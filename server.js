@@ -1,67 +1,60 @@
+const express = require('express');
 const http = require('http');
-const fs = require('fs');
 const { Server } = require('socket.io');
-const { exec } = require('child_process'); // Declare this once at the top
+const { spawn } = require('child_process');
+const axios = require('axios');
 
-// 1. Create the web server
-const server = http.createServer((req, res) => {
-    fs.readFile(__dirname + '/index.html', (err, data) => {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(data);
-    });
-});
-
-// 2. Attach Socket.io
+const app = express();
+const server = http.createServer(app);
 const io = new Server(server);
 
+app.use(express.static(__dirname));
+
+// --- THE AI CHAT LOGIC ---
 io.on('connection', (socket) => {
-    console.log('A user connected to Afro AI!');
+    console.log('User connected to Afro AI');
 
-    // This handles the "Run" button logic
-    socket.on('runCode', (code) => {
-        console.log('Running code:', code);
-        
-        // This executes the text as real Python code on your laptop
-        exec(`python -c "${code.replace(/"/g, '\\"')}"`, (error, stdout, stderr) => {
-            if (error) {
-                // Send back the Python error message
-                socket.emit('output', 'Python Error: ' + stderr);
-                return;
-            }
-            // Send back the actual result (like 4)
-            socket.emit('output', stdout || 'Code executed (No output)');
-        });
-    });
-});
+    socket.on('ai-prompt', async (prompt) => {
+        try {
+            const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+                model: "deepseek/deepseek-r1:free",
+                messages: [
+                    { 
+                        role: "system", 
+                        content: "You are Afro AI, a master Python developer. Return ONLY the requested Python code. No conversational filler, no markdown backticks (```), just the code." 
+                    },
+                    { role: "user", content: prompt }
+                ]
+            }, {
+                headers: {
+                    "Authorization": `Bearer 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`,
+                    "Content-Type": "application/json"
+                }
+            });
 
-// 3. Start the server
-server.listen(3000, () => {
-    console.log('Afro AI is LIVE at http://localhost:3000');
-});
-let pythonProcess; // Variable to hold the running code
-
-io.on('connection', (socket) => {
-    console.log('A user connected to Afro AI!');
-
-    socket.on('runCode', (code) => {
-        console.log('Running code...');
-        
-        // Start the Python process and save it to our variable
-        pythonProcess = exec(`python -c "${code.replace(/"/g, '\\"')}"`, (error, stdout, stderr) => {
-            if (error) {
-                socket.emit('output', 'Python Error: ' + stderr);
-                return;
-            }
-            socket.emit('output', stdout || 'Code executed successfully.');
-        });
-    });
-
-    // NEW: Logic to kill the process
-    socket.on('stopCode', () => {
-        if (pythonProcess) {
-            pythonProcess.kill(); // This kills the Python engine
-            console.log('Process stopped by user.');
-            socket.emit('output', '--- PROCESS TERMINATED BY USER ---');
+            const aiCode = response.data.choices[0].message.content;
+            socket.emit('ai-response', aiCode);
+        } catch (error) {
+            console.error("AI Error:", error.message);
+            socket.emit('ai-response', "# Error: The AI brain is currently offline. Check your API key.");
         }
     });
+
+    // --- THE PYTHON ENGINE LOGIC ---
+    socket.on('run-python', (code) => {
+        const pyProcess = spawn('python3', ['-c', code]);
+
+        pyProcess.stdout.on('data', (data) => {
+            socket.emit('python-output', data.toString());
+        });
+
+        pyProcess.stderr.on('data', (data) => {
+            socket.emit('python-output', `ERROR: ${data.toString()}`);
+        });
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Afro AI is LIVE at http://localhost:${PORT}`);
 });
