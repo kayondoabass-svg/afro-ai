@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Afro AI Platform</title>
+    <style>
+        body { background: #121212; color: white; font-family: Arial; text-align: center; }
+        textarea { width: 80%; height: 200px; margin-top: 20px; background: #222; color: #0f0; padding: 10px; border: 1px solid #444; }
+        button { background: #ff4500; color: white; padding: 10px 30px; border: none; cursor: pointer; margin: 10px; border-radius: 5px; }
+        #terminal { background: black; color: #0f0; width: 80%; margin: 20px auto; padding: 15px; text-align: left; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+    <h1>AFRO AI IDE</h1>
+    <textarea id="codeInput" placeholder="Enter your Python code here..."></textarea><br>
+    <button onclick="sendCode()">RUN CODE</button>
+    <div id="terminal">Output will appear here...</div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        function sendCode() {
+            const code = document.getElementById('codeInput').value;
+            socket.emit('runCode', code);
+        }
+
+        socket.on('output', (data) => {
+            document.getElementById('terminal').innerText = data;
+        });
+    </script>
+</body>
+</html><button onclick="document.getElementById('terminal').innerText = ''" style="background: #444;">CLEAR</button>
+<div id="status">● Offline</div>
+#status { color: gray; font-size: 12px; margin-bottom: 10px; }
+socket.on('connect', () => {
+    const status = document.getElementById('status');
+    status.innerText = "● Online";
+    status.style.color = "#0f0"; // Bright Green
+});
+<button id="stopBtn" onclick="stopCode()" style="background: #cc0000;">STOP</button>
+
+<script>
+    // Add this function inside your <script> tag
+    function stopCode() {
+        socket.emit('stopCode');
+    }
+</script>
