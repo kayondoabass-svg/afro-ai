@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
+import { useLanguage } from "@/hooks/use-language";
 import {
   Send,
   Plus,
@@ -25,6 +26,7 @@ interface ConversationWithMessages extends Conversation {
 
 export default function AIChatPage() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const { toast } = useToast();
   const [activeConversation, setActiveConversation] = useState<number | null>(null);
   const [input, setInput] = useState("");
@@ -44,7 +46,7 @@ export default function AIChatPage() {
 
   const createConvoMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/conversations", { title: "New Chat" });
+      const res = await apiRequest("POST", "/api/conversations", { title: t("chat.newChat") });
       return res.json();
     },
     onSuccess: (data: Conversation) => {
@@ -134,7 +136,7 @@ export default function AIChatPage() {
         }
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to get AI response.", variant: "destructive" });
+      toast({ title: t("dashboard.error"), description: t("chat.error"), variant: "destructive" });
       setIsStreaming(false);
       setStreamingContent("");
     }
@@ -162,7 +164,7 @@ export default function AIChatPage() {
             data-testid="button-new-chat"
           >
             <Plus className="w-4 h-4" />
-            New Chat
+            {t("chat.newChat")}
           </Button>
         </div>
         <ScrollArea className="flex-1">
@@ -201,7 +203,7 @@ export default function AIChatPage() {
               ))
             ) : (
               <p className="text-xs text-muted-foreground text-center py-4 px-2">
-                No conversations yet. Start a new chat!
+                {t("chat.noConversations")}
               </p>
             )}
           </div>
@@ -274,7 +276,7 @@ export default function AIChatPage() {
                     </Avatar>
                     <div className="flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      <span className="text-sm text-muted-foreground">Thinking...</span>
+                      <span className="text-sm text-muted-foreground">{t("chat.thinking")}</span>
                     </div>
                   </div>
                 )}
@@ -290,7 +292,7 @@ export default function AIChatPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask Africa.ai anything..."
+                  placeholder={t("chat.placeholder")}
                   disabled={isStreaming}
                   data-testid="input-chat-message"
                 />
@@ -311,17 +313,17 @@ export default function AIChatPage() {
                 <Sparkles className="w-10 h-10 text-primary" />
               </div>
               <h2 className="text-2xl font-bold font-serif" data-testid="text-chat-welcome">
-                Africa.ai Assistant
+                {t("chat.welcome")}
               </h2>
               <p className="text-muted-foreground">
-                Your AI-powered building companion. Ask about website design, app development, code help, or anything else.
+                {t("chat.welcomeDesc")}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
-                  "Help me design a landing page",
-                  "How to publish to App Store?",
-                  "Create a mobile app layout",
-                  "Optimize my website for speed",
+                  t("chat.suggestion1"),
+                  t("chat.suggestion2"),
+                  t("chat.suggestion3"),
+                  t("chat.suggestion4"),
                 ].map((suggestion, i) => (
                   <Card
                     key={i}
@@ -340,7 +342,7 @@ export default function AIChatPage() {
                 data-testid="button-start-chat"
               >
                 <MessageSquare className="w-4 h-4" />
-                Start a Conversation
+                {t("chat.startChat")}
               </Button>
             </div>
           </div>

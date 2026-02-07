@@ -1,5 +1,6 @@
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useLanguage } from "@/hooks/use-language";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,16 +23,17 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const menuItems = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "AI Chat", url: "/chat", icon: MessageSquare },
-  { title: "Pricing", url: "/pricing", icon: CreditCard },
-];
-
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const firstName = user?.firstName || "Creator";
+
+  const menuItems = [
+    { title: t("sidebar.dashboard"), url: "/dashboard", icon: LayoutDashboard },
+    { title: t("sidebar.aiChat"), url: "/chat", icon: MessageSquare },
+    { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
+  ];
 
   return (
     <Sidebar>
@@ -47,16 +49,16 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Menu</SidebarGroupLabel>
+          <SidebarGroupLabel>{t("sidebar.menu")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
+                <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton
                     asChild
                     isActive={location === item.url}
                   >
-                    <Link href={item.url} data-testid={`link-sidebar-${item.title.toLowerCase().replace(/\s/g, "-")}`}>
+                    <Link href={item.url} data-testid={`link-sidebar-${item.url.slice(1)}`}>
                       <item.icon className="w-4 h-4" />
                       <span>{item.title}</span>
                     </Link>
@@ -87,7 +89,7 @@ export function AppSidebar() {
           data-testid="button-logout"
         >
           <LogOut className="w-4 h-4" />
-          Log Out
+          {t("sidebar.logout")}
         </Button>
       </SidebarFooter>
     </Sidebar>

@@ -2,6 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageSelector } from "@/components/language-selector";
+import { useLanguage } from "@/hooks/use-language";
 import {
   Smartphone,
   Globe,
@@ -20,6 +22,8 @@ import workspaceImg from "@assets/workspace.png";
 import africaTechImg from "@assets/africa-tech.png";
 
 export default function LandingPage() {
+  const { t } = useLanguage();
+
   return (
     <div className="min-h-screen bg-background">
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/70 border-b">
@@ -31,17 +35,18 @@ export default function LandingPage() {
             <span className="font-bold text-lg tracking-tight" data-testid="text-logo">Africa.ai</span>
           </div>
           <div className="hidden md:flex items-center gap-6">
-            <a href="#features" className="text-sm text-muted-foreground transition-colors" data-testid="link-features">Features</a>
-            <a href="#pricing" className="text-sm text-muted-foreground transition-colors" data-testid="link-pricing">Pricing</a>
-            <a href="#about" className="text-sm text-muted-foreground transition-colors" data-testid="link-about">About</a>
+            <a href="#features" className="text-sm text-muted-foreground transition-colors" data-testid="link-features">{t("nav.features")}</a>
+            <a href="#pricing" className="text-sm text-muted-foreground transition-colors" data-testid="link-pricing">{t("nav.pricing")}</a>
+            <a href="#about" className="text-sm text-muted-foreground transition-colors" data-testid="link-about">{t("nav.about")}</a>
           </div>
           <div className="flex items-center gap-2">
+            <LanguageSelector compact />
             <ThemeToggle />
             <a href="/api/login">
-              <Button variant="ghost" data-testid="button-login">Log In</Button>
+              <Button variant="ghost" data-testid="button-login">{t("nav.login")}</Button>
             </a>
             <a href="/api/login">
-              <Button data-testid="button-get-started">Get Started</Button>
+              <Button data-testid="button-get-started">{t("nav.getStarted")}</Button>
             </a>
           </div>
         </div>
@@ -62,28 +67,28 @@ export default function LandingPage() {
             <div className="space-y-8">
               <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 backdrop-blur-sm">
                 <Zap className="w-3 h-3 mr-1" />
-                Built for Africa, by Africans
+                {t("hero.badge")}
               </Badge>
 
               <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight text-white">
-                Building the Future
-                <span className="text-primary block mt-1">We Want</span>
+                {t("hero.title1")}
+                <span className="text-primary block mt-1">{t("hero.title2")}</span>
               </h1>
 
               <p className="text-lg text-gray-300 max-w-lg leading-relaxed">
-                Create stunning websites and powerful mobile apps. Launch them to the App Store and Google Play Store. All powered by AI, designed for African innovators.
+                {t("hero.subtitle")}
               </p>
 
               <div className="flex flex-wrap gap-3">
                 <a href="/api/login">
                   <Button size="lg" data-testid="button-hero-start">
-                    Start Creating
+                    {t("hero.cta1")}
                     <ArrowRight className="w-4 h-4" />
                   </Button>
                 </a>
                 <a href="#features">
                   <Button size="lg" variant="outline" className="backdrop-blur-sm bg-white/5 text-white border-white/20" data-testid="button-hero-learn">
-                    See How It Works
+                    {t("hero.cta2")}
                   </Button>
                 </a>
               </div>
@@ -91,15 +96,15 @@ export default function LandingPage() {
               <div className="flex flex-wrap items-center gap-6 pt-2">
                 <div className="flex items-center gap-2 text-sm text-gray-400">
                   <Check className="w-4 h-4 text-primary" />
-                  <span>Free to start</span>
+                  <span>{t("hero.check1")}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-gray-400">
                   <Check className="w-4 h-4 text-primary" />
-                  <span>AI-powered</span>
+                  <span>{t("hero.check2")}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-gray-400">
                   <Check className="w-4 h-4 text-primary" />
-                  <span>No code needed</span>
+                  <span>{t("hero.check3")}</span>
                 </div>
               </div>
             </div>
@@ -122,25 +127,25 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-4">
             <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Empowering African Innovation
+              {t("stats.label")}
             </p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             <div>
               <p className="text-3xl font-bold text-primary" data-testid="text-stat-creators">10K+</p>
-              <p className="text-sm text-muted-foreground mt-1">African Creators</p>
+              <p className="text-sm text-muted-foreground mt-1">{t("stats.creators")}</p>
             </div>
             <div>
               <p className="text-3xl font-bold text-primary" data-testid="text-stat-apps">5K+</p>
-              <p className="text-sm text-muted-foreground mt-1">Apps Launched</p>
+              <p className="text-sm text-muted-foreground mt-1">{t("stats.apps")}</p>
             </div>
             <div>
               <p className="text-3xl font-bold text-primary" data-testid="text-stat-countries">54</p>
-              <p className="text-sm text-muted-foreground mt-1">Countries</p>
+              <p className="text-sm text-muted-foreground mt-1">{t("stats.countries")}</p>
             </div>
             <div>
               <p className="text-3xl font-bold text-primary" data-testid="text-stat-uptime">99.9%</p>
-              <p className="text-sm text-muted-foreground mt-1">Uptime</p>
+              <p className="text-sm text-muted-foreground mt-1">{t("stats.uptime")}</p>
             </div>
           </div>
         </div>
@@ -151,14 +156,14 @@ export default function LandingPage() {
           <div className="text-center mb-16">
             <Badge variant="outline" className="mb-4">
               <Sparkles className="w-3 h-3 mr-1" />
-              Features
+              {t("features.badge")}
             </Badge>
             <h2 className="font-serif text-3xl md:text-4xl font-bold mb-4">
-              Everything You Need to
-              <span className="text-primary"> Build & Launch</span>
+              {t("features.title1")}
+              <span className="text-primary"> {t("features.title2")}</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              From idea to App Store. Design, build, and deploy professional websites and mobile apps with the power of AI.
+              {t("features.subtitle")}
             </p>
           </div>
 
@@ -168,9 +173,9 @@ export default function LandingPage() {
                 <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
                   <Globe className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-websites">Website Builder</h3>
+                <h3 className="text-lg font-semibold" data-testid="text-feature-websites">{t("features.website.title")}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Create beautiful, responsive websites with our drag-and-drop builder. No coding experience required.
+                  {t("features.website.desc")}
                 </p>
               </CardContent>
             </Card>
@@ -180,9 +185,9 @@ export default function LandingPage() {
                 <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
                   <Smartphone className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-apps">App Designer</h3>
+                <h3 className="text-lg font-semibold" data-testid="text-feature-apps">{t("features.app.title")}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Design mobile apps for iOS and Android. Preview in real-time and publish directly to app stores.
+                  {t("features.app.desc")}
                 </p>
               </CardContent>
             </Card>
@@ -192,9 +197,9 @@ export default function LandingPage() {
                 <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
                   <MessageSquare className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-ai">AI Chat Assistant</h3>
+                <h3 className="text-lg font-semibold" data-testid="text-feature-ai">{t("features.ai.title")}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Get instant help from our AI assistant. Ask questions, get code suggestions, and solve problems in real-time.
+                  {t("features.ai.desc")}
                 </p>
               </CardContent>
             </Card>
@@ -204,9 +209,9 @@ export default function LandingPage() {
                 <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
                   <Store className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-store">App Store Launch</h3>
+                <h3 className="text-lg font-semibold" data-testid="text-feature-store">{t("features.store.title")}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Publish to Apple App Store and Google Play Store with one click. We handle all the complexity.
+                  {t("features.store.desc")}
                 </p>
               </CardContent>
             </Card>
@@ -216,9 +221,9 @@ export default function LandingPage() {
                 <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
                   <Code2 className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-code">Code Generation</h3>
+                <h3 className="text-lg font-semibold" data-testid="text-feature-code">{t("features.code.title")}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  AI generates clean, production-ready code. Export your project or let us host it for you.
+                  {t("features.code.desc")}
                 </p>
               </CardContent>
             </Card>
@@ -228,9 +233,9 @@ export default function LandingPage() {
                 <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
                   <Shield className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-security">Secure & Reliable</h3>
+                <h3 className="text-lg font-semibold" data-testid="text-feature-security">{t("features.security.title")}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Enterprise-grade security and 99.9% uptime. Your apps are safe, fast, and always available.
+                  {t("features.security.desc")}
                 </p>
               </CardContent>
             </Card>
@@ -251,18 +256,18 @@ export default function LandingPage() {
             </div>
             <div className="space-y-6">
               <h2 className="font-serif text-3xl md:text-4xl font-bold">
-                Africa Rising.
-                <span className="text-primary block mt-1">Innovation Without Limits.</span>
+                {t("africa.title1")}
+                <span className="text-primary block mt-1">{t("africa.title2")}</span>
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Africa is home to the world's youngest and fastest-growing population. With Africa.ai, every dreamer, entrepreneur, and creator can turn their vision into reality. Build the apps that will transform communities, create opportunities, and shape the digital future of the continent.
+                {t("africa.desc")}
               </p>
               <div className="space-y-3">
                 {[
-                  "Ubuntu-inspired collaboration tools",
-                  "Mobile-first design for African networks",
-                  "Local payment integration with Flutterwave",
-                  "Multilingual support for African languages",
+                  t("africa.item1"),
+                  t("africa.item2"),
+                  t("africa.item3"),
+                  t("africa.item4"),
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
@@ -282,14 +287,14 @@ export default function LandingPage() {
           <div className="text-center mb-16">
             <Badge variant="outline" className="mb-4">
               <Rocket className="w-3 h-3 mr-1" />
-              Pricing
+              {t("pricing.badge")}
             </Badge>
             <h2 className="font-serif text-3xl md:text-4xl font-bold mb-4">
-              Fair Pricing for
-              <span className="text-primary"> Every Creator</span>
+              {t("pricing.title1")}
+              <span className="text-primary"> {t("pricing.title2")}</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Affordable plans designed for African innovators. Start free, scale as you grow.
+              {t("pricing.subtitle")}
             </p>
           </div>
 
@@ -297,14 +302,14 @@ export default function LandingPage() {
             <Card className="hover-elevate">
               <CardContent className="p-6 space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold">Starter</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Perfect to get started</p>
+                  <h3 className="text-lg font-semibold">{t("pricing.starter")}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{t("pricing.starter.desc")}</p>
                 </div>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold">Free</span>
+                  <span className="text-4xl font-bold">{t("pricing.free")}</span>
                 </div>
                 <div className="space-y-3">
-                  {["1 project", "Basic AI chat", "Community support", "Africa.ai subdomain"].map((f, i) => (
+                  {[t("pricing.starter.f1"), t("pricing.starter.f2"), t("pricing.starter.f3"), t("pricing.starter.f4")].map((f, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <Check className="w-4 h-4 text-primary flex-shrink-0" />
                       <span>{f}</span>
@@ -312,26 +317,26 @@ export default function LandingPage() {
                   ))}
                 </div>
                 <a href="/api/login" className="block">
-                  <Button variant="outline" className="w-full" data-testid="button-plan-starter">Get Started</Button>
+                  <Button variant="outline" className="w-full" data-testid="button-plan-starter">{t("nav.getStarted")}</Button>
                 </a>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate ring-2 ring-primary relative">
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge className="bg-primary text-primary-foreground">Most Popular</Badge>
+                <Badge className="bg-primary text-primary-foreground">{t("pricing.mostPopular")}</Badge>
               </div>
               <CardContent className="p-6 space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold">Pro</h3>
-                  <p className="text-sm text-muted-foreground mt-1">For serious creators</p>
+                  <h3 className="text-lg font-semibold">{t("pricing.pro")}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{t("pricing.pro.desc")}</p>
                 </div>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold">$9</span>
-                  <span className="text-muted-foreground">/month</span>
+                  <span className="text-4xl font-bold">{t("pricing.pro.price")}</span>
+                  <span className="text-muted-foreground">{t("pricing.perMonth")}</span>
                 </div>
                 <div className="space-y-3">
-                  {["10 projects", "Unlimited AI chat", "Priority support", "Custom domain", "App Store publishing"].map((f, i) => (
+                  {[t("pricing.pro.f1"), t("pricing.pro.f2"), t("pricing.pro.f3"), t("pricing.pro.f4"), t("pricing.pro.f5")].map((f, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <Check className="w-4 h-4 text-primary flex-shrink-0" />
                       <span>{f}</span>
@@ -339,7 +344,7 @@ export default function LandingPage() {
                   ))}
                 </div>
                 <Button className="w-full" disabled data-testid="button-plan-pro">
-                  Coming Soon
+                  {t("pricing.comingSoon")}
                 </Button>
               </CardContent>
             </Card>
@@ -347,15 +352,15 @@ export default function LandingPage() {
             <Card className="hover-elevate">
               <CardContent className="p-6 space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold">Business</h3>
-                  <p className="text-sm text-muted-foreground mt-1">For teams & agencies</p>
+                  <h3 className="text-lg font-semibold">{t("pricing.business")}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{t("pricing.business.desc")}</p>
                 </div>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold">$29</span>
-                  <span className="text-muted-foreground">/month</span>
+                  <span className="text-4xl font-bold">{t("pricing.business.price")}</span>
+                  <span className="text-muted-foreground">{t("pricing.perMonth")}</span>
                 </div>
                 <div className="space-y-3">
-                  {["Unlimited projects", "Advanced AI features", "Dedicated support", "White-label apps", "Team collaboration", "Analytics dashboard"].map((f, i) => (
+                  {[t("pricing.business.f1"), t("pricing.business.f2"), t("pricing.business.f3"), t("pricing.business.f4"), t("pricing.business.f5"), t("pricing.business.f6")].map((f, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <Check className="w-4 h-4 text-primary flex-shrink-0" />
                       <span>{f}</span>
@@ -363,14 +368,14 @@ export default function LandingPage() {
                   ))}
                 </div>
                 <Button variant="outline" className="w-full" disabled data-testid="button-plan-business">
-                  Coming Soon
+                  {t("pricing.comingSoon")}
                 </Button>
               </CardContent>
             </Card>
           </div>
 
           <p className="text-center text-sm text-muted-foreground mt-8">
-            Payments powered by Flutterwave. Pay with Mobile Money, cards, or bank transfer.
+            {t("pricing.flutterwave")}
           </p>
         </div>
       </section>
@@ -378,15 +383,15 @@ export default function LandingPage() {
       <section id="about" className="py-20 bg-card/50">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-8">
           <h2 className="font-serif text-3xl md:text-4xl font-bold">
-            "If you want to go fast, go alone.
-            <span className="text-primary block mt-2">If you want to go far, go together."</span>
+            {t("quote.line1")}
+            <span className="text-primary block mt-2">{t("quote.line2")}</span>
           </h2>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            An African proverb that guides everything we build. Africa.ai is more than a tool — it's a movement to empower every African creator to build the technology that shapes our continent's future.
+            {t("quote.desc")}
           </p>
           <a href="/api/login">
             <Button size="lg" className="mt-4" data-testid="button-join-movement">
-              Join the Movement
+              {t("quote.cta")}
               <ArrowRight className="w-4 h-4" />
             </Button>
           </a>
@@ -404,38 +409,38 @@ export default function LandingPage() {
                 <span className="font-bold">Africa.ai</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Building the future of African technology, one app at a time.
+                {t("footer.tagline")}
               </p>
             </div>
             <div className="space-y-3">
-              <h4 className="font-semibold text-sm">Product</h4>
+              <h4 className="font-semibold text-sm">{t("footer.product")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>Website Builder</p>
-                <p>App Designer</p>
-                <p>AI Assistant</p>
-                <p>App Store Launch</p>
+                <p>{t("footer.websiteBuilder")}</p>
+                <p>{t("footer.appDesigner")}</p>
+                <p>{t("footer.aiAssistant")}</p>
+                <p>{t("footer.appStoreLaunch")}</p>
               </div>
             </div>
             <div className="space-y-3">
-              <h4 className="font-semibold text-sm">Company</h4>
+              <h4 className="font-semibold text-sm">{t("footer.company")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>About Us</p>
-                <p>Careers</p>
-                <p>Blog</p>
-                <p>Contact</p>
+                <p>{t("footer.aboutUs")}</p>
+                <p>{t("footer.careers")}</p>
+                <p>{t("footer.blog")}</p>
+                <p>{t("footer.contact")}</p>
               </div>
             </div>
             <div className="space-y-3">
-              <h4 className="font-semibold text-sm">Legal</h4>
+              <h4 className="font-semibold text-sm">{t("footer.legal")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>Privacy Policy</p>
-                <p>Terms of Service</p>
-                <p>Cookie Policy</p>
+                <p>{t("footer.privacy")}</p>
+                <p>{t("footer.terms")}</p>
+                <p>{t("footer.cookies")}</p>
               </div>
             </div>
           </div>
           <div className="border-t mt-8 pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; {new Date().getFullYear()} Africa.ai. All rights reserved. Made with love for Africa.</p>
+            <p>&copy; {new Date().getFullYear()} Africa.ai. {t("footer.copyright")}</p>
           </div>
         </div>
       </footer>

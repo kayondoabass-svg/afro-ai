@@ -1,8 +1,9 @@
 import { useAuth } from "@/hooks/use-auth";
+import { useLanguage } from "@/hooks/use-language";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,6 +47,7 @@ import type { Project } from "@shared/schema";
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const { toast } = useToast();
   const [showNewProject, setShowNewProject] = useState(false);
 
@@ -61,10 +63,10 @@ export default function DashboardPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setShowNewProject(false);
-      toast({ title: "Project created", description: "Your new project is ready." });
+      toast({ title: t("dashboard.projectCreated"), description: t("dashboard.projectCreatedDesc") });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to create project.", variant: "destructive" });
+      toast({ title: t("dashboard.error"), description: t("dashboard.createError"), variant: "destructive" });
     },
   });
 
@@ -74,7 +76,7 @@ export default function DashboardPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Project deleted" });
+      toast({ title: t("dashboard.projectDeleted") });
     },
   });
 
@@ -117,14 +119,14 @@ export default function DashboardPage() {
             </Avatar>
             <div>
               <h1 className="text-2xl font-bold" data-testid="text-welcome">
-                Welcome back, {firstName}
+                {t("dashboard.welcome")} {firstName}
               </h1>
-              <p className="text-sm text-muted-foreground">Let's build something amazing today.</p>
+              <p className="text-sm text-muted-foreground">{t("dashboard.subtitle")}</p>
             </div>
           </div>
           <Button onClick={() => setShowNewProject(true)} data-testid="button-new-project">
             <Plus className="w-4 h-4" />
-            New Project
+            {t("dashboard.newProject")}
           </Button>
         </div>
 
@@ -136,7 +138,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold" data-testid="text-total-projects">{projects?.length ?? 0}</p>
-                <p className="text-xs text-muted-foreground">Total Projects</p>
+                <p className="text-xs text-muted-foreground">{t("dashboard.totalProjects")}</p>
               </div>
             </CardContent>
           </Card>
@@ -149,7 +151,7 @@ export default function DashboardPage() {
                 <p className="text-2xl font-bold" data-testid="text-published-projects">
                   {projects?.filter((p) => p.status === "published").length ?? 0}
                 </p>
-                <p className="text-xs text-muted-foreground">Published</p>
+                <p className="text-xs text-muted-foreground">{t("dashboard.published")}</p>
               </div>
             </CardContent>
           </Card>
@@ -159,15 +161,15 @@ export default function DashboardPage() {
                 <Sparkles className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold" data-testid="text-ai-chats">Unlimited</p>
-                <p className="text-xs text-muted-foreground">AI Chats</p>
+                <p className="text-2xl font-bold" data-testid="text-ai-chats">{t("dashboard.unlimited")}</p>
+                <p className="text-xs text-muted-foreground">{t("dashboard.aiChats")}</p>
               </div>
             </CardContent>
           </Card>
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold mb-4" data-testid="text-projects-heading">Your Projects</h2>
+          <h2 className="text-lg font-semibold mb-4" data-testid="text-projects-heading">{t("dashboard.yourProjects")}</h2>
 
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -205,13 +207,13 @@ export default function DashboardPage() {
                             onClick={() => deleteMutation.mutate(project.id)}
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
+                            {t("dashboard.delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
                     <p className="text-sm text-muted-foreground line-clamp-2">
-                      {project.description || "No description"}
+                      {project.description || t("dashboard.noDescription")}
                     </p>
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <Badge variant="secondary" className={getStatusColor(project.status)}>
@@ -232,13 +234,13 @@ export default function DashboardPage() {
                 <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
                   <Sparkles className="w-8 h-8 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold">No projects yet</h3>
+                <h3 className="text-lg font-semibold">{t("dashboard.noProjects")}</h3>
                 <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                  Start building your first website or app. The future of African tech starts with you.
+                  {t("dashboard.noProjectsDesc")}
                 </p>
                 <Button onClick={() => setShowNewProject(true)} data-testid="button-create-first">
                   <Plus className="w-4 h-4" />
-                  Create Your First Project
+                  {t("dashboard.createFirst")}
                 </Button>
               </CardContent>
             </Card>
@@ -249,8 +251,8 @@ export default function DashboardPage() {
       <Dialog open={showNewProject} onOpenChange={setShowNewProject}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Project</DialogTitle>
-            <DialogDescription>Start building your website or app.</DialogDescription>
+            <DialogTitle>{t("dashboard.createTitle")}</DialogTitle>
+            <DialogDescription>{t("dashboard.createDesc")}</DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -259,9 +261,9 @@ export default function DashboardPage() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Project Name</FormLabel>
+                    <FormLabel>{t("dashboard.projectName")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="My Amazing App" {...field} data-testid="input-project-name" />
+                      <Input placeholder={t("dashboard.projectNamePlaceholder")} {...field} data-testid="input-project-name" />
                     </FormControl>
                   </FormItem>
                 )}
@@ -271,9 +273,9 @@ export default function DashboardPage() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description</FormLabel>
+                    <FormLabel>{t("dashboard.description")}</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="What are you building?" className="resize-none" {...field} data-testid="input-project-description" />
+                      <Textarea placeholder={t("dashboard.descPlaceholder")} className="resize-none" {...field} data-testid="input-project-description" />
                     </FormControl>
                   </FormItem>
                 )}
@@ -283,23 +285,23 @@ export default function DashboardPage() {
                 name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Type</FormLabel>
+                    <FormLabel>{t("dashboard.type")}</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-project-type">
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="website">Website</SelectItem>
-                        <SelectItem value="mobile_app">Mobile App</SelectItem>
+                        <SelectItem value="website">{t("dashboard.website")}</SelectItem>
+                        <SelectItem value="mobile_app">{t("dashboard.mobileApp")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormItem>
                 )}
               />
               <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-submit-project">
-                {createMutation.isPending ? "Creating..." : "Create Project"}
+                {createMutation.isPending ? t("dashboard.creating") : t("dashboard.createProject")}
               </Button>
             </form>
           </Form>
