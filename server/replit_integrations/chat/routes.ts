@@ -80,10 +80,14 @@ export function registerChatRoutes(app: Express): void {
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      // Stream response from OpenAI
+      const systemMessage = {
+        role: "system" as const,
+        content: "You are Africa.ai, an AI assistant that helps African creators build websites and mobile apps. You are knowledgeable about web development, mobile app design, UI/UX, App Store and Google Play Store publishing, and African tech ecosystems. Be encouraging, practical, and supportive. Help users with code, design advice, deployment, and any technical questions. Keep responses concise and actionable.",
+      };
+
       const stream = await openai.chat.completions.create({
-        model: "gpt-5.1",
-        messages: chatMessages,
+        model: "gpt-5.2",
+        messages: [systemMessage, ...chatMessages],
         stream: true,
         max_completion_tokens: 2048,
       });
