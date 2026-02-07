@@ -62,12 +62,12 @@ export default function LandingPage() {
             <div className="space-y-8">
               <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 backdrop-blur-sm">
                 <Zap className="w-3 h-3 mr-1" />
-                Built for Africa, by Africa
+                Built for Africa, by Africans
               </Badge>
 
               <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight text-white">
-                The Future
-                <span className="text-primary block mt-1">We Build</span>
+                Building the Future
+                <span className="text-primary block mt-1">We Want</span>
               </h1>
 
               <p className="text-lg text-gray-300 max-w-lg leading-relaxed">
