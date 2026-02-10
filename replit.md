@@ -8,7 +8,7 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - **Backend**: Express.js + Node.js
 - **Database**: PostgreSQL with Drizzle ORM
 - **Auth**: Replit Auth (OpenID Connect)
-- **AI**: OpenAI via Replit AI Integrations (gpt-5.2)
+- **AI**: OpenAI via Replit AI Integrations (tiered: nano/mini/4.1 by plan)
 - **Payments**: Flutterwave (coming soon)
 - **Routing**: wouter (frontend), Express (backend)
 
@@ -26,9 +26,17 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - Dark mode default with light mode toggle (African-inspired gold/amber theme)
 - Landing page with African heritage imagery and slogans
 - Dashboard with project management (create, view, delete)
-- AI-powered chat assistant for building help
+- AI-powered code generator with live preview (split-view: chat + iframe)
+- Tiered AI models by plan: Starter=gpt-4.1-nano, Pro=gpt-4.1-mini, Business=gpt-4.1
 - Pricing page with Flutterwave integration (coming soon)
 - Responsive design with sidebar navigation
+
+## AI Model Tiers
+- **Starter (Free)**: gpt-4.1-nano, 16k max tokens - basic code generation
+- **Pro ($9/mo)**: gpt-4.1-mini, 32k max tokens - better quality designs
+- **Business ($29/mo)**: gpt-4.1, 32k max tokens - premium quality output
+- User plan stored in `users.plan` column (default: "starter")
+- Model selection happens server-side in chat/routes.ts based on DB lookup
 
 ## API Routes
 - `GET /api/projects` - Get user's projects (auth required)

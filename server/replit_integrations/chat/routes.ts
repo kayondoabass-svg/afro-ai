@@ -1,6 +1,23 @@
 import type { Express, Request, Response } from "express";
 import OpenAI from "openai";
 import { chatStorage } from "./storage";
+import { db } from "../../db";
+import { users } from "@shared/schema";
+import { eq } from "drizzle-orm";
+
+type UserPlan = "starter" | "pro" | "business";
+
+function getModelForPlan(plan: UserPlan): { model: string; maxTokens: number } {
+  switch (plan) {
+    case "business":
+      return { model: "gpt-4.1", maxTokens: 32000 };
+    case "pro":
+      return { model: "gpt-4.1-mini", maxTokens: 32000 };
+    case "starter":
+    default:
+      return { model: "gpt-4.1-nano", maxTokens: 16000 };
+  }
+}
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -191,6 +208,21 @@ export function registerChatRoutes(app: Express): void {
       const conversationId = parseInt(req.params.id as string);
       const { content: userContent } = req.body;
 
+      let userPlan: UserPlan = "starter";
+      try {
+        const authUser = (req as any).user;
+        if (authUser?.claims?.sub) {
+          const [dbUser] = await db.select().from(users).where(eq(users.id, authUser.claims.sub));
+          if (dbUser?.plan && ["starter", "pro", "business"].includes(dbUser.plan)) {
+            userPlan = dbUser.plan as UserPlan;
+          }
+        }
+      } catch (planErr) {
+        console.error("Error fetching user plan, defaulting to starter:", planErr);
+      }
+
+      const { model, maxTokens } = getModelForPlan(userPlan);
+
       await chatStorage.createMessage(conversationId, "user", userContent);
 
       const messages = await chatStorage.getMessagesByConversation(conversationId);
@@ -209,10 +241,10 @@ export function registerChatRoutes(app: Express): void {
       };
 
       const stream = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
+        model,
         messages: [systemMessage, ...chatMessages],
         stream: true,
-        max_completion_tokens: 32000,
+        max_completion_tokens: maxTokens,
       });
 
       let fullResponse = "";
