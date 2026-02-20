@@ -26,3 +26,23 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
+
+export const publishedApps = pgTable("published_apps", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  subdomain: varchar("subdomain").notNull().unique(),
+  htmlContent: text("html_content").notNull(),
+  title: text("title").notNull(),
+  cloudflareDnsRecordId: varchar("cloudflare_dns_record_id"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertPublishedAppSchema = createInsertSchema(publishedApps).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type PublishedApp = typeof publishedApps.$inferSelect;
+export type InsertPublishedApp = z.infer<typeof insertPublishedAppSchema>;

@@ -24,7 +24,21 @@ import {
   Minimize2,
   PanelRightOpen,
   PanelRightClose,
+  Globe,
+  Check,
+  AlertCircle,
+  ExternalLink,
+  Rocket,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Conversation, Message } from "@shared/schema";
 
@@ -51,6 +65,171 @@ function removeCodeBlock(text: string): string {
   return text.replace(/```(?:html)?\s*\n[\s\S]*?```/g, "").trim();
 }
 
+function PublishDialog({ code, open, onOpenChange }: {
+  code: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const [subdomain, setSubdomain] = useState("");
+  const [title, setTitle] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+    };
+  }, []);
+
+  const checkSubdomain = useCallback(async (value: string) => {
+    if (value.length < 3) {
+      setAvailable(null);
+      return;
+    }
+    setChecking(true);
+    try {
+      const res = await fetch(`/api/check-subdomain/${encodeURIComponent(value)}`);
+      const data = await res.json();
+      setAvailable(data.available);
+    } catch {
+      setAvailable(null);
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  const handleSubdomainChange = (value: string) => {
+    const cleaned = value.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    setSubdomain(cleaned);
+    setAvailable(null);
+    setPublishedUrl(null);
+    if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+    if (cleaned.length >= 3) {
+      checkTimeoutRef.current = setTimeout(() => checkSubdomain(cleaned), 500);
+    }
+  };
+
+  const publishMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/publish", { subdomain, htmlContent: code, title });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setPublishedUrl(data.url);
+      toast({ title: "Published!", description: `Your app is live at ${data.url}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handlePublish = () => {
+    if (!subdomain || !title || available === false) return;
+    publishMutation.mutate();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Rocket className="w-5 h-5 text-primary" />
+            Publish Your App
+          </DialogTitle>
+          <DialogDescription>
+            Give your app a name and subdomain to publish it live on afroaigroup.com
+          </DialogDescription>
+        </DialogHeader>
+
+        {publishedUrl ? (
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-2 text-green-500">
+              <Check className="w-5 h-5" />
+              <span className="font-medium">Published Successfully!</span>
+            </div>
+            <div className="bg-card rounded-lg p-4 border">
+              <p className="text-sm text-muted-foreground mb-2">Your app is live at:</p>
+              <a
+                href={publishedUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline flex items-center gap-1 font-medium"
+                data-testid="link-published-url"
+              >
+                {publishedUrl}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              DNS may take a few minutes to propagate. You can also preview at /site/{subdomain}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">App Title</label>
+              <Input
+                placeholder="My Amazing App"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                data-testid="input-publish-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Subdomain</label>
+              <div className="flex items-center gap-1">
+                <Input
+                  placeholder="my-app"
+                  value={subdomain}
+                  onChange={(e) => handleSubdomainChange(e.target.value)}
+                  className="flex-1"
+                  data-testid="input-publish-subdomain"
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">.afroaigroup.com</span>
+              </div>
+              {subdomain.length >= 3 && (
+                <div className="flex items-center gap-1 text-xs">
+                  {checking ? (
+                    <><Loader2 className="w-3 h-3 animate-spin" /><span className="text-muted-foreground">Checking...</span></>
+                  ) : available === true ? (
+                    <><Check className="w-3 h-3 text-green-500" /><span className="text-green-500">Available!</span></>
+                  ) : available === false ? (
+                    <><AlertCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Already taken</span></>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          {publishedUrl ? (
+            <Button onClick={() => onOpenChange(false)} data-testid="button-publish-done">
+              Done
+            </Button>
+          ) : (
+            <Button
+              onClick={handlePublish}
+              disabled={!subdomain || !title || subdomain.length < 3 || available === false || publishMutation.isPending}
+              data-testid="button-publish-confirm"
+            >
+              {publishMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 animate-spin" />Publishing...</>
+              ) : (
+                <><Globe className="w-4 h-4" />Publish to Web</>
+              )}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload }: {
   code: string;
   isFullscreen: boolean;
@@ -59,6 +238,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   onDownload: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [showPublish, setShowPublish] = useState(false);
 
   return (
     <div className={`flex flex-col bg-background border-l ${isFullscreen ? "fixed inset-0 z-50" : ""}`}>
@@ -68,6 +248,10 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
           <span className="text-sm font-medium" data-testid="text-preview-label">Live Preview</span>
         </div>
         <div className="flex items-center gap-1">
+          <Button size="sm" variant="default" onClick={() => setShowPublish(true)} className="gap-1" data-testid="button-publish-app">
+            <Rocket className="w-3 h-3" />
+            Publish
+          </Button>
           <Button size="icon" variant="ghost" onClick={onDownload} data-testid="button-download-code">
             <Download className="w-4 h-4" />
           </Button>
@@ -89,6 +273,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
           data-testid="iframe-preview"
         />
       </div>
+      <PublishDialog code={code} open={showPublish} onOpenChange={setShowPublish} />
     </div>
   );
 }
