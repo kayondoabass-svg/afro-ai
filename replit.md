@@ -7,7 +7,7 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
 - **Backend**: Express.js + Node.js
 - **Database**: PostgreSQL with Drizzle ORM
-- **Auth**: Replit Auth (OpenID Connect)
+- **Auth**: Google OAuth 2.0 (passport-google-oauth20)
 - **AI**: OpenAI via Replit AI Integrations (tiered: nano/mini/4.1 by plan)
 - **Payments**: Flutterwave (coming soon)
 - **Routing**: wouter (frontend), Express (backend)

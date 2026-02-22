@@ -12,6 +12,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import LandingPage from "@/pages/landing";
+import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import AIChatPage from "@/pages/ai-chat";
 import PricingPage from "@/pages/pricing";
@@ -65,7 +66,12 @@ function AppRouter() {
   }
 
   if (!user) {
-    return <LandingPage />;
+    return (
+      <Switch>
+        <Route path="/login" component={LoginPage} />
+        <Route component={LandingPage} />
+      </Switch>
+    );
   }
 
   return <AuthenticatedLayout />;
