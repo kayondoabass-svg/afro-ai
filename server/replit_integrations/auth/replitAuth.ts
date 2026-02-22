@@ -14,6 +14,7 @@ export function getSession() {
     ttl: sessionTtl,
     tableName: "sessions",
   });
+  const isProduction = process.env.REPLIT_DEPLOYMENT === "1" || process.env.NODE_ENV === "production";
   return session({
     secret: process.env.SESSION_SECRET!,
     store: sessionStore,
@@ -21,7 +22,7 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "lax",
       maxAge: sessionTtl,
     },
@@ -38,11 +39,20 @@ export async function setupAuth(app: Express) {
     ? `${process.env.BASE_URL}/api/auth/google/callback`
     : "/api/auth/google/callback";
 
+  const clientID = process.env.GOOGLE_CLIENT_ID!;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
+
+  console.log("[Auth] Google OAuth config:");
+  console.log("[Auth]   Client ID:", clientID?.substring(0, 20) + "...");
+  console.log("[Auth]   Client Secret length:", clientSecret?.length);
+  console.log("[Auth]   Callback URL:", callbackURL);
+  console.log("[Auth]   BASE_URL:", process.env.BASE_URL || "(not set)");
+
   passport.use(
     new GoogleStrategy(
       {
-        clientID: process.env.GOOGLE_CLIENT_ID!,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        clientID,
+        clientSecret,
         callbackURL,
         proxy: true,
       },
@@ -73,6 +83,7 @@ export async function setupAuth(app: Express) {
 
           done(null, user);
         } catch (error) {
+          console.error("[Auth] Error in Google strategy callback:", error);
           done(error as Error);
         }
       }
@@ -87,10 +98,24 @@ export async function setupAuth(app: Express) {
     prompt: "select_account",
   }));
 
-  app.get("/api/auth/google/callback", passport.authenticate("google", {
-    failureRedirect: "/?error=auth_failed",
-  }), (_req, res) => {
-    res.redirect("/");
+  app.get("/api/auth/google/callback", (req, res, next) => {
+    passport.authenticate("google", (err: any, user: any, info: any) => {
+      if (err) {
+        console.error("[Auth] Callback error:", err.message, err.code, err.status);
+        return res.redirect("/?error=auth_failed&reason=" + encodeURIComponent(err.message || "unknown"));
+      }
+      if (!user) {
+        console.error("[Auth] No user returned:", info);
+        return res.redirect("/?error=auth_failed&reason=no_user");
+      }
+      req.logIn(user, (loginErr) => {
+        if (loginErr) {
+          console.error("[Auth] Login error:", loginErr);
+          return res.redirect("/?error=auth_failed&reason=login_error");
+        }
+        return res.redirect("/");
+      });
+    })(req, res, next);
   });
 
   app.get("/api/logout", (req, res) => {
