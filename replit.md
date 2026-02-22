@@ -13,7 +13,7 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - **Routing**: wouter (frontend), Express (backend)
 
 ## Project Structure
-- `client/src/pages/` - Landing, Dashboard, AI Chat, Pricing pages
+- `client/src/pages/` - Landing, Dashboard, AI Chat, Pricing, Founder Dashboard, Admin Command pages
 - `client/src/components/` - AppSidebar, ThemeProvider, ThemeToggle, UI components
 - `server/routes.ts` - API routes (projects CRUD, publishing)
 - `server/storage.ts` - Database storage layer
@@ -69,6 +69,15 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - Flutterwave for payments in Uganda
 - Payments section marked as "Coming Soon" for now
 - FLW_SECRET_KEY, FLW_PUBLIC_KEY, FLW_SECRET_HASH needed when ready
+
+## Founder / Admin System
+- Founder email: kayondoabass@gmail.com (hardcoded in server for security)
+- `isFounder` middleware: checks email match, returns 403 for non-founders
+- `/api/auth/user` response includes `isFounder: boolean` field
+- Founder Dashboard (`/founder`): Full platform analytics - all users, projects, published apps, conversations, messages
+- Admin Command Center (`/admin-command`): AI chat interface where founder can type natural language instructions to build/modify pages and publish directly to afroaigroup.com
+- Admin API routes: `/api/admin/stats`, `/api/admin/users`, `/api/admin/projects`, `/api/admin/published-apps` (all protected by isFounder middleware)
+- Sidebar shows "Founder" section with Crown icon only when isFounder is true
 
 ## Environment Variables
 - DATABASE_URL - PostgreSQL connection

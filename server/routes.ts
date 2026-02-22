@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder } from "./replit_integrations/auth";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { storage } from "./storage";
 import { insertProjectSchema } from "@shared/schema";
@@ -186,6 +186,46 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error serving published app:", error);
       res.status(500).send("Internal server error");
+    }
+  });
+
+  app.get("/api/admin/stats", isFounder, async (req, res) => {
+    try {
+      const stats = await storage.getPlatformStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).json({ message: "Failed to fetch stats" });
+    }
+  });
+
+  app.get("/api/admin/users", isFounder, async (req, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      res.json(allUsers);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.get("/api/admin/projects", isFounder, async (req, res) => {
+    try {
+      const allProjects = await storage.getAllProjects();
+      res.json(allProjects);
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+      res.status(500).json({ message: "Failed to fetch projects" });
+    }
+  });
+
+  app.get("/api/admin/published-apps", isFounder, async (req, res) => {
+    try {
+      const allApps = await storage.getAllPublishedApps();
+      res.json(allApps);
+    } catch (error) {
+      console.error("Error fetching published apps:", error);
+      res.status(500).json({ message: "Failed to fetch published apps" });
     }
   });
 

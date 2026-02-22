@@ -21,6 +21,8 @@ import {
   CreditCard,
   LogOut,
   Sparkles,
+  Crown,
+  Terminal,
 } from "lucide-react";
 
 export function AppSidebar() {
@@ -29,10 +31,17 @@ export function AppSidebar() {
   const { t } = useLanguage();
   const firstName = user?.firstName || "Creator";
 
+  const isFounder = (user as any)?.isFounder === true;
+
   const menuItems = [
     { title: t("sidebar.dashboard"), url: "/dashboard", icon: LayoutDashboard },
     { title: t("sidebar.aiChat"), url: "/chat", icon: MessageSquare },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
+  ];
+
+  const founderItems = [
+    { title: "Founder Dashboard", url: "/founder", icon: Crown },
+    { title: "Command Center", url: "/admin-command", icon: Terminal },
   ];
 
   return (
@@ -68,6 +77,28 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {isFounder && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-primary">Founder</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {founderItems.map((item) => (
+                  <SidebarMenuItem key={item.url}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location === item.url}
+                    >
+                      <Link href={item.url} data-testid={`link-sidebar-${item.url.slice(1)}`}>
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter className="p-4 space-y-3">
         <div className="flex items-center gap-3">

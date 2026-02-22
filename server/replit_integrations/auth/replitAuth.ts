@@ -130,9 +130,22 @@ export async function setupAuth(app: Express) {
   });
 }
 
+export const FOUNDER_EMAIL = "kayondoabass@gmail.com";
+
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ message: "Unauthorized" });
+  }
+  return next();
+};
+
+export const isFounder: RequestHandler = async (req: any, res, next) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  const email = req.user?.claims?.email;
+  if (email !== FOUNDER_EMAIL) {
+    return res.status(403).json({ message: "Forbidden: Founder access only" });
   }
   return next();
 };

@@ -1,6 +1,8 @@
 import { db } from "./db";
 import { projects, publishedApps, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { users } from "@shared/models/auth";
+import { conversations, messages } from "@shared/models/chat";
+import { eq, desc, sql, count } from "drizzle-orm";
 
 export interface IStorage {
   getProjectsByUser(userId: string): Promise<Project[]>;
@@ -12,6 +14,19 @@ export interface IStorage {
   createPublishedApp(app: InsertPublishedApp): Promise<PublishedApp>;
   updatePublishedApp(id: number, data: Partial<InsertPublishedApp>): Promise<PublishedApp>;
   deletePublishedApp(id: number): Promise<void>;
+  getAllUsers(): Promise<any[]>;
+  getAllProjects(): Promise<any[]>;
+  getAllPublishedApps(): Promise<any[]>;
+  getPlatformStats(): Promise<{
+    totalUsers: number;
+    totalProjects: number;
+    totalPublishedApps: number;
+    totalConversations: number;
+    totalMessages: number;
+    recentUsers: any[];
+    recentProjects: any[];
+    recentPublishedApps: any[];
+  }>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -54,6 +69,41 @@ class DatabaseStorage implements IStorage {
 
   async deletePublishedApp(id: number): Promise<void> {
     await db.delete(publishedApps).where(eq(publishedApps.id, id));
+  }
+
+  async getAllUsers(): Promise<any[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  async getAllProjects(): Promise<any[]> {
+    return db.select().from(projects).orderBy(desc(projects.createdAt));
+  }
+
+  async getAllPublishedApps(): Promise<any[]> {
+    return db.select().from(publishedApps).orderBy(desc(publishedApps.createdAt));
+  }
+
+  async getPlatformStats() {
+    const [userCount] = await db.select({ value: count() }).from(users);
+    const [projectCount] = await db.select({ value: count() }).from(projects);
+    const [publishedCount] = await db.select({ value: count() }).from(publishedApps);
+    const [convoCount] = await db.select({ value: count() }).from(conversations);
+    const [msgCount] = await db.select({ value: count() }).from(messages);
+
+    const recentUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(10);
+    const recentProjects = await db.select().from(projects).orderBy(desc(projects.createdAt)).limit(10);
+    const recentPublishedApps = await db.select().from(publishedApps).orderBy(desc(publishedApps.createdAt)).limit(10);
+
+    return {
+      totalUsers: userCount.value,
+      totalProjects: projectCount.value,
+      totalPublishedApps: publishedCount.value,
+      totalConversations: convoCount.value,
+      totalMessages: msgCount.value,
+      recentUsers,
+      recentProjects,
+      recentPublishedApps,
+    };
   }
 }
 
