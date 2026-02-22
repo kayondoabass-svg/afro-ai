@@ -217,6 +217,8 @@ export default function AdminCommandPage() {
     }
   }, [streamingContent]);
 
+  if (!isFounder) return null;
+
   const ensureConversation = async (): Promise<number> => {
     if (conversationId) return conversationId;
     const res = await apiRequest("POST", "/api/conversations", { title: "Founder Command" });

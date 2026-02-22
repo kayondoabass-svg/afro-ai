@@ -65,6 +65,8 @@ export default function FounderDashboardPage() {
     if (!isFounder) setLocation("/dashboard");
   }, [isFounder, setLocation]);
 
+  if (!isFounder) return null;
+
   if (isLoading) {
     return (
       <div className="flex-1 overflow-auto">
