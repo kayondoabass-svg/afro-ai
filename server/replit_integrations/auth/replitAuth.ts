@@ -34,12 +34,16 @@ export async function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  const callbackURL = process.env.BASE_URL
+    ? `${process.env.BASE_URL}/api/auth/google/callback`
+    : "/api/auth/google/callback";
+
   passport.use(
     new GoogleStrategy(
       {
         clientID: process.env.GOOGLE_CLIENT_ID!,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-        callbackURL: "/api/auth/google/callback",
+        callbackURL,
         proxy: true,
       },
       async (_accessToken, _refreshToken, profile, done) => {
