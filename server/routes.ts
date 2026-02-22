@@ -5,14 +5,70 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { storage } from "./storage";
 import { insertProjectSchema } from "@shared/schema";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import express from "express";
+
+const uploadDir = path.join(process.cwd(), "public", "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const fileStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, uniqueSuffix + ext);
+  },
+});
+
+const upload = multer({
+  storage: fileStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const blocked = /svg/i;
+    const allowed = /^(image|video)\//;
+    if (blocked.test(file.mimetype) || blocked.test(file.originalname)) {
+      cb(new Error("SVG files are not allowed for security reasons"));
+    } else if (allowed.test(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image and video files are allowed"));
+    }
+  },
+});
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.use("/uploads", express.static(uploadDir));
+
   await setupAuth(app);
   registerAuthRoutes(app);
   registerChatRoutes(app);
+
+  app.post("/api/upload", isAuthenticated, upload.array("files", 5), (req: any, res) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No files uploaded" });
+      }
+      const result = files.map((f) => ({
+        filename: f.filename,
+        originalName: f.originalname,
+        mimetype: f.mimetype,
+        size: f.size,
+        url: `/uploads/${f.filename}`,
+      }));
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error uploading file:", error);
+      res.status(500).json({ message: error.message || "Failed to upload file" });
+    }
+  });
 
   app.get("/api/projects", isAuthenticated, async (req: any, res) => {
     try {

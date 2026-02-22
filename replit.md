@@ -13,7 +13,7 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - **Routing**: wouter (frontend), Express (backend)
 
 ## Project Structure
-- `client/src/pages/` - Landing, Dashboard, AI Chat, Pricing, Founder Dashboard, Admin Command pages
+- `client/src/pages/` - Landing, Dashboard, AI Chat, Deployments, Pricing, Founder Dashboard, Admin Command pages
 - `client/src/components/` - AppSidebar, ThemeProvider, ThemeToggle, UI components
 - `server/routes.ts` - API routes (projects CRUD, publishing)
 - `server/storage.ts` - Database storage layer
@@ -28,8 +28,10 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - Landing page with African heritage imagery and slogans
 - Dashboard with project management (create, view, delete)
 - AI-powered code generator with live preview (split-view: chat + iframe)
+- File attachments in AI chat (photos, videos, screenshots) with OpenAI vision support
 - Tiered AI models by plan: Starter=gpt-4.1-nano, Pro=gpt-4.1-mini, Business=gpt-4.1
 - App publishing to custom subdomains (e.g., my-app.afroaigroup.com) via Cloudflare DNS API
+- Deployments page: detailed view of all published apps with domain, visibility, status, SSL info, copy/delete
 - Pricing page with Flutterwave integration (coming soon)
 - Responsive design with sidebar navigation
 
@@ -54,8 +56,9 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - `DELETE /api/projects/:id` - Delete project (auth required)
 - `GET /api/conversations` - Get all conversations
 - `POST /api/conversations` - Create conversation
-- `POST /api/conversations/:id/messages` - Send message (streaming SSE)
+- `POST /api/conversations/:id/messages` - Send message with optional attachments (streaming SSE, vision support)
 - `DELETE /api/conversations/:id` - Delete conversation
+- `POST /api/upload` - Upload files (images/videos, max 10MB, auth required)
 - `GET /api/published-apps` - Get user's published apps (auth required)
 - `POST /api/publish` - Publish app to subdomain (auth required, body: subdomain, htmlContent, title)
 - `DELETE /api/published-apps/:id` - Delete published app and DNS record (auth required)

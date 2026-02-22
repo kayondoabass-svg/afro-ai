@@ -23,6 +23,7 @@ import {
   Sparkles,
   Crown,
   Terminal,
+  Rocket,
 } from "lucide-react";
 
 export function AppSidebar() {
@@ -36,6 +37,7 @@ export function AppSidebar() {
   const menuItems = [
     { title: t("sidebar.dashboard"), url: "/dashboard", icon: LayoutDashboard },
     { title: t("sidebar.aiChat"), url: "/chat", icon: MessageSquare },
+    { title: "Deployments", url: "/deployments", icon: Rocket },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
   ];
 

@@ -206,7 +206,7 @@ export function registerChatRoutes(app: Express): void {
   app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
     try {
       const conversationId = parseInt(req.params.id as string);
-      const { content: userContent } = req.body;
+      const { content: userContent, attachments } = req.body;
 
       let userPlan: UserPlan = "starter";
       try {
@@ -223,13 +223,37 @@ export function registerChatRoutes(app: Express): void {
 
       const { model, maxTokens } = getModelForPlan(userPlan);
 
-      await chatStorage.createMessage(conversationId, "user", userContent);
+      const messageContent = attachments && attachments.length > 0
+        ? JSON.stringify({ text: userContent, attachments })
+        : userContent;
+      await chatStorage.createMessage(conversationId, "user", messageContent);
 
       const messages = await chatStorage.getMessagesByConversation(conversationId);
-      const chatMessages = messages.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+      const chatMessages: any[] = messages.map((m) => {
+        if (m.role === "user") {
+          try {
+            const parsed = JSON.parse(m.content);
+            if (parsed.text && parsed.attachments) {
+              const contentParts: any[] = [{ type: "text", text: parsed.text }];
+              for (const att of parsed.attachments) {
+                if (att.mimetype && att.mimetype.startsWith("image/")) {
+                  const protocol = process.env.NODE_ENV === "production" ? "https" : req.protocol;
+                  const host = req.get("host") || "localhost:5000";
+                  contentParts.push({
+                    type: "image_url",
+                    image_url: { url: `${protocol}://${host}${att.url}` },
+                  });
+                } else if (att.mimetype && att.mimetype.startsWith("video/")) {
+                  contentParts.push({ type: "text", text: `[Attached video: ${att.originalName}]` });
+                }
+              }
+              return { role: "user" as const, content: contentParts };
+            }
+          } catch {}
+          return { role: "user" as const, content: m.content };
+        }
+        return { role: m.role as "user" | "assistant", content: m.content };
+      });
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");

@@ -29,6 +29,9 @@ import {
   AlertCircle,
   ExternalLink,
   Rocket,
+  Paperclip,
+  Image,
+  Film,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,6 +44,19 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Conversation, Message } from "@shared/schema";
+
+interface Attachment {
+  filename: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+  url: string;
+}
+
+interface ParsedMessageContent {
+  text: string;
+  attachments?: Attachment[];
+}
 
 interface ConversationWithMessages extends Conversation {
   messages?: Message[];
@@ -63,6 +79,16 @@ function extractAllCodeBlocks(text: string): string | null {
 
 function removeCodeBlock(text: string): string {
   return text.replace(/```(?:html)?\s*\n[\s\S]*?```/g, "").trim();
+}
+
+function parseMessageContent(content: string): ParsedMessageContent {
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed.text !== undefined && parsed.attachments) {
+      return parsed;
+    }
+  } catch {}
+  return { text: content };
 }
 
 function PublishDialog({ code, open, onOpenChange }: {
@@ -289,8 +315,11 @@ export default function AIChatPage() {
   const [previewCode, setPreviewCode] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: conversations, isLoading: loadingConversations } = useQuery<Conversation[]>({
     queryKey: ["/api/conversations"],
@@ -353,6 +382,38 @@ export default function AIChatPage() {
     }
   }, [activeConvo?.messages]);
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+      }
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Upload failed");
+      }
+      const uploaded: Attachment[] = await res.json();
+      setPendingAttachments((prev) => [...prev, ...uploaded]);
+    } catch (error: any) {
+      toast({ title: "Upload Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removePendingAttachment = (index: number) => {
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleDownload = useCallback(() => {
     if (!previewCode) return;
     const blob = new Blob([previewCode], { type: "text/html" });
@@ -368,18 +429,24 @@ export default function AIChatPage() {
   }, [previewCode, toast]);
 
   const handleSend = async () => {
-    if (!input.trim() || !activeConversation || isStreaming) return;
+    if ((!input.trim() && pendingAttachments.length === 0) || !activeConversation || isStreaming) return;
 
-    const userMessage = input.trim();
+    const userMessage = input.trim() || "Check these attachments";
+    const currentAttachments = [...pendingAttachments];
     setInput("");
+    setPendingAttachments([]);
     setIsStreaming(true);
     setStreamingContent("");
+
+    const messageContent = currentAttachments.length > 0
+      ? JSON.stringify({ text: userMessage, attachments: currentAttachments })
+      : userMessage;
 
     const optimisticMsg: Message = {
       id: Date.now(),
       conversationId: activeConversation,
       role: "user",
-      content: userMessage,
+      content: messageContent,
       createdAt: new Date(),
     };
 
@@ -396,7 +463,10 @@ export default function AIChatPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content: userMessage }),
+        body: JSON.stringify({
+          content: userMessage,
+          attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+        }),
       });
 
       if (!response.ok) throw new Error("Failed to send message");
@@ -460,7 +530,41 @@ export default function AIChatPage() {
 
   const renderMessageContent = (content: string, role: string) => {
     if (role !== "assistant") {
-      return <p className="whitespace-pre-wrap break-words">{content}</p>;
+      const parsed = parseMessageContent(content);
+      return (
+        <div className="space-y-2">
+          {parsed.text && <p className="whitespace-pre-wrap break-words">{parsed.text}</p>}
+          {parsed.attachments && parsed.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {parsed.attachments.map((att, i) => (
+                <div key={i} className="relative">
+                  {att.mimetype.startsWith("image/") ? (
+                    <img
+                      src={att.url}
+                      alt={att.originalName}
+                      className="max-w-[200px] max-h-[150px] rounded-lg border object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => window.open(att.url, "_blank")}
+                      data-testid={`img-attachment-${i}`}
+                    />
+                  ) : att.mimetype.startsWith("video/") ? (
+                    <video
+                      src={att.url}
+                      controls
+                      className="max-w-[250px] max-h-[150px] rounded-lg border"
+                      data-testid={`video-attachment-${i}`}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2 text-xs">
+                      <Paperclip className="w-3 h-3" />
+                      {att.originalName}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
     }
 
     const code = extractAllCodeBlocks(content);
@@ -657,25 +761,78 @@ export default function AIChatPage() {
               </ScrollArea>
 
               <div className="border-t p-3 bg-background">
-                <div className="max-w-2xl mx-auto flex gap-2">
-                  <Textarea
-                    ref={textareaRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={t("chat.placeholder")}
-                    disabled={isStreaming}
-                    className="resize-none min-h-[44px] max-h-[120px]"
-                    rows={1}
-                    data-testid="input-chat-message"
-                  />
-                  <Button
-                    onClick={handleSend}
-                    disabled={!input.trim() || isStreaming}
-                    data-testid="button-send-message"
-                  >
-                    <Send className="w-4 h-4" />
-                  </Button>
+                <div className="max-w-2xl mx-auto space-y-2">
+                  {pendingAttachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 px-1">
+                      {pendingAttachments.map((att, i) => (
+                        <div key={i} className="relative group">
+                          {att.mimetype.startsWith("image/") ? (
+                            <img
+                              src={att.url}
+                              alt={att.originalName}
+                              className="w-16 h-16 rounded-lg border object-cover"
+                              data-testid={`img-pending-${i}`}
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-lg border bg-muted flex flex-col items-center justify-center gap-1">
+                              <Film className="w-5 h-5 text-muted-foreground" />
+                              <span className="text-[10px] text-muted-foreground truncate max-w-[56px]">{att.originalName}</span>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => removePendingAttachment(i)}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            data-testid={`button-remove-attachment-${i}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleFileSelect}
+                      data-testid="input-file-upload"
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isStreaming || isUploading}
+                      data-testid="button-attach-file"
+                      title="Attach photo, video, or screenshot"
+                    >
+                      {isUploading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Paperclip className="w-4 h-4" />
+                      )}
+                    </Button>
+                    <Textarea
+                      ref={textareaRef}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder={t("chat.placeholder")}
+                      disabled={isStreaming}
+                      className="resize-none min-h-[44px] max-h-[120px]"
+                      rows={1}
+                      data-testid="input-chat-message"
+                    />
+                    <Button
+                      onClick={handleSend}
+                      disabled={(!input.trim() && pendingAttachments.length === 0) || isStreaming}
+                      data-testid="button-send-message"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </>

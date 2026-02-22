@@ -16,6 +16,7 @@ import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import AIChatPage from "@/pages/ai-chat";
 import PricingPage from "@/pages/pricing";
+import DeploymentsPage from "@/pages/deployments";
 import FounderDashboardPage from "@/pages/founder-dashboard";
 import AdminCommandPage from "@/pages/admin-command";
 import NotFound from "@/pages/not-found";
@@ -42,6 +43,7 @@ function AuthenticatedLayout() {
             <Switch>
               <Route path="/dashboard" component={DashboardPage} />
               <Route path="/chat" component={AIChatPage} />
+              <Route path="/deployments" component={DeploymentsPage} />
               <Route path="/pricing" component={PricingPage} />
               <Route path="/founder" component={FounderDashboardPage} />
               <Route path="/admin-command" component={AdminCommandPage} />
