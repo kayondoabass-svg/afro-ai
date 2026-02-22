@@ -42,13 +42,7 @@ export async function setupAuth(app: Express) {
   const clientID = (process.env.GOOGLE_CLIENT_ID || "").trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
 
-  console.log("[Auth] Google OAuth config:");
-  console.log("[Auth]   Client ID:", clientID?.substring(0, 20) + "...");
-  console.log("[Auth]   Client Secret length:", clientSecret?.length);
-  console.log("[Auth]   Secret starts with:", clientSecret?.substring(0, 6) + "...");
-  console.log("[Auth]   Secret ends with:", "..." + clientSecret?.substring(clientSecret.length - 4));
-  console.log("[Auth]   Callback URL:", callbackURL);
-  console.log("[Auth]   BASE_URL:", process.env.BASE_URL || "(not set)");
+  console.log("[Auth] Google OAuth configured, callback:", callbackURL);
 
   passport.use(
     new GoogleStrategy(
