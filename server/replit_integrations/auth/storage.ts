@@ -1,10 +1,7 @@
 import { users, type User, type UpsertUser } from "@shared/models/auth";
-import { projects, publishedApps } from "@shared/schema";
 import { db } from "../../db";
 import { eq } from "drizzle-orm";
 
-// Interface for auth storage operations
-// (IMPORTANT) These user operations are mandatory for Replit Auth.
 export interface IAuthStorage {
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
@@ -24,16 +21,9 @@ class AuthStorage implements IAuthStorage {
         .where(eq(users.email, userData.email));
 
       if (existingByEmail) {
-        const oldId = existingByEmail.id;
-        const newId = userData.id;
-        if (oldId !== newId) {
-          await db.update(projects).set({ userId: newId! }).where(eq(projects.userId, oldId));
-          await db.update(publishedApps).set({ userId: newId! }).where(eq(publishedApps.userId, oldId));
-        }
         const [updated] = await db
           .update(users)
           .set({
-            id: userData.id,
             firstName: userData.firstName,
             lastName: userData.lastName,
             profileImageUrl: userData.profileImageUrl,
@@ -51,7 +41,10 @@ class AuthStorage implements IAuthStorage {
       .onConflictDoUpdate({
         target: users.id,
         set: {
-          ...userData,
+          email: userData.email,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImageUrl: userData.profileImageUrl,
           updatedAt: new Date(),
         },
       })

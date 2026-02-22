@@ -65,7 +65,7 @@ export async function setupAuth(app: Express) {
           const lastName = profile.name?.familyName || profile.displayName?.split(" ").slice(1).join(" ") || "";
           const profileImageUrl = profile.photos?.[0]?.value || "";
 
-          await authStorage.upsertUser({
+          const dbUser = await authStorage.upsertUser({
             id: profile.id,
             email,
             firstName,
@@ -75,11 +75,11 @@ export async function setupAuth(app: Express) {
 
           const user = {
             claims: {
-              sub: profile.id,
-              email,
-              first_name: firstName,
-              last_name: lastName,
-              profile_image_url: profileImageUrl,
+              sub: dbUser.id,
+              email: dbUser.email || email,
+              first_name: dbUser.firstName || firstName,
+              last_name: dbUser.lastName || lastName,
+              profile_image_url: dbUser.profileImageUrl || profileImageUrl,
             },
           };
 
