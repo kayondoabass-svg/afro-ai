@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,11 +25,35 @@ import africaTechImg from "@assets/africa-tech.png";
 export default function LandingPage() {
   const { t } = useLanguage();
 
+  const params = new URLSearchParams(window.location.search);
+  const initialError = params.get("error");
+  const authReason = params.get("reason");
+  const [showError, setShowError] = useState(!!initialError);
+
   return (
     <div className="min-h-screen bg-background">
-      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/70 border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 h-16">
-          <div className="flex items-center gap-2">
+      {showError && (
+        <div className="fixed top-0 left-0 right-0 z-[60] bg-destructive text-destructive-foreground text-center py-3 px-4 text-sm" data-testid="banner-auth-error">
+          {authReason === "no_user"
+            ? "Sign-in was cancelled or your account could not be verified. Please try again."
+            : authReason?.includes("access_denied")
+              ? "Access denied. Your Google account may not have permission to sign in. Please contact the administrator."
+              : "Sign-in failed. Please try again or use a different Google account."}
+          <button
+            onClick={() => {
+              setShowError(false);
+              window.history.replaceState({}, "", "/");
+            }}
+            className="ml-3 underline font-medium"
+            data-testid="button-dismiss-error"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      <nav className={`fixed ${showError ? "top-10" : "top-0"} left-0 right-0 z-50 backdrop-blur-xl bg-background/70 border-b`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-2 h-16">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-primary-foreground" />
             </div>
@@ -39,14 +64,14 @@ export default function LandingPage() {
             <a href="#pricing" className="text-sm text-muted-foreground transition-colors" data-testid="link-pricing">{t("nav.pricing")}</a>
             <a href="#about" className="text-sm text-muted-foreground transition-colors" data-testid="link-about">{t("nav.about")}</a>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
             <LanguageSelector compact />
             <ThemeToggle />
-            <a href="/api/login">
+            <a href="/api/login" className="hidden sm:block">
               <Button variant="ghost" data-testid="button-login">{t("nav.login")}</Button>
             </a>
             <a href="/api/login">
-              <Button data-testid="button-get-started">{t("nav.getStarted")}</Button>
+              <Button data-testid="button-get-started" className="whitespace-nowrap">{t("nav.getStarted")}</Button>
             </a>
           </div>
         </div>

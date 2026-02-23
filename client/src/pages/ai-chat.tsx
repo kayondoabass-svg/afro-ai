@@ -32,6 +32,9 @@ import {
   Paperclip,
   Image,
   Film,
+  Monitor,
+  Tablet,
+  Smartphone,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -256,6 +259,14 @@ function PublishDialog({ code, open, onOpenChange }: {
   );
 }
 
+type PreviewDevice = "desktop" | "tablet" | "phone";
+
+const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
+  desktop: { width: "100%", label: "Desktop" },
+  tablet: { width: "768px", label: "Tablet" },
+  phone: { width: "375px", label: "Phone" },
+};
+
 function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload }: {
   code: string;
   isFullscreen: boolean;
@@ -265,6 +276,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
 
   return (
     <div className={`flex flex-col bg-background border-l ${isFullscreen ? "fixed inset-0 z-50" : ""}`}>
@@ -274,6 +286,38 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
           <span className="text-sm font-medium" data-testid="text-preview-label">Live Preview</span>
         </div>
         <div className="flex items-center gap-1">
+          <div className="flex items-center border rounded-md mr-2">
+            <Button
+              size="icon"
+              variant={previewDevice === "desktop" ? "default" : "ghost"}
+              className="h-7 w-7 rounded-r-none"
+              onClick={() => setPreviewDevice("desktop")}
+              title="Desktop"
+              data-testid="button-chat-preview-desktop"
+            >
+              <Monitor className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant={previewDevice === "tablet" ? "default" : "ghost"}
+              className="h-7 w-7 rounded-none border-x"
+              onClick={() => setPreviewDevice("tablet")}
+              title="Tablet"
+              data-testid="button-chat-preview-tablet"
+            >
+              <Tablet className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant={previewDevice === "phone" ? "default" : "ghost"}
+              className="h-7 w-7 rounded-l-none"
+              onClick={() => setPreviewDevice("phone")}
+              title="Phone"
+              data-testid="button-chat-preview-phone"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+            </Button>
+          </div>
           <Button size="sm" variant="default" onClick={() => setShowPublish(true)} className="gap-1" data-testid="button-publish-app">
             <Rocket className="w-3 h-3" />
             Publish
@@ -289,11 +333,16 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
           </Button>
         </div>
       </div>
-      <div className="flex-1 bg-white">
+      <div className="flex-1 bg-white flex justify-center overflow-auto">
         <iframe
           ref={iframeRef}
           srcDoc={code}
-          className="w-full h-full border-0"
+          className="h-full border-0 transition-all duration-300"
+          style={{
+            width: deviceSizes[previewDevice].width,
+            maxWidth: "100%",
+            boxShadow: previewDevice !== "desktop" ? "0 0 0 1px rgba(0,0,0,0.1), 0 4px 24px rgba(0,0,0,0.15)" : "none",
+          }}
           sandbox="allow-scripts allow-popups"
           title="Live Preview"
           data-testid="iframe-preview"

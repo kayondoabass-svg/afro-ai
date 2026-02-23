@@ -24,6 +24,12 @@ import {
   Check,
   AlertCircle,
   ExternalLink,
+  Paperclip,
+  Image,
+  Film,
+  Smartphone,
+  Tablet,
+  Monitor,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -37,12 +43,23 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
+interface Attachment {
+  filename: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+  url: string;
+}
+
 interface CommandMessage {
   id: number;
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[];
   timestamp: Date;
 }
+
+type PreviewDevice = "desktop" | "tablet" | "phone";
 
 function extractHtmlCode(text: string): string | null {
   const htmlMatch = text.match(/```html\s*\n([\s\S]*?)```/);
@@ -183,6 +200,12 @@ function PublishDialog({ code, open, onOpenChange }: {
   );
 }
 
+const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
+  desktop: { width: "100%", label: "Desktop" },
+  tablet: { width: "768px", label: "Tablet" },
+  phone: { width: "375px", label: "Phone" },
+};
+
 export default function AdminCommandPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -196,7 +219,11 @@ export default function AdminCommandPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showPublish, setShowPublish] = useState(false);
   const [conversationId, setConversationId] = useState<number | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isFounder = (user as any)?.isFounder === true;
 
   useEffect(() => {
@@ -227,10 +254,44 @@ export default function AdminCommandPage() {
     return convo.id;
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+      }
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Upload failed");
+      }
+      const uploaded: Attachment[] = await res.json();
+      setPendingAttachments((prev) => [...prev, ...uploaded]);
+    } catch (error: any) {
+      toast({ title: "Upload Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removePendingAttachment = (index: number) => {
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || isStreaming) return;
-    const userMessage = input.trim();
+    if ((!input.trim() && pendingAttachments.length === 0) || isStreaming) return;
+    const userMessage = input.trim() || "Check these attachments";
+    const currentAttachments = [...pendingAttachments];
     setInput("");
+    setPendingAttachments([]);
     setIsStreaming(true);
     setStreamingContent("");
 
@@ -238,6 +299,7 @@ export default function AdminCommandPage() {
       id: Date.now(),
       role: "user",
       content: userMessage,
+      attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, userMsg]);
@@ -248,7 +310,10 @@ export default function AdminCommandPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content: userMessage }),
+        body: JSON.stringify({
+          content: userMessage,
+          attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+        }),
       });
 
       if (!response.ok) throw new Error("Failed to send");
@@ -321,9 +386,42 @@ export default function AdminCommandPage() {
     toast({ title: "Downloaded!" });
   };
 
-  const renderMessageContent = (content: string, role: string) => {
+  const renderMessageContent = (content: string, role: string, attachments?: Attachment[]) => {
     if (role !== "assistant") {
-      return <p className="whitespace-pre-wrap break-words">{content}</p>;
+      return (
+        <div className="space-y-2">
+          <p className="whitespace-pre-wrap break-words">{content}</p>
+          {attachments && attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((att, i) => (
+                <div key={i} className="relative">
+                  {att.mimetype.startsWith("image/") ? (
+                    <img
+                      src={att.url}
+                      alt={att.originalName}
+                      className="max-w-[200px] max-h-[150px] rounded-lg border object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => window.open(att.url, "_blank")}
+                      data-testid={`img-admin-attachment-${i}`}
+                    />
+                  ) : att.mimetype.startsWith("video/") ? (
+                    <video
+                      src={att.url}
+                      controls
+                      className="max-w-[250px] max-h-[150px] rounded-lg border"
+                      data-testid={`video-admin-attachment-${i}`}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2 text-xs">
+                      <Paperclip className="w-3 h-3" />
+                      {att.originalName}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
     }
     const code = extractHtmlCode(content);
     const textOnly = removeCodeBlock(content);
@@ -405,7 +503,7 @@ export default function AdminCommandPage() {
                     {msg.role === "assistant" ? "Africa.ai" : "Founder"}
                   </p>
                   <div className="text-sm leading-relaxed">
-                    {renderMessageContent(msg.content, msg.role)}
+                    {renderMessageContent(msg.content, msg.role, msg.attachments)}
                   </div>
                 </div>
               </div>
@@ -452,25 +550,78 @@ export default function AdminCommandPage() {
         </ScrollArea>
 
         <div className="p-4 border-t bg-card/50">
-          <div className="max-w-2xl mx-auto flex gap-2">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Tell me what to build or change..."
-              className="min-h-[48px] max-h-[120px] resize-none flex-1"
-              disabled={isStreaming}
-              data-testid="textarea-admin-command"
-            />
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim() || isStreaming}
-              size="icon"
-              className="flex-shrink-0 h-12 w-12"
-              data-testid="button-admin-send"
-            >
-              {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </Button>
+          <div className="max-w-2xl mx-auto space-y-2">
+            {pendingAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-1">
+                {pendingAttachments.map((att, i) => (
+                  <div key={i} className="relative group">
+                    {att.mimetype.startsWith("image/") ? (
+                      <img
+                        src={att.url}
+                        alt={att.originalName}
+                        className="w-16 h-16 rounded-lg border object-cover"
+                        data-testid={`img-admin-pending-${i}`}
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-lg border bg-muted flex flex-col items-center justify-center gap-1">
+                        <Film className="w-5 h-5 text-muted-foreground" />
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[56px]">{att.originalName}</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => removePendingAttachment(i)}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      data-testid={`button-admin-remove-attachment-${i}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+                data-testid="input-admin-file-upload"
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isStreaming || isUploading}
+                data-testid="button-admin-attach-file"
+                title="Attach photo, video, or screenshot"
+              >
+                {isUploading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Paperclip className="w-4 h-4" />
+                )}
+              </Button>
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Tell me what to build or change..."
+                className="min-h-[48px] max-h-[120px] resize-none flex-1"
+                disabled={isStreaming}
+                data-testid="textarea-admin-command"
+              />
+              <Button
+                onClick={handleSend}
+                disabled={(!input.trim() && pendingAttachments.length === 0) || isStreaming}
+                size="icon"
+                className="flex-shrink-0 h-12 w-12"
+                data-testid="button-admin-send"
+              >
+                {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -483,6 +634,38 @@ export default function AdminCommandPage() {
               <span className="text-sm font-medium" data-testid="text-admin-preview-label">Live Preview</span>
             </div>
             <div className="flex items-center gap-1">
+              <div className="flex items-center border rounded-md mr-2">
+                <Button
+                  size="icon"
+                  variant={previewDevice === "desktop" ? "default" : "ghost"}
+                  className="h-7 w-7 rounded-r-none"
+                  onClick={() => setPreviewDevice("desktop")}
+                  title="Desktop"
+                  data-testid="button-preview-desktop"
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant={previewDevice === "tablet" ? "default" : "ghost"}
+                  className="h-7 w-7 rounded-none border-x"
+                  onClick={() => setPreviewDevice("tablet")}
+                  title="Tablet"
+                  data-testid="button-preview-tablet"
+                >
+                  <Tablet className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant={previewDevice === "phone" ? "default" : "ghost"}
+                  className="h-7 w-7 rounded-l-none"
+                  onClick={() => setPreviewDevice("phone")}
+                  title="Phone"
+                  data-testid="button-preview-phone"
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                </Button>
+              </div>
               <Button size="sm" variant="default" onClick={() => setShowPublish(true)} className="gap-1" data-testid="button-admin-preview-publish">
                 <Rocket className="w-3 h-3" />Publish
               </Button>
@@ -497,10 +680,15 @@ export default function AdminCommandPage() {
               </Button>
             </div>
           </div>
-          <div className="flex-1 bg-white">
+          <div className="flex-1 bg-white flex justify-center overflow-auto">
             <iframe
               srcDoc={previewCode}
-              className="w-full h-full border-0"
+              className="h-full border-0 transition-all duration-300"
+              style={{
+                width: deviceSizes[previewDevice].width,
+                maxWidth: "100%",
+                boxShadow: previewDevice !== "desktop" ? "0 0 0 1px rgba(0,0,0,0.1), 0 4px 24px rgba(0,0,0,0.15)" : "none",
+              }}
               sandbox="allow-scripts allow-popups"
               title="Admin Preview"
               data-testid="iframe-admin-preview"
