@@ -59,7 +59,7 @@ export default function LandingPage() {
             <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="font-bold text-lg tracking-tight" data-testid="text-logo">Africa.ai</span>
+            <span className="font-bold text-lg tracking-tight" data-testid="text-logo">Afro AI</span>
           </div>
           <div className="hidden md:flex items-center gap-6">
             <a href="#features" className="text-sm text-muted-foreground transition-colors" data-testid="link-features">{t("nav.features")}</a>
@@ -141,7 +141,7 @@ export default function LandingPage() {
                 <div className="absolute -inset-4 bg-primary/20 rounded-2xl blur-3xl animate-glow-pulse" />
                 <img
                   src={workspaceImg}
-                  alt="Africa.ai workspace"
+                  alt="Afro AI workspace"
                   className="relative rounded-2xl ring-1 ring-white/10"
                 />
               </div>
@@ -433,7 +433,7 @@ export default function LandingPage() {
                 <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
                   <Sparkles className="w-4 h-4 text-primary-foreground" />
                 </div>
-                <span className="font-bold">Africa.ai</span>
+                <span className="font-bold">Afro AI</span>
               </div>
               <p className="text-sm text-muted-foreground">
                 {t("footer.tagline")}
@@ -467,7 +467,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="border-t mt-8 pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; {new Date().getFullYear()} Africa.ai. {t("footer.copyright")}</p>
+            <p>&copy; {new Date().getFullYear()} Afro AI. {t("footer.copyright")}</p>
           </div>
         </div>
       </footer>

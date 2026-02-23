@@ -14,7 +14,7 @@ export default function PrivacyPage() {
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-lg">Africa.ai</span>
+              <span className="font-bold text-lg">Afro AI</span>
             </div>
           </Link>
           <div className="flex items-center gap-2">
@@ -36,7 +36,7 @@ export default function PrivacyPage() {
           <p className="text-muted-foreground mb-8">Last updated: February 2026</p>
 
           <h2>1. Information We Collect</h2>
-          <p>When you use Africa.ai, we collect the following information:</p>
+          <p>When you use Afro AI, we collect the following information:</p>
           <ul>
             <li><strong>Account Information:</strong> Your name, email address, and profile picture provided through Google OAuth sign-in.</li>
             <li><strong>Project Data:</strong> The websites and apps you create using our platform, including code, content, and design elements.</li>
@@ -47,7 +47,7 @@ export default function PrivacyPage() {
           <h2>2. How We Use Your Information</h2>
           <p>We use your information to:</p>
           <ul>
-            <li>Provide and maintain the Africa.ai platform</li>
+            <li>Provide and maintain the Afro AI platform</li>
             <li>Generate AI-powered code and designs for your projects</li>
             <li>Publish your apps to custom subdomains on afroaigroup.com</li>
             <li>Improve our AI models and platform features</li>
@@ -89,7 +89,7 @@ export default function PrivacyPage() {
       </main>
 
       <footer className="border-t py-8 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Africa.ai. All rights reserved. Made with love for Africa.</p>
+        <p>&copy; {new Date().getFullYear()} Afro AI. All rights reserved. Made with love for Africa.</p>
       </footer>
     </div>
   );

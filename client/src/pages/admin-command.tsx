@@ -473,7 +473,7 @@ export default function AdminCommandPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto">
                   {[
-                    "Build me a landing page for Africa.ai with a signup form",
+                    "Build me a landing page for Afro AI with a signup form",
                     "Create a pricing page with Starter, Pro, and Business plans",
                     "Make a portfolio showcase page for African creators",
                     "Build a mobile-friendly coming soon page for our app",
@@ -500,7 +500,7 @@ export default function AdminCommandPage() {
                 </Avatar>
                 <div className="flex-1 space-y-1 min-w-0">
                   <p className="text-xs font-medium text-muted-foreground">
-                    {msg.role === "assistant" ? "Africa.ai" : "Founder"}
+                    {msg.role === "assistant" ? "Afro AI" : "Founder"}
                   </p>
                   <div className="text-sm leading-relaxed">
                     {renderMessageContent(msg.content, msg.role, msg.attachments)}
@@ -517,7 +517,7 @@ export default function AdminCommandPage() {
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 space-y-1 min-w-0">
-                  <p className="text-xs font-medium text-muted-foreground">Africa.ai</p>
+                  <p className="text-xs font-medium text-muted-foreground">Afro AI</p>
                   <div className="text-sm leading-relaxed">
                     <p className="whitespace-pre-wrap break-words">{removeCodeBlock(streamingContent)}</p>
                     {extractHtmlCode(streamingContent) && (

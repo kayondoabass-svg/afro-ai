@@ -24,7 +24,7 @@ export default function LoginPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold font-serif tracking-tight" data-testid="text-login-title">
-                Africa.ai
+                Afro AI
               </h1>
               <p className="text-sm text-muted-foreground mt-1" data-testid="text-login-subtitle">
                 Built for Africa, by Africans

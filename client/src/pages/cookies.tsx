@@ -14,7 +14,7 @@ export default function CookiePolicyPage() {
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-lg">Africa.ai</span>
+              <span className="font-bold text-lg">Afro AI</span>
             </div>
           </Link>
           <div className="flex items-center gap-2">
@@ -39,7 +39,7 @@ export default function CookiePolicyPage() {
           <p>Cookies are small text files stored on your device when you visit a website. They help the website remember your preferences and improve your experience.</p>
 
           <h2>2. Cookies We Use</h2>
-          <p>Africa.ai uses only essential cookies that are necessary for the platform to function properly:</p>
+          <p>Afro AI uses only essential cookies that are necessary for the platform to function properly:</p>
 
           <h3>Essential Cookies</h3>
           <ul>
@@ -69,7 +69,7 @@ export default function CookiePolicyPage() {
       </main>
 
       <footer className="border-t py-8 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Africa.ai. All rights reserved. Made with love for Africa.</p>
+        <p>&copy; {new Date().getFullYear()} Afro AI. All rights reserved. Made with love for Africa.</p>
       </footer>
     </div>
   );

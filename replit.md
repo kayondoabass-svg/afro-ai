@@ -1,7 +1,7 @@
-# Africa.ai
+# Afro AI
 
 ## Overview
-Africa.ai is a platform that helps African creators build websites and mobile apps and launch them to the App Store and Google Play Store. It features an AI-powered chat assistant, project management, and a payment system (Flutterwave - coming soon).
+Afro AI is a platform that helps African creators build websites and mobile apps and launch them to the App Store and Google Play Store. It features an AI-powered chat assistant, project management, and a payment system (Flutterwave - coming soon).
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
@@ -91,7 +91,7 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - Landing page captures `?ref=` param and passes it to `/api/login?ref=CODE`
 - On Google OAuth callback, ref code is stored in session, then used to create referral record
 - 5% commission when referred user upgrades to paid plan
-- Commission credited towards referrer's Africa.ai plan subscription
+- Commission credited towards referrer's Afro AI plan subscription
 - Self-referral prevention: checked in both auth callback and storage layer
 - Duplicate prevention: unique index on referrals.referred_id
 - DB tables: `referrals` (id, referrer_id, referred_id, status, commission_amount, paid_plan, created_at)

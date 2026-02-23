@@ -46,7 +46,7 @@ export default function ReferralsPage() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: "Join Africa.ai",
+          title: "Join Afro AI",
           text: "Build websites and apps with AI! Use my referral link to get started:",
           url: data.referralLink,
         });
@@ -81,7 +81,7 @@ export default function ReferralsPage() {
           Referral Program
         </h1>
         <p className="text-muted-foreground">
-          Earn 5% commission when people you refer upgrade to a paid plan. Credits go towards your Africa.ai subscription.
+          Earn 5% commission when people you refer upgrade to a paid plan. Credits go towards your Afro AI subscription.
         </p>
       </div>
 
@@ -182,7 +182,7 @@ export default function ReferralsPage() {
             <div className="space-y-2 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto text-lg font-bold text-primary">3</div>
               <h3 className="font-semibold">Earn 5% Credit</h3>
-              <p className="text-sm text-muted-foreground">You receive 5% of their plan payment as credit towards your own Africa.ai subscription.</p>
+              <p className="text-sm text-muted-foreground">You receive 5% of their plan payment as credit towards your own Afro AI subscription.</p>
             </div>
           </div>
         </CardContent>

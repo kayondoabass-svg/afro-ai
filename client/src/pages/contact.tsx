@@ -18,7 +18,7 @@ export default function ContactPage() {
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-lg">Africa.ai</span>
+              <span className="font-bold text-lg">Afro AI</span>
             </div>
           </Link>
           <div className="flex items-center gap-2">
@@ -105,7 +105,7 @@ export default function ContactPage() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   const formData = new FormData(e.currentTarget);
-                  const subject = encodeURIComponent(`Africa.ai Contact: ${formData.get("subject")}`);
+                  const subject = encodeURIComponent(`Afro AI Contact: ${formData.get("subject")}`);
                   const body = encodeURIComponent(`Name: ${formData.get("name")}\nEmail: ${formData.get("email")}\n\n${formData.get("message")}`);
                   window.location.href = `mailto:Support@afroaigroup.com?subject=${subject}&body=${body}`;
                 }}
@@ -164,7 +164,7 @@ export default function ContactPage() {
       </main>
 
       <footer className="border-t py-8 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Africa.ai. All rights reserved. Made with love for Africa.</p>
+        <p>&copy; {new Date().getFullYear()} Afro AI. All rights reserved. Made with love for Africa.</p>
       </footer>
     </div>
   );

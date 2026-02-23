@@ -14,7 +14,7 @@ export default function TermsPage() {
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-lg">Africa.ai</span>
+              <span className="font-bold text-lg">Afro AI</span>
             </div>
           </Link>
           <div className="flex items-center gap-2">
@@ -36,10 +36,10 @@ export default function TermsPage() {
           <p className="text-muted-foreground mb-8">Last updated: February 2026</p>
 
           <h2>1. Acceptance of Terms</h2>
-          <p>By accessing and using Africa.ai ("the Platform"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Platform.</p>
+          <p>By accessing and using Afro AI ("the Platform"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Platform.</p>
 
           <h2>2. Description of Service</h2>
-          <p>Africa.ai is an AI-powered platform that enables users to create websites and mobile applications. The Platform provides AI code generation, live preview, app publishing to custom subdomains, and project management features.</p>
+          <p>Afro AI is an AI-powered platform that enables users to create websites and mobile applications. The Platform provides AI code generation, live preview, app publishing to custom subdomains, and project management features.</p>
 
           <h2>3. User Accounts</h2>
           <p>To use the Platform, you must sign in with a valid Google account. You are responsible for maintaining the security of your account and for all activities that occur under your account.</p>
@@ -56,7 +56,7 @@ export default function TermsPage() {
           </ul>
 
           <h2>5. Content Ownership</h2>
-          <p>You retain ownership of the content and code generated through your use of the Platform. However, you grant Africa.ai a non-exclusive license to host, display, and distribute your published apps through our subdomain service.</p>
+          <p>You retain ownership of the content and code generated through your use of the Platform. However, you grant Afro AI a non-exclusive license to host, display, and distribute your published apps through our subdomain service.</p>
 
           <h2>6. Published Apps</h2>
           <p>Apps published to subdomains on afroaigroup.com must comply with our acceptable use policy. We reserve the right to remove published apps that violate these terms. Published apps are publicly accessible and you are solely responsible for their content.</p>
@@ -68,7 +68,7 @@ export default function TermsPage() {
           <p>The Platform offers free and paid subscription plans. Paid plans provide access to advanced AI models and additional features. Payment processing is handled through Flutterwave. Plan details and pricing are available on our Pricing page.</p>
 
           <h2>9. Limitation of Liability</h2>
-          <p>Africa.ai is provided "as is" without warranties of any kind. We are not liable for any damages arising from your use of the Platform, including loss of data, revenue, or business opportunities.</p>
+          <p>Afro AI is provided "as is" without warranties of any kind. We are not liable for any damages arising from your use of the Platform, including loss of data, revenue, or business opportunities.</p>
 
           <h2>10. Termination</h2>
           <p>We reserve the right to suspend or terminate your account at any time for violation of these terms. You may delete your account at any time.</p>
@@ -82,7 +82,7 @@ export default function TermsPage() {
       </main>
 
       <footer className="border-t py-8 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Africa.ai. All rights reserved. Made with love for Africa.</p>
+        <p>&copy; {new Date().getFullYear()} Afro AI. All rights reserved. Made with love for Africa.</p>
       </footer>
     </div>
   );

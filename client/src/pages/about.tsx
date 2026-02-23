@@ -18,7 +18,7 @@ export default function AboutPage() {
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-lg">Africa.ai</span>
+              <span className="font-bold text-lg">Afro AI</span>
             </div>
           </Link>
           <div className="flex items-center gap-2">
@@ -38,7 +38,7 @@ export default function AboutPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16 space-y-4">
             <h1 className="font-serif text-4xl md:text-5xl font-bold" data-testid="text-page-title">
-              About <span className="text-primary">Africa.ai</span>
+              About <span className="text-primary">Afro AI</span>
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               A registered business in the Pearl of Africa, Uganda — and the first AI platform in Africa dedicated to powering startups across the continent.
@@ -53,7 +53,7 @@ export default function AboutPage() {
                 Our Mission
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Afro AI Group is a registered business in Uganda, the Pearl of Africa, and the first AI platform on the continent built specifically to empower African creators. We are breaking down the barriers to technology by providing an AI-powered platform that lets anyone — regardless of technical background — build professional websites and mobile apps.
+                Afro AI is a registered business in Uganda, the Pearl of Africa, and the first AI platform on the continent built specifically to empower African creators. We are breaking down the barriers to technology by providing an AI-powered platform that lets anyone — regardless of technical background — build professional websites and mobile apps.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 Our AI assistant understands the unique needs of African businesses and communities. From local restaurants in Lagos to healthcare startups in Nairobi, from fashion brands in Accra to tech companies in Johannesburg — we empower creators across the continent to bring their ideas to life.
@@ -81,7 +81,7 @@ export default function AboutPage() {
                 <Card>
                   <CardContent className="p-6 space-y-2">
                     <h3 className="font-semibold" data-testid="text-value-quality">Quality Without Compromise</h3>
-                    <p className="text-sm text-muted-foreground">Every app and website built on Africa.ai meets international standards. We use the latest AI models to generate professional-grade code.</p>
+                    <p className="text-sm text-muted-foreground">Every app and website built on Afro AI meets international standards. We use the latest AI models to generate professional-grade code.</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -112,7 +112,7 @@ export default function AboutPage() {
                 Our Team
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Afro AI Group is founded and led by a passionate team of African technologists, designers, and entrepreneurs who believe in the transformative power of technology. Headquartered in Uganda, the Pearl of Africa, our team brings together diverse perspectives and deep understanding of the African tech landscape. As the first AI platform in Africa, we are pioneering the future of technology on the continent.
+                Afro AI is founded and led by a passionate team of African technologists, designers, and entrepreneurs who believe in the transformative power of technology. Headquartered in Uganda, the Pearl of Africa, our team brings together diverse perspectives and deep understanding of the African tech landscape. As the first AI platform in Africa, we are pioneering the future of technology on the continent.
               </p>
             </section>
 
@@ -128,7 +128,7 @@ export default function AboutPage() {
       </main>
 
       <footer className="border-t py-8 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Africa.ai. All rights reserved. Made with love for Africa.</p>
+        <p>&copy; {new Date().getFullYear()} Afro AI. All rights reserved. Made with love for Africa.</p>
       </footer>
     </div>
   );

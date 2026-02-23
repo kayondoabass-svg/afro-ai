@@ -932,7 +932,7 @@ export default function AIChatPage() {
                         </Avatar>
                         <div className="flex-1 space-y-1 min-w-0">
                           <p className="text-xs font-medium text-muted-foreground">
-                            {msg.role === "assistant" ? "Africa.ai" : firstName}
+                            {msg.role === "assistant" ? "Afro AI" : firstName}
                           </p>
                           <div className="text-sm leading-relaxed">
                             {renderMessageContent(msg.content, msg.role)}
@@ -950,7 +950,7 @@ export default function AIChatPage() {
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 space-y-1 min-w-0">
-                        <p className="text-xs font-medium text-muted-foreground">Africa.ai</p>
+                        <p className="text-xs font-medium text-muted-foreground">Afro AI</p>
                         <div className="text-sm leading-relaxed">
                           <div className="space-y-3">
                             {removeCodeBlock(streamingContent) && (
