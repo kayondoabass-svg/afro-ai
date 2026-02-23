@@ -1,0 +1,156 @@
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageSelector } from "@/components/language-selector";
+import { useLanguage } from "@/hooks/use-language";
+import { Sparkles, ArrowLeft, Mail, MapPin, Clock } from "lucide-react";
+import { Link } from "wouter";
+
+export default function ContactPage() {
+  const { t } = useLanguage();
+
+  return (
+    <div className="min-h-screen bg-background">
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/70 border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+          <Link href="/">
+            <div className="flex items-center gap-2 cursor-pointer">
+              <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <span className="font-bold text-lg">Africa.ai</span>
+            </div>
+          </Link>
+          <div className="flex items-center gap-2">
+            <LanguageSelector compact />
+            <ThemeToggle />
+            <Link href="/">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </nav>
+
+      <main className="pt-24 pb-16">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16 space-y-4">
+            <h1 className="font-serif text-4xl md:text-5xl font-bold">
+              Contact <span className="text-primary">Us</span>
+            </h1>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              We'd love to hear from you. Reach out to us for any questions, feedback, or partnership opportunities.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6 mb-12">
+            <Card>
+              <CardContent className="p-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                  <Mail className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="font-semibold">Email Us</h3>
+                <p className="text-sm text-muted-foreground">For general inquiries and support</p>
+                <a href="mailto:hello@afroaigroup.com" className="text-primary text-sm font-medium hover:underline" data-testid="link-email">
+                  hello@afroaigroup.com
+                </a>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                  <MapPin className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="font-semibold">Location</h3>
+                <p className="text-sm text-muted-foreground">Serving all of Africa</p>
+                <p className="text-primary text-sm font-medium">Kampala, Uganda</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                  <Clock className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="font-semibold">Hours</h3>
+                <p className="text-sm text-muted-foreground">We're available</p>
+                <p className="text-primary text-sm font-medium">Mon - Fri, 8AM - 6PM EAT</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardContent className="p-8 space-y-6">
+              <h2 className="font-serif text-2xl font-bold text-center">Send Us a Message</h2>
+              <form
+                className="space-y-4 max-w-lg mx-auto"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  const subject = encodeURIComponent(`Africa.ai Contact: ${formData.get("subject")}`);
+                  const body = encodeURIComponent(`Name: ${formData.get("name")}\nEmail: ${formData.get("email")}\n\n${formData.get("message")}`);
+                  window.location.href = `mailto:hello@afroaigroup.com?subject=${subject}&body=${body}`;
+                }}
+              >
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Name</label>
+                  <input
+                    name="name"
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Your name"
+                    data-testid="input-contact-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Email</label>
+                  <input
+                    name="email"
+                    type="email"
+                    required
+                    className="w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="your@email.com"
+                    data-testid="input-contact-email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Subject</label>
+                  <input
+                    name="subject"
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="What's this about?"
+                    data-testid="input-contact-subject"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Message</label>
+                  <textarea
+                    name="message"
+                    required
+                    rows={5}
+                    className="w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                    placeholder="Tell us how we can help..."
+                    data-testid="input-contact-message"
+                  />
+                </div>
+                <Button type="submit" className="w-full" data-testid="button-contact-submit">
+                  Send Message
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+
+      <footer className="border-t py-8 text-center text-sm text-muted-foreground">
+        <p>&copy; {new Date().getFullYear()} Africa.ai. All rights reserved. Made with love for Africa.</p>
+      </footer>
+    </div>
+  );
+}
