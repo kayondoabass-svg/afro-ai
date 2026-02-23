@@ -19,6 +19,7 @@ import PricingPage from "@/pages/pricing";
 import DeploymentsPage from "@/pages/deployments";
 import FounderDashboardPage from "@/pages/founder-dashboard";
 import AdminCommandPage from "@/pages/admin-command";
+import ReferralsPage from "@/pages/referrals";
 import AboutPage from "@/pages/about";
 import ContactPage from "@/pages/contact";
 import PrivacyPage from "@/pages/privacy";
@@ -52,6 +53,7 @@ function AuthenticatedLayout() {
               <Route path="/pricing" component={PricingPage} />
               <Route path="/founder" component={FounderDashboardPage} />
               <Route path="/admin-command" component={AdminCommandPage} />
+              <Route path="/referrals" component={ReferralsPage} />
               <Route path="/about" component={AboutPage} />
               <Route path="/contact" component={ContactPage} />
               <Route path="/privacy" component={PrivacyPage} />

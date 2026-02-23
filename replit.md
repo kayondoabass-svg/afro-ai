@@ -13,7 +13,7 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - **Routing**: wouter (frontend), Express (backend)
 
 ## Project Structure
-- `client/src/pages/` - Landing, Dashboard, AI Chat, Deployments, Pricing, Founder Dashboard, Admin Command pages
+- `client/src/pages/` - Landing, Dashboard, AI Chat, Deployments, Pricing, Referrals, Founder Dashboard, Admin Command, About, Contact, Privacy, Terms, Cookies pages
 - `client/src/components/` - AppSidebar, ThemeProvider, ThemeToggle, UI components
 - `server/routes.ts` - API routes (projects CRUD, publishing)
 - `server/storage.ts` - Database storage layer
@@ -66,6 +66,7 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - `DELETE /api/published-apps/:id` - Delete published app and DNS record (auth required)
 - `GET /api/check-subdomain/:subdomain` - Check if subdomain is available
 - `GET /site/:subdomain` - Serve published app HTML
+- `GET /api/referral` - Get user's referral code, link, stats, and referral list (auth required)
 - Auth routes: `/api/login`, `/api/logout`, `/api/auth/user`, `/api/callback`
 
 ## User Preferences
@@ -83,6 +84,19 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - Admin Command Center (`/admin-command`): AI chat interface where founder can type natural language instructions to build/modify pages and publish directly to afroaigroup.com
 - Admin API routes: `/api/admin/stats`, `/api/admin/users`, `/api/admin/projects`, `/api/admin/published-apps` (all protected by isFounder middleware)
 - Sidebar shows "Founder" section with Crown icon only when isFounder is true
+
+## Referral Commission System
+- Users get a unique 8-character referral code (auto-generated on first access)
+- Referral link format: `https://afroaigroup.com?ref=CODE`
+- Landing page captures `?ref=` param and passes it to `/api/login?ref=CODE`
+- On Google OAuth callback, ref code is stored in session, then used to create referral record
+- 5% commission when referred user upgrades to paid plan
+- Commission credited towards referrer's Africa.ai plan subscription
+- Self-referral prevention: checked in both auth callback and storage layer
+- Duplicate prevention: unique index on referrals.referred_id
+- DB tables: `referrals` (id, referrer_id, referred_id, status, commission_amount, paid_plan, created_at)
+- User fields: referral_code (unique), referred_by, referral_credit (cents)
+- Referrals page (`/referrals`): Shows referral link, stats (total/paid/earnings/credit), how-it-works, referral list
 
 ## Environment Variables
 - DATABASE_URL - PostgreSQL connection

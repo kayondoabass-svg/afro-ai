@@ -28,7 +28,9 @@ export default function LandingPage() {
   const params = new URLSearchParams(window.location.search);
   const initialError = params.get("error");
   const authReason = params.get("reason");
+  const refCode = params.get("ref");
   const [showError, setShowError] = useState(!!initialError);
+  const loginUrl = refCode ? `/api/login?ref=${encodeURIComponent(refCode)}` : "/api/login";
 
   return (
     <div className="min-h-screen bg-background">
@@ -67,10 +69,10 @@ export default function LandingPage() {
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
             <LanguageSelector compact />
             <ThemeToggle />
-            <a href="/api/login" className="hidden sm:block">
+            <a href={loginUrl} className="hidden sm:block">
               <Button variant="ghost" data-testid="button-login">{t("nav.login")}</Button>
             </a>
-            <a href="/api/login">
+            <a href={loginUrl}>
               <Button data-testid="button-get-started" className="whitespace-nowrap">{t("nav.getStarted")}</Button>
             </a>
           </div>
@@ -105,7 +107,7 @@ export default function LandingPage() {
               </p>
 
               <div className="flex flex-wrap gap-3">
-                <a href="/api/login">
+                <a href={loginUrl}>
                   <Button size="lg" data-testid="button-hero-start">
                     {t("hero.cta1")}
                     <ArrowRight className="w-4 h-4" />
@@ -341,7 +343,7 @@ export default function LandingPage() {
                     </div>
                   ))}
                 </div>
-                <a href="/api/login" className="block">
+                <a href={loginUrl} className="block">
                   <Button variant="outline" className="w-full" data-testid="button-plan-starter">{t("nav.getStarted")}</Button>
                 </a>
               </CardContent>
@@ -414,7 +416,7 @@ export default function LandingPage() {
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
             {t("quote.desc")}
           </p>
-          <a href="/api/login">
+          <a href={loginUrl}>
             <Button size="lg" className="mt-4" data-testid="button-join-movement">
               {t("quote.cta")}
               <ArrowRight className="w-4 h-4" />

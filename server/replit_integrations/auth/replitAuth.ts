@@ -4,6 +4,7 @@ import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
+import { storage } from "../../storage";
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
@@ -89,10 +90,15 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
-  app.get("/api/login", passport.authenticate("google", {
-    scope: ["profile", "email"],
-    prompt: "select_account",
-  }));
+  app.get("/api/login", (req: any, res, next) => {
+    if (req.query.ref) {
+      req.session.referralCode = req.query.ref;
+    }
+    passport.authenticate("google", {
+      scope: ["profile", "email"],
+      prompt: "select_account",
+    })(req, res, next);
+  });
 
   app.get("/api/auth/google/callback", (req, res, next) => {
     passport.authenticate("google", (err: any, user: any, info: any) => {
@@ -104,10 +110,35 @@ export async function setupAuth(app: Express) {
         console.error("[Auth] No user returned:", info);
         return res.redirect("/?error=auth_failed&reason=no_user");
       }
-      req.logIn(user, (loginErr) => {
+      req.logIn(user, async (loginErr) => {
         if (loginErr) {
           console.error("[Auth] Login error:", loginErr);
           return res.redirect("/?error=auth_failed&reason=login_error");
+        }
+        const refCode = (req.session as any)?.referralCode;
+        if (refCode) {
+          try {
+            const referrer = await storage.getUserByReferralCode(refCode);
+            const userId = user.claims.sub;
+            if (referrer && referrer.id !== userId) {
+              const existingUser = await authStorage.getUser(userId);
+              if (existingUser && !existingUser.referredBy) {
+                const { db } = await import("../../db");
+                const { users } = await import("@shared/models/auth");
+                const { eq } = await import("drizzle-orm");
+                await db.update(users).set({ referredBy: refCode }).where(eq(users.id, userId));
+                await storage.createReferral({
+                  referrerId: referrer.id,
+                  referredId: userId,
+                  status: "signed_up",
+                  commissionAmount: 0,
+                });
+              }
+            }
+          } catch (err) {
+            console.error("[Auth] Referral tracking error:", err);
+          }
+          delete (req.session as any).referralCode;
         }
         return res.redirect("/");
       });

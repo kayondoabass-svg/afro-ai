@@ -272,6 +272,25 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/referral", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const code = await storage.getUserReferralCode(userId);
+      const stats = await storage.getUserReferralStats(userId);
+      const referrals = await storage.getReferralsByReferrer(userId);
+      const baseUrl = process.env.BASE_URL || `https://${req.headers.host}`;
+      res.json({
+        referralCode: code,
+        referralLink: `${baseUrl}?ref=${code}`,
+        ...stats,
+        referrals,
+      });
+    } catch (error) {
+      console.error("Error fetching referral info:", error);
+      res.status(500).json({ message: "Failed to fetch referral info" });
+    }
+  });
+
   app.get("/api/admin/stats", isFounder, async (req, res) => {
     try {
       const stats = await storage.getPlatformStats();

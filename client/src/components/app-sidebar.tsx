@@ -24,6 +24,7 @@ import {
   Crown,
   Terminal,
   Rocket,
+  Gift,
 } from "lucide-react";
 
 export function AppSidebar() {
@@ -38,6 +39,7 @@ export function AppSidebar() {
     { title: t("sidebar.dashboard"), url: "/dashboard", icon: LayoutDashboard },
     { title: t("sidebar.aiChat"), url: "/chat", icon: MessageSquare },
     { title: "Deployments", url: "/deployments", icon: Rocket },
+    { title: "Referrals", url: "/referrals", icon: Gift },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
   ];
 

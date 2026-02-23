@@ -127,6 +127,13 @@ class DatabaseStorage implements IStorage {
   }
 
   async createReferral(referral: InsertReferral): Promise<Referral> {
+    if (referral.referrerId === referral.referredId) {
+      throw new Error("Cannot refer yourself");
+    }
+    const existing = await db.select().from(referrals).where(eq(referrals.referredId, referral.referredId));
+    if (existing.length > 0) {
+      return existing[0];
+    }
     const [created] = await db.insert(referrals).values(referral).returning();
     return created;
   }
