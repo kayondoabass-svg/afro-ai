@@ -25,6 +25,7 @@ import ContactPage from "@/pages/contact";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
 import CookiePolicyPage from "@/pages/cookies";
+import RefundPolicyPage from "@/pages/refund-policy";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -59,6 +60,7 @@ function AuthenticatedLayout() {
               <Route path="/privacy" component={PrivacyPage} />
               <Route path="/terms" component={TermsPage} />
               <Route path="/cookies" component={CookiePolicyPage} />
+              <Route path="/refund-policy" component={RefundPolicyPage} />
               <Route path="/" component={DashboardPage} />
               <Route component={NotFound} />
             </Switch>
@@ -92,6 +94,7 @@ function AppRouter() {
         <Route path="/privacy" component={PrivacyPage} />
         <Route path="/terms" component={TermsPage} />
         <Route path="/cookies" component={CookiePolicyPage} />
+        <Route path="/refund-policy" component={RefundPolicyPage} />
         <Route component={LandingPage} />
       </Switch>
     );

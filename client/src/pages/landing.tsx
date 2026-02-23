@@ -459,6 +459,7 @@ export default function LandingPage() {
                 <a href="/privacy" className="block hover:text-primary transition-colors" data-testid="link-footer-privacy">{t("footer.privacy")}</a>
                 <a href="/terms" className="block hover:text-primary transition-colors" data-testid="link-footer-terms">{t("footer.terms")}</a>
                 <a href="/cookies" className="block hover:text-primary transition-colors" data-testid="link-footer-cookies">{t("footer.cookies")}</a>
+                <a href="/refund-policy" className="block hover:text-primary transition-colors" data-testid="link-footer-refund">Refund Policy</a>
               </div>
             </div>
           </div>
