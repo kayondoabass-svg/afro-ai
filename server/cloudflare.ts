@@ -88,5 +88,5 @@ export function isValidSubdomain(subdomain: string): { valid: boolean; error?: s
 }
 
 export function getPublishedUrl(subdomain: string): string {
-  return `https://${subdomain}.${DOMAIN}`;
+  return `https://${DOMAIN}/site/${subdomain}`;
 }

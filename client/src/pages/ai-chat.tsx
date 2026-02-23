@@ -194,7 +194,7 @@ function PublishDialog({ code, open, onOpenChange }: {
               </a>
             </div>
             <p className="text-xs text-muted-foreground">
-              DNS may take a few minutes to propagate. You can also preview at /site/{subdomain}
+              Your app is live and accessible to anyone with the link.
             </p>
           </div>
         ) : (
@@ -211,6 +211,7 @@ function PublishDialog({ code, open, onOpenChange }: {
             <div className="space-y-2">
               <label className="text-sm font-medium">Subdomain</label>
               <div className="flex items-center gap-1">
+                <span className="text-sm text-muted-foreground whitespace-nowrap">afroaigroup.com/site/</span>
                 <Input
                   placeholder="my-app"
                   value={subdomain}
@@ -218,7 +219,6 @@ function PublishDialog({ code, open, onOpenChange }: {
                   className="flex-1"
                   data-testid="input-publish-subdomain"
                 />
-                <span className="text-sm text-muted-foreground whitespace-nowrap">.afroaigroup.com</span>
               </div>
               {subdomain.length >= 3 && (
                 <div className="flex items-center gap-1 text-xs">

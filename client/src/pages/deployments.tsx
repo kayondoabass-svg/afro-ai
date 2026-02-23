@@ -79,7 +79,7 @@ export default function DeploymentsPage() {
   });
 
   const copyDomain = (app: PublishedApp) => {
-    const url = `https://${app.subdomain}.afroaigroup.com`;
+    const url = `https://afroaigroup.com/site/${app.subdomain}`;
     navigator.clipboard.writeText(url);
     setCopiedId(app.id);
     toast({ title: "Copied!", description: "Domain URL copied to clipboard" });
@@ -126,7 +126,7 @@ export default function DeploymentsPage() {
         ) : apps && apps.length > 0 ? (
           <div className="space-y-4">
             {apps.map((app) => {
-              const domainUrl = `https://${app.subdomain}.afroaigroup.com`;
+              const domainUrl = `https://afroaigroup.com/site/${app.subdomain}`;
               const previewUrl = `/site/${app.subdomain}`;
               const isExpanded = expandedApp === app.id;
 
@@ -298,7 +298,7 @@ export default function DeploymentsPage() {
             </DialogTitle>
             <DialogDescription>
               Are you sure you want to delete <strong>{deleteApp?.title}</strong>? This will remove the app from{" "}
-              <strong>{deleteApp?.subdomain}.afroaigroup.com</strong> and delete the DNS record. This action cannot be undone.
+              <strong>afroaigroup.com/site/{deleteApp?.subdomain}</strong>. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
