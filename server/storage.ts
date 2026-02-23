@@ -1,8 +1,9 @@
 import { db } from "./db";
-import { projects, publishedApps, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp } from "@shared/schema";
+import { projects, publishedApps, referrals, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type Referral, type InsertReferral } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
-import { eq, desc, sql, count } from "drizzle-orm";
+import { eq, desc, sql, count, and } from "drizzle-orm";
+import crypto from "crypto";
 
 export interface IStorage {
   getProjectsByUser(userId: string): Promise<Project[]>;
@@ -27,6 +28,13 @@ export interface IStorage {
     recentProjects: any[];
     recentPublishedApps: any[];
   }>;
+  getUserReferralCode(userId: string): Promise<string>;
+  getUserByReferralCode(code: string): Promise<any | undefined>;
+  createReferral(referral: InsertReferral): Promise<Referral>;
+  getReferralsByReferrer(referrerId: string): Promise<Referral[]>;
+  updateReferralStatus(referredId: string, status: string, commissionAmount: number, paidPlan: string): Promise<void>;
+  addReferralCredit(userId: string, amount: number): Promise<void>;
+  getUserReferralStats(userId: string): Promise<{ totalReferrals: number; paidReferrals: number; totalEarnings: number; credit: number }>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -103,6 +111,48 @@ class DatabaseStorage implements IStorage {
       recentUsers,
       recentProjects,
       recentPublishedApps,
+    };
+  }
+  async getUserReferralCode(userId: string): Promise<string> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (user?.referralCode) return user.referralCode;
+    const code = crypto.randomBytes(4).toString("hex").toUpperCase();
+    await db.update(users).set({ referralCode: code }).where(eq(users.id, userId));
+    return code;
+  }
+
+  async getUserByReferralCode(code: string): Promise<any | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.referralCode, code));
+    return user;
+  }
+
+  async createReferral(referral: InsertReferral): Promise<Referral> {
+    const [created] = await db.insert(referrals).values(referral).returning();
+    return created;
+  }
+
+  async getReferralsByReferrer(referrerId: string): Promise<Referral[]> {
+    return db.select().from(referrals).where(eq(referrals.referrerId, referrerId)).orderBy(desc(referrals.createdAt));
+  }
+
+  async updateReferralStatus(referredId: string, status: string, commissionAmount: number, paidPlan: string): Promise<void> {
+    await db.update(referrals).set({ status, commissionAmount, paidPlan }).where(eq(referrals.referredId, referredId));
+  }
+
+  async addReferralCredit(userId: string, amount: number): Promise<void> {
+    await db.update(users).set({ referralCredit: sql`referral_credit + ${amount}` }).where(eq(users.id, userId));
+  }
+
+  async getUserReferralStats(userId: string): Promise<{ totalReferrals: number; paidReferrals: number; totalEarnings: number; credit: number }> {
+    const allReferrals = await this.getReferralsByReferrer(userId);
+    const paidReferrals = allReferrals.filter(r => r.status === "paid");
+    const totalEarnings = paidReferrals.reduce((sum, r) => sum + (r.commissionAmount || 0), 0);
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    return {
+      totalReferrals: allReferrals.length,
+      paidReferrals: paidReferrals.length,
+      totalEarnings,
+      credit: user?.referralCredit || 0,
     };
   }
 }
