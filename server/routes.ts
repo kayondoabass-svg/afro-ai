@@ -46,6 +46,33 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use("/uploads", express.static(uploadDir));
 
+  app.use(async (req, res, next) => {
+    const host = req.hostname || req.headers.host?.split(":")[0] || "";
+    const baseDomain = "afroaigroup.com";
+    if (host !== baseDomain && host.endsWith("." + baseDomain)) {
+      const subdomain = host.replace("." + baseDomain, "");
+      if (subdomain && subdomain !== "www") {
+        try {
+          const publishedApp = await storage.getPublishedAppBySubdomain(subdomain);
+          if (publishedApp) {
+            return res.send(publishedApp.htmlContent);
+          }
+          return res.status(404).send(
+            '<!DOCTYPE html><html><head><title>Not Found</title>' +
+            '<style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#d4af37;}' +
+            '.c{text-align:center;}h1{font-size:3rem;}p{color:#888;}</style></head>' +
+            '<body><div class="c"><h1>404</h1><p>This site doesn\'t exist yet.</p>' +
+            '<a href="https://afroaigroup.com" style="color:#d4af37;">Build one with Africa.ai</a></div></body></html>'
+          );
+        } catch (err) {
+          console.error("Subdomain routing error:", err);
+          return res.status(500).send("Internal server error");
+        }
+      }
+    }
+    next();
+  });
+
   await setupAuth(app);
   registerAuthRoutes(app);
   registerChatRoutes(app);
