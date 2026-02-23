@@ -267,23 +267,36 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onClose: () => void;
   onDownload: () => void;
+  onBackToChat?: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
 
   return (
-    <div className={`flex flex-col bg-background border-l ${isFullscreen ? "fixed inset-0 z-50" : ""}`}>
+    <div className={`flex flex-col bg-background border-l w-full ${isFullscreen ? "fixed inset-0 z-50" : ""}`}>
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-card/80">
         <div className="flex items-center gap-2">
+          {onBackToChat && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onBackToChat}
+              className="md:hidden gap-1"
+              data-testid="button-back-to-chat"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              Chat
+            </Button>
+          )}
           <Eye className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium" data-testid="text-preview-label">Live Preview</span>
+          <span className="text-sm font-medium hidden sm:inline" data-testid="text-preview-label">Live Preview</span>
         </div>
         <div className="flex items-center gap-1">
           <div className="flex items-center border rounded-md mr-2">
@@ -366,6 +379,7 @@ export default function AIChatPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -414,6 +428,7 @@ export default function AIChatPage() {
       if (code) {
         setPreviewCode(code);
         setShowPreview(true);
+        setMobileView("preview");
       }
     }
   }, [streamingContent]);
@@ -571,6 +586,7 @@ export default function AIChatPage() {
     if (code) {
       setPreviewCode(code);
       setShowPreview(true);
+      setMobileView("preview");
     }
   };
 
@@ -709,23 +725,38 @@ export default function AIChatPage() {
         </ScrollArea>
       </div>
 
-      <div className={`flex-1 flex ${showPreview && previewCode ? "" : ""}`}>
-        <div className={`flex flex-col ${showPreview && previewCode ? "w-1/2 min-w-[320px]" : "flex-1"}`}>
+      <div className="flex-1 flex">
+        <div className={`flex flex-col ${showPreview && previewCode ? `${mobileView === "preview" ? "hidden" : "flex"} md:flex md:w-1/2 md:min-w-[320px]` : "flex-1"}`}>
           {activeConversation ? (
             <>
-              {showPreview && previewCode && (
+              {previewCode && (
                 <div className="flex items-center justify-between gap-2 px-4 py-2 border-b bg-card/50">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Code2 className="w-4 h-4 text-primary" />
                     <span>Building Mode</span>
                   </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => setShowPreview(!showPreview)}
-                  >
-                    {showPreview ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    {(!showPreview || mobileView === "chat") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setShowPreview(true); setMobileView("preview"); }}
+                        className="gap-1 text-xs"
+                        data-testid="button-show-preview"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Preview
+                      </Button>
+                    )}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setShowPreview(!showPreview)}
+                      className="hidden md:flex"
+                    >
+                      {showPreview ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 </div>
               )}
 
@@ -939,13 +970,14 @@ export default function AIChatPage() {
         </div>
 
         {showPreview && previewCode && (
-          <div className={`${isFullscreen ? "" : "w-1/2"} flex`}>
+          <div className={`${isFullscreen ? "" : "w-full md:w-1/2"} ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
             <LivePreview
               code={previewCode}
               isFullscreen={isFullscreen}
               onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
-              onClose={() => { setShowPreview(false); setIsFullscreen(false); }}
+              onClose={() => { setShowPreview(false); setIsFullscreen(false); setMobileView("chat"); }}
               onDownload={handleDownload}
+              onBackToChat={() => setMobileView("chat")}
             />
           </div>
         )}
