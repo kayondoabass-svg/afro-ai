@@ -1,7 +1,7 @@
 export * from "./models/auth";
 export * from "./models/chat";
 
-import { pgTable, serial, text, timestamp, varchar, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, varchar, boolean, integer, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -46,3 +46,21 @@ export const insertPublishedAppSchema = createInsertSchema(publishedApps).omit({
 
 export type PublishedApp = typeof publishedApps.$inferSelect;
 export type InsertPublishedApp = z.infer<typeof insertPublishedAppSchema>;
+
+export const referrals = pgTable("referrals", {
+  id: serial("id").primaryKey(),
+  referrerId: varchar("referrer_id").notNull().references(() => users.id),
+  referredId: varchar("referred_id").notNull().references(() => users.id),
+  status: varchar("status").notNull().default("signed_up"),
+  commissionAmount: integer("commission_amount").notNull().default(0),
+  paidPlan: varchar("paid_plan"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertReferralSchema = createInsertSchema(referrals).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type Referral = typeof referrals.$inferSelect;
+export type InsertReferral = z.infer<typeof insertReferralSchema>;
