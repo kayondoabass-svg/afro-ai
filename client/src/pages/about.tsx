@@ -41,8 +41,9 @@ export default function AboutPage() {
               About <span className="text-primary">Africa.ai</span>
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Building the future of African technology, one app at a time.
+              A registered business in the Pearl of Africa, Uganda — and the first AI platform in Africa dedicated to powering startups across the continent.
             </p>
+            <p className="text-primary font-serif text-xl italic">"The Africa We Want"</p>
           </div>
 
           <div className="space-y-12">
@@ -52,7 +53,7 @@ export default function AboutPage() {
                 Our Mission
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Africa.ai was born from a simple belief: every African creator deserves the tools to build world-class digital products. We are breaking down the barriers to technology by providing an AI-powered platform that lets anyone — regardless of technical background — build professional websites and mobile apps.
+                Afro AI Group is a registered business in Uganda, the Pearl of Africa, and the first AI platform on the continent built specifically to empower African creators. We are breaking down the barriers to technology by providing an AI-powered platform that lets anyone — regardless of technical background — build professional websites and mobile apps.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 Our AI assistant understands the unique needs of African businesses and communities. From local restaurants in Lagos to healthcare startups in Nairobi, from fashion brands in Accra to tech companies in Johannesburg — we empower creators across the continent to bring their ideas to life.
@@ -101,7 +102,7 @@ export default function AboutPage() {
                 We envision an Africa where technology creation is democratized — where a student in Kampala can build an app as easily as a developer in Silicon Valley. Where local businesses can establish their digital presence without expensive development teams. Where African innovation leads the global conversation.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                By 2030, we aim to empower 1 million African creators to launch their digital products, contributing to the continent's growing tech economy and creating opportunities for the next generation.
+                Our vision is bold: to power more than <strong className="text-foreground">1 million startups</strong> across Africa and become the <strong className="text-foreground">leading global AI platform by 2062</strong>. We are building "The Africa We Want" — a continent where every dreamer has the tools to build, launch, and scale their ideas.
               </p>
             </section>
 
@@ -111,7 +112,7 @@ export default function AboutPage() {
                 Our Team
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Africa.ai is founded and led by a passionate team of African technologists, designers, and entrepreneurs who believe in the transformative power of technology. Based across the continent, our team brings together diverse perspectives and deep understanding of the African tech landscape.
+                Afro AI Group is founded and led by a passionate team of African technologists, designers, and entrepreneurs who believe in the transformative power of technology. Headquartered in Uganda, the Pearl of Africa, our team brings together diverse perspectives and deep understanding of the African tech landscape. As the first AI platform in Africa, we are pioneering the future of technology on the continent.
               </p>
             </section>
 
