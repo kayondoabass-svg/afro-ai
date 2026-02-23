@@ -3,8 +3,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Sparkles } from "lucide-react";
 import { SiGoogle } from "react-icons/si";
+import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function LoginPage() {
   const { t } = useLanguage();
@@ -20,7 +20,7 @@ export default function LoginPage() {
         <Card className="w-full max-w-sm p-8 space-y-8 border-primary/20">
           <div className="text-center space-y-4">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto">
-              <Sparkles className="w-8 h-8 text-primary" />
+              <img src={afroLogo} alt="Afro AI" className="w-12 h-12 object-contain" />
             </div>
             <div>
               <h1 className="text-2xl font-bold font-serif tracking-tight" data-testid="text-login-title">

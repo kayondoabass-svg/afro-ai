@@ -29,13 +29,14 @@ import {
   Plus,
   Globe,
   Smartphone,
-  Sparkles,
   MoreHorizontal,
   Folder,
   Clock,
   Trash2,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
+import afroLogo from "@assets/IMG_5719_1771852498362.png";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -165,7 +166,7 @@ export default function DashboardPage() {
           <Card>
             <CardContent className="p-4 flex items-center gap-4">
               <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Sparkles className="w-5 h-5 text-primary" />
+                <img src={afroLogo} alt="AI" className="w-7 h-7 object-contain" />
               </div>
               <div>
                 <p className="text-2xl font-bold" data-testid="text-ai-chats">{t("dashboard.unlimited")}</p>
@@ -266,7 +267,7 @@ export default function DashboardPage() {
             <Card>
               <CardContent className="p-12 text-center space-y-4">
                 <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                  <Sparkles className="w-8 h-8 text-primary" />
+                  <img src={afroLogo} alt="Afro AI" className="w-10 h-10 object-contain" />
                 </div>
                 <h3 className="text-lg font-semibold">{t("dashboard.noProjects")}</h3>
                 <p className="text-sm text-muted-foreground max-w-sm mx-auto">

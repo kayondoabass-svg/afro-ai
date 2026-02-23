@@ -20,12 +20,12 @@ import {
   MessageSquare,
   CreditCard,
   LogOut,
-  Sparkles,
   Crown,
   Terminal,
   Rocket,
   Gift,
 } from "lucide-react";
+import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export function AppSidebar() {
   const [location] = useLocation();
@@ -53,9 +53,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <Link href="/dashboard">
           <div className="flex items-center gap-2 cursor-pointer" data-testid="link-sidebar-logo">
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-primary-foreground" />
-            </div>
+            <img src={afroLogo} alt="Afro AI" className="w-8 h-8 object-contain" />
             <span className="font-bold text-lg tracking-tight">Afro AI</span>
           </div>
         </Link>

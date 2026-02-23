@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
 import { useLanguage } from "@/hooks/use-language";
+import afroLogo from "@assets/IMG_5719_1771852498362.png";
 import {
   Send,
   Plus,
@@ -1099,7 +1100,7 @@ export default function AIChatPage() {
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="text-center space-y-6 max-w-md">
                 <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                  <Sparkles className="w-10 h-10 text-primary" />
+                  <img src={afroLogo} alt="Afro AI" className="w-12 h-12 object-contain" />
                 </div>
                 <h2 className="text-2xl font-bold font-serif" data-testid="text-chat-welcome">
                   {t("chat.welcome")}

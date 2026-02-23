@@ -8,7 +8,6 @@ import { useLanguage } from "@/hooks/use-language";
 import {
   Smartphone,
   Globe,
-  Sparkles,
   MessageSquare,
   Rocket,
   Shield,
@@ -21,6 +20,7 @@ import {
 import heroBg from "@assets/hero-bg.png";
 import workspaceImg from "@assets/workspace.png";
 import africaTechImg from "@assets/africa-tech.png";
+import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function LandingPage() {
   const { t } = useLanguage();
@@ -56,9 +56,7 @@ export default function LandingPage() {
       <nav className={`fixed ${showError ? "top-10" : "top-0"} left-0 right-0 z-50 backdrop-blur-xl bg-background/70 border-b`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-2 h-16">
           <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-primary-foreground" />
-            </div>
+            <img src={afroLogo} alt="Afro AI" className="w-8 h-8 object-contain" />
             <span className="font-bold text-lg tracking-tight" data-testid="text-logo">Afro AI</span>
           </div>
           <div className="hidden md:flex items-center gap-6">
@@ -182,7 +180,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <Badge variant="outline" className="mb-4">
-              <Sparkles className="w-3 h-3 mr-1" />
+              <img src={afroLogo} alt="" className="w-3 h-3" />
               {t("features.badge")}
             </Badge>
             <h2 className="font-serif text-3xl md:text-4xl font-bold mb-4">
@@ -430,9 +428,7 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-4 gap-8">
             <div className="space-y-4">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-primary-foreground" />
-                </div>
+                <img src={afroLogo} alt="Afro AI" className="w-7 h-7 object-contain" />
                 <span className="font-bold">Afro AI</span>
               </div>
               <p className="text-sm text-muted-foreground">

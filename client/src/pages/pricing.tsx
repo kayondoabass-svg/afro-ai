@@ -2,7 +2,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLanguage } from "@/hooks/use-language";
-import { Check, Rocket, Sparkles } from "lucide-react";
+import { Check, Rocket } from "lucide-react";
+import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function PricingPage() {
   const { t } = useLanguage();
@@ -69,7 +70,7 @@ export default function PricingPage() {
                 ))}
               </div>
               <Button className="w-full" disabled data-testid="button-pro-plan">
-                <Sparkles className="w-4 h-4" />
+                <img src={afroLogo} alt="" className="w-4 h-4 object-contain" />
                 {t("pricing.comingSoon")}
               </Button>
             </CardContent>
@@ -103,7 +104,7 @@ export default function PricingPage() {
         <Card>
           <CardContent className="p-8 text-center space-y-4">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-              <Sparkles className="w-6 h-6 text-primary" />
+              <img src={afroLogo} alt="Afro AI" className="w-8 h-8 object-contain" />
             </div>
             <h3 className="text-lg font-semibold">{t("pricingPage.flutterwaveTitle")}</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">

@@ -3,8 +3,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { useLanguage } from "@/hooks/use-language";
-import { Sparkles, ArrowLeft, Mail, MapPin, Clock, Phone, MessageCircle } from "lucide-react";
+import { ArrowLeft, Mail, MapPin, Clock, Phone, MessageCircle } from "lucide-react";
 import { Link } from "wouter";
+import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function ContactPage() {
   const { t } = useLanguage();
@@ -15,9 +16,7 @@ export default function ContactPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <Link href="/">
             <div className="flex items-center gap-2 cursor-pointer">
-              <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-primary-foreground" />
-              </div>
+              <img src={afroLogo} alt="Afro AI" className="w-8 h-8 object-contain" />
               <span className="font-bold text-lg">Afro AI</span>
             </div>
           </Link>
