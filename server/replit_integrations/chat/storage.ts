@@ -5,7 +5,8 @@ import { eq, desc } from "drizzle-orm";
 export interface IChatStorage {
   getConversation(id: number): Promise<typeof conversations.$inferSelect | undefined>;
   getAllConversations(): Promise<(typeof conversations.$inferSelect)[]>;
-  createConversation(title: string): Promise<typeof conversations.$inferSelect>;
+  createConversation(title: string, projectId?: number): Promise<typeof conversations.$inferSelect>;
+  getConversationsByProject(projectId: number): Promise<(typeof conversations.$inferSelect)[]>;
   deleteConversation(id: number): Promise<void>;
   updateConversationTitle(id: number, title: string): Promise<void>;
   getMessagesByConversation(conversationId: number): Promise<(typeof messages.$inferSelect)[]>;
@@ -22,9 +23,15 @@ export const chatStorage: IChatStorage = {
     return db.select().from(conversations).orderBy(desc(conversations.createdAt));
   },
 
-  async createConversation(title: string) {
-    const [conversation] = await db.insert(conversations).values({ title }).returning();
+  async createConversation(title: string, projectId?: number) {
+    const values: any = { title };
+    if (projectId) values.projectId = projectId;
+    const [conversation] = await db.insert(conversations).values(values).returning();
     return conversation;
+  },
+
+  async getConversationsByProject(projectId: number) {
+    return db.select().from(conversations).where(eq(conversations.projectId, projectId)).orderBy(desc(conversations.createdAt));
   },
 
   async deleteConversation(id: number) {

@@ -191,12 +191,23 @@ export function registerChatRoutes(app: Express): void {
 
   app.post("/api/conversations", async (req: Request, res: Response) => {
     try {
-      const { title } = req.body;
-      const conversation = await chatStorage.createConversation(title || "New Chat");
+      const { title, projectId } = req.body;
+      const conversation = await chatStorage.createConversation(title || "New Chat", projectId ? parseInt(projectId) : undefined);
       res.status(201).json(conversation);
     } catch (error) {
       console.error("Error creating conversation:", error);
       res.status(500).json({ error: "Failed to create conversation" });
+    }
+  });
+
+  app.get("/api/conversations/project/:projectId", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId as string);
+      const convos = await chatStorage.getConversationsByProject(projectId);
+      res.json(convos);
+    } catch (error) {
+      console.error("Error fetching project conversations:", error);
+      res.status(500).json({ error: "Failed to fetch project conversations" });
     }
   });
 

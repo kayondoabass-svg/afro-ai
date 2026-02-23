@@ -28,9 +28,11 @@ Africa.ai is a platform that helps African creators build websites and mobile ap
 - Landing page with African heritage imagery and slogans
 - Dashboard with project management (create, view, delete)
 - AI-powered code generator with live preview (split-view: chat + iframe)
+- Project continuity: conversations linked to projects via projectId, "Open & Build" resumes last conversation
 - File attachments in AI chat (photos, videos, screenshots) with OpenAI vision support
 - Tiered AI models by plan: Starter=gpt-4.1-nano, Pro=gpt-4.1-mini, Business=gpt-4.1
 - App publishing to custom subdomains (e.g., my-app.afroaigroup.com) via Cloudflare DNS API
+- Subdomain routing via Express middleware (checks Host header for *.afroaigroup.com)
 - Deployments page: detailed view of all published apps with domain, visibility, status, SSL info, copy/delete
 - Pricing page with Flutterwave integration (coming soon)
 - Responsive design with sidebar navigation

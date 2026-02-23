@@ -108,7 +108,7 @@ export default function DashboardPage() {
   };
 
   const handleOpenProject = (project: Project) => {
-    navigate(`/chat?project=${encodeURIComponent(project.name)}&type=${encodeURIComponent(project.type)}&description=${encodeURIComponent(project.description || "")}`);
+    navigate(`/chat?projectId=${project.id}&project=${encodeURIComponent(project.name)}&type=${encodeURIComponent(project.type)}&description=${encodeURIComponent(project.description || "")}`);
   };
 
   const firstName = user?.firstName || "Creator";

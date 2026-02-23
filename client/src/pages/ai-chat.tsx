@@ -391,12 +391,27 @@ export default function AIChatPage() {
     const projectName = params.get("project");
     const projectType = params.get("type");
     const projectDesc = params.get("description");
+    const projectId = params.get("projectId");
     if (projectName) {
       setProjectInitialized(true);
       window.history.replaceState({}, "", "/chat");
       (async () => {
         try {
-          const res = await apiRequest("POST", "/api/conversations", { title: projectName });
+          if (projectId) {
+            const existingRes = await fetch(`/api/conversations/project/${projectId}`, { credentials: "include" });
+            if (existingRes.ok) {
+              const existingConvos = await existingRes.json();
+              if (existingConvos.length > 0) {
+                queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+                setActiveConversation(existingConvos[0].id);
+                return;
+              }
+            }
+          }
+          const res = await apiRequest("POST", "/api/conversations", {
+            title: projectName,
+            projectId: projectId || undefined,
+          });
           const convo = await res.json();
           queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
           setActiveConversation(convo.id);
