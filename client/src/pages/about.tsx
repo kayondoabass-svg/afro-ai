@@ -14,7 +14,7 @@ export default function AboutPage() {
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/70 border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <Link href="/">
-            <div className="flex items-center gap-2 cursor-pointer">
+            <div className="flex items-center gap-2 cursor-pointer" data-testid="link-home-logo">
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
@@ -25,7 +25,7 @@ export default function AboutPage() {
             <LanguageSelector compact />
             <ThemeToggle />
             <Link href="/">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" data-testid="button-back">
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Back
               </Button>
@@ -37,7 +37,7 @@ export default function AboutPage() {
       <main className="pt-24 pb-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16 space-y-4">
-            <h1 className="font-serif text-4xl md:text-5xl font-bold">
+            <h1 className="font-serif text-4xl md:text-5xl font-bold" data-testid="text-page-title">
               About <span className="text-primary">Africa.ai</span>
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
@@ -67,25 +67,25 @@ export default function AboutPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold">Built for Africa, by Africans</h3>
+                    <h3 className="font-semibold" data-testid="text-value-africa">Built for Africa, by Africans</h3>
                     <p className="text-sm text-muted-foreground">We understand the unique challenges and opportunities of the African market. Our platform is designed with Africa-first thinking.</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold">Accessibility First</h3>
+                    <h3 className="font-semibold" data-testid="text-value-accessibility">Accessibility First</h3>
                     <p className="text-sm text-muted-foreground">Technology should be accessible to everyone. We support 12 African languages and keep our platform affordable for all creators.</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold">Quality Without Compromise</h3>
+                    <h3 className="font-semibold" data-testid="text-value-quality">Quality Without Compromise</h3>
                     <p className="text-sm text-muted-foreground">Every app and website built on Africa.ai meets international standards. We use the latest AI models to generate professional-grade code.</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold">Community Driven</h3>
+                    <h3 className="font-semibold" data-testid="text-value-community">Community Driven</h3>
                     <p className="text-sm text-muted-foreground">We grow together. Our platform evolves based on the needs and feedback of the African creator community.</p>
                   </CardContent>
                 </Card>
@@ -117,7 +117,7 @@ export default function AboutPage() {
 
             <div className="text-center pt-8">
               <a href="/api/login">
-                <Button size="lg" data-testid="button-about-cta">
+                <Button size="lg" data-testid="button-cta-start">
                   Start Building Today
                 </Button>
               </a>

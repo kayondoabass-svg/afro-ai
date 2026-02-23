@@ -19,6 +19,11 @@ import PricingPage from "@/pages/pricing";
 import DeploymentsPage from "@/pages/deployments";
 import FounderDashboardPage from "@/pages/founder-dashboard";
 import AdminCommandPage from "@/pages/admin-command";
+import AboutPage from "@/pages/about";
+import ContactPage from "@/pages/contact";
+import PrivacyPage from "@/pages/privacy";
+import TermsPage from "@/pages/terms";
+import CookiePolicyPage from "@/pages/cookies";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -47,6 +52,11 @@ function AuthenticatedLayout() {
               <Route path="/pricing" component={PricingPage} />
               <Route path="/founder" component={FounderDashboardPage} />
               <Route path="/admin-command" component={AdminCommandPage} />
+              <Route path="/about" component={AboutPage} />
+              <Route path="/contact" component={ContactPage} />
+              <Route path="/privacy" component={PrivacyPage} />
+              <Route path="/terms" component={TermsPage} />
+              <Route path="/cookies" component={CookiePolicyPage} />
               <Route path="/" component={DashboardPage} />
               <Route component={NotFound} />
             </Switch>
@@ -75,6 +85,11 @@ function AppRouter() {
     return (
       <Switch>
         <Route path="/login" component={LoginPage} />
+        <Route path="/about" component={AboutPage} />
+        <Route path="/contact" component={ContactPage} />
+        <Route path="/privacy" component={PrivacyPage} />
+        <Route path="/terms" component={TermsPage} />
+        <Route path="/cookies" component={CookiePolicyPage} />
         <Route component={LandingPage} />
       </Switch>
     );

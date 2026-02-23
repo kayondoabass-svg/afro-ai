@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { useLanguage } from "@/hooks/use-language";
-import { Sparkles, ArrowLeft, Mail, MapPin, Clock } from "lucide-react";
+import { Sparkles, ArrowLeft, Mail, MapPin, Clock, Phone, MessageCircle } from "lucide-react";
 import { Link } from "wouter";
 
 export default function ContactPage() {
@@ -45,16 +45,42 @@ export default function ContactPage() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 mb-12">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
             <Card>
               <CardContent className="p-6 text-center space-y-3">
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
                   <Mail className="w-6 h-6 text-primary" />
                 </div>
                 <h3 className="font-semibold">Email Us</h3>
-                <p className="text-sm text-muted-foreground">For general inquiries and support</p>
-                <a href="mailto:hello@afroaigroup.com" className="text-primary text-sm font-medium hover:underline" data-testid="link-email">
-                  hello@afroaigroup.com
+                <p className="text-sm text-muted-foreground">For inquiries and support</p>
+                <a href="mailto:Support@afroaigroup.com" className="text-primary text-sm font-medium hover:underline" data-testid="link-email">
+                  Support@afroaigroup.com
+                </a>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                  <Phone className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="font-semibold">Call Us</h3>
+                <p className="text-sm text-muted-foreground">Direct phone call</p>
+                <a href="tel:+256777815214" className="text-primary text-sm font-medium hover:underline" data-testid="link-phone">
+                  +256 777 815 214
+                </a>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
+                  <MessageCircle className="w-6 h-6 text-green-500" />
+                </div>
+                <h3 className="font-semibold">WhatsApp</h3>
+                <p className="text-sm text-muted-foreground">Chat with us directly</p>
+                <a href="https://wa.me/256777815214" target="_blank" rel="noopener noreferrer" className="text-green-500 text-sm font-medium hover:underline" data-testid="link-whatsapp">
+                  +256 777 815 214
                 </a>
               </CardContent>
             </Card>
@@ -69,17 +95,6 @@ export default function ContactPage() {
                 <p className="text-primary text-sm font-medium">Kampala, Uganda</p>
               </CardContent>
             </Card>
-
-            <Card>
-              <CardContent className="p-6 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                  <Clock className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="font-semibold">Hours</h3>
-                <p className="text-sm text-muted-foreground">We're available</p>
-                <p className="text-primary text-sm font-medium">Mon - Fri, 8AM - 6PM EAT</p>
-              </CardContent>
-            </Card>
           </div>
 
           <Card>
@@ -92,7 +107,7 @@ export default function ContactPage() {
                   const formData = new FormData(e.currentTarget);
                   const subject = encodeURIComponent(`Africa.ai Contact: ${formData.get("subject")}`);
                   const body = encodeURIComponent(`Name: ${formData.get("name")}\nEmail: ${formData.get("email")}\n\n${formData.get("message")}`);
-                  window.location.href = `mailto:hello@afroaigroup.com?subject=${subject}&body=${body}`;
+                  window.location.href = `mailto:Support@afroaigroup.com?subject=${subject}&body=${body}`;
                 }}
               >
                 <div className="space-y-2">

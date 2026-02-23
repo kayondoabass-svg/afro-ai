@@ -10,7 +10,7 @@ export default function TermsPage() {
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/70 border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <Link href="/">
-            <div className="flex items-center gap-2 cursor-pointer">
+            <div className="flex items-center gap-2 cursor-pointer" data-testid="link-home-logo">
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
@@ -21,7 +21,7 @@ export default function TermsPage() {
             <LanguageSelector compact />
             <ThemeToggle />
             <Link href="/">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" data-testid="button-back">
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Back
               </Button>
@@ -32,7 +32,7 @@ export default function TermsPage() {
 
       <main className="pt-24 pb-16">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 prose prose-neutral dark:prose-invert">
-          <h1 className="font-serif text-4xl font-bold mb-2">Terms of Service</h1>
+          <h1 className="font-serif text-4xl font-bold mb-2" data-testid="text-page-title">Terms of Service</h1>
           <p className="text-muted-foreground mb-8">Last updated: February 2026</p>
 
           <h2>1. Acceptance of Terms</h2>
@@ -77,7 +77,7 @@ export default function TermsPage() {
           <p>We may update these terms from time to time. Continued use of the Platform after changes constitutes acceptance of the updated terms.</p>
 
           <h2>12. Contact</h2>
-          <p>For questions about these terms, contact us at <a href="mailto:hello@afroaigroup.com" className="text-primary">hello@afroaigroup.com</a>.</p>
+          <p>For questions about these terms, contact us at <a href="mailto:Support@afroaigroup.com" className="text-primary">Support@afroaigroup.com</a> or call/WhatsApp us at <a href="https://wa.me/256777815214" className="text-primary">+256 777 815 214</a>.</p>
         </div>
       </main>
 

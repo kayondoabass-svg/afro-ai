@@ -440,27 +440,27 @@ export default function LandingPage() {
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.product")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>{t("footer.websiteBuilder")}</p>
-                <p>{t("footer.appDesigner")}</p>
-                <p>{t("footer.aiAssistant")}</p>
-                <p>{t("footer.appStoreLaunch")}</p>
+                <a href="#features" className="block hover:text-primary transition-colors" data-testid="link-footer-website-builder">{t("footer.websiteBuilder")}</a>
+                <a href="#features" className="block hover:text-primary transition-colors" data-testid="link-footer-app-designer">{t("footer.appDesigner")}</a>
+                <a href="#features" className="block hover:text-primary transition-colors" data-testid="link-footer-ai-assistant">{t("footer.aiAssistant")}</a>
+                <a href="#features" className="block hover:text-primary transition-colors" data-testid="link-footer-app-store">{t("footer.appStoreLaunch")}</a>
               </div>
             </div>
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.company")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>{t("footer.aboutUs")}</p>
-                <p>{t("footer.careers")}</p>
-                <p>{t("footer.blog")}</p>
-                <p>{t("footer.contact")}</p>
+                <a href="/about" className="block hover:text-primary transition-colors" data-testid="link-footer-about">{t("footer.aboutUs")}</a>
+                <a href="mailto:Support@afroaigroup.com" className="block hover:text-primary transition-colors" data-testid="link-footer-careers">{t("footer.careers")}</a>
+                <a href="/about" className="block hover:text-primary transition-colors" data-testid="link-footer-blog">{t("footer.blog")}</a>
+                <a href="/contact" className="block hover:text-primary transition-colors" data-testid="link-footer-contact">{t("footer.contact")}</a>
               </div>
             </div>
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.legal")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>{t("footer.privacy")}</p>
-                <p>{t("footer.terms")}</p>
-                <p>{t("footer.cookies")}</p>
+                <a href="/privacy" className="block hover:text-primary transition-colors" data-testid="link-footer-privacy">{t("footer.privacy")}</a>
+                <a href="/terms" className="block hover:text-primary transition-colors" data-testid="link-footer-terms">{t("footer.terms")}</a>
+                <a href="/cookies" className="block hover:text-primary transition-colors" data-testid="link-footer-cookies">{t("footer.cookies")}</a>
               </div>
             </div>
           </div>
