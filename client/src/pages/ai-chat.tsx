@@ -466,6 +466,7 @@ export default function AIChatPage() {
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
+  const [showPublishFromChat, setShowPublishFromChat] = useState(false);
   const [projectInitialized, setProjectInitialized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -777,6 +778,19 @@ export default function AIChatPage() {
               >
                 <Eye className="w-3 h-3" />
                 View Live Preview
+              </Button>
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => {
+                  handleViewCode(content);
+                  setTimeout(() => setShowPublishFromChat(true), 300);
+                }}
+                className="gap-1 bg-green-600 hover:bg-green-700"
+                data-testid="button-publish-from-msg"
+              >
+                <Rocket className="w-3 h-3" />
+                Publish to Web
               </Button>
               <Button
                 size="sm"
@@ -1115,6 +1129,13 @@ export default function AIChatPage() {
           </div>
         )}
       </div>
+      {previewCode && (
+        <PublishDialog
+          code={previewCode}
+          open={showPublishFromChat}
+          onOpenChange={setShowPublishFromChat}
+        />
+      )}
     </div>
   );
 }
