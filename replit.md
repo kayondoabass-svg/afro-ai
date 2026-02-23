@@ -31,18 +31,17 @@ Afro AI is a platform that helps African creators build websites and mobile apps
 - Project continuity: conversations linked to projects via projectId, "Open & Build" resumes last conversation
 - File attachments in AI chat (photos, videos, screenshots) with OpenAI vision support
 - Tiered AI models by plan: Starter=gpt-4.1-nano, Pro=gpt-4.1-mini, Business=gpt-4.1
-- App publishing to custom subdomains (e.g., my-app.afroaigroup.com) via Cloudflare DNS API
-- Subdomain routing via Express middleware (checks Host header for *.afroaigroup.com)
-- Deployments page: detailed view of all published apps with domain, visibility, status, SSL info, copy/delete
+- App publishing to afroaigroup.com/site/{name} via Cloudflare DNS + Express routes
+- Deployments page: detailed view of all published apps with URL, visibility, status, copy/delete
 - Pricing page with Flutterwave integration (coming soon)
 - Responsive design with sidebar navigation
 
-## App Publishing (Subdomains)
-- Users can publish AI-generated apps to `subdomain.afroaigroup.com`
-- Cloudflare DNS API creates CNAME records for each subdomain
+## App Publishing
+- Users can publish AI-generated apps to `afroaigroup.com/site/{name}`
 - Published apps stored in `published_apps` table (htmlContent, subdomain, title)
-- Subdomain validation: 3-50 chars, lowercase alphanumeric + hyphens, reserved words blocked
-- Preview route: `/site/:subdomain` serves published HTML directly
+- Name validation: 3-50 chars, lowercase alphanumeric + hyphens, reserved words blocked
+- Route: `/site/:subdomain` serves published HTML directly
+- Publish dialog remembers last used title and subdomain (localStorage + API fallback)
 - Users can update or delete their published apps
 
 ## AI Model Tiers

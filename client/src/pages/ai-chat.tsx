@@ -192,12 +192,42 @@ function PublishDialog({ code, open, onOpenChange }: {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
+    if (open && !loadedRef.current) {
+      loadedRef.current = true;
+      const savedTitle = localStorage.getItem("afroai_publish_title");
+      const savedSubdomain = localStorage.getItem("afroai_publish_subdomain");
+      if (savedTitle) setTitle(savedTitle);
+      if (savedSubdomain) {
+        setSubdomain(savedSubdomain);
+        setAvailable(true);
+      }
+      if (!savedTitle || !savedSubdomain) {
+        fetch("/api/published-apps")
+          .then(res => res.ok ? res.json() : [])
+          .then((apps: any[]) => {
+            if (apps.length > 0) {
+              const latest = apps[0];
+              if (!savedTitle && latest.title) setTitle(latest.title);
+              if (!savedSubdomain && latest.subdomain) {
+                setSubdomain(latest.subdomain);
+                setAvailable(true);
+              }
+            }
+          })
+          .catch(() => {});
+      }
+    }
+    if (!open) {
+      loadedRef.current = false;
+      setPublishedUrl(null);
+    }
     return () => {
       if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
     };
-  }, []);
+  }, [open]);
 
   const checkSubdomain = useCallback(async (value: string) => {
     if (value.length < 3) {
@@ -234,6 +264,8 @@ function PublishDialog({ code, open, onOpenChange }: {
     },
     onSuccess: (data: any) => {
       setPublishedUrl(data.url);
+      localStorage.setItem("afroai_publish_title", title);
+      localStorage.setItem("afroai_publish_subdomain", subdomain);
       toast({ title: "Published!", description: `Your app is live at ${data.url}` });
       queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
     },
@@ -280,7 +312,7 @@ function PublishDialog({ code, open, onOpenChange }: {
               </a>
             </div>
             <p className="text-xs text-muted-foreground">
-              DNS may take a few minutes to propagate. You can also preview at /site/{subdomain}
+              Your app is live and ready to share!
             </p>
           </div>
         ) : (
@@ -295,8 +327,9 @@ function PublishDialog({ code, open, onOpenChange }: {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Subdomain</label>
+              <label className="text-sm font-medium">App URL Name</label>
               <div className="flex items-center gap-1">
+                <span className="text-sm text-muted-foreground whitespace-nowrap">afroaigroup.com/site/</span>
                 <Input
                   placeholder="my-app"
                   value={subdomain}
@@ -304,7 +337,6 @@ function PublishDialog({ code, open, onOpenChange }: {
                   className="flex-1"
                   data-testid="input-publish-subdomain"
                 />
-                <span className="text-sm text-muted-foreground whitespace-nowrap">.afroaigroup.com</span>
               </div>
               {subdomain.length >= 3 && (
                 <div className="flex items-center gap-1 text-xs">
