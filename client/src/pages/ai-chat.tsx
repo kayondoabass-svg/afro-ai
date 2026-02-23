@@ -380,9 +380,34 @@ export default function AIChatPage() {
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
+  const [projectInitialized, setProjectInitialized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (projectInitialized) return;
+    const params = new URLSearchParams(window.location.search);
+    const projectName = params.get("project");
+    const projectType = params.get("type");
+    const projectDesc = params.get("description");
+    if (projectName) {
+      setProjectInitialized(true);
+      window.history.replaceState({}, "", "/chat");
+      (async () => {
+        try {
+          const res = await apiRequest("POST", "/api/conversations", { title: projectName });
+          const convo = await res.json();
+          queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+          setActiveConversation(convo.id);
+          const prompt = `Build me a ${projectType === "mobile_app" ? "mobile app" : "website"} called "${projectName}"${projectDesc ? `. Description: ${projectDesc}` : ""}`;
+          setTimeout(() => setInput(prompt), 300);
+        } catch {
+          toast({ title: "Error", description: "Failed to open project", variant: "destructive" });
+        }
+      })();
+    }
+  }, [projectInitialized]);
 
   const { data: conversations, isLoading: loadingConversations } = useQuery<Conversation[]>({
     queryKey: ["/api/conversations"],

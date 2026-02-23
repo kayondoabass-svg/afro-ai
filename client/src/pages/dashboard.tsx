@@ -34,6 +34,7 @@ import {
   Folder,
   Clock,
   Trash2,
+  ArrowRight,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -43,12 +44,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import type { Project } from "@shared/schema";
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const { t } = useLanguage();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [showNewProject, setShowNewProject] = useState(false);
 
   const { data: projects, isLoading } = useQuery<Project[]>({
@@ -102,6 +105,10 @@ export default function DashboardPage() {
       case "in_progress": return "bg-primary/10 text-primary";
       default: return "bg-muted text-muted-foreground";
     }
+  };
+
+  const handleOpenProject = (project: Project) => {
+    navigate(`/chat?project=${encodeURIComponent(project.name)}&type=${encodeURIComponent(project.type)}&description=${encodeURIComponent(project.description || "")}`);
   };
 
   const firstName = user?.firstName || "Creator";
@@ -186,7 +193,12 @@ export default function DashboardPage() {
           ) : projects && projects.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {projects.map((project) => (
-                <Card key={project.id} className="hover-elevate group" data-testid={`card-project-${project.id}`}>
+                <Card
+                  key={project.id}
+                  className="hover-elevate group cursor-pointer"
+                  onClick={() => handleOpenProject(project)}
+                  data-testid={`card-project-${project.id}`}
+                >
                   <CardContent className="p-6 space-y-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -197,14 +209,23 @@ export default function DashboardPage() {
                       </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ visibility: "visible" }}>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ visibility: "visible" }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
                             className="text-destructive"
-                            onClick={() => deleteMutation.mutate(project.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteMutation.mutate(project.id);
+                            }}
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
                             {t("dashboard.delete")}
@@ -224,6 +245,19 @@ export default function DashboardPage() {
                         {new Date(project.createdAt).toLocaleDateString()}
                       </div>
                     </div>
+                    <Button
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenProject(project);
+                      }}
+                      data-testid={`button-build-project-${project.id}`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Open & Build
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
