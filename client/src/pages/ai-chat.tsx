@@ -84,6 +84,92 @@ function removeCodeBlock(text: string): string {
   return text.replace(/```(?:html)?\s*\n[\s\S]*?```/g, "").trim();
 }
 
+interface BuildStep {
+  label: string;
+  done: boolean;
+}
+
+function detectBuildSteps(code: string): BuildStep[] {
+  const steps: BuildStep[] = [];
+  const checks: [RegExp, string][] = [
+    [/<html|<!DOCTYPE/i, "Setting up the project structure"],
+    [/<style|css/i, "Designing the layout and styles"],
+    [/<nav|<header/i, "Building the navigation"],
+    [/hero|<main|<section/i, "Creating content sections"],
+    [/font-family|google.*font|@import.*font/i, "Adding typography and fonts"],
+    [/<img|background-image|picsum|placeholder/i, "Adding images and media"],
+    [/<button|<a.*href|cta|btn/i, "Setting up buttons and links"],
+    [/<footer/i, "Building the footer"],
+    [/animation|@keyframes|transition|transform/i, "Adding animations and effects"],
+    [/media.*query|@media|responsive/i, "Making it responsive"],
+    [/<script|addEventListener|function\s/i, "Adding interactive features"],
+  ];
+  for (const [regex, label] of checks) {
+    steps.push({ label, done: regex.test(code) });
+  }
+  return steps;
+}
+
+function BuildProgress({ code, isComplete }: { code: string; isComplete: boolean }) {
+  const steps = detectBuildSteps(code);
+  const doneSteps = steps.filter(s => s.done);
+  const progress = isComplete ? 100 : Math.round((doneSteps.length / steps.length) * 100);
+
+  return (
+    <div className="space-y-3 bg-card/50 border rounded-lg p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-foreground">
+          {isComplete ? "Build complete" : "Building your project..."}
+        </span>
+        <span className="text-xs text-primary font-semibold">{progress}%</span>
+      </div>
+      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+        <div
+          className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="space-y-1">
+        {(isComplete ? doneSteps : steps).map((step, i) => (
+          <div key={i} className="flex items-center gap-2 text-xs">
+            {step.done ? (
+              <Check className="w-3 h-3 text-primary flex-shrink-0" />
+            ) : (
+              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground flex-shrink-0" />
+            )}
+            <span className={step.done ? "text-foreground" : "text-muted-foreground"}>
+              {step.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StreamingBuildProgress({ content }: { content: string }) {
+  const hasHtmlBlock = content.includes("```html");
+  const hasHtmlTag = content.includes("<!DOCTYPE") || content.includes("<html");
+  const hasGenericBlock = content.includes("```\n") && hasHtmlTag;
+
+  if (!hasHtmlBlock && !hasHtmlTag && !hasGenericBlock) {
+    return null;
+  }
+
+  let codeContent = content;
+  if (hasHtmlBlock) {
+    codeContent = content.substring(content.indexOf("```html") + 7);
+  } else if (hasGenericBlock) {
+    codeContent = content.substring(content.indexOf("```\n") + 4);
+  } else if (hasHtmlTag) {
+    const idx = content.indexOf("<!DOCTYPE");
+    const idx2 = content.indexOf("<html");
+    codeContent = content.substring(Math.min(idx >= 0 ? idx : Infinity, idx2 >= 0 ? idx2 : Infinity));
+  }
+
+  return <BuildProgress code={codeContent} isComplete={false} />;
+}
+
 function parseMessageContent(content: string): ParsedMessageContent {
   try {
     const parsed = JSON.parse(content);
@@ -679,29 +765,33 @@ export default function AIChatPage() {
       <div className="space-y-3">
         {textOnly && <p className="whitespace-pre-wrap break-words">{textOnly}</p>}
         {code && (
-          <div className="flex flex-wrap gap-2 mt-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleViewCode(content)}
-              data-testid="button-view-preview"
-            >
-              <Eye className="w-3 h-3" />
-              View Live Preview
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setPreviewCode(code);
-                handleDownload();
-              }}
-              data-testid="button-download-from-msg"
-            >
-              <Download className="w-3 h-3" />
-              Download
-            </Button>
-          </div>
+          <>
+            <BuildProgress code={code} isComplete={true} />
+            <div className="flex flex-wrap gap-2 mt-2">
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => handleViewCode(content)}
+                className="gap-1"
+                data-testid="button-view-preview"
+              >
+                <Eye className="w-3 h-3" />
+                View Live Preview
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setPreviewCode(code);
+                  handleDownload();
+                }}
+                data-testid="button-download-from-msg"
+              >
+                <Download className="w-3 h-3" />
+                Download
+              </Button>
+            </div>
+          </>
         )}
       </div>
     );
@@ -848,12 +938,15 @@ export default function AIChatPage() {
                       <div className="flex-1 space-y-1 min-w-0">
                         <p className="text-xs font-medium text-muted-foreground">Africa.ai</p>
                         <div className="text-sm leading-relaxed">
-                          <div className="space-y-2">
-                            <p className="whitespace-pre-wrap break-words">{removeCodeBlock(streamingContent)}</p>
-                            {extractAllCodeBlocks(streamingContent) && (
-                              <div className="flex items-center gap-2 py-2">
+                          <div className="space-y-3">
+                            {removeCodeBlock(streamingContent) && (
+                              <p className="whitespace-pre-wrap break-words">{removeCodeBlock(streamingContent)}</p>
+                            )}
+                            <StreamingBuildProgress content={streamingContent} />
+                            {!streamingContent.includes("```html") && !streamingContent.includes("<!DOCTYPE") && !streamingContent.includes("<html") && !removeCodeBlock(streamingContent) && (
+                              <div className="flex items-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                                <span className="text-sm text-primary font-medium">Building your project...</span>
+                                <span className="text-sm text-muted-foreground">Thinking...</span>
                               </div>
                             )}
                           </div>
