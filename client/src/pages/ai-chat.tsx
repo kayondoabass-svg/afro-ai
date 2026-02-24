@@ -494,7 +494,7 @@ export default function AIChatPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [previewCode, setPreviewCode] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -573,7 +573,7 @@ export default function AIChatPage() {
       if (activeConversation === deletedId) {
         setActiveConversation(null);
         setPreviewCode(null);
-        setShowPreview(false);
+        setMobileView("chat");
       }
     },
   });
@@ -903,7 +903,7 @@ export default function AIChatPage() {
       </div>
 
       <div className="flex-1 flex">
-        <div className={`flex flex-col ${showPreview && previewCode ? `${mobileView === "preview" ? "hidden" : "flex"} md:flex md:w-1/2 md:min-w-[320px]` : "flex-1"}`}>
+        <div className={`flex flex-col ${previewCode && showPreview ? `${mobileView === "preview" ? "hidden" : "flex"} md:flex md:w-1/2 md:min-w-[320px]` : "flex-1"}`}>
           {activeConversation ? (
             <>
               {previewCode && (
@@ -913,12 +913,12 @@ export default function AIChatPage() {
                     <span>Building Mode</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    {(!showPreview || mobileView === "chat") && (
+                    {mobileView === "chat" && (
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => { setShowPreview(true); setMobileView("preview"); }}
-                        className="gap-1 text-xs"
+                        className="gap-1 text-xs md:hidden"
                         data-testid="button-show-preview"
                       >
                         <Eye className="w-3.5 h-3.5" />
@@ -930,6 +930,7 @@ export default function AIChatPage() {
                       variant="ghost"
                       onClick={() => setShowPreview(!showPreview)}
                       className="hidden md:flex"
+                      data-testid="button-toggle-preview"
                     >
                       {showPreview ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
                     </Button>
@@ -1149,7 +1150,7 @@ export default function AIChatPage() {
           )}
         </div>
 
-        {showPreview && previewCode && (
+        {previewCode && showPreview && (
           <div className={`${isFullscreen ? "" : "w-full md:w-1/2"} ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
             <LivePreview
               code={previewCode}
