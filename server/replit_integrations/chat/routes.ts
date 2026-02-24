@@ -4,6 +4,8 @@ import { chatStorage } from "./storage";
 import { db } from "../../db";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import fs from "fs";
+import path from "path";
 
 type UserPlan = "starter" | "pro" | "business";
 
@@ -301,12 +303,23 @@ export function registerChatRoutes(app: Express): void {
               const contentParts: any[] = [{ type: "text", text: parsed.text }];
               for (const att of parsed.attachments) {
                 if (att.mimetype && att.mimetype.startsWith("image/")) {
-                  const protocol = process.env.NODE_ENV === "production" ? "https" : req.protocol;
-                  const host = req.get("host") || "localhost:5000";
-                  contentParts.push({
-                    type: "image_url",
-                    image_url: { url: `${protocol}://${host}${att.url}` },
-                  });
+                  try {
+                    const filePath = path.join(process.cwd(), att.url.startsWith("/") ? att.url.slice(1) : att.url);
+                    if (fs.existsSync(filePath)) {
+                      const imageBuffer = fs.readFileSync(filePath);
+                      const base64Image = imageBuffer.toString("base64");
+                      const dataUrl = `data:${att.mimetype};base64,${base64Image}`;
+                      contentParts.push({
+                        type: "image_url",
+                        image_url: { url: dataUrl },
+                      });
+                    } else {
+                      contentParts.push({ type: "text", text: `[Attached image: ${att.originalName} - file not found]` });
+                    }
+                  } catch (imgErr) {
+                    console.error("Error reading image file:", imgErr);
+                    contentParts.push({ type: "text", text: `[Attached image: ${att.originalName} - could not read]` });
+                  }
                 } else if (att.mimetype && att.mimetype.startsWith("video/")) {
                   contentParts.push({ type: "text", text: `[Attached video: ${att.originalName}]` });
                 }
