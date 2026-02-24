@@ -36,6 +36,7 @@ import {
   Monitor,
   Tablet,
   Smartphone,
+  RefreshCw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -194,31 +195,40 @@ function PublishDialog({ code, open, onOpenChange }: {
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
+  const [existingApp, setExistingApp] = useState<{ subdomain: string; title: string } | null>(null);
+  const [loadingExisting, setLoadingExisting] = useState(true);
 
   useEffect(() => {
     if (open && !loadedRef.current) {
       loadedRef.current = true;
+      setLoadingExisting(true);
       const savedTitle = localStorage.getItem("afroai_publish_title");
       const savedSubdomain = localStorage.getItem("afroai_publish_subdomain");
-      if (savedTitle) setTitle(savedTitle);
-      if (savedSubdomain) {
+
+      if (savedTitle && savedSubdomain) {
+        setTitle(savedTitle);
         setSubdomain(savedSubdomain);
         setAvailable(true);
-      }
-      if (!savedTitle || !savedSubdomain) {
+        setExistingApp({ subdomain: savedSubdomain, title: savedTitle });
+        setLoadingExisting(false);
+      } else {
         fetch("/api/published-apps")
           .then(res => res.ok ? res.json() : [])
           .then((apps: any[]) => {
             if (apps.length > 0) {
               const latest = apps[0];
-              if (!savedTitle && latest.title) setTitle(latest.title);
-              if (!savedSubdomain && latest.subdomain) {
+              if (latest.title) setTitle(latest.title);
+              if (latest.subdomain) {
                 setSubdomain(latest.subdomain);
                 setAvailable(true);
               }
+              if (latest.title && latest.subdomain) {
+                setExistingApp({ subdomain: latest.subdomain, title: latest.title });
+              }
             }
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => setLoadingExisting(false));
       }
     }
     if (!open) {
@@ -267,6 +277,7 @@ function PublishDialog({ code, open, onOpenChange }: {
       setPublishedUrl(data.url);
       localStorage.setItem("afroai_publish_title", title);
       localStorage.setItem("afroai_publish_subdomain", subdomain);
+      setExistingApp({ subdomain, title });
       toast({ title: "Published!", description: `Your app is live at ${data.url}` });
       queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
     },
@@ -280,16 +291,27 @@ function PublishDialog({ code, open, onOpenChange }: {
     publishMutation.mutate();
   };
 
+  const handleRepublish = () => {
+    publishMutation.mutate();
+  };
+
+  const isRepublish = existingApp && !loadingExisting;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Rocket className="w-5 h-5 text-primary" />
-            Publish Your App
+            {publishedUrl ? "Published!" : isRepublish ? "Republish Your App" : "Publish Your App"}
           </DialogTitle>
           <DialogDescription>
-            Give your app a name and subdomain to publish it live on afroaigroup.com
+            {publishedUrl
+              ? "Your app has been updated successfully"
+              : isRepublish
+                ? `Update your app live at afroaigroup.com/site/${existingApp.subdomain}`
+                : "Give your app a name and subdomain to publish it live on afroaigroup.com"
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -312,9 +334,30 @@ function PublishDialog({ code, open, onOpenChange }: {
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
+          </div>
+        ) : isRepublish ? (
+          <div className="space-y-4 py-4">
+            <div className="bg-card rounded-lg p-4 border space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Title</span>
+                <span className="text-sm font-medium" data-testid="text-republish-title">{existingApp.title}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">URL</span>
+                <span className="text-sm font-medium text-primary" data-testid="text-republish-url">afroaigroup.com/site/{existingApp.subdomain}</span>
+              </div>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Your app is live and ready to share!
+              Click Republish to update your live app with the latest changes.
             </p>
+            <Button
+              variant="ghost"
+              className="text-xs p-0 h-auto text-muted-foreground hover:text-primary underline"
+              onClick={() => setExistingApp(null)}
+              data-testid="button-change-settings"
+            >
+              Change name or URL instead
+            </Button>
           </div>
         ) : (
           <div className="space-y-4 py-4">
@@ -358,6 +401,18 @@ function PublishDialog({ code, open, onOpenChange }: {
           {publishedUrl ? (
             <Button onClick={() => onOpenChange(false)} data-testid="button-publish-done">
               Done
+            </Button>
+          ) : isRepublish ? (
+            <Button
+              onClick={handleRepublish}
+              disabled={publishMutation.isPending}
+              data-testid="button-republish-confirm"
+            >
+              {publishMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 animate-spin" />Republishing...</>
+              ) : (
+                <><RefreshCw className="w-4 h-4" />Republish</>
+              )}
             </Button>
           ) : (
             <Button

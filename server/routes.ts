@@ -237,7 +237,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/check-subdomain/:subdomain", async (req, res) => {
+  app.get("/api/check-subdomain/:subdomain", async (req: any, res) => {
     try {
       const subdomain = req.params.subdomain.toLowerCase().trim();
       const validation = isValidSubdomain(subdomain);
@@ -245,7 +245,14 @@ export async function registerRoutes(
         return res.json({ available: false, error: validation.error });
       }
       const existing = await storage.getPublishedAppBySubdomain(subdomain);
-      res.json({ available: !existing });
+      if (!existing) {
+        return res.json({ available: true });
+      }
+      const userId = req.user?.claims?.sub;
+      if (userId && existing.userId === userId) {
+        return res.json({ available: true, owned: true });
+      }
+      res.json({ available: false });
     } catch (error) {
       console.error("Error checking subdomain:", error);
       res.status(500).json({ available: false, error: "Failed to check subdomain" });
