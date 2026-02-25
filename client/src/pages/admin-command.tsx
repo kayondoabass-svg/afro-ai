@@ -188,8 +188,8 @@ function PublishDialog({ code, open, onOpenChange }: {
             <div className="space-y-2">
               <label className="text-sm font-medium">App URL Name</label>
               <div className="flex items-center gap-1">
-                <span className="text-sm text-muted-foreground whitespace-nowrap">afroaigroup.com/site/</span>
                 <Input placeholder="my-app" value={subdomain} onChange={(e) => handleSubdomainChange(e.target.value)} className="flex-1" data-testid="input-admin-publish-subdomain" />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">.afroaigroup.com</span>
               </div>
               {subdomain.length >= 3 && (
                 <div className="flex items-center gap-1 text-xs">

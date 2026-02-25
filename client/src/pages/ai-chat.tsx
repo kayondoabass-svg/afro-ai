@@ -296,7 +296,7 @@ function PublishDialog({ code, open, onOpenChange }: {
             {publishedUrl
               ? "Your app has been updated successfully"
               : isRepublish
-                ? `Update your app live at afroaigroup.com/site/${existingApp.subdomain}`
+                ? `Update your app live at ${existingApp.subdomain}.afroaigroup.com`
                 : "Give your app a name and subdomain to publish it live on afroaigroup.com"
             }
           </DialogDescription>
@@ -331,7 +331,7 @@ function PublishDialog({ code, open, onOpenChange }: {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">URL</span>
-                <span className="text-sm font-medium text-primary" data-testid="text-republish-url">afroaigroup.com/site/{existingApp.subdomain}</span>
+                <span className="text-sm font-medium text-primary" data-testid="text-republish-url">{existingApp.subdomain}.afroaigroup.com</span>
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -360,7 +360,6 @@ function PublishDialog({ code, open, onOpenChange }: {
             <div className="space-y-2">
               <label className="text-sm font-medium">App URL Name</label>
               <div className="flex items-center gap-1">
-                <span className="text-sm text-muted-foreground whitespace-nowrap">afroaigroup.com/site/</span>
                 <Input
                   placeholder="my-app"
                   value={subdomain}
@@ -368,6 +367,7 @@ function PublishDialog({ code, open, onOpenChange }: {
                   className="flex-1"
                   data-testid="input-publish-subdomain"
                 />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">.afroaigroup.com</span>
               </div>
               {subdomain.length >= 3 && (
                 <div className="flex items-center gap-1 text-xs">
