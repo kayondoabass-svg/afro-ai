@@ -92,28 +92,19 @@ function PublishDialog({ code, open, onOpenChange }: {
   useEffect(() => {
     if (open && !loadedRef.current) {
       loadedRef.current = true;
-      const savedTitle = localStorage.getItem("afroai_publish_title");
-      const savedSubdomain = localStorage.getItem("afroai_publish_subdomain");
-      if (savedTitle) setTitle(savedTitle);
-      if (savedSubdomain) {
-        setSubdomain(savedSubdomain);
-        setAvailable(true);
-      }
-      if (!savedTitle || !savedSubdomain) {
-        fetch("/api/published-apps")
-          .then(res => res.ok ? res.json() : [])
-          .then((apps: any[]) => {
-            if (apps.length > 0) {
-              const latest = apps[0];
-              if (!savedTitle && latest.title) setTitle(latest.title);
-              if (!savedSubdomain && latest.subdomain) {
-                setSubdomain(latest.subdomain);
-                setAvailable(true);
-              }
+      fetch("/api/published-apps")
+        .then(res => res.ok ? res.json() : [])
+        .then((apps: any[]) => {
+          if (apps.length > 0) {
+            const latest = apps[0];
+            if (latest.title) setTitle(latest.title);
+            if (latest.subdomain) {
+              setSubdomain(latest.subdomain);
+              setAvailable(true);
             }
-          })
-          .catch(() => {});
-      }
+          }
+        })
+        .catch(() => {});
     }
     if (!open) {
       loadedRef.current = false;
@@ -153,8 +144,6 @@ function PublishDialog({ code, open, onOpenChange }: {
     },
     onSuccess: (data: any) => {
       setPublishedUrl(data.url);
-      localStorage.setItem("afroai_publish_title", title);
-      localStorage.setItem("afroai_publish_subdomain", subdomain);
       toast({ title: "Published!", description: `Live at ${data.url}` });
       queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });

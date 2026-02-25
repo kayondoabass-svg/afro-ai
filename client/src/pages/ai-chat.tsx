@@ -202,34 +202,23 @@ function PublishDialog({ code, open, onOpenChange }: {
     if (open && !loadedRef.current) {
       loadedRef.current = true;
       setLoadingExisting(true);
-      const savedTitle = localStorage.getItem("afroai_publish_title");
-      const savedSubdomain = localStorage.getItem("afroai_publish_subdomain");
-
-      if (savedTitle && savedSubdomain) {
-        setTitle(savedTitle);
-        setSubdomain(savedSubdomain);
-        setAvailable(true);
-        setExistingApp({ subdomain: savedSubdomain, title: savedTitle });
-        setLoadingExisting(false);
-      } else {
-        fetch("/api/published-apps")
-          .then(res => res.ok ? res.json() : [])
-          .then((apps: any[]) => {
-            if (apps.length > 0) {
-              const latest = apps[0];
-              if (latest.title) setTitle(latest.title);
-              if (latest.subdomain) {
-                setSubdomain(latest.subdomain);
-                setAvailable(true);
-              }
-              if (latest.title && latest.subdomain) {
-                setExistingApp({ subdomain: latest.subdomain, title: latest.title });
-              }
+      fetch("/api/published-apps")
+        .then(res => res.ok ? res.json() : [])
+        .then((apps: any[]) => {
+          if (apps.length > 0) {
+            const latest = apps[0];
+            if (latest.title) setTitle(latest.title);
+            if (latest.subdomain) {
+              setSubdomain(latest.subdomain);
+              setAvailable(true);
             }
-          })
-          .catch(() => {})
-          .finally(() => setLoadingExisting(false));
-      }
+            if (latest.title && latest.subdomain) {
+              setExistingApp({ subdomain: latest.subdomain, title: latest.title });
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingExisting(false));
     }
     if (!open) {
       loadedRef.current = false;
@@ -275,8 +264,6 @@ function PublishDialog({ code, open, onOpenChange }: {
     },
     onSuccess: (data: any) => {
       setPublishedUrl(data.url);
-      localStorage.setItem("afroai_publish_title", title);
-      localStorage.setItem("afroai_publish_subdomain", subdomain);
       setExistingApp({ subdomain, title });
       toast({ title: "Published!", description: `Your app is live at ${data.url}` });
       queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });

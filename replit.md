@@ -41,7 +41,7 @@ Afro AI is a platform that helps African creators build websites and mobile apps
 - Published apps stored in `published_apps` table (htmlContent, subdomain, title)
 - Name validation: 3-50 chars, lowercase alphanumeric + hyphens, reserved words blocked
 - Route: `/site/:subdomain` serves published HTML directly
-- Publish dialog remembers last used title and subdomain (localStorage + API fallback)
+- Publish dialog loads user's existing app from server API (per-user, no localStorage)
 - Users can update or delete their published apps
 
 ## AI Model Tiers
