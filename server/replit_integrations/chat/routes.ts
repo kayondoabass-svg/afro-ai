@@ -106,7 +106,11 @@ CARDS & COMPONENTS:
 - Image cards with overlay gradients for text readability
 
 IMAGES & MEDIA:
-- Use high-quality placeholder images from picsum.photos or via.placeholder.com
+- NEVER use external image hosting services like imgur.com, imgbb.com, or any third-party image hosts. These links break and expire.
+- For placeholder images, ONLY use: https://picsum.photos/{width}/{height} or https://placehold.co/{width}x{height}/{bg}/{text}
+- Better yet, use CSS gradients, SVG patterns, or inline SVG graphics instead of external images whenever possible
+- For icons and illustrations, prefer inline SVG or Font Awesome icons over external image URLs
+- If the user uploads/attaches their own image, use a data URI or reference the uploaded file path
 - Images should have rounded corners matching the card radius
 - Add subtle border (1px solid rgba(0,0,0,0.08)) to images to define edges
 - Use object-fit: cover for consistent image sizing
