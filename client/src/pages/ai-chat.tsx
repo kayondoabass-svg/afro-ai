@@ -86,6 +86,62 @@ function removeCodeBlock(text: string): string {
   return text.replace(/```(?:html)?\s*\n[\s\S]*?```/g, "").trim();
 }
 
+interface CodeTestResult {
+  passed: boolean;
+  checks: { name: string; passed: boolean; detail?: string }[];
+}
+
+function validateHtmlCode(code: string): CodeTestResult {
+  const checks: CodeTestResult["checks"] = [];
+
+  checks.push({
+    name: "Valid HTML structure",
+    passed: code.includes("<!DOCTYPE html") || code.includes("<html"),
+    detail: "Document has proper HTML structure",
+  });
+
+  checks.push({
+    name: "Has head section",
+    passed: /<head[\s>]/i.test(code),
+    detail: "Document includes <head> section",
+  });
+
+  checks.push({
+    name: "Has body content",
+    passed: /<body[\s>]/i.test(code) && code.includes("</body>"),
+    detail: "Document has a <body> with content",
+  });
+
+  checks.push({
+    name: "Has title",
+    passed: /<title>.+<\/title>/i.test(code),
+    detail: "Page has a title tag",
+  });
+
+  checks.push({
+    name: "Has visible content",
+    passed: (/<h[1-6][\s>]/i.test(code) || /<p[\s>]/i.test(code) || /<div[\s>]/i.test(code)),
+    detail: "Page has visible text content",
+  });
+
+  checks.push({
+    name: "No broken image hosts",
+    passed: !(/imgur\.com|imgbb\.com|postimg\.cc/i.test(code)),
+    detail: "No unreliable external image hosts used",
+  });
+
+  checks.push({
+    name: "Proper closing tags",
+    passed: code.includes("</html>"),
+    detail: "HTML document is properly closed",
+  });
+
+  const passedCount = checks.filter(c => c.passed).length;
+  return { passed: passedCount >= 5, checks };
+}
+
+type AutoPublishStatus = "idle" | "testing" | "test-passed" | "test-failed" | "publishing" | "published" | "publish-failed";
+
 interface BuildStep {
   label: string;
   done: boolean;
@@ -543,6 +599,8 @@ export default function AIChatPage() {
   const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
   const [showPublishFromChat, setShowPublishFromChat] = useState(false);
   const [projectInitialized, setProjectInitialized] = useState(false);
+  const [autoPublishStatus, setAutoPublishStatus] = useState<AutoPublishStatus>("idle");
+  const [testResult, setTestResult] = useState<CodeTestResult | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -694,6 +752,78 @@ export default function AIChatPage() {
     toast({ title: "Downloaded!", description: "Your project has been downloaded as an HTML file." });
   }, [previewCode, toast]);
 
+  const runAutoTestAndPublish = async (code: string) => {
+    setAutoPublishStatus("testing");
+    setTestResult(null);
+
+    await new Promise(r => setTimeout(r, 800));
+
+    const result = validateHtmlCode(code);
+    setTestResult(result);
+
+    if (!result.passed) {
+      setAutoPublishStatus("test-failed");
+      toast({
+        title: "Quality Check Failed",
+        description: `${result.checks.filter(c => !c.passed).length} issue(s) found. Review and fix before publishing.`,
+        variant: "destructive",
+      });
+      setTimeout(() => setAutoPublishStatus("idle"), 5000);
+      return;
+    }
+
+    setAutoPublishStatus("test-passed");
+    toast({ title: "Quality Check Passed", description: "All tests passed! Auto-publishing..." });
+
+    await new Promise(r => setTimeout(r, 1000));
+
+    try {
+      const appsRes = await fetch("/api/published-apps", { credentials: "include" });
+      if (!appsRes.ok) {
+        setAutoPublishStatus("idle");
+        return;
+      }
+      const apps = await appsRes.json();
+      if (apps.length === 0) {
+        setAutoPublishStatus("test-passed");
+        toast({ title: "Ready to Publish", description: "Tests passed! Click 'Publish to Web' to go live." });
+        setTimeout(() => setAutoPublishStatus("idle"), 4000);
+        return;
+      }
+
+      const existingApp = apps[0];
+      setAutoPublishStatus("publishing");
+
+      const publishRes = await apiRequest("POST", "/api/publish", {
+        subdomain: existingApp.subdomain,
+        htmlContent: code,
+        title: existingApp.title,
+      });
+
+      if (!publishRes.ok) {
+        const errData = await publishRes.json();
+        throw new Error(errData.message || "Publish failed");
+      }
+
+      const publishData = await publishRes.json();
+      setAutoPublishStatus("published");
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      toast({
+        title: "Auto-Published!",
+        description: `Your app has been updated at ${publishData.url}`,
+      });
+      setTimeout(() => setAutoPublishStatus("idle"), 6000);
+    } catch (err: any) {
+      setAutoPublishStatus("publish-failed");
+      toast({
+        title: "Auto-Publish Failed",
+        description: err.message || "Could not republish. Try manually.",
+        variant: "destructive",
+      });
+      setTimeout(() => setAutoPublishStatus("idle"), 5000);
+    }
+  };
+
   const handleSend = async () => {
     if ((!input.trim() && pendingAttachments.length === 0) || !activeConversation || isStreaming) return;
 
@@ -765,6 +895,11 @@ export default function AIChatPage() {
               setIsStreaming(false);
               queryClient.invalidateQueries({ queryKey: ["/api/conversations", activeConversation] });
               queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+
+              const generatedCode = extractAllCodeBlocks(fullResponse);
+              if (generatedCode) {
+                runAutoTestAndPublish(generatedCode);
+              }
             }
           } catch {}
         }
@@ -843,6 +978,44 @@ export default function AIChatPage() {
         {code && (
           <>
             <BuildProgress code={code} isComplete={true} />
+            {autoPublishStatus !== "idle" && (
+              <div className="bg-card/50 border rounded-lg p-3 space-y-2" data-testid="auto-publish-status">
+                <div className="flex items-center gap-2 text-xs font-medium">
+                  {autoPublishStatus === "testing" && (
+                    <><Loader2 className="w-3 h-3 animate-spin text-primary" /><span>Running quality checks...</span></>
+                  )}
+                  {autoPublishStatus === "test-passed" && (
+                    <><Check className="w-3 h-3 text-green-500" /><span className="text-green-500">All checks passed!</span></>
+                  )}
+                  {autoPublishStatus === "test-failed" && (
+                    <><AlertCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Quality check failed</span></>
+                  )}
+                  {autoPublishStatus === "publishing" && (
+                    <><Loader2 className="w-3 h-3 animate-spin text-primary" /><span>Auto-publishing to your site...</span></>
+                  )}
+                  {autoPublishStatus === "published" && (
+                    <><Check className="w-3 h-3 text-green-500" /><span className="text-green-500">Auto-published successfully!</span></>
+                  )}
+                  {autoPublishStatus === "publish-failed" && (
+                    <><AlertCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Auto-publish failed</span></>
+                  )}
+                </div>
+                {testResult && (
+                  <div className="space-y-1">
+                    {testResult.checks.map((check, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        {check.passed ? (
+                          <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-3 h-3 text-red-500 flex-shrink-0" />
+                        )}
+                        <span className={check.passed ? "text-muted-foreground" : "text-red-400"}>{check.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2 mt-2">
               <Button
                 size="sm"

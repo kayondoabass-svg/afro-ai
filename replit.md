@@ -46,6 +46,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - Fallback route: `/site/:subdomain` also serves published apps (path-based access)
 - Publish dialog loads user's existing app from server API (per-user, no localStorage)
 - Users can update or delete their published apps
+- Auto-test & auto-publish: after AI generates code, automated quality checks run (HTML structure, content, broken images); if checks pass and user has existing app, auto-republishes to their subdomain
 
 ## AI Model Tiers
 - **Starter (Free)**: gpt-4.1-nano, 16k max tokens - basic code generation
