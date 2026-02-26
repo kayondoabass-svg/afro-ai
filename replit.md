@@ -1,7 +1,7 @@
 # Afro AI
 
 ## Overview
-Afro AI is a platform that helps African creators build websites and mobile apps and launch them to the App Store and Google Play Store. It features an AI-powered chat assistant, project management, and a payment system (Pesapal).
+Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a registered business in Kampala, Uganda. It is a platform that helps African creators build websites and mobile apps and launch them to the App Store and Google Play Store. It features an AI-powered chat assistant, project management, and a payment system (Pesapal).
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui

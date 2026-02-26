@@ -68,7 +68,7 @@ export default function CookiePolicyPage() {
       </main>
 
       <footer className="border-t py-8 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Afro AI. All rights reserved. Made with love for Africa.</p>
+        <p>&copy; {new Date().getFullYear()} KEYO TECHNOLOGIES. All rights reserved. Afro AI — Made with love for Africa.</p>
       </footer>
     </div>
   );

@@ -3,9 +3,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { useLanguage } from "@/hooks/use-language";
-import { ArrowLeft, Users, Target, Heart, Globe } from "lucide-react";
+import { ArrowLeft, Users, Target, Heart, Globe, Building2 } from "lucide-react";
 import { Link } from "wouter";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
+import registrationCert from "@assets/IMG_5870_1772110983132.jpeg";
 
 export default function AboutPage() {
   const { t } = useLanguage();
@@ -40,7 +41,7 @@ export default function AboutPage() {
               About <span className="text-primary">Afro AI</span>
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              A registered business in the Pearl of Africa, Uganda — and the first AI platform in Africa dedicated to powering startups across the continent.
+              A product of <strong className="text-foreground">KEYO TECHNOLOGIES</strong>, a registered business in the Pearl of Africa, Uganda — and the first AI platform in Africa dedicated to powering startups across the continent.
             </p>
             <p className="text-primary font-serif text-xl italic">"The Africa We Want"</p>
           </div>
@@ -52,7 +53,7 @@ export default function AboutPage() {
                 Our Mission
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Afro AI is a registered business in Uganda, the Pearl of Africa, and the first AI platform on the continent built specifically to empower African creators. We are breaking down the barriers to technology by providing an AI-powered platform that lets anyone — regardless of technical background — build professional websites and mobile apps.
+                Afro AI is a product of KEYO TECHNOLOGIES, a registered business in Uganda (Registration No. 80030812159711), the Pearl of Africa. We are the first AI platform on the continent built specifically to empower African creators. We are breaking down the barriers to technology by providing an AI-powered platform that lets anyone — regardless of technical background — build professional websites and mobile apps.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 Our AI assistant understands the unique needs of African businesses and communities. From local restaurants in Lagos to healthcare startups in Nairobi, from fashion brands in Accra to tech companies in Johannesburg — we empower creators across the continent to bring their ideas to life.
@@ -111,8 +112,28 @@ export default function AboutPage() {
                 Our Team
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Afro AI is founded and led by a passionate team of African technologists, designers, and entrepreneurs who believe in the transformative power of technology. Headquartered in Uganda, the Pearl of Africa, our team brings together diverse perspectives and deep understanding of the African tech landscape. As the first AI platform in Africa, we are pioneering the future of technology on the continent.
+                Afro AI is built by KEYO TECHNOLOGIES, founded and led by a passionate team of African technologists, designers, and entrepreneurs who believe in the transformative power of technology. Headquartered in Kampala, Uganda, the Pearl of Africa, our team brings together diverse perspectives and deep understanding of the African tech landscape. As the first AI platform in Africa, we are pioneering the future of technology on the continent.
               </p>
+            </section>
+
+            <section className="space-y-4">
+              <h2 className="font-serif text-2xl font-bold flex items-center gap-2">
+                <Building2 className="w-6 h-6 text-primary" />
+                Registered Business
+              </h2>
+              <p className="text-muted-foreground leading-relaxed">
+                Afro AI is a product of <strong className="text-foreground">KEYO TECHNOLOGIES</strong>, a duly registered business under the Business Names Registration Act of Uganda, Registration No. <strong className="text-foreground">80030812159711</strong>. Registered on the 26th day of February, 2026 in Kampala, Uganda.
+              </p>
+              <Card className="overflow-hidden">
+                <CardContent className="p-4">
+                  <img
+                    src={registrationCert}
+                    alt="KEYO TECHNOLOGIES - Certificate of Registration, Republic of Uganda"
+                    className="w-full rounded-lg"
+                    data-testid="img-registration-certificate"
+                  />
+                </CardContent>
+              </Card>
             </section>
 
             <div className="text-center pt-8">
@@ -127,7 +148,7 @@ export default function AboutPage() {
       </main>
 
       <footer className="border-t py-8 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Afro AI. All rights reserved. Made with love for Africa.</p>
+        <p>&copy; {new Date().getFullYear()} KEYO TECHNOLOGIES. All rights reserved. Afro AI — Made with love for Africa.</p>
       </footer>
     </div>
   );

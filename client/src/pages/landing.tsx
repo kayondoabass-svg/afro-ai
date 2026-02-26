@@ -464,7 +464,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="border-t mt-8 pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; {new Date().getFullYear()} Afro AI. {t("footer.copyright")}</p>
+            <p>&copy; {new Date().getFullYear()} KEYO TECHNOLOGIES. Afro AI — {t("footer.copyright")}</p>
           </div>
         </div>
       </footer>
