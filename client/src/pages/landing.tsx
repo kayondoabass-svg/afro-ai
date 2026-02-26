@@ -16,6 +16,11 @@ import {
   Code2,
   Store,
   Check,
+  Star,
+  Users,
+  CreditCard,
+  Wifi,
+  ScanSearch,
 } from "lucide-react";
 import heroBg from "@assets/hero-bg.png";
 import workspaceImg from "@assets/workspace.png";
@@ -95,9 +100,9 @@ export default function LandingPage() {
                 {t("hero.badge")}
               </Badge>
 
-              <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight text-white">
+              <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight text-white animate-fade-in-up">
                 {t("hero.title1")}
-                <span className="text-primary block mt-1">{t("hero.title2")}</span>
+                <span className="animate-gradient-text block mt-1">{t("hero.title2")}</span>
               </h1>
 
               <p className="text-lg text-gray-300 max-w-lg leading-relaxed">
@@ -268,6 +273,41 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section className="py-20 bg-card/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <Badge variant="outline" className="mb-4">
+              <Zap className="w-3 h-3 mr-1" />
+              How It Works
+            </Badge>
+            <h2 className="font-serif text-3xl md:text-4xl font-bold mb-4">
+              Three Steps to
+              <span className="animate-gradient-text"> Your Dream App</span>
+            </h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+            {[
+              { step: "01", icon: MessageSquare, title: "Describe Your Vision", desc: "Tell our AI what you want to build. Describe your website or app in plain language." },
+              { step: "02", icon: Code2, title: "AI Builds It Live", desc: "Watch as AI generates your complete website or app in real-time with live preview." },
+              { step: "03", icon: Rocket, title: "Publish Instantly", desc: "Launch your creation to the world with one click on your own .afroaigroup.com domain." },
+            ].map((item, i) => (
+              <div key={i} className="text-center space-y-4 animate-shimmer rounded-xl p-6">
+                <div className="relative inline-flex">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto animate-pulse-gold">
+                    <item.icon className="w-7 h-7 text-primary" />
+                  </div>
+                  <span className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center" data-testid={`text-step-${item.step}`}>
+                    {item.step}
+                  </span>
+                </div>
+                <h3 className="text-lg font-semibold" data-testid={`text-howit-title-${i}`}>{item.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="py-20 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-accent/5" />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -289,20 +329,60 @@ export default function LandingPage() {
               </p>
               <div className="space-y-3">
                 {[
-                  t("africa.item1"),
-                  t("africa.item2"),
-                  t("africa.item3"),
-                  t("africa.item4"),
+                  { text: t("africa.item1"), icon: Globe },
+                  { text: t("africa.item2"), icon: Users },
+                  { text: t("africa.item3"), icon: CreditCard },
+                  { text: t("africa.item4"), icon: Wifi },
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
-                    <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                      <Check className="w-3 h-3 text-primary" />
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <item.icon className="w-4 h-4 text-primary" />
                     </div>
-                    <span className="text-sm">{item}</span>
+                    <span className="text-sm font-medium">{item.text}</span>
                   </div>
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 bg-card/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="font-serif text-2xl md:text-3xl font-bold mb-3">
+              Trusted by African Creators
+            </h2>
+            <p className="text-muted-foreground">Hear from creators across the continent</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              { name: "Amara Osei", country: "Ghana", text: "I built and launched my business website in under 30 minutes. Afro AI understands what African businesses need.", rating: 5 },
+              { name: "Kwame Mensah", country: "Kenya", text: "The Mobile Money payment integration is a game changer. Finally, a platform that works with how Africa pays.", rating: 5 },
+              { name: "Fatima Diallo", country: "Senegal", text: "I had no coding experience. Now I have a professional website for my fashion brand live on the internet.", rating: 5 },
+            ].map((review, i) => (
+              <Card key={i} className="hover-elevate" data-testid={`card-testimonial-${i}`}>
+                <CardContent className="p-6 space-y-4">
+                  <div className="flex gap-0.5">
+                    {Array.from({ length: review.rating }).map((_, j) => (
+                      <Star key={j} className="w-4 h-4 fill-primary text-primary" />
+                    ))}
+                  </div>
+                  <p className="text-sm text-muted-foreground leading-relaxed italic">
+                    "{review.text}"
+                  </p>
+                  <div className="flex items-center gap-2 pt-2 border-t">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
+                      {review.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{review.name}</p>
+                      <p className="text-xs text-muted-foreground">{review.country}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
@@ -405,21 +485,33 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="about" className="py-20 bg-card/50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-8">
-          <h2 className="font-serif text-3xl md:text-4xl font-bold">
+      <section id="about" className="py-24 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-background via-primary/5 to-background" />
+        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-8">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm font-medium text-primary">
+            <Star className="w-4 h-4 fill-primary" />
+            The Africa We Want
+          </div>
+          <h2 className="font-serif text-3xl md:text-5xl font-bold">
             {t("quote.line1")}
-            <span className="text-primary block mt-2">{t("quote.line2")}</span>
+            <span className="animate-gradient-text block mt-2">{t("quote.line2")}</span>
           </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-lg max-w-2xl mx-auto leading-relaxed">
             {t("quote.desc")}
           </p>
-          <a href={loginUrl}>
-            <Button size="lg" className="mt-4" data-testid="button-join-movement">
-              {t("quote.cta")}
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </a>
+          <div className="flex flex-wrap justify-center gap-4 pt-4">
+            <a href={loginUrl}>
+              <Button size="lg" className="animate-pulse-gold" data-testid="button-join-movement">
+                {t("quote.cta")}
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </a>
+            <a href="#pricing">
+              <Button size="lg" variant="outline" data-testid="button-see-plans">
+                View Plans
+              </Button>
+            </a>
+          </div>
         </div>
       </section>
 

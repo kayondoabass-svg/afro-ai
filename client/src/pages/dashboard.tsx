@@ -35,6 +35,10 @@ import {
   Trash2,
   ArrowRight,
   Sparkles,
+  Lightbulb,
+  Rocket,
+  MessageSquare,
+  ScanSearch,
 } from "lucide-react";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 import {
@@ -264,21 +268,60 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="p-12 text-center space-y-4">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                  <img src={afroLogo} alt="Afro AI" className="w-10 h-10 object-contain" />
+            <div className="space-y-6">
+              <Card className="animate-shimmer">
+                <CardContent className="p-12 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto animate-pulse-gold">
+                    <img src={afroLogo} alt="Afro AI" className="w-10 h-10 object-contain" />
+                  </div>
+                  <h3 className="text-lg font-semibold">{t("dashboard.noProjects")}</h3>
+                  <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                    {t("dashboard.noProjectsDesc")}
+                  </p>
+                  <Button onClick={() => setShowNewProject(true)} data-testid="button-create-first">
+                    <Plus className="w-4 h-4" />
+                    {t("dashboard.createFirst")}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-primary" />
+                  Quick Start Ideas
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {[
+                    { icon: Globe, title: "Business Website", desc: "Professional website for your business with contact form and services", type: "website" },
+                    { icon: Smartphone, title: "Mobile App", desc: "Build a mobile-friendly app for your customers", type: "mobile_app" },
+                    { icon: Rocket, title: "Portfolio Site", desc: "Showcase your work with a stunning portfolio website", type: "website" },
+                    { icon: MessageSquare, title: "Blog Platform", desc: "Start a blog to share your ideas with the world", type: "website" },
+                    { icon: ScanSearch, title: "E-Commerce Store", desc: "Sell products online with a beautiful storefront", type: "website" },
+                    { icon: Sparkles, title: "Landing Page", desc: "High-converting landing page for your product launch", type: "website" },
+                  ].map((idea, i) => (
+                    <Card
+                      key={i}
+                      className="hover-elevate cursor-pointer group"
+                      onClick={() => {
+                        navigate(`/chat?project=${encodeURIComponent(idea.title)}&type=${idea.type}&description=${encodeURIComponent(idea.desc)}`);
+                      }}
+                      data-testid={`card-quickstart-${i}`}
+                    >
+                      <CardContent className="p-4 flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <idea.icon className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{idea.title}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{idea.desc}</p>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-1" />
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
-                <h3 className="text-lg font-semibold">{t("dashboard.noProjects")}</h3>
-                <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                  {t("dashboard.noProjectsDesc")}
-                </p>
-                <Button onClick={() => setShowNewProject(true)} data-testid="button-create-first">
-                  <Plus className="w-4 h-4" />
-                  {t("dashboard.createFirst")}
-                </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
         </div>
       </div>

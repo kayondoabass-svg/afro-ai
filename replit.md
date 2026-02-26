@@ -20,6 +20,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - `server/cloudflare.ts` - Cloudflare DNS API service for subdomain management
 - `server/pesapal.ts` - Pesapal payment gateway integration (API 3.0)
 - `server/db.ts` - Database connection
+- `server/gemini.ts` - Google Gemini AI image analysis service
 - `server/replit_integrations/` - Auth, Chat, Image integrations
 - `shared/schema.ts` - Drizzle schemas (users, sessions, projects, conversations, messages, publishedApps)
 - `shared/models/` - Auth and Chat model definitions
@@ -27,9 +28,10 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 
 ## Key Features
 - Dark mode default with light mode toggle (African-inspired gold/amber theme)
-- Landing page with African heritage imagery and slogans
-- Dashboard with project management (create, view, delete)
+- Landing page with African heritage imagery, "How It Works" steps, testimonials, animated gradient text
+- Dashboard with project management (create, view, delete) and quick-start ideas for new users
 - AI-powered code generator with live preview (split-view: chat + iframe)
+- Image scanning/recognition via Google Gemini (ScanSearch button in AI chat)
 - Project continuity: conversations linked to projects via projectId, "Open & Build" resumes last conversation
 - File attachments in AI chat (photos, videos, screenshots) with OpenAI vision support
 - Tiered AI models by plan: Starter=gpt-4.1-nano, Pro=gpt-4.1-mini, Business=gpt-4.1
@@ -64,6 +66,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - `POST /api/conversations/:id/messages` - Send message with optional attachments (streaming SSE, vision support)
 - `DELETE /api/conversations/:id` - Delete conversation
 - `POST /api/upload` - Upload files (images/videos, max 10MB, auth required)
+- `POST /api/analyze-image` - Analyze image with Google Gemini AI (auth required, body: imageBase64, mimeType, prompt)
 - `GET /api/published-apps` - Get user's published apps (auth required)
 - `POST /api/publish` - Publish app to subdomain (auth required, body: subdomain, htmlContent, title)
 - `DELETE /api/published-apps/:id` - Delete published app and DNS record (auth required)

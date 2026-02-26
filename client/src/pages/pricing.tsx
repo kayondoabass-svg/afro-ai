@@ -7,7 +7,7 @@ import { useLanguage } from "@/hooks/use-language";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Check, Rocket, Globe, Loader2 } from "lucide-react";
+import { Check, Rocket, Globe, Loader2, Shield, CreditCard, Smartphone, Zap } from "lucide-react";
 import { africanCountries, formatLocalPrice, formatUsdPrice, type AfricanCountry } from "@shared/currencies";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
@@ -235,15 +235,30 @@ export default function PricingPage() {
           </Card>
         </div>
 
-        <Card>
-          <CardContent className="p-8 text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-              <img src={afroLogo} alt="Afro AI" className="w-8 h-8 object-contain" />
+        <Card className="animate-shimmer">
+          <CardContent className="p-8 space-y-6">
+            <div className="text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                <Shield className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold">{t("pricingPage.pesapalTitle")}</h3>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                {t("pricingPage.pesapalDesc")}
+              </p>
             </div>
-            <h3 className="text-lg font-semibold">{t("pricingPage.pesapalTitle")}</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              {t("pricingPage.pesapalDesc")}
-            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
+              {[
+                { icon: Smartphone, label: "Mobile Money" },
+                { icon: CreditCard, label: "Visa / Mastercard" },
+                { icon: Globe, label: "Bank Transfer" },
+                { icon: Zap, label: "Instant Activation" },
+              ].map((method, i) => (
+                <div key={i} className="flex flex-col items-center gap-2 p-3 rounded-lg bg-card/80 border" data-testid={`text-payment-method-${i}`}>
+                  <method.icon className="w-5 h-5 text-primary" />
+                  <span className="text-xs font-medium text-muted-foreground text-center">{method.label}</span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>

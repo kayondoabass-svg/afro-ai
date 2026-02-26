@@ -297,10 +297,85 @@
   50% { opacity: 0.8; }
 }
 
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes fade-in-up {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 0 0 hsla(43, 96%, 56%, 0.4); }
+  50% { box-shadow: 0 0 0 8px hsla(43, 96%, 56%, 0); }
+}
+
 .animate-float {
   animation: float 6s ease-in-out infinite;
 }
 
 .animate-glow-pulse {
   animation: glow-pulse 3s ease-in-out infinite;
+}
+
+.animate-gradient-text {
+  background: linear-gradient(135deg, hsl(43, 96%, 40%), hsl(30, 90%, 38%), hsl(43, 96%, 48%), hsl(43, 96%, 40%));
+  background-size: 300% 300%;
+  animation: gradient-shift 4s ease-in-out infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dark .animate-gradient-text {
+  background: linear-gradient(135deg, hsl(43, 96%, 56%), hsl(30, 90%, 55%), hsl(43, 96%, 70%), hsl(43, 96%, 56%));
+  background-size: 300% 300%;
+  animation: gradient-shift 4s ease-in-out infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.4s ease-out forwards;
+}
+
+.animate-pulse-gold {
+  animation: pulse-gold 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  position: relative;
+}
+
+.animate-shimmer::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: -1;
+  background: linear-gradient(90deg, transparent, hsla(43, 96%, 56%, 0.06), transparent);
+  animation: shimmer 2.5s ease-in-out infinite;
+}
+
+html {
+  scroll-behavior: smooth;
 }

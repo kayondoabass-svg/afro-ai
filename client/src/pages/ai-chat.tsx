@@ -1403,28 +1403,30 @@ export default function AIChatPage() {
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
-                    "Build me a restaurant website",
-                    "Create a fitness tracking app",
-                    "Design a portfolio website",
-                    "Make an e-commerce store",
+                    { text: "Build me a restaurant website with menu and booking", icon: Globe },
+                    { text: "Create a fitness tracking app with progress charts", icon: Smartphone },
+                    { text: "Design a portfolio website for a photographer", icon: Eye },
+                    { text: "Make an e-commerce store with product catalog", icon: Code2 },
                   ].map((suggestion, i) => (
                     <Card
                       key={i}
-                      className="hover-elevate cursor-pointer"
+                      className="hover-elevate cursor-pointer group"
                       onClick={async () => {
                         try {
-                          const res = await apiRequest("POST", "/api/conversations", { title: suggestion });
+                          const res = await apiRequest("POST", "/api/conversations", { title: suggestion.text });
                           const convo = await res.json();
                           queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
                           setActiveConversation(convo.id);
-                          setTimeout(() => setInput(suggestion), 100);
+                          setTimeout(() => setInput(suggestion.text), 100);
                         } catch {}
                       }}
                       data-testid={`card-suggestion-${i}`}
                     >
                       <div className="p-3 text-sm text-muted-foreground flex items-center gap-2">
-                        <Code2 className="w-4 h-4 text-primary flex-shrink-0" />
-                        {suggestion}
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <suggestion.icon className="w-4 h-4 text-primary" />
+                        </div>
+                        <span>{suggestion.text}</span>
                       </div>
                     </Card>
                   ))}
