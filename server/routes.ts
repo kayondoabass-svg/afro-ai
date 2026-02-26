@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { insertProjectSchema } from "@shared/schema";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
 import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./pesapal";
+import { analyzeImage } from "./gemini";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -96,6 +97,26 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error uploading file:", error);
       res.status(500).json({ message: error.message || "Failed to upload file" });
+    }
+  });
+
+  app.post("/api/analyze-image", isAuthenticated, async (req: any, res) => {
+    try {
+      const { imageBase64, mimeType, prompt } = req.body;
+
+      if (!imageBase64 || !mimeType) {
+        return res.status(400).json({ message: "imageBase64 and mimeType are required" });
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ message: "Image analysis service is not configured" });
+      }
+
+      const analysis = await analyzeImage(imageBase64, mimeType, prompt || undefined);
+      res.json({ analysis });
+    } catch (error: any) {
+      console.error("Error analyzing image:", error);
+      res.status(500).json({ message: error.message || "Failed to analyze image" });
     }
   });
 

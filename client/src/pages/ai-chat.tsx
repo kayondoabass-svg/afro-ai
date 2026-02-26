@@ -37,6 +37,8 @@ import {
   Tablet,
   Smartphone,
   RefreshCw,
+  ScanSearch,
+  Camera,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -601,9 +603,14 @@ export default function AIChatPage() {
   const [projectInitialized, setProjectInitialized] = useState(false);
   const [autoPublishStatus, setAutoPublishStatus] = useState<AutoPublishStatus>("idle");
   const [testResult, setTestResult] = useState<CodeTestResult | null>(null);
+  const [showImageAnalysis, setShowImageAnalysis] = useState(false);
+  const [analyzingImage, setAnalyzingImage] = useState(false);
+  const [imageAnalysisResult, setImageAnalysisResult] = useState<string | null>(null);
+  const [analysisImagePreview, setAnalysisImagePreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scanFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (projectInitialized) return;
@@ -751,6 +758,52 @@ export default function AIChatPage() {
     URL.revokeObjectURL(url);
     toast({ title: "Downloaded!", description: "Your project has been downloaded as an HTML file." });
   }, [previewCode, toast]);
+
+  const handleScanImage = async (file: File) => {
+    setAnalyzingImage(true);
+    setImageAnalysisResult(null);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      setAnalysisImagePreview(dataUrl);
+
+      const base64 = dataUrl.split(",")[1];
+      const mimeType = file.type || "image/jpeg";
+
+      try {
+        const res = await fetch("/api/analyze-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ imageBase64: base64, mimeType }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.message || "Analysis failed");
+        }
+
+        const data = await res.json();
+        setImageAnalysisResult(data.analysis);
+      } catch (error: any) {
+        toast({ title: "Analysis Error", description: error.message, variant: "destructive" });
+        setImageAnalysisResult("Failed to analyze the image. Please try again.");
+      } finally {
+        setAnalyzingImage(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleScanFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setShowImageAnalysis(true);
+      handleScanImage(file);
+    }
+    if (scanFileInputRef.current) scanFileInputRef.current.value = "";
+  };
 
   const runAutoTestAndPublish = async (code: string) => {
     setAutoPublishStatus("testing");
@@ -1276,6 +1329,15 @@ export default function AIChatPage() {
                       onChange={handleFileSelect}
                       data-testid="input-file-upload"
                     />
+                    <input
+                      ref={scanFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={handleScanFileSelect}
+                      data-testid="input-scan-upload"
+                    />
                     <Button
                       size="icon"
                       variant="ghost"
@@ -1288,6 +1350,21 @@ export default function AIChatPage() {
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         <Paperclip className="w-4 h-4" />
+                      )}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => scanFileInputRef.current?.click()}
+                      disabled={isStreaming || analyzingImage}
+                      data-testid="button-scan-image"
+                      title="Scan & identify an image (Google Lens-like)"
+                      className="text-primary"
+                    >
+                      {analyzingImage ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ScanSearch className="w-4 h-4" />
                       )}
                     </Button>
                     <Textarea
@@ -1385,6 +1462,65 @@ export default function AIChatPage() {
           onOpenChange={setShowPublishFromChat}
         />
       )}
+      <Dialog open={showImageAnalysis} onOpenChange={(open) => {
+        setShowImageAnalysis(open);
+        if (!open) {
+          setImageAnalysisResult(null);
+          setAnalysisImagePreview(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ScanSearch className="w-5 h-5 text-primary" />
+              Image Analysis
+            </DialogTitle>
+            <DialogDescription>
+              AI-powered image recognition powered by Google Gemini
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {analysisImagePreview && (
+              <div className="rounded-lg overflow-hidden border bg-muted/50">
+                <img
+                  src={analysisImagePreview}
+                  alt="Scanned image"
+                  className="w-full max-h-[250px] object-contain"
+                  data-testid="img-analysis-preview"
+                />
+              </div>
+            )}
+            {analyzingImage && (
+              <div className="flex items-center gap-3 p-4 bg-card/50 rounded-lg border">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Analyzing image...</p>
+                  <p className="text-xs text-muted-foreground">Identifying objects, text, and details</p>
+                </div>
+              </div>
+            )}
+            {imageAnalysisResult && (
+              <div className="prose prose-sm dark:prose-invert max-w-none p-4 bg-card/50 rounded-lg border" data-testid="text-analysis-result">
+                <div className="whitespace-pre-wrap text-sm">{imageAnalysisResult}</div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => scanFileInputRef.current?.click()}
+              disabled={analyzingImage}
+              data-testid="button-scan-another"
+            >
+              <Camera className="w-4 h-4 mr-1" />
+              Scan Another
+            </Button>
+            <Button onClick={() => setShowImageAnalysis(false)} data-testid="button-close-analysis">
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
