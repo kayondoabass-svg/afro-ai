@@ -1,7 +1,7 @@
 # Afro AI
 
 ## Overview
-Afro AI is a platform that helps African creators build websites and mobile apps and launch them to the App Store and Google Play Store. It features an AI-powered chat assistant, project management, and a payment system (Flutterwave - coming soon).
+Afro AI is a platform that helps African creators build websites and mobile apps and launch them to the App Store and Google Play Store. It features an AI-powered chat assistant, project management, and a payment system (Pesapal).
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
@@ -9,7 +9,7 @@ Afro AI is a platform that helps African creators build websites and mobile apps
 - **Database**: PostgreSQL with Drizzle ORM
 - **Auth**: Google OAuth 2.0 (passport-google-oauth20)
 - **AI**: OpenAI via Replit AI Integrations (tiered: nano/mini/4.1 by plan)
-- **Payments**: Flutterwave (coming soon)
+- **Payments**: Pesapal (Mobile Money, Visa, Mastercard, bank transfers)
 - **Routing**: wouter (frontend), Express (backend)
 
 ## Project Structure
@@ -18,10 +18,12 @@ Afro AI is a platform that helps African creators build websites and mobile apps
 - `server/routes.ts` - API routes (projects CRUD, publishing)
 - `server/storage.ts` - Database storage layer
 - `server/cloudflare.ts` - Cloudflare DNS API service for subdomain management
+- `server/pesapal.ts` - Pesapal payment gateway integration (API 3.0)
 - `server/db.ts` - Database connection
 - `server/replit_integrations/` - Auth, Chat, Image integrations
 - `shared/schema.ts` - Drizzle schemas (users, sessions, projects, conversations, messages, publishedApps)
 - `shared/models/` - Auth and Chat model definitions
+- `shared/currencies.ts` - All 54 African countries with currency codes, symbols, and exchange rates
 
 ## Key Features
 - Dark mode default with light mode toggle (African-inspired gold/amber theme)
@@ -33,7 +35,7 @@ Afro AI is a platform that helps African creators build websites and mobile apps
 - Tiered AI models by plan: Starter=gpt-4.1-nano, Pro=gpt-4.1-mini, Business=gpt-4.1
 - App publishing to {name}.afroaigroup.com via Cloudflare DNS + Express subdomain routing
 - Deployments page: detailed view of all published apps with URL, visibility, status, copy/delete
-- Pricing page with Flutterwave integration (coming soon)
+- Pricing page with Pesapal payment integration
 - Responsive design with sidebar navigation
 
 ## App Publishing
@@ -67,14 +69,16 @@ Afro AI is a platform that helps African creators build websites and mobile apps
 - `GET /api/check-subdomain/:subdomain` - Check if subdomain is available
 - `GET /site/:subdomain` - Serve published app HTML
 - `GET /api/referral` - Get user's referral code, link, stats, and referral list (auth required)
+- `POST /api/subscribe` - Create Pesapal payment order, returns redirect URL (auth required)
+- `GET /api/pesapal/ipn` - Pesapal IPN callback (processes payment, upgrades plan)
+- `GET /api/pesapal/callback` - User redirect after payment completion
 - Auth routes: `/api/login`, `/api/logout`, `/api/auth/user`, `/api/callback`
 
 ## User Preferences
 - Dark mode as default
 - African-inspired color scheme (gold primary, warm tones)
-- Flutterwave for payments in Uganda
-- Payments section marked as "Coming Soon" for now
-- FLW_SECRET_KEY, FLW_PUBLIC_KEY, FLW_SECRET_HASH needed when ready
+- Pesapal for payments across Africa (Mobile Money, Visa, Mastercard, bank transfers)
+- PESAPAL_CONSUMER_KEY, PESAPAL_CONSUMER_SECRET needed for payment processing
 
 ## Founder / Admin System
 - Founder email: kayondoabass@gmail.com (hardcoded in server for security)
@@ -105,3 +109,6 @@ Afro AI is a platform that helps African creators build websites and mobile apps
 - AI_INTEGRATIONS_OPENAI_BASE_URL - AI endpoint (auto-configured)
 - CLOUDFLARE_API_TOKEN - Cloudflare API token for DNS management
 - CLOUDFLARE_ZONE_ID - Cloudflare zone ID for afroaigroup.com
+- PESAPAL_CONSUMER_KEY - Pesapal merchant consumer key
+- PESAPAL_CONSUMER_SECRET - Pesapal merchant consumer secret
+- PESAPAL_ENV - "production" or "sandbox" (defaults to sandbox)

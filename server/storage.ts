@@ -35,6 +35,8 @@ export interface IStorage {
   updateReferralStatus(referredId: string, status: string, commissionAmount: number, paidPlan: string): Promise<void>;
   addReferralCredit(userId: string, amount: number): Promise<void>;
   getUserReferralStats(userId: string): Promise<{ totalReferrals: number; paidReferrals: number; totalEarnings: number; credit: number }>;
+  updateUserPlan(userId: string, plan: string): Promise<void>;
+  getUser(userId: string): Promise<any | undefined>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -161,6 +163,14 @@ class DatabaseStorage implements IStorage {
       totalEarnings,
       credit: user?.referralCredit || 0,
     };
+  }
+  async updateUserPlan(userId: string, plan: string): Promise<void> {
+    await db.update(users).set({ plan, updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async getUser(userId: string): Promise<any | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    return user;
   }
 }
 

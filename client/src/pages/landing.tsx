@@ -400,7 +400,7 @@ export default function LandingPage() {
           </div>
 
           <p className="text-center text-sm text-muted-foreground mt-8">
-            {t("pricing.flutterwave")}
+            {t("pricing.pesapal")}
           </p>
         </div>
       </section>

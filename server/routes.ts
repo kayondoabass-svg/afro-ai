@@ -5,10 +5,12 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { storage } from "./storage";
 import { insertProjectSchema } from "@shared/schema";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
+import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./pesapal";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import express from "express";
+import crypto from "crypto";
 
 const uploadDir = path.join(process.cwd(), "public", "uploads");
 if (!fs.existsSync(uploadDir)) {
@@ -335,6 +337,163 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching published apps:", error);
       res.status(500).json({ message: "Failed to fetch published apps" });
+    }
+  });
+
+  let cachedIpnId: string | null = null;
+
+  const PLAN_PRICES_USD: Record<string, number> = { pro: 9, business: 29 };
+
+  app.post("/api/subscribe", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { plan, countryCode, firstName, lastName, phoneNumber } = req.body;
+
+      if (!plan) {
+        return res.status(400).json({ message: "Plan is required" });
+      }
+
+      const validPlans = ["pro", "business"];
+      if (!validPlans.includes(plan)) {
+        return res.status(400).json({ message: "Invalid plan. Must be 'pro' or 'business'" });
+      }
+
+      const userEmail = req.user.claims.email || req.user.claims.preferred_username;
+      if (!userEmail) {
+        return res.status(400).json({ message: "User email not available" });
+      }
+
+      const usdAmount = PLAN_PRICES_USD[plan];
+      let currency = "USD";
+      let amount = usdAmount;
+
+      if (countryCode) {
+        const { getCurrencyForCountry, convertUsdToLocal } = await import("@shared/currencies");
+        const currencyInfo = getCurrencyForCountry(countryCode);
+        if (currencyInfo) {
+          currency = currencyInfo.currencyCode;
+          amount = Math.round(convertUsdToLocal(usdAmount, countryCode));
+        }
+      }
+
+      const baseUrl = process.env.BASE_URL || `https://${req.headers.host}`;
+
+      if (!cachedIpnId) {
+        try {
+          cachedIpnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`);
+        } catch (err) {
+          console.error("Failed to register IPN URL:", err);
+          return res.status(500).json({ message: "Payment service configuration error" });
+        }
+      }
+
+      const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
+
+      const order = await submitOrder({
+        id: merchantReference,
+        currency,
+        amount,
+        description: `Afro AI ${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan Subscription`,
+        callback_url: `${baseUrl}/api/pesapal/callback`,
+        notification_id: cachedIpnId,
+        billing_address: {
+          email_address: userEmail,
+          phone_number: phoneNumber || undefined,
+          country_code: countryCode || undefined,
+          first_name: firstName || undefined,
+          last_name: lastName || undefined,
+        },
+      });
+
+      res.json({
+        redirectUrl: order.redirect_url,
+        orderTrackingId: order.order_tracking_id,
+        merchantReference: order.merchant_reference,
+      });
+    } catch (error: any) {
+      console.error("Error creating subscription:", error);
+      res.status(500).json({ message: error.message || "Failed to create subscription" });
+    }
+  });
+
+  app.get("/api/pesapal/ipn", async (req, res) => {
+    try {
+      const { OrderTrackingId, OrderMerchantReference, OrderNotificationType } = req.query;
+
+      if (!OrderTrackingId || !OrderMerchantReference) {
+        return res.status(400).json({ message: "Missing required parameters" });
+      }
+
+      const trackingId = OrderTrackingId as string;
+      const merchantRef = OrderMerchantReference as string;
+
+      console.log(`IPN received: trackingId=${trackingId}, merchantRef=${merchantRef}, type=${OrderNotificationType}`);
+
+      const status = await getTransactionStatus(trackingId);
+
+      if (isPaymentComplete(status)) {
+        const parts = merchantRef.split("-");
+        if (parts.length >= 2) {
+          const plan = parts[0];
+          const userId = parts.slice(1, -1).join("-");
+          await storage.updateUserPlan(userId, plan);
+          console.log(`User ${userId} upgraded to ${plan} plan via IPN`);
+
+          try {
+            const user = await storage.getUser(userId);
+            if (user?.referredBy) {
+              const referrer = await storage.getUserByReferralCode(user.referredBy);
+              if (referrer) {
+                const commission = Math.round(status.amount * 0.1);
+                await storage.updateReferralStatus(userId, "paid", commission, plan);
+                await storage.addReferralCredit(referrer.id, commission);
+              }
+            }
+          } catch (refErr) {
+            console.error("Error processing referral commission:", refErr);
+          }
+        }
+      } else if (isPaymentFailed(status)) {
+        console.log(`Payment failed for ${merchantRef}: ${status.payment_status_description}`);
+      }
+
+      res.json({ orderNotificationType: OrderNotificationType, orderTrackingId: trackingId, orderMerchantReference: merchantRef, status: 200 });
+    } catch (error: any) {
+      console.error("Error processing IPN:", error);
+      res.status(500).json({ message: error.message || "Failed to process IPN" });
+    }
+  });
+
+  app.get("/api/pesapal/callback", async (req, res) => {
+    try {
+      const { OrderTrackingId, OrderMerchantReference } = req.query;
+
+      if (!OrderTrackingId) {
+        return res.redirect("/?payment=error&reason=missing_tracking_id");
+      }
+
+      const trackingId = OrderTrackingId as string;
+      const merchantRef = (OrderMerchantReference as string) || "";
+
+      const status = await getTransactionStatus(trackingId);
+
+      if (isPaymentComplete(status)) {
+        const parts = merchantRef.split("-");
+        if (parts.length >= 2) {
+          const plan = parts[0];
+          const userId = parts.slice(1, -1).join("-");
+          await storage.updateUserPlan(userId, plan);
+          console.log(`User ${userId} upgraded to ${plan} plan via callback`);
+        }
+        return res.redirect(`/?payment=success&plan=${encodeURIComponent(parts[0] || "pro")}`);
+      } else if (isPaymentFailed(status)) {
+        return res.redirect(`/?payment=failed&reason=${encodeURIComponent(status.payment_status_description || "Payment failed")}`);
+      } else {
+        return res.redirect(`/?payment=pending&trackingId=${encodeURIComponent(trackingId)}`);
+      }
+    } catch (error: any) {
+      console.error("Error handling payment callback:", error);
+      return res.redirect(`/?payment=error&reason=${encodeURIComponent(error.message || "Unknown error")}`);
     }
   });
 
