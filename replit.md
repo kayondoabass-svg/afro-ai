@@ -48,13 +48,27 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 
 ## App Publishing
 - Users can publish AI-generated apps to `{name}.afroaigroup.com` (unique subdomain per app)
-- Published apps stored in `published_apps` table (htmlContent, subdomain, title)
+- Published apps stored in `published_apps` table (htmlContent, subdomain, title, appStatus, suspendedAt, suspendReason)
 - Name validation: 3-50 chars, lowercase alphanumeric + hyphens, reserved words blocked
 - Subdomain middleware detects `*.afroaigroup.com` requests via Host header and serves published HTML
 - Fallback route: `/site/:subdomain` also serves published apps (path-based access)
 - Publish dialog loads user's existing app from server API (per-user, no localStorage)
-- Users can update or delete their published apps
+- Users can update or delete their published apps (delete includes Cloudflare DNS cleanup)
 - Auto-test & auto-publish: after AI generates code, automated quality checks run (HTML structure, content, broken images); if checks pass and user has existing app, auto-republishes to their subdomain
+
+## App Suspension System
+- Published apps have `appStatus` field: "active" (default) or "suspended"
+- Suspended apps show a branded "Site Suspended" page with reason instead of app content
+- Founder can suspend/reactivate individual apps from Founder Dashboard (Ban/CheckCircle buttons)
+- Founder can suspend/reactivate all apps for a specific user via admin API
+- When a user pays (Pesapal IPN), their suspended apps are automatically reactivated
+- Admin API routes:
+  - `POST /api/admin/published-apps/:id/suspend` - Suspend single app (body: reason)
+  - `POST /api/admin/published-apps/:id/reactivate` - Reactivate single app
+  - `POST /api/admin/users/:userId/suspend-apps` - Suspend all user's apps
+  - `POST /api/admin/users/:userId/reactivate-apps` - Reactivate all user's apps
+- Deployments page shows red "Suspended" status with reason in expanded details
+- Dashboard Live Sites shows red icon for suspended apps
 
 ## AI Model Tiers
 - **Starter (Free)**: gpt-4.1-nano, 16k max tokens - basic code generation

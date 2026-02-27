@@ -289,8 +289,8 @@ export async function registerRoutes(
   app.get("/site/:subdomain", async (req, res) => {
     try {
       const subdomain = req.params.subdomain.toLowerCase().trim();
-      const app = await storage.getPublishedAppBySubdomain(subdomain);
-      if (!app) {
+      const publishedApp = await storage.getPublishedAppBySubdomain(subdomain);
+      if (!publishedApp) {
         return res.status(404).send(`
           <!DOCTYPE html>
           <html><head><title>Not Found</title>
@@ -299,7 +299,37 @@ export async function registerRoutes(
           <body><div class="c"><h1>404</h1><p>This site doesn't exist yet.</p><a href="/" style="color:#d4af37;">Build one with Afro AI</a></div></body></html>
         `);
       }
-      res.send(app.htmlContent);
+      if (publishedApp.appStatus === "suspended") {
+        return res.status(403).send(`
+          <!DOCTYPE html>
+          <html><head><title>Site Suspended</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            *{margin:0;padding:0;box-sizing:border-box;}
+            body{font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0a0a0a;color:#fff;padding:20px;}
+            .container{text-align:center;max-width:480px;}
+            .icon{width:80px;height:80px;border-radius:50%;background:rgba(239,68,68,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;}
+            .icon svg{width:40px;height:40px;color:#ef4444;}
+            h1{font-size:1.75rem;font-weight:700;margin-bottom:12px;color:#ef4444;}
+            p{color:#888;font-size:0.95rem;line-height:1.6;margin-bottom:8px;}
+            .reason{background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:12px 16px;margin:20px 0;font-size:0.85rem;color:#ccc;}
+            a{color:#d4af37;text-decoration:none;font-weight:500;}
+            a:hover{text-decoration:underline;}
+            .footer{margin-top:32px;padding-top:20px;border-top:1px solid #222;font-size:0.8rem;color:#555;}
+          </style></head>
+          <body>
+            <div class="container">
+              <div class="icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg></div>
+              <h1>Site Suspended</h1>
+              <p>This website has been temporarily taken offline.</p>
+              ${publishedApp.suspendReason ? `<div class="reason">${publishedApp.suspendReason}</div>` : ""}
+              <p>If you are the owner of this site, please check your <a href="https://afroaigroup.com">Afro AI dashboard</a> for more details.</p>
+              <div class="footer">Powered by <a href="https://afroaigroup.com">Afro AI</a></div>
+            </div>
+          </body></html>
+        `);
+      }
+      res.send(publishedApp.htmlContent);
     } catch (error) {
       console.error("Error serving published app:", error);
       res.status(500).send("Internal server error");
@@ -362,6 +392,52 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching published apps:", error);
       res.status(500).json({ message: "Failed to fetch published apps" });
+    }
+  });
+
+  app.post("/api/admin/published-apps/:id/suspend", isFounder, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { reason } = req.body;
+      const updated = await storage.suspendPublishedApp(id, reason || "Suspended by administrator");
+      res.json(updated);
+    } catch (error) {
+      console.error("Error suspending app:", error);
+      res.status(500).json({ message: "Failed to suspend app" });
+    }
+  });
+
+  app.post("/api/admin/published-apps/:id/reactivate", isFounder, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = await storage.reactivatePublishedApp(id);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error reactivating app:", error);
+      res.status(500).json({ message: "Failed to reactivate app" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/suspend-apps", isFounder, async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const { reason } = req.body;
+      await storage.suspendAppsByUser(userId, reason || "Account suspension");
+      res.json({ message: "All active apps suspended" });
+    } catch (error) {
+      console.error("Error suspending user apps:", error);
+      res.status(500).json({ message: "Failed to suspend user apps" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/reactivate-apps", isFounder, async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      await storage.reactivateAppsByUser(userId);
+      res.json({ message: "All suspended apps reactivated" });
+    } catch (error) {
+      console.error("Error reactivating user apps:", error);
+      res.status(500).json({ message: "Failed to reactivate user apps" });
     }
   });
 
@@ -462,7 +538,8 @@ export async function registerRoutes(
           const plan = parts[0];
           const userId = parts.slice(1, -1).join("-");
           await storage.updateUserPlan(userId, plan);
-          console.log(`User ${userId} upgraded to ${plan} plan via IPN`);
+          await storage.reactivateAppsByUser(userId);
+          console.log(`User ${userId} upgraded to ${plan} plan via IPN — apps reactivated`);
 
           try {
             const user = await storage.getUser(userId);

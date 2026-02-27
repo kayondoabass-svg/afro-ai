@@ -136,8 +136,8 @@ export default function DeploymentsPage() {
                     <div className="p-6">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-center gap-4 min-w-0">
-                          <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                            <Globe className="w-5 h-5 text-green-500" />
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${app.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
+                            <Globe className={`w-5 h-5 ${app.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
                           </div>
                           <div className="min-w-0">
                             <h3 className="font-semibold text-lg truncate" data-testid={`text-app-title-${app.id}`}>{app.title}</h3>
@@ -169,8 +169,17 @@ export default function DeploymentsPage() {
                           <div className="space-y-1">
                             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</p>
                             <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                              <span className="text-sm font-medium text-green-500" data-testid={`text-status-${app.id}`}>Live</span>
+                              {app.appStatus === "suspended" ? (
+                                <>
+                                  <div className="w-2 h-2 rounded-full bg-red-500" />
+                                  <span className="text-sm font-medium text-red-500" data-testid={`text-status-${app.id}`}>Suspended</span>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                                  <span className="text-sm font-medium text-green-500" data-testid={`text-status-${app.id}`}>Live</span>
+                                </>
+                              )}
                             </div>
                           </div>
                           <div className="space-y-1">
@@ -228,6 +237,15 @@ export default function DeploymentsPage() {
                             <Server className="w-4 h-4 text-primary" />
                             Deployment Details
                           </h4>
+                          {app.appStatus === "suspended" && app.suspendReason && (
+                            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm font-medium text-red-500">Suspended</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">{app.suspendReason}</p>
+                              </div>
+                            </div>
+                          )}
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                             <div className="space-y-1">
                               <p className="text-xs text-muted-foreground">Type</p>

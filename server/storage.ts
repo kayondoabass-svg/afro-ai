@@ -15,6 +15,10 @@ export interface IStorage {
   createPublishedApp(app: InsertPublishedApp): Promise<PublishedApp>;
   updatePublishedApp(id: number, data: Partial<InsertPublishedApp>): Promise<PublishedApp>;
   deletePublishedApp(id: number): Promise<void>;
+  suspendPublishedApp(id: number, reason: string): Promise<PublishedApp>;
+  reactivatePublishedApp(id: number): Promise<PublishedApp>;
+  suspendAppsByUser(userId: string, reason: string): Promise<void>;
+  reactivateAppsByUser(userId: string): Promise<void>;
   getAllUsers(): Promise<any[]>;
   getAllProjects(): Promise<any[]>;
   getAllPublishedApps(): Promise<any[]>;
@@ -79,6 +83,44 @@ class DatabaseStorage implements IStorage {
 
   async deletePublishedApp(id: number): Promise<void> {
     await db.delete(publishedApps).where(eq(publishedApps.id, id));
+  }
+
+  async suspendPublishedApp(id: number, reason: string): Promise<PublishedApp> {
+    const [updated] = await db.update(publishedApps).set({
+      appStatus: "suspended",
+      suspendedAt: new Date(),
+      suspendReason: reason,
+      updatedAt: new Date(),
+    }).where(eq(publishedApps.id, id)).returning();
+    return updated;
+  }
+
+  async reactivatePublishedApp(id: number): Promise<PublishedApp> {
+    const [updated] = await db.update(publishedApps).set({
+      appStatus: "active",
+      suspendedAt: null,
+      suspendReason: null,
+      updatedAt: new Date(),
+    }).where(eq(publishedApps.id, id)).returning();
+    return updated;
+  }
+
+  async suspendAppsByUser(userId: string, reason: string): Promise<void> {
+    await db.update(publishedApps).set({
+      appStatus: "suspended",
+      suspendedAt: new Date(),
+      suspendReason: reason,
+      updatedAt: new Date(),
+    }).where(and(eq(publishedApps.userId, userId), eq(publishedApps.appStatus, "active")));
+  }
+
+  async reactivateAppsByUser(userId: string): Promise<void> {
+    await db.update(publishedApps).set({
+      appStatus: "active",
+      suspendedAt: null,
+      suspendReason: null,
+      updatedAt: new Date(),
+    }).where(and(eq(publishedApps.userId, userId), eq(publishedApps.appStatus, "suspended")));
   }
 
   async getAllUsers(): Promise<any[]> {

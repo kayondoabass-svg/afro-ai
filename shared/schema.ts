@@ -34,6 +34,9 @@ export const publishedApps = pgTable("published_apps", {
   htmlContent: text("html_content").notNull(),
   title: text("title").notNull(),
   cloudflareDnsRecordId: varchar("cloudflare_dns_record_id"),
+  appStatus: varchar("app_status").notNull().default("active"),
+  suspendedAt: timestamp("suspended_at"),
+  suspendReason: text("suspend_reason"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

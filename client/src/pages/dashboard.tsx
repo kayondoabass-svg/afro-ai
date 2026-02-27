@@ -212,8 +212,8 @@ export default function DashboardPage() {
               {publishedApps.slice(0, 6).map((app) => (
                 <Card key={app.id} className="hover-elevate" data-testid={`card-published-${app.id}`}>
                   <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                      <Globe className="w-4 h-4 text-green-500" />
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${app.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
+                      <Globe className={`w-4 h-4 ${app.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold truncate">{app.title || app.subdomain}</p>

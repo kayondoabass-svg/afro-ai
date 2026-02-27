@@ -1,12 +1,15 @@
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 import {
   Users,
   Folder,
@@ -17,6 +20,8 @@ import {
   TrendingUp,
   Activity,
   ExternalLink,
+  Ban,
+  CheckCircle,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -56,9 +61,39 @@ export default function FounderDashboardPage() {
   const [, setLocation] = useLocation();
   const isFounder = (user as any)?.isFounder === true;
 
+  const { toast } = useToast();
+
   const { data: stats, isLoading } = useQuery<PlatformStats>({
     queryKey: ["/api/admin/stats"],
     enabled: isFounder,
+  });
+
+  const suspendMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+      await apiRequest("POST", `/api/admin/published-apps/${id}/suspend`, { reason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      toast({ title: "App suspended", description: "The app is now offline." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to suspend app", variant: "destructive" });
+    },
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("POST", `/api/admin/published-apps/${id}/reactivate`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      toast({ title: "App reactivated", description: "The app is back online." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to reactivate app", variant: "destructive" });
+    },
   });
 
   useEffect(() => {
@@ -182,21 +217,53 @@ export default function FounderDashboardPage() {
                   {stats?.recentPublishedApps && stats.recentPublishedApps.length > 0 ? (
                     stats.recentPublishedApps.map((a: any) => (
                       <div key={a.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`admin-app-${a.id}`}>
-                        <div className="w-8 h-8 rounded-md bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                          <Globe className="w-4 h-4 text-green-500" />
+                        <div className={`w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 ${a.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
+                          <Globe className={`w-4 h-4 ${a.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{a.title}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium truncate">{a.title}</p>
+                            {a.appStatus === "suspended" && (
+                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Suspended</Badge>
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground truncate">{a.subdomain}.afroaigroup.com</p>
                         </div>
-                        <a
-                          href={`/site/${a.subdomain}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:text-primary/80"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {a.appStatus === "suspended" ? (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10"
+                              onClick={() => reactivateMutation.mutate(a.id)}
+                              disabled={reactivateMutation.isPending}
+                              title="Reactivate app"
+                              data-testid={`button-reactivate-${a.id}`}
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </Button>
+                          ) : (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                              onClick={() => suspendMutation.mutate({ id: a.id, reason: "Suspended by administrator" })}
+                              disabled={suspendMutation.isPending}
+                              title="Suspend app"
+                              data-testid={`button-suspend-${a.id}`}
+                            >
+                              <Ban className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <a
+                            href={`/site/${a.subdomain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:text-primary/80"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </div>
                       </div>
                     ))
                   ) : (
