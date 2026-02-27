@@ -6,7 +6,7 @@ import { useLanguage } from "@/hooks/use-language";
 import { ArrowLeft, Users, Target, Heart, Globe, Building2 } from "lucide-react";
 import { Link } from "wouter";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
-import registrationCert from "@assets/IMG_5870_1772110983132.jpeg";
+
 
 export default function AboutPage() {
   const { t } = useLanguage();
@@ -124,16 +124,6 @@ export default function AboutPage() {
               <p className="text-muted-foreground leading-relaxed">
                 Afro AI is a product of <strong className="text-foreground">KEYO TECHNOLOGIES</strong>, a duly registered business under the Business Names Registration Act of Uganda, Registration No. <strong className="text-foreground">80030812159711</strong>. Registered on the 26th day of February, 2026 in Kampala, Uganda.
               </p>
-              <Card className="overflow-hidden">
-                <CardContent className="p-4">
-                  <img
-                    src={registrationCert}
-                    alt="KEYO TECHNOLOGIES - Certificate of Registration, Republic of Uganda"
-                    className="w-full rounded-lg"
-                    data-testid="img-registration-certificate"
-                  />
-                </CardContent>
-              </Card>
             </section>
 
             <div className="text-center pt-8">
