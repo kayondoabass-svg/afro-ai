@@ -195,12 +195,23 @@ Many African users access the internet on 2G/3G networks with high data costs. G
 - Testimonials should have realistic names and detailed quotes
 - Pricing should use realistic numbers for the industry
 
-=== FOLLOW-UP & MODIFICATION REQUESTS ===
-When the user asks to change, update, fix, or add something to their existing site:
-- ALWAYS regenerate and return the COMPLETE, FULL HTML file with all changes applied
-- NEVER return partial code snippets, diffs, or fragments — the user's preview only works with complete HTML
-- Apply the requested changes while keeping everything else intact
-- If the user says "change the color" or "add a section", return the entire updated page
+=== FOLLOW-UP & MODIFICATION REQUESTS (EDITOR MODE) ===
+When the user asks to change, update, fix, or add something to their existing site, switch to EDITOR MODE:
+
+RULES OF ENGAGEMENT:
+1. NEVER REBUILD FROM SCRATCH. You are an expert editor, not a creator on follow-ups.
+2. READ BEFORE WRITING: Study the [CURRENT APP STATE] (injected below when available) thoroughly before making any changes.
+3. SURGICAL EDITS ONLY: Identify exactly which sections, styles, or scripts need to change — then change ONLY those parts.
+4. NO DELETIONS: Do NOT remove existing features, sections, styles, or scripts unless the user explicitly says "delete" or "remove."
+5. PRESERVE EVERYTHING: Keep all existing naming conventions, CSS variables, color schemes, font choices, layout patterns, event handlers, and content.
+6. RETURN COMPLETE HTML: Even though you only changed specific parts, always return the FULL updated HTML file (the live preview needs complete HTML to render).
+
+COMMON MISTAKES TO AVOID:
+- Do NOT change the app name, logo text, or branding unless asked
+- Do NOT swap out the color scheme or fonts unless asked
+- Do NOT reorganize sections or change their order unless asked
+- Do NOT remove navigation items, footer links, or social icons unless asked
+- Do NOT simplify or "clean up" code by removing features the user didn't mention
 
 === TECHNICAL REQUIREMENTS ===
 - Generate a COMPLETE, standalone HTML file
@@ -416,7 +427,7 @@ export function registerChatRoutes(app: Express): void {
         const codePreview = lastGeneratedCode.length > 12000
           ? lastGeneratedCode.substring(0, 12000) + "\n<!-- ... truncated for context ... -->"
           : lastGeneratedCode;
-        contextPrompt += `\n\n=== CURRENT APP STATE ===\nThe user has an existing app/website you previously built. Here is the current code:\n\`\`\`html\n${codePreview}\n\`\`\`\n\nWhen the user asks for changes, modifications, or additions:\n1. Start from this EXACT code as your base\n2. Make ONLY the requested changes — do NOT rebuild unrelated sections\n3. Preserve ALL existing features, styles, sections, content, and functionality\n4. Return the COMPLETE updated HTML file with your changes applied\n5. If adding a new section, insert it in the logical place within the existing structure\n6. Keep the same color scheme, fonts, layout patterns, and design language`;
+        contextPrompt += `\n\n=== CURRENT APP STATE ===\nThe user has an existing app/website you previously built. Below is the current code — this is the SOURCE OF TRUTH. Every line, section, style, and script in this code was intentionally placed there.\n\`\`\`html\n${codePreview}\n\`\`\`\n\nYou are now in EDITOR MODE. Follow these rules strictly:\n1. This code is your starting point — copy it entirely, then apply ONLY the requested changes\n2. Do NOT delete any existing sections, features, styles, or scripts unless explicitly told to\n3. Do NOT change colors, fonts, branding, or layout unless the user specifically asks\n4. If adding a new section, insert it in the logical place within the existing structure\n5. If changing a style, only modify the specific CSS property mentioned\n6. Return the COMPLETE updated HTML file with surgical changes applied`;
       }
 
       const systemMessage = {
