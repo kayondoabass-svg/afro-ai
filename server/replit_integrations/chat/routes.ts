@@ -473,22 +473,29 @@ export function registerChatRoutes(app: Express): void {
               const contentParts: any[] = [{ type: "text", text: parsed.text }];
               for (const att of parsed.attachments) {
                 if (att.mimetype && att.mimetype.startsWith("image/")) {
-                  try {
-                    const filePath = path.join(process.cwd(), att.url.startsWith("/") ? att.url.slice(1) : att.url);
-                    if (fs.existsSync(filePath)) {
-                      const imageBuffer = fs.readFileSync(filePath);
-                      const base64Image = imageBuffer.toString("base64");
-                      const dataUrl = `data:${att.mimetype};base64,${base64Image}`;
-                      contentParts.push({
-                        type: "image_url",
-                        image_url: { url: dataUrl },
-                      });
-                    } else {
-                      contentParts.push({ type: "text", text: `[Attached image: ${att.originalName} - file not found]` });
+                  if (att.dataUrl) {
+                    contentParts.push({
+                      type: "image_url",
+                      image_url: { url: att.dataUrl },
+                    });
+                  } else {
+                    try {
+                      const filePath = path.join(process.cwd(), att.url.startsWith("/") ? att.url.slice(1) : att.url);
+                      if (fs.existsSync(filePath)) {
+                        const imageBuffer = fs.readFileSync(filePath);
+                        const base64Image = imageBuffer.toString("base64");
+                        const dataUrl = `data:${att.mimetype};base64,${base64Image}`;
+                        contentParts.push({
+                          type: "image_url",
+                          image_url: { url: dataUrl },
+                        });
+                      } else {
+                        contentParts.push({ type: "text", text: `[User attached an image: ${att.originalName}. The image file is no longer available on disk but was previously uploaded by the user. Acknowledge that you received the image but explain that it may need to be re-uploaded for you to view it.]` });
+                      }
+                    } catch (imgErr) {
+                      console.error("Error reading image file:", imgErr);
+                      contentParts.push({ type: "text", text: `[User attached an image: ${att.originalName}. Could not read the file.]` });
                     }
-                  } catch (imgErr) {
-                    console.error("Error reading image file:", imgErr);
-                    contentParts.push({ type: "text", text: `[Attached image: ${att.originalName} - could not read]` });
                   }
                 } else if (att.mimetype && att.mimetype.startsWith("video/")) {
                   contentParts.push({ type: "text", text: `[Attached video: ${att.originalName}]` });

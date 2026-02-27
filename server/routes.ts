@@ -86,13 +86,24 @@ export async function registerRoutes(
       if (!files || files.length === 0) {
         return res.status(400).json({ message: "No files uploaded" });
       }
-      const result = files.map((f) => ({
-        filename: f.filename,
-        originalName: f.originalname,
-        mimetype: f.mimetype,
-        size: f.size,
-        url: `/uploads/${f.filename}`,
-      }));
+      const result = files.map((f) => {
+        const entry: any = {
+          filename: f.filename,
+          originalName: f.originalname,
+          mimetype: f.mimetype,
+          size: f.size,
+          url: `/uploads/${f.filename}`,
+        };
+        if (f.mimetype.startsWith("image/")) {
+          try {
+            const imageBuffer = fs.readFileSync(f.path);
+            entry.dataUrl = `data:${f.mimetype};base64,${imageBuffer.toString("base64")}`;
+          } catch (e) {
+            console.error("Error encoding image to base64:", e);
+          }
+        }
+        return entry;
+      });
       res.json(result);
     } catch (error: any) {
       console.error("Error uploading file:", error);
