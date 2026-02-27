@@ -50,7 +50,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import type { Project } from "@shared/schema";
+import type { Project, PublishedApp } from "@shared/schema";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -62,6 +62,12 @@ export default function DashboardPage() {
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
+
+  const { data: publishedApps } = useQuery<PublishedApp[]>({
+    queryKey: ["/api/published-apps"],
+  });
+
+  const userPlan = (user as any)?.plan || "starter";
 
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; description: string; type: string }) => {
@@ -130,9 +136,14 @@ export default function DashboardPage() {
               </AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="text-2xl font-bold" data-testid="text-welcome">
-                {t("dashboard.welcome")} {firstName}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold" data-testid="text-welcome">
+                  {t("dashboard.welcome")} {firstName}
+                </h1>
+                <Badge variant={userPlan === "starter" ? "secondary" : "default"} className="capitalize text-xs" data-testid="badge-user-plan">
+                  {userPlan}
+                </Badge>
+              </div>
               <p className="text-sm text-muted-foreground">{t("dashboard.subtitle")}</p>
             </div>
           </div>
@@ -157,11 +168,11 @@ export default function DashboardPage() {
           <Card>
             <CardContent className="p-4 flex items-center gap-4">
               <div className="w-10 h-10 rounded-md bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                <Globe className="w-5 h-5 text-green-500" />
+                <Rocket className="w-5 h-5 text-green-500" />
               </div>
               <div>
                 <p className="text-2xl font-bold" data-testid="text-published-projects">
-                  {projects?.filter((p) => p.status === "published").length ?? 0}
+                  {publishedApps?.length ?? 0}
                 </p>
                 <p className="text-xs text-muted-foreground">{t("dashboard.published")}</p>
               </div>
@@ -179,6 +190,38 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {publishedApps && publishedApps.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" data-testid="text-live-sites-heading">
+              <Globe className="w-5 h-5 text-green-500" />
+              Live Sites
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {publishedApps.slice(0, 6).map((app) => (
+                <Card key={app.id} className="hover-elevate" data-testid={`card-published-${app.id}`}>
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                      <Globe className="w-4 h-4 text-green-500" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold truncate">{app.title || app.subdomain}</p>
+                      <a
+                        href={`https://${app.subdomain}.afroaigroup.com`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline truncate block"
+                        data-testid={`link-published-url-${app.id}`}
+                      >
+                        {app.subdomain}.afroaigroup.com
+                      </a>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div>
           <h2 className="text-lg font-semibold mb-4" data-testid="text-projects-heading">{t("dashboard.yourProjects")}</h2>

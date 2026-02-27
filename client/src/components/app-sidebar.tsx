@@ -24,7 +24,10 @@ import {
   Terminal,
   Rocket,
   Gift,
+  LayoutTemplate,
+  Settings,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export function AppSidebar() {
@@ -38,9 +41,11 @@ export function AppSidebar() {
   const menuItems = [
     { title: t("sidebar.dashboard"), url: "/dashboard", icon: LayoutDashboard },
     { title: t("sidebar.aiChat"), url: "/chat", icon: MessageSquare },
+    { title: "Templates", url: "/templates", icon: LayoutTemplate },
     { title: "Deployments", url: "/deployments", icon: Rocket },
     { title: "Referrals", url: "/referrals", icon: Gift },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
+    { title: "Settings", url: "/settings", icon: Settings },
   ];
 
   const founderItems = [
@@ -111,7 +116,12 @@ export function AppSidebar() {
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate" data-testid="text-sidebar-user">{firstName} {user?.lastName || ""}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-medium truncate" data-testid="text-sidebar-user">{firstName} {user?.lastName || ""}</p>
+              <Badge variant={((user as any)?.plan || "starter") === "starter" ? "secondary" : "default"} className="capitalize text-[10px] px-1.5 py-0" data-testid="badge-sidebar-plan">
+                {(user as any)?.plan || "starter"}
+              </Badge>
+            </div>
             <p className="text-xs text-muted-foreground truncate">{user?.email || ""}</p>
           </div>
         </div>

@@ -13,7 +13,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - **Routing**: wouter (frontend), Express (backend)
 
 ## Project Structure
-- `client/src/pages/` - Landing, Dashboard, AI Chat, Deployments, Pricing, Referrals, Founder Dashboard, Admin Command, About, Contact, Privacy, Terms, Cookies pages
+- `client/src/pages/` - Landing, Dashboard, AI Chat, Deployments, Pricing, Referrals, Templates, Settings, Founder Dashboard, Admin Command, About, Contact, Privacy, Terms, Cookies pages
 - `client/src/components/` - AppSidebar, ThemeProvider, ThemeToggle, UI components
 - `server/routes.ts` - API routes (projects CRUD, publishing)
 - `server/storage.ts` - Database storage layer
@@ -38,6 +38,11 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - App publishing to {name}.afroaigroup.com via Cloudflare DNS + Express subdomain routing
 - Deployments page: detailed view of all published apps with URL, visibility, status, copy/delete
 - Pricing page with Pesapal payment integration
+- Templates page: 21 pre-built African business templates across 5 categories (Business, E-Commerce, Portfolio, Community, Events) with one-click "Use Template" to start building
+- Settings page: profile display, plan badge, country/currency preference selector, account stats
+- AI co-creation with 30/70 rule: AI asks clarifying questions first, then builds with predictive UX (auto-suggests M-Pesa, WhatsApp, local currencies)
+- Performance-first code generation: lazy loading, <500KB pages, optimized for 2G/3G African networks
+- Dashboard shows live published sites, plan badge, and published apps count
 - Responsive design with sidebar navigation
 
 ## App Publishing
