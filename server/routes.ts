@@ -189,27 +189,51 @@ export async function registerRoutes(
   });
 
   app.post("/api/publish", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const { subdomain, htmlContent, title } = req.body;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const sendStep = (step: string, status: "pending" | "active" | "done" | "error", detail?: string) => {
+      res.write(`data: ${JSON.stringify({ type: "step", step, status, detail })}\n\n`);
+    };
+    const sendResult = (data: any) => {
+      res.write(`data: ${JSON.stringify({ type: "result", ...data })}\n\n`);
+      res.end();
+    };
+    const sendError = (message: string) => {
+      res.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+      res.end();
+    };
+
     try {
-      const userId = req.user.claims.sub;
-      const { subdomain, htmlContent, title } = req.body;
-
+      sendStep("validate", "active");
       if (!subdomain || !htmlContent || !title) {
-        return res.status(400).json({ message: "Subdomain, HTML content, and title are required" });
+        sendStep("validate", "error", "Missing required fields");
+        return sendError("Subdomain, HTML content, and title are required");
       }
-
       const subdomainLower = subdomain.toLowerCase().trim();
       const validation = isValidSubdomain(subdomainLower);
       if (!validation.valid) {
-        return res.status(400).json({ message: validation.error });
+        sendStep("validate", "error", validation.error);
+        return sendError(validation.error!);
       }
+      sendStep("validate", "done", "Input validated");
 
+      sendStep("check", "active");
       const existing = await storage.getPublishedAppBySubdomain(subdomainLower);
       if (existing && existing.userId !== userId) {
-        return res.status(409).json({ message: "This subdomain is already taken" });
+        sendStep("check", "error", "Subdomain taken");
+        return sendError("This subdomain is already taken");
       }
+      sendStep("check", "done", existing ? "Updating existing app" : "Subdomain available");
 
+      sendStep("dns", "active");
+      let dnsRecordId: string | undefined;
       if (existing && existing.userId === userId) {
-        let dnsRecordId = existing.cloudflareDnsRecordId;
+        dnsRecordId = existing.cloudflareDnsRecordId || undefined;
         if (!dnsRecordId) {
           try {
             dnsRecordId = await createSubdomainRecord(subdomainLower);
@@ -217,34 +241,42 @@ export async function registerRoutes(
             console.error("Cloudflare DNS error:", err);
           }
         }
+      } else {
+        try {
+          dnsRecordId = await createSubdomainRecord(subdomainLower);
+        } catch (err) {
+          console.error("Cloudflare DNS error:", err);
+        }
+      }
+      sendStep("dns", "done", dnsRecordId ? "DNS record configured" : "DNS pending");
 
-        const updated = await storage.updatePublishedApp(existing.id, {
+      sendStep("deploy", "active");
+      let result;
+      if (existing && existing.userId === userId) {
+        result = await storage.updatePublishedApp(existing.id, {
           htmlContent,
           title,
           cloudflareDnsRecordId: dnsRecordId || undefined,
         });
-        return res.json({ ...updated, url: getPublishedUrl(subdomainLower) });
+      } else {
+        result = await storage.createPublishedApp({
+          userId,
+          subdomain: subdomainLower,
+          htmlContent,
+          title,
+          cloudflareDnsRecordId: dnsRecordId || null,
+        });
       }
+      sendStep("deploy", "done", "App saved to database");
 
-      let dnsRecordId: string | undefined;
-      try {
-        dnsRecordId = await createSubdomainRecord(subdomainLower);
-      } catch (err) {
-        console.error("Cloudflare DNS error:", err);
-      }
+      sendStep("live", "active");
+      const url = getPublishedUrl(subdomainLower);
+      sendStep("live", "done", `Live at ${url}`);
 
-      const published = await storage.createPublishedApp({
-        userId,
-        subdomain: subdomainLower,
-        htmlContent,
-        title,
-        cloudflareDnsRecordId: dnsRecordId || null,
-      });
-
-      res.status(201).json({ ...published, url: getPublishedUrl(subdomainLower) });
+      sendResult({ url, id: result.id, subdomain: subdomainLower });
     } catch (error: any) {
       console.error("Error publishing app:", error);
-      res.status(500).json({ message: error.message || "Failed to publish app" });
+      sendError(error.message || "Failed to publish app");
     }
   });
 

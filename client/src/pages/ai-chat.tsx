@@ -229,6 +229,21 @@ function parseMessageContent(content: string): ParsedMessageContent {
   return { text: content };
 }
 
+interface PublishStep {
+  id: string;
+  label: string;
+  status: "pending" | "active" | "done" | "error";
+  detail?: string;
+}
+
+const PUBLISH_STEPS: { id: string; label: string }[] = [
+  { id: "validate", label: "Validating input" },
+  { id: "check", label: "Checking subdomain" },
+  { id: "dns", label: "Configuring DNS" },
+  { id: "deploy", label: "Deploying app" },
+  { id: "live", label: "Going live" },
+];
+
 function PublishDialog({ code, open, onOpenChange }: {
   code: string;
   open: boolean;
@@ -240,6 +255,9 @@ function PublishDialog({ code, open, onOpenChange }: {
   const [checking, setChecking] = useState(false);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishSteps, setPublishSteps] = useState<PublishStep[]>([]);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
   const [existingApp, setExistingApp] = useState<{ subdomain: string; title: string } | null>(null);
@@ -270,6 +288,9 @@ function PublishDialog({ code, open, onOpenChange }: {
     if (!open) {
       loadedRef.current = false;
       setPublishedUrl(null);
+      setPublishSteps([]);
+      setPublishError(null);
+      setIsPublishing(false);
     }
     return () => {
       if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
@@ -304,70 +325,146 @@ function PublishDialog({ code, open, onOpenChange }: {
     }
   };
 
-  const publishMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/publish", { subdomain, htmlContent: code, title });
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      setPublishedUrl(data.url);
-      setExistingApp({ subdomain, title });
-      toast({ title: "Published!", description: `Your app is live at ${data.url}` });
-      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
-    },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
-  });
+  const startPublish = async () => {
+    setIsPublishing(true);
+    setPublishError(null);
+    setPublishSteps(PUBLISH_STEPS.map(s => ({ ...s, status: "pending" as const })));
+
+    try {
+      const res = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ subdomain, htmlContent: code, title }),
+      });
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === "step") {
+              setPublishSteps(prev => prev.map(s =>
+                s.id === data.step ? { ...s, status: data.status, detail: data.detail } : s
+              ));
+            } else if (data.type === "result") {
+              setPublishedUrl(data.url);
+              setExistingApp({ subdomain: data.subdomain || subdomain, title });
+              toast({ title: "Published!", description: `Your app is live at ${data.url}` });
+              queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+            } else if (data.type === "error") {
+              setPublishError(data.message);
+              toast({ title: "Error", description: data.message, variant: "destructive" });
+            }
+          } catch {}
+        }
+      }
+    } catch (err: any) {
+      setPublishError(err.message || "Publishing failed");
+      toast({ title: "Error", description: err.message || "Publishing failed", variant: "destructive" });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   const handlePublish = () => {
     if (!subdomain || !title || available === false) return;
-    publishMutation.mutate();
+    startPublish();
   };
 
   const handleRepublish = () => {
-    publishMutation.mutate();
+    startPublish();
   };
 
   const isRepublish = existingApp && !loadingExisting;
+  const showProgress = publishSteps.length > 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={isPublishing ? undefined : onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Rocket className="w-5 h-5 text-primary" />
-            {publishedUrl ? "Published!" : isRepublish ? "Republish Your App" : "Publish Your App"}
+            {publishedUrl ? "Published!" : showProgress ? "Publishing..." : isRepublish ? "Republish Your App" : "Publish Your App"}
           </DialogTitle>
           <DialogDescription>
             {publishedUrl
-              ? "Your app has been updated successfully"
-              : isRepublish
-                ? `Update your app live at ${existingApp.subdomain}.afroaigroup.com`
-                : "Give your app a name and subdomain to publish it live on afroaigroup.com"
+              ? "Your app has been deployed successfully"
+              : showProgress
+                ? "Deploying your app to the web..."
+                : isRepublish
+                  ? `Update your app live at ${existingApp.subdomain}.afroaigroup.com`
+                  : "Give your app a name and subdomain to publish it live on afroaigroup.com"
             }
           </DialogDescription>
         </DialogHeader>
 
-        {publishedUrl ? (
-          <div className="space-y-4 py-4">
-            <div className="flex items-center gap-2 text-green-500">
-              <Check className="w-5 h-5" />
-              <span className="font-medium">Published Successfully!</span>
-            </div>
-            <div className="bg-card rounded-lg p-4 border">
-              <p className="text-sm text-muted-foreground mb-2">Your app is live at:</p>
-              <a
-                href={publishedUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline flex items-center gap-1 font-medium"
-                data-testid="link-published-url"
-              >
-                {publishedUrl}
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
+        {showProgress ? (
+          <div className="space-y-3 py-4" data-testid="publish-progress">
+            {publishSteps.map((step) => (
+              <div key={step.id} className="flex items-start gap-3" data-testid={`publish-step-${step.id}`}>
+                <div className="mt-0.5 flex-shrink-0">
+                  {step.status === "done" ? (
+                    <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center">
+                      <Check className="w-3.5 h-3.5 text-green-500" />
+                    </div>
+                  ) : step.status === "active" ? (
+                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                    </div>
+                  ) : step.status === "error" ? (
+                    <div className="w-6 h-6 rounded-full bg-red-500/10 flex items-center justify-center">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                    </div>
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center">
+                      <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium ${step.status === "done" ? "text-green-500" : step.status === "active" ? "text-foreground" : step.status === "error" ? "text-red-500" : "text-muted-foreground"}`}>
+                    {step.label}
+                  </p>
+                  {step.detail && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{step.detail}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+            {publishError && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mt-2">
+                <p className="text-sm text-red-500">{publishError}</p>
+              </div>
+            )}
+            {publishedUrl && (
+              <div className="bg-card rounded-lg p-4 border mt-2">
+                <p className="text-sm text-muted-foreground mb-2">Your app is live at:</p>
+                <a
+                  href={publishedUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline flex items-center gap-1 font-medium"
+                  data-testid="link-published-url"
+                >
+                  {publishedUrl}
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
           </div>
         ) : isRepublish ? (
           <div className="space-y-4 py-4">
@@ -436,31 +533,31 @@ function PublishDialog({ code, open, onOpenChange }: {
             <Button onClick={() => onOpenChange(false)} data-testid="button-publish-done">
               Done
             </Button>
-          ) : isRepublish ? (
+          ) : isRepublish && !showProgress ? (
             <Button
               onClick={handleRepublish}
-              disabled={publishMutation.isPending}
+              disabled={isPublishing}
               data-testid="button-republish-confirm"
             >
-              {publishMutation.isPending ? (
+              {isPublishing ? (
                 <><Loader2 className="w-4 h-4 animate-spin" />Republishing...</>
               ) : (
                 <><RefreshCw className="w-4 h-4" />Republish</>
               )}
             </Button>
-          ) : (
+          ) : !showProgress ? (
             <Button
               onClick={handlePublish}
-              disabled={!subdomain || !title || subdomain.length < 3 || available === false || publishMutation.isPending}
+              disabled={!subdomain || !title || subdomain.length < 3 || available === false || isPublishing}
               data-testid="button-publish-confirm"
             >
-              {publishMutation.isPending ? (
+              {isPublishing ? (
                 <><Loader2 className="w-4 h-4 animate-spin" />Publishing...</>
               ) : (
                 <><Globe className="w-4 h-4" />Publish to Web</>
               )}
             </Button>
-          )}
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -933,23 +1030,48 @@ export default function AIChatPage() {
       const existingApp = apps[0];
       setAutoPublishStatus("publishing");
 
-      const publishRes = await apiRequest("POST", "/api/publish", {
-        subdomain: existingApp.subdomain,
-        htmlContent: code,
-        title: existingApp.title,
+      const publishRes = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          subdomain: existingApp.subdomain,
+          htmlContent: code,
+          title: existingApp.title,
+        }),
       });
 
-      if (!publishRes.ok) {
-        const errData = await publishRes.json();
-        throw new Error(errData.message || "Publish failed");
+      const reader = publishRes.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let publishUrl = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === "result") publishUrl = data.url;
+            if (data.type === "error") throw new Error(data.message);
+          } catch (e: any) {
+            if (e.message && e.message !== "Unexpected end of JSON input") throw e;
+          }
+        }
       }
 
-      const publishData = await publishRes.json();
+      if (!publishUrl) throw new Error("Publish failed — no URL returned");
+
       setAutoPublishStatus("published");
       queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
       toast({
         title: "Auto-Published!",
-        description: `Your app has been updated at ${publishData.url}`,
+        description: `Your app has been updated at ${publishUrl}`,
       });
       setTimeout(() => setAutoPublishStatus("idle"), 6000);
     } catch (err: any) {
