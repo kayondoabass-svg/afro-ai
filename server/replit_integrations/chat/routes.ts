@@ -400,9 +400,28 @@ export function registerChatRoutes(app: Express): void {
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
+      let lastGeneratedCode = "";
+      for (let i = chatMessages.length - 1; i >= 0; i--) {
+        if (chatMessages[i].role === "assistant" && typeof chatMessages[i].content === "string") {
+          const codeMatch = chatMessages[i].content.match(/```html\s*([\s\S]*?)```/);
+          if (codeMatch) {
+            lastGeneratedCode = codeMatch[1].trim();
+            break;
+          }
+        }
+      }
+
+      let contextPrompt = BUILDER_SYSTEM_PROMPT;
+      if (lastGeneratedCode) {
+        const codePreview = lastGeneratedCode.length > 12000
+          ? lastGeneratedCode.substring(0, 12000) + "\n<!-- ... truncated for context ... -->"
+          : lastGeneratedCode;
+        contextPrompt += `\n\n=== CURRENT APP STATE ===\nThe user has an existing app/website you previously built. Here is the current code:\n\`\`\`html\n${codePreview}\n\`\`\`\n\nWhen the user asks for changes, modifications, or additions:\n1. Start from this EXACT code as your base\n2. Make ONLY the requested changes — do NOT rebuild unrelated sections\n3. Preserve ALL existing features, styles, sections, content, and functionality\n4. Return the COMPLETE updated HTML file with your changes applied\n5. If adding a new section, insert it in the logical place within the existing structure\n6. Keep the same color scheme, fonts, layout patterns, and design language`;
+      }
+
       const systemMessage = {
         role: "system" as const,
-        content: BUILDER_SYSTEM_PROMPT,
+        content: contextPrompt,
       };
 
       const stream = await openai.chat.completions.create({

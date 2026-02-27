@@ -41,6 +41,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - Templates page: 21 pre-built African business templates across 5 categories (Business, E-Commerce, Portfolio, Community, Events) with one-click "Use Template" to start building
 - Settings page: profile display, plan badge, country/currency preference selector, account stats
 - AI co-creation with 30/70 rule: AI asks clarifying questions first, then builds with predictive UX (auto-suggests M-Pesa, WhatsApp, local currencies)
+- Context-aware AI: on follow-up requests, the AI receives the last generated HTML as "CURRENT APP STATE" in its system prompt, so it modifies the existing code surgically instead of rebuilding from scratch
 - Performance-first code generation: lazy loading, <500KB pages, optimized for 2G/3G African networks
 - Dashboard shows live published sites, plan badge, and published apps count
 - Responsive design with sidebar navigation
