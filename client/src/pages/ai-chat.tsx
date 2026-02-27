@@ -747,16 +747,104 @@ export default function AIChatPage() {
 
   const handleDownload = useCallback(() => {
     if (!previewCode) return;
-    const blob = new Blob([previewCode], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "africa-ai-project.html";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast({ title: "Downloaded!", description: "Your project has been downloaded as an HTML file." });
+
+    const titleMatch = previewCode.match(/<title>([^<]+)<\/title>/i);
+    const projectName = titleMatch ? titleMatch[1].replace(/[^a-zA-Z0-9-_ ]/g, "").trim().replace(/\s+/g, "-").toLowerCase() : "afro-ai-project";
+
+    const styleMatch = previewCode.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+    const scriptMatch = previewCode.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
+
+    if (styleMatch && scriptMatch && previewCode.length > 3000) {
+      const css = styleMatch[1].trim();
+      const js = scriptMatch[1].trim();
+
+      let htmlContent = previewCode;
+      htmlContent = htmlContent.replace(/<style[^>]*>[\s\S]*?<\/style>/i, '<link rel="stylesheet" href="styles.css">');
+      htmlContent = htmlContent.replace(/<script[^>]*>[\s\S]*?<\/script>/i, '<script src="script.js"></script>');
+
+      const files = [
+        { name: "index.html", content: htmlContent },
+        { name: "styles.css", content: css },
+        { name: "script.js", content: js },
+        { name: "README.md", content: `# ${titleMatch?.[1] || "My Project"}\n\nBuilt with Afro AI — afroaigroup.com\n\n## How to Use\n1. Open index.html in your browser\n2. Or deploy to any web hosting service\n\n## Files\n- index.html — Main page\n- styles.css — Styling\n- script.js — Functionality` },
+      ];
+
+      const folderPrefix = projectName + "/";
+      const textEncoder = new TextEncoder();
+      const fileEntries: { name: string; data: Uint8Array }[] = files.map(f => ({
+        name: folderPrefix + f.name,
+        data: textEncoder.encode(f.content),
+      }));
+
+      const zipParts: Uint8Array[] = [];
+      const centralDir: Uint8Array[] = [];
+      let offset = 0;
+
+      for (const entry of fileEntries) {
+        const nameBytes = textEncoder.encode(entry.name);
+        const localHeader = new Uint8Array(30 + nameBytes.length);
+        const view = new DataView(localHeader.buffer);
+        view.setUint32(0, 0x04034b50, true);
+        view.setUint16(4, 20, true);
+        view.setUint16(8, 0, true);
+        view.setUint32(18, entry.data.length, true);
+        view.setUint32(22, entry.data.length, true);
+        view.setUint16(26, nameBytes.length, true);
+        localHeader.set(nameBytes, 30);
+
+        zipParts.push(localHeader, entry.data);
+
+        const cdEntry = new Uint8Array(46 + nameBytes.length);
+        const cdView = new DataView(cdEntry.buffer);
+        cdView.setUint32(0, 0x02014b50, true);
+        cdView.setUint16(4, 20, true);
+        cdView.setUint16(6, 20, true);
+        cdView.setUint16(12, 0, true);
+        cdView.setUint32(20, entry.data.length, true);
+        cdView.setUint32(24, entry.data.length, true);
+        cdView.setUint16(28, nameBytes.length, true);
+        cdView.setUint32(42, offset, true);
+        cdEntry.set(nameBytes, 46);
+        centralDir.push(cdEntry);
+
+        offset += localHeader.length + entry.data.length;
+      }
+
+      const cdOffset = offset;
+      let cdSize = 0;
+      centralDir.forEach(cd => { zipParts.push(cd); cdSize += cd.length; });
+
+      const endRecord = new Uint8Array(22);
+      const endView = new DataView(endRecord.buffer);
+      endView.setUint32(0, 0x06054b50, true);
+      endView.setUint16(8, fileEntries.length, true);
+      endView.setUint16(10, fileEntries.length, true);
+      endView.setUint32(12, cdSize, true);
+      endView.setUint32(16, cdOffset, true);
+      zipParts.push(endRecord);
+
+      const zipBlob = new Blob(zipParts, { type: "application/zip" });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${projectName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Project Downloaded!", description: `${projectName}.zip — includes HTML, CSS, JS, and README files.` });
+    } else {
+      const blob = new Blob([previewCode], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${projectName}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Downloaded!", description: "Your project has been downloaded as an HTML file." });
+    }
   }, [previewCode, toast]);
 
   const handleScanImage = async (file: File) => {
