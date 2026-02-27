@@ -1507,7 +1507,7 @@ export default function AIChatPage() {
               </div>
             )}
           </div>
-          <DialogFooter className="flex gap-2">
+          <DialogFooter className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={() => scanFileInputRef.current?.click()}
@@ -1517,6 +1517,21 @@ export default function AIChatPage() {
               <Camera className="w-4 h-4 mr-1" />
               Scan Another
             </Button>
+            {imageAnalysisResult && imageAnalysisResult !== "Failed to analyze the image. Please try again." && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setInput(`Based on the image analysis:\n${imageAnalysisResult}\n\nPlease help me build something with this.`);
+                  setShowImageAnalysis(false);
+                  setImageAnalysisResult(null);
+                  setAnalysisImagePreview(null);
+                }}
+                data-testid="button-use-in-chat"
+              >
+                <MessageSquare className="w-4 h-4 mr-1" />
+                Use in Chat
+              </Button>
+            )}
             <Button onClick={() => setShowImageAnalysis(false)} data-testid="button-close-analysis">
               Done
             </Button>

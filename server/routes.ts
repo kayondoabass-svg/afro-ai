@@ -109,14 +109,18 @@ export async function registerRoutes(
       }
 
       if (!process.env.GEMINI_API_KEY) {
-        return res.status(500).json({ message: "Image analysis service is not configured" });
+        return res.status(500).json({ message: "Image analysis service is not configured. Please contact support." });
       }
 
+      const base64Size = Math.round((imageBase64.length * 3) / 4 / 1024);
+      console.log(`[Gemini] Analyzing image: ${mimeType}, ~${base64Size}KB`);
+
       const analysis = await analyzeImage(imageBase64, mimeType, prompt || undefined);
+      console.log(`[Gemini] Analysis complete: ${analysis.substring(0, 100)}...`);
       res.json({ analysis });
     } catch (error: any) {
-      console.error("Error analyzing image:", error);
-      res.status(500).json({ message: error.message || "Failed to analyze image" });
+      console.error("[Gemini] Analysis error:", error.message || error);
+      res.status(500).json({ message: error.message || "Failed to analyze image. Please try again with a clearer photo." });
     }
   });
 
