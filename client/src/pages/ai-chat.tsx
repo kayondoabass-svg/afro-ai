@@ -98,32 +98,20 @@ function validateHtmlCode(code: string): CodeTestResult {
 
   checks.push({
     name: "Valid HTML structure",
-    passed: code.includes("<!DOCTYPE html") || code.includes("<html"),
+    passed: code.includes("<!DOCTYPE html") || code.includes("<html") || code.includes("<HTML"),
     detail: "Document has proper HTML structure",
   });
 
   checks.push({
-    name: "Has head section",
-    passed: /<head[\s>]/i.test(code),
-    detail: "Document includes <head> section",
+    name: "Has content",
+    passed: (/<body[\s>]/i.test(code) || /<div[\s>]/i.test(code) || /<canvas[\s>]/i.test(code) || /<main[\s>]/i.test(code)),
+    detail: "Document has displayable content",
   });
 
   checks.push({
-    name: "Has body content",
-    passed: /<body[\s>]/i.test(code) && code.includes("</body>"),
-    detail: "Document has a <body> with content",
-  });
-
-  checks.push({
-    name: "Has title",
-    passed: /<title>.+<\/title>/i.test(code),
-    detail: "Page has a title tag",
-  });
-
-  checks.push({
-    name: "Has visible content",
-    passed: (/<h[1-6][\s>]/i.test(code) || /<p[\s>]/i.test(code) || /<div[\s>]/i.test(code)),
-    detail: "Page has visible text content",
+    name: "Has visible elements",
+    passed: (/<h[1-6][\s>]/i.test(code) || /<p[\s>]/i.test(code) || /<div[\s>]/i.test(code) || /<canvas[\s>]/i.test(code) || /<button[\s>]/i.test(code) || /<section[\s>]/i.test(code)),
+    detail: "Page has visible elements",
   });
 
   checks.push({
@@ -133,13 +121,13 @@ function validateHtmlCode(code: string): CodeTestResult {
   });
 
   checks.push({
-    name: "Proper closing tags",
-    passed: code.includes("</html>"),
-    detail: "HTML document is properly closed",
+    name: "Has styling",
+    passed: (/<style[\s>]/i.test(code) || /style="/i.test(code) || /<link.*stylesheet/i.test(code)),
+    detail: "Page has CSS styling",
   });
 
   const passedCount = checks.filter(c => c.passed).length;
-  return { passed: passedCount >= 5, checks };
+  return { passed: passedCount >= 3, checks };
 }
 
 type AutoPublishStatus = "idle" | "testing" | "test-passed" | "test-failed" | "publishing" | "published" | "publish-failed";
@@ -815,13 +803,11 @@ export default function AIChatPage() {
     setTestResult(result);
 
     if (!result.passed) {
-      setAutoPublishStatus("test-failed");
+      setAutoPublishStatus("idle");
       toast({
-        title: "Quality Check Failed",
-        description: `${result.checks.filter(c => !c.passed).length} issue(s) found. Review and fix before publishing.`,
-        variant: "destructive",
+        title: "Quality Tips",
+        description: `${result.checks.filter(c => !c.passed).length} suggestion(s) found. You can still publish manually.`,
       });
-      setTimeout(() => setAutoPublishStatus("idle"), 5000);
       return;
     }
 
