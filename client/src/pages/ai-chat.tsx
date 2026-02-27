@@ -39,6 +39,7 @@ import {
   RefreshCw,
   ScanSearch,
   Camera,
+  Undo2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -474,13 +475,15 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onClose: () => void;
   onDownload: () => void;
   onBackToChat?: () => void;
+  onUndo?: () => void;
+  canUndo?: boolean;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
@@ -542,6 +545,11 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
             <Rocket className="w-3 h-3" />
             Publish
           </Button>
+          {canUndo && onUndo && (
+            <Button size="icon" variant="ghost" onClick={onUndo} title="Undo last change" data-testid="button-undo-preview">
+              <Undo2 className="w-4 h-4" />
+            </Button>
+          )}
           <Button size="icon" variant="ghost" onClick={onDownload} data-testid="button-download-code">
             <Download className="w-4 h-4" />
           </Button>
@@ -582,6 +590,7 @@ export default function AIChatPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [previewCode, setPreviewCode] = useState<string | null>(null);
+  const [previousCode, setPreviousCode] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -681,6 +690,9 @@ export default function AIChatPage() {
     if (streamingContent) {
       const code = extractAllCodeBlocks(streamingContent);
       if (code) {
+        if (previewCode && previewCode !== code) {
+          setPreviousCode(previewCode);
+        }
         setPreviewCode(code);
         setShowPreview(true);
         setMobileView("preview");
@@ -1439,6 +1451,14 @@ export default function AIChatPage() {
               onClose={() => { setShowPreview(false); setIsFullscreen(false); setMobileView("chat"); }}
               onDownload={handleDownload}
               onBackToChat={() => setMobileView("chat")}
+              canUndo={!!previousCode}
+              onUndo={() => {
+                if (previousCode) {
+                  setPreviewCode(previousCode);
+                  setPreviousCode(null);
+                  toast({ title: "Reverted", description: "Restored your previous version." });
+                }
+              }}
             />
           </div>
         )}
