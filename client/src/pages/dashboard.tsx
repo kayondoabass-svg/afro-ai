@@ -48,6 +48,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import type { Project, PublishedApp } from "@shared/schema";
@@ -58,6 +68,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [showNewProject, setShowNewProject] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -272,7 +283,7 @@ export default function DashboardPage() {
                             className="text-destructive"
                             onClick={(e) => {
                               e.stopPropagation();
-                              deleteMutation.mutate(project.id);
+                              setProjectToDelete(project);
                             }}
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
@@ -428,6 +439,33 @@ export default function DashboardPage() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>"{projectToDelete?.name}"</strong>? Once deleted, there is no going back. All project data will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-project">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (projectToDelete) {
+                  deleteMutation.mutate(projectToDelete.id);
+                  setProjectToDelete(null);
+                }
+              }}
+              data-testid="button-confirm-delete-project"
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete Forever
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
