@@ -465,18 +465,28 @@ export function registerChatRoutes(app: Express): void {
       await chatStorage.createMessage(conversationId, "user", messageContent);
 
       const messages = await chatStorage.getMessagesByConversation(conversationId);
-      const chatMessages: any[] = messages.map((m) => {
+
+      const RECENT_IMAGE_WINDOW = 6;
+      const recentStartIndex = Math.max(0, messages.length - RECENT_IMAGE_WINDOW);
+
+      const chatMessages: any[] = messages.map((m, idx) => {
         if (m.role === "user") {
           try {
             const parsed = JSON.parse(m.content);
             if (parsed.text && parsed.attachments) {
               const contentParts: any[] = [{ type: "text", text: parsed.text }];
+              const includeImageData = idx >= recentStartIndex;
+
               for (const att of parsed.attachments) {
                 if (att.mimetype && att.mimetype.startsWith("image/")) {
+                  if (!includeImageData) {
+                    contentParts.push({ type: "text", text: `[User previously attached an image: ${att.originalName || "screenshot"}]` });
+                    continue;
+                  }
                   if (att.dataUrl) {
                     contentParts.push({
                       type: "image_url",
-                      image_url: { url: att.dataUrl },
+                      image_url: { url: att.dataUrl, detail: "low" },
                     });
                   } else {
                     try {
@@ -487,7 +497,7 @@ export function registerChatRoutes(app: Express): void {
                         const dataUrl = `data:${att.mimetype};base64,${base64Image}`;
                         contentParts.push({
                           type: "image_url",
-                          image_url: { url: dataUrl },
+                          image_url: { url: dataUrl, detail: "low" },
                         });
                       } else {
                         contentParts.push({ type: "text", text: `[User attached an image: ${att.originalName}. The image file is no longer available on disk but was previously uploaded by the user. Acknowledge that you received the image but explain that it may need to be re-uploaded for you to view it.]` });
