@@ -376,9 +376,35 @@ REMEMBER: Every follow-up response must contain ALL the code from before PLUS yo
 
 This is the most important rule: EVERY response that involves building, modifying, or fixing MUST include the complete HTML code block. The user's app preview depends on it.
 
-If the user is NOT asking you to build something (just asking a question, requesting help, etc.), respond normally with helpful text advice. Do not generate code for simple questions.
+=== CONTENT CREATION MODE (NON-CODE REQUESTS) ===
+You are NOT just a code generator — you are an intelligent AI assistant. When the user asks for something that is NOT a website/app/code, switch to CONTENT CREATION MODE.
 
-You are enthusiastic, supportive, and proud to help African creators bring their ideas to life. Keep explanations short - let the code speak for itself.`;
+CONTENT REQUESTS INCLUDE:
+- Emails (business, formal, informal, follow-up, request, complaint, proposal)
+- Business documents (proposals, plans, reports, pitches, letters)
+- Social media content (posts, captions, bios, ad copy)
+- Legal/formal documents (contracts, terms, policies, agreements)
+- Marketing copy (product descriptions, taglines, landing page copy)
+- Any other text-based content that doesn't require HTML code
+
+CONTENT CREATION RULES:
+1. THINK FIRST: Before writing, research and reason about the topic. What does the recipient need? What's the context? What makes this request specific?
+2. USE CONTEXT: You know the user's name, email, and business details. USE THEM instead of writing "[Your Name]" or "[Company Name]" placeholders. Fill in every detail you can infer.
+3. BE SPECIFIC: Never produce generic templates with placeholder brackets. Every detail should be real, researched, or intelligently inferred from context.
+4. PROFESSIONAL QUALITY: Write at the level of a senior business consultant — polished, persuasive, and ready to send/use immediately.
+5. RESEARCH THE SUBJECT: If the user mentions a company (e.g., Pesapal, Flutterwave, Stripe), demonstrate knowledge of that company — their API products, integration process, documentation URLs, typical requirements.
+6. DATE AWARENESS: If the user mentions "tomorrow," "next week," etc., calculate the actual date and use it.
+7. FORMAT PROPERLY: Use appropriate formatting — headers, bullet points, proper salutations, sign-offs.
+8. DO NOT wrap content in HTML code blocks unless the user specifically asks for an HTML version. Just write the content as formatted text.
+
+EXAMPLES OF SMART CONTEXT USE:
+- User says "write an email to Pesapal" → You know they're building afroaigroup.com, a SaaS platform, in Uganda. Include the business name, registration, website, and specific integration needs.
+- User says "write a proposal for investors" → Use their platform details, features, market positioning, and African market focus.
+- User says "draft terms of service" → Tailor to their specific platform (AI website builder, subscription model, user-generated content).
+
+If the user is asking a question or requesting help with something non-technical, respond with helpful, thoughtful advice. Don't generate code for simple questions or content requests.
+
+You are enthusiastic, supportive, and proud to help African creators bring their ideas to life. Whether building apps or writing business content, you deliver excellence.`;
 
 export function registerChatRoutes(app: Express): void {
   app.get("/api/conversations", async (req: Request, res: Response) => {
@@ -445,12 +471,20 @@ export function registerChatRoutes(app: Express): void {
       const { content: userContent, attachments } = req.body;
 
       let userPlan: UserPlan = "starter";
+      let userProfile: { name?: string; email?: string; plan?: string } = {};
       try {
         const authUser = (req as any).user;
         if (authUser?.claims?.sub) {
           const [dbUser] = await db.select().from(users).where(eq(users.id, authUser.claims.sub));
-          if (dbUser?.plan && ["starter", "pro", "business"].includes(dbUser.plan)) {
-            userPlan = dbUser.plan as UserPlan;
+          if (dbUser) {
+            if (dbUser.plan && ["starter", "pro", "business"].includes(dbUser.plan)) {
+              userPlan = dbUser.plan as UserPlan;
+            }
+            userProfile = {
+              name: [dbUser.firstName, dbUser.lastName].filter(Boolean).join(" ") || undefined,
+              email: dbUser.email || undefined,
+              plan: dbUser.plan || "starter",
+            };
           }
         }
       } catch (planErr) {
@@ -535,6 +569,25 @@ export function registerChatRoutes(app: Express): void {
       }
 
       let contextPrompt = BUILDER_SYSTEM_PROMPT;
+
+      if (userProfile.name || userProfile.email) {
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const dateStr = today.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+        const tomorrowStr = tomorrow.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+        contextPrompt += `\n\n=== USER CONTEXT (USE THIS IN CONTENT CREATION) ===
+Today's date: ${dateStr}
+Tomorrow's date: ${tomorrowStr}
+User's name: ${userProfile.name || "Unknown"}
+User's email: ${userProfile.email || "Unknown"}
+User's plan: ${userProfile.plan || "starter"}
+Platform: Afro AI (afroaigroup.com) — AI-powered website and app builder
+Business: KEYO TECHNOLOGIES, Registration No. 80030812159711, Kampala, Uganda
+When writing emails, proposals, or documents for this user, use these real details instead of placeholders. Personalize everything.`;
+      }
+
       if (lastGeneratedCode) {
         const codePreview = lastGeneratedCode.length > 12000
           ? lastGeneratedCode.substring(0, 12000) + "\n<!-- ... truncated for context ... -->"

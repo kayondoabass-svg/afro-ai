@@ -31,6 +31,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - Landing page with African heritage imagery, "How It Works" steps, testimonials, animated gradient text
 - Dashboard with project management (create, view, delete) and quick-start ideas for new users
 - AI-powered code generator with live preview (split-view: chat + iframe)
+- AI Content Creation Mode: smart emails, proposals, documents with user context (name, email, business) auto-filled — no placeholders
 - Image scanning/recognition via Google Gemini (ScanSearch button in AI chat)
 - Project continuity: conversations linked to projects via projectId, "Open & Build" resumes last conversation
 - File attachments in AI chat (photos, videos, screenshots) with OpenAI vision support
