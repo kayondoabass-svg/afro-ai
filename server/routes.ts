@@ -7,11 +7,29 @@ import { insertProjectSchema } from "@shared/schema";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
 import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./pesapal";
 import { analyzeImage } from "./gemini";
+import { scanHtmlContent, publishedAppHeaders } from "./security";
+import rateLimit from "express-rate-limit";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import express from "express";
 import crypto from "crypto";
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please try again later." },
+});
+
+const publishLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Publishing rate limit reached. Please try again later." },
+});
 
 const uploadDir = path.join(process.cwd(), "public", "uploads");
 if (!fs.existsSync(uploadDir)) {
@@ -58,6 +76,15 @@ export async function registerRoutes(
         try {
           const publishedApp = await storage.getPublishedAppBySubdomain(subdomain);
           if (publishedApp) {
+            if (publishedApp.appStatus === "suspended") {
+              return res.status(403).send(
+                '<!DOCTYPE html><html><head><title>Site Suspended</title></head>' +
+                '<body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#ef4444;">' +
+                '<div style="text-align:center;"><h1>Site Suspended</h1><p style="color:#888;">This site has been temporarily taken offline.</p>' +
+                '<a href="https://afroaigroup.com" style="color:#d4af37;">Afro AI</a></div></body></html>'
+              );
+            }
+            publishedAppHeaders(res);
             return res.send(publishedApp.htmlContent);
           }
           return res.status(404).send(
@@ -188,7 +215,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/publish", isAuthenticated, async (req: any, res) => {
+  app.post("/api/publish", publishLimiter, isAuthenticated, async (req: any, res) => {
     const userId = req.user.claims.sub;
     const { subdomain, htmlContent, title } = req.body;
 
@@ -220,6 +247,19 @@ export async function registerRoutes(
         sendStep("validate", "error", validation.error);
         return sendError(validation.error!);
       }
+
+      const scanResult = scanHtmlContent(htmlContent);
+      if (scanResult.blocked) {
+        sendStep("validate", "error", "Security check failed");
+        return sendError(scanResult.reason || "Content contains potentially dangerous code patterns");
+      }
+      if (scanResult.warnings.length > 0) {
+        const highWarnings = scanResult.warnings.filter(w => w.severity === "high");
+        if (highWarnings.length > 0) {
+          console.log(`Security warnings for ${subdomainLower}: ${highWarnings.map(w => w.name).join(", ")}`);
+        }
+      }
+
       sendStep("validate", "done", "Input validated");
 
       sendStep("check", "active");
@@ -343,8 +383,7 @@ export async function registerRoutes(
         `);
       }
       if (publishedApp.appStatus === "suspended") {
-        return res.status(403).send(`
-          <!DOCTYPE html>
+        return res.status(403).send(`<!DOCTYPE html>
           <html><head><title>Site Suspended</title>
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <style>
@@ -372,6 +411,7 @@ export async function registerRoutes(
           </body></html>
         `);
       }
+      publishedAppHeaders(res);
       res.send(publishedApp.htmlContent);
     } catch (error) {
       console.error("Error serving published app:", error);
@@ -549,7 +589,7 @@ export async function registerRoutes(
 
   const PLAN_PRICES_USD: Record<string, number> = { pro: 9, business: 29 };
 
-  app.post("/api/subscribe", isAuthenticated, async (req: any, res) => {
+  app.post("/api/subscribe", apiLimiter, isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { plan, countryCode, firstName, lastName, phoneNumber } = req.body;

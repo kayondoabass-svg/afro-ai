@@ -90,7 +90,15 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
-  app.get("/api/login", (req: any, res, next) => {
+  const rateLimit = (await import("express-rate-limit")).default;
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  app.get("/api/login", authLimiter, (req: any, res, next) => {
     if (req.query.ref) {
       req.session.referralCode = req.query.ref;
     }

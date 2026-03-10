@@ -19,6 +19,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - `server/storage.ts` - Database storage layer
 - `server/cloudflare.ts` - Cloudflare DNS API service for subdomain management
 - `server/pesapal.ts` - Pesapal payment gateway integration (API 3.0)
+- `server/security.ts` - Security: HTML scanning, CSP headers, security headers
 - `server/db.ts` - Database connection
 - `server/gemini.ts` - Google Gemini AI image analysis service
 - `server/replit_integrations/` - Auth, Chat, Image integrations
@@ -137,6 +138,14 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - Usage tracking: every AI chat completion logs the model used and estimated tokens consumed
 - Billing page (`/billing`): current plan card, AI usage chart (30-day bar chart with daily breakdown), payment history table, receipt modal with print support
 - Receipt includes: Afro AI branding, KEYO TECHNOLOGIES business details, transaction info, customer info, print/save button
+
+## Security
+- Global security headers: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy
+- Published app CSP headers: restricts scripts to trusted CDNs (jsdelivr, cloudflare, unpkg), blocks frame embedding except afroaigroup.com
+- HTML content scanning before publish: detects dangerous patterns (eval, document.cookie theft, crypto mining, external fetch, parent frame access); blocks content with 3+ high-severity issues
+- Rate limiting: API (100/15min), Auth (20/15min), Publish (30/hr), Chat AI (20/min)
+- iframe sandbox for preview: `allow-scripts allow-popups` only (blocks same-origin, navigation, forms)
+- Session security: httpOnly, secure (production), sameSite: lax, PostgreSQL-backed
 
 ## Environment Variables
 - DATABASE_URL - PostgreSQL connection
