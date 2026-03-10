@@ -1,8 +1,8 @@
 import { db } from "./db";
-import { projects, publishedApps, referrals, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type Referral, type InsertReferral } from "@shared/schema";
+import { projects, publishedApps, referrals, payments, usageLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
-import { eq, desc, sql, count, and } from "drizzle-orm";
+import { eq, desc, sql, count, and, gte } from "drizzle-orm";
 import crypto from "crypto";
 
 export interface IStorage {
@@ -41,6 +41,14 @@ export interface IStorage {
   getUserReferralStats(userId: string): Promise<{ totalReferrals: number; paidReferrals: number; totalEarnings: number; credit: number }>;
   updateUserPlan(userId: string, plan: string): Promise<void>;
   getUser(userId: string): Promise<any | undefined>;
+  createPayment(payment: InsertPayment): Promise<Payment>;
+  updatePaymentByMerchantRef(merchantRef: string, data: Partial<InsertPayment>): Promise<Payment | undefined>;
+  getPaymentsByUser(userId: string): Promise<Payment[]>;
+  getPaymentById(id: number): Promise<Payment | undefined>;
+  getPaymentByMerchantRef(merchantRef: string): Promise<Payment | undefined>;
+  createUsageLog(log: InsertUsageLog): Promise<UsageLog>;
+  getUsageByUser(userId: string): Promise<UsageLog[]>;
+  getUsageStatsByUser(userId: string): Promise<{ totalGenerations: number; totalTokens: number; dailyUsage: { date: string; generations: number; tokens: number }[] }>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -213,6 +221,67 @@ class DatabaseStorage implements IStorage {
   async getUser(userId: string): Promise<any | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     return user;
+  }
+
+  async createPayment(payment: InsertPayment): Promise<Payment> {
+    const [created] = await db.insert(payments).values(payment).returning();
+    return created;
+  }
+
+  async updatePaymentByMerchantRef(merchantRef: string, data: Partial<InsertPayment>): Promise<Payment | undefined> {
+    const [updated] = await db.update(payments).set(data).where(eq(payments.merchantReference, merchantRef)).returning();
+    return updated;
+  }
+
+  async getPaymentsByUser(userId: string): Promise<Payment[]> {
+    return db.select().from(payments).where(eq(payments.userId, userId)).orderBy(desc(payments.createdAt));
+  }
+
+  async getPaymentById(id: number): Promise<Payment | undefined> {
+    const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+    return payment;
+  }
+
+  async getPaymentByMerchantRef(merchantRef: string): Promise<Payment | undefined> {
+    const [payment] = await db.select().from(payments).where(eq(payments.merchantReference, merchantRef));
+    return payment;
+  }
+
+  async createUsageLog(log: InsertUsageLog): Promise<UsageLog> {
+    const [created] = await db.insert(usageLogs).values(log).returning();
+    return created;
+  }
+
+  async getUsageByUser(userId: string): Promise<UsageLog[]> {
+    return db.select().from(usageLogs).where(eq(usageLogs.userId, userId)).orderBy(desc(usageLogs.createdAt));
+  }
+
+  async getUsageStatsByUser(userId: string): Promise<{ totalGenerations: number; totalTokens: number; dailyUsage: { date: string; generations: number; tokens: number }[] }> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const logs = await db.select().from(usageLogs)
+      .where(and(eq(usageLogs.userId, userId), gte(usageLogs.createdAt, thirtyDaysAgo)))
+      .orderBy(desc(usageLogs.createdAt));
+
+    const totalGenerations = logs.length;
+    const totalTokens = logs.reduce((sum, l) => sum + (l.tokensUsed || 0), 0);
+
+    const dailyMap = new Map<string, { generations: number; tokens: number }>();
+    for (const log of logs) {
+      const dateKey = log.createdAt.toISOString().split("T")[0];
+      const existing = dailyMap.get(dateKey) || { generations: 0, tokens: 0 };
+      existing.generations++;
+      existing.tokens += log.tokensUsed || 0;
+      dailyMap.set(dateKey, existing);
+    }
+
+    const dailyUsage = Array.from(dailyMap.entries()).map(([date, data]) => ({
+      date,
+      ...data,
+    })).sort((a, b) => a.date.localeCompare(b.date));
+
+    return { totalGenerations, totalTokens, dailyUsage };
   }
 }
 

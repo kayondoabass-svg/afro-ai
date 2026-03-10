@@ -67,3 +67,42 @@ export const insertReferralSchema = createInsertSchema(referrals).omit({
 
 export type Referral = typeof referrals.$inferSelect;
 export type InsertReferral = z.infer<typeof insertReferralSchema>;
+
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  plan: varchar("plan").notNull(),
+  amount: numeric("amount").notNull(),
+  currency: varchar("currency").notNull().default("USD"),
+  pesapalTrackingId: varchar("pesapal_tracking_id"),
+  merchantReference: varchar("merchant_reference").notNull(),
+  paymentMethod: varchar("payment_method"),
+  confirmationCode: varchar("confirmation_code"),
+  status: varchar("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertPaymentSchema = createInsertSchema(payments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type Payment = typeof payments.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+
+export const usageLogs = pgTable("usage_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  conversationId: integer("conversation_id"),
+  model: varchar("model").notNull(),
+  tokensUsed: integer("tokens_used").notNull().default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertUsageLogSchema = createInsertSchema(usageLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type UsageLog = typeof usageLogs.$inferSelect;
+export type InsertUsageLog = z.infer<typeof insertUsageLogSchema>;

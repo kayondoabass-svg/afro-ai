@@ -26,6 +26,7 @@ import {
   Gift,
   LayoutTemplate,
   Settings,
+  Receipt,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -45,6 +46,7 @@ export function AppSidebar() {
     { title: "Deployments", url: "/deployments", icon: Rocket },
     { title: "Referrals", url: "/referrals", icon: Gift },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
+    { title: "Billing & Usage", url: "/billing", icon: Receipt },
     { title: "Settings", url: "/settings", icon: Settings },
   ];
 

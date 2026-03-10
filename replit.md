@@ -13,7 +13,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - **Routing**: wouter (frontend), Express (backend)
 
 ## Project Structure
-- `client/src/pages/` - Landing, Dashboard, AI Chat, Deployments, Pricing, Referrals, Templates, Settings, Founder Dashboard, Admin Command, About, Contact, Privacy, Terms, Cookies pages
+- `client/src/pages/` - Landing, Dashboard, AI Chat, Deployments, Pricing, Billing, Referrals, Templates, Settings, Founder Dashboard, Admin Command, About, Contact, Privacy, Terms, Cookies pages
 - `client/src/components/` - AppSidebar, ThemeProvider, ThemeToggle, UI components
 - `server/routes.ts` - API routes (projects CRUD, publishing)
 - `server/storage.ts` - Database storage layer
@@ -22,7 +22,7 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - `server/db.ts` - Database connection
 - `server/gemini.ts` - Google Gemini AI image analysis service
 - `server/replit_integrations/` - Auth, Chat, Image integrations
-- `shared/schema.ts` - Drizzle schemas (users, sessions, projects, conversations, messages, publishedApps)
+- `shared/schema.ts` - Drizzle schemas (users, sessions, projects, conversations, messages, publishedApps, payments, usageLogs)
 - `shared/models/` - Auth and Chat model definitions
 - `shared/currencies.ts` - All 54 African countries with currency codes, symbols, and exchange rates
 
@@ -94,8 +94,11 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - `GET /api/check-subdomain/:subdomain` - Check if subdomain is available
 - `GET /site/:subdomain` - Serve published app HTML
 - `GET /api/referral` - Get user's referral code, link, stats, and referral list (auth required)
+- `GET /api/usage` - Get user's AI usage stats (generations, tokens, daily breakdown, auth required)
+- `GET /api/payments` - Get user's payment history (auth required)
+- `GET /api/payments/:id/receipt` - Get formatted receipt data for a specific payment (auth required)
 - `POST /api/subscribe` - Create Pesapal payment order, returns redirect URL (auth required)
-- `GET /api/pesapal/ipn` - Pesapal IPN callback (processes payment, upgrades plan)
+- `GET /api/pesapal/ipn` - Pesapal IPN callback (processes payment, upgrades plan, records payment)
 - `GET /api/pesapal/callback` - User redirect after payment completion
 - Auth routes: `/api/login`, `/api/logout`, `/api/auth/user`, `/api/callback`
 
@@ -126,6 +129,14 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - DB tables: `referrals` (id, referrer_id, referred_id, status, commission_amount, paid_plan, created_at)
 - User fields: referral_code (unique), referred_by, referral_credit (cents)
 - Referrals page (`/referrals`): Shows referral link, stats (total/paid/earnings/credit), how-it-works, referral list
+
+## Billing & Usage Tracking System
+- `payments` table: records every Pesapal transaction (id, userId, plan, amount, currency, pesapalTrackingId, merchantReference, paymentMethod, confirmationCode, status, createdAt)
+- `usage_logs` table: tracks every AI generation (id, userId, conversationId, model, tokensUsed, createdAt)
+- Payment flow: `/api/subscribe` creates pending payment record → Pesapal redirect → IPN/callback updates to completed/failed with payment method and confirmation code
+- Usage tracking: every AI chat completion logs the model used and estimated tokens consumed
+- Billing page (`/billing`): current plan card, AI usage chart (30-day bar chart with daily breakdown), payment history table, receipt modal with print support
+- Receipt includes: Afro AI branding, KEYO TECHNOLOGIES business details, transaction info, customer info, print/save button
 
 ## Environment Variables
 - DATABASE_URL - PostgreSQL connection

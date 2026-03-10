@@ -484,6 +484,67 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/usage", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const stats = await storage.getUsageStatsByUser(userId);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching usage:", error);
+      res.status(500).json({ message: "Failed to fetch usage data" });
+    }
+  });
+
+  app.get("/api/payments", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userPayments = await storage.getPaymentsByUser(userId);
+      res.json(userPayments);
+    } catch (error) {
+      console.error("Error fetching payments:", error);
+      res.status(500).json({ message: "Failed to fetch payments" });
+    }
+  });
+
+  app.get("/api/payments/:id/receipt", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const paymentId = parseInt(req.params.id);
+      const payment = await storage.getPaymentById(paymentId);
+
+      if (!payment) {
+        return res.status(404).json({ message: "Payment not found" });
+      }
+      if (payment.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const user = await storage.getUser(userId);
+
+      res.json({
+        receipt: {
+          id: payment.id,
+          date: payment.createdAt,
+          plan: payment.plan,
+          amount: payment.amount,
+          currency: payment.currency,
+          paymentMethod: payment.paymentMethod,
+          confirmationCode: payment.confirmationCode,
+          status: payment.status,
+          merchantReference: payment.merchantReference,
+          customerName: user ? [user.firstName, user.lastName].filter(Boolean).join(" ") : "Customer",
+          customerEmail: user?.email || "",
+          business: "KEYO TECHNOLOGIES",
+          registrationNo: "80030812159711",
+          platform: "Afro AI (afroaigroup.com)",
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching receipt:", error);
+      res.status(500).json({ message: "Failed to fetch receipt" });
+    }
+  });
+
   let cachedIpnId: string | null = null;
 
   const PLAN_PRICES_USD: Record<string, number> = { pro: 9, business: 29 };
@@ -549,6 +610,16 @@ export async function registerRoutes(
         },
       });
 
+      await storage.createPayment({
+        userId,
+        plan,
+        amount: amount.toString(),
+        currency,
+        pesapalTrackingId: order.order_tracking_id,
+        merchantReference,
+        status: "pending",
+      });
+
       res.json({
         redirectUrl: order.redirect_url,
         orderTrackingId: order.order_tracking_id,
@@ -559,6 +630,53 @@ export async function registerRoutes(
       res.status(500).json({ message: error.message || "Failed to create subscription" });
     }
   });
+
+  async function processCompletedPayment(merchantRef: string, status: any) {
+    const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
+    if (!existingPayment) {
+      console.error(`No payment record found for merchantRef: ${merchantRef}`);
+      return false;
+    }
+
+    if (existingPayment.status === "completed") {
+      console.log(`Payment ${merchantRef} already processed, skipping`);
+      return true;
+    }
+
+    if (status.merchant_reference && status.merchant_reference !== merchantRef) {
+      console.error(`Merchant reference mismatch: expected ${merchantRef}, got ${status.merchant_reference}`);
+      return false;
+    }
+
+    await storage.updatePaymentByMerchantRef(merchantRef, {
+      status: "completed",
+      paymentMethod: status.payment_method || undefined,
+      confirmationCode: status.confirmation_code || undefined,
+    });
+
+    const userId = existingPayment.userId;
+    const plan = existingPayment.plan;
+
+    await storage.updateUserPlan(userId, plan);
+    await storage.reactivateAppsByUser(userId);
+    console.log(`User ${userId} upgraded to ${plan} plan — apps reactivated`);
+
+    try {
+      const user = await storage.getUser(userId);
+      if (user?.referredBy) {
+        const referrer = await storage.getUserByReferralCode(user.referredBy);
+        if (referrer) {
+          const commission = Math.round(status.amount * 0.1);
+          await storage.updateReferralStatus(userId, "paid", commission, plan);
+          await storage.addReferralCredit(referrer.id, commission);
+        }
+      }
+    } catch (refErr) {
+      console.error("Error processing referral commission:", refErr);
+    }
+
+    return true;
+  }
 
   app.get("/api/pesapal/ipn", async (req, res) => {
     try {
@@ -576,29 +694,12 @@ export async function registerRoutes(
       const status = await getTransactionStatus(trackingId);
 
       if (isPaymentComplete(status)) {
-        const parts = merchantRef.split("-");
-        if (parts.length >= 2) {
-          const plan = parts[0];
-          const userId = parts.slice(1, -1).join("-");
-          await storage.updateUserPlan(userId, plan);
-          await storage.reactivateAppsByUser(userId);
-          console.log(`User ${userId} upgraded to ${plan} plan via IPN — apps reactivated`);
-
-          try {
-            const user = await storage.getUser(userId);
-            if (user?.referredBy) {
-              const referrer = await storage.getUserByReferralCode(user.referredBy);
-              if (referrer) {
-                const commission = Math.round(status.amount * 0.1);
-                await storage.updateReferralStatus(userId, "paid", commission, plan);
-                await storage.addReferralCredit(referrer.id, commission);
-              }
-            }
-          } catch (refErr) {
-            console.error("Error processing referral commission:", refErr);
-          }
-        }
+        await processCompletedPayment(merchantRef, status);
       } else if (isPaymentFailed(status)) {
+        const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
+        if (existingPayment && existingPayment.status === "pending") {
+          await storage.updatePaymentByMerchantRef(merchantRef, { status: "failed" });
+        }
         console.log(`Payment failed for ${merchantRef}: ${status.payment_status_description}`);
       }
 
@@ -623,15 +724,14 @@ export async function registerRoutes(
       const status = await getTransactionStatus(trackingId);
 
       if (isPaymentComplete(status)) {
-        const parts = merchantRef.split("-");
-        if (parts.length >= 2) {
-          const plan = parts[0];
-          const userId = parts.slice(1, -1).join("-");
-          await storage.updateUserPlan(userId, plan);
-          console.log(`User ${userId} upgraded to ${plan} plan via callback`);
-        }
-        return res.redirect(`/?payment=success&plan=${encodeURIComponent(parts[0] || "pro")}`);
+        await processCompletedPayment(merchantRef, status);
+        const payment = await storage.getPaymentByMerchantRef(merchantRef);
+        return res.redirect(`/?payment=success&plan=${encodeURIComponent(payment?.plan || "pro")}`);
       } else if (isPaymentFailed(status)) {
+        const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
+        if (existingPayment && existingPayment.status === "pending") {
+          await storage.updatePaymentByMerchantRef(merchantRef, { status: "failed" });
+        }
         return res.redirect(`/?payment=failed&reason=${encodeURIComponent(status.payment_status_description || "Payment failed")}`);
       } else {
         return res.redirect(`/?payment=pending&trackingId=${encodeURIComponent(trackingId)}`);

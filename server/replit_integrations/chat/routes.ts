@@ -608,6 +608,7 @@ When writing emails, proposals, or documents for this user, use these real detai
       });
 
       let fullResponse = "";
+      let completionTokens = 0;
 
       for await (const chunk of stream) {
         const content = chunk.choices[0]?.delta?.content || "";
@@ -615,9 +616,31 @@ When writing emails, proposals, or documents for this user, use these real detai
           fullResponse += content;
           res.write(`data: ${JSON.stringify({ content })}\n\n`);
         }
+        if (chunk.usage?.completion_tokens) {
+          completionTokens = chunk.usage.completion_tokens;
+        }
+      }
+
+      if (!completionTokens) {
+        completionTokens = Math.ceil(fullResponse.length / 4);
       }
 
       await chatStorage.createMessage(conversationId, "assistant", fullResponse);
+
+      try {
+        const authUser = (req as any).user;
+        if (authUser?.claims?.sub) {
+          const { storage } = await import("../../storage");
+          await storage.createUsageLog({
+            userId: authUser.claims.sub,
+            conversationId,
+            model,
+            tokensUsed: completionTokens,
+          });
+        }
+      } catch (usageErr) {
+        console.error("Error logging usage:", usageErr);
+      }
 
       try {
         if (messages.length <= 1) {

@@ -28,6 +28,7 @@ import CookiePolicyPage from "@/pages/cookies";
 import RefundPolicyPage from "@/pages/refund-policy";
 import TemplatesPage from "@/pages/templates";
 import SettingsPage from "@/pages/settings";
+import BillingPage from "@/pages/billing";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -59,6 +60,7 @@ function AuthenticatedLayout() {
               <Route path="/referrals" component={ReferralsPage} />
               <Route path="/templates" component={TemplatesPage} />
               <Route path="/settings" component={SettingsPage} />
+              <Route path="/billing" component={BillingPage} />
               <Route path="/about" component={AboutPage} />
               <Route path="/contact" component={ContactPage} />
               <Route path="/privacy" component={PrivacyPage} />
