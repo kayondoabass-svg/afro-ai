@@ -483,6 +483,135 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/forms", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const userForms = await storage.getFormsByUser(userId);
+      const formsWithCounts = await Promise.all(
+        userForms.map(async (f) => ({
+          ...f,
+          submissionCount: await storage.getFormSubmissionCount(f.id),
+        }))
+      );
+      res.json(formsWithCounts);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch forms" });
+    }
+  });
+
+  app.post("/api/forms", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const { name, description, fields, submitButtonText, successMessage, notificationEmail } = req.body;
+      if (!name?.trim()) return res.status(400).json({ message: "Form name is required" });
+      const form = await storage.createForm({
+        userId,
+        name: name.trim(),
+        description: description || null,
+        fields: fields || [],
+        submitButtonText: submitButtonText || "Submit",
+        successMessage: successMessage || "Thank you! Your submission has been received.",
+        notificationEmail: notificationEmail || null,
+        isActive: true,
+      });
+      res.status(201).json(form);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create form" });
+    }
+  });
+
+  app.get("/api/forms/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+      const form = await storage.getForm(id);
+      if (!form || form.userId !== userId) return res.status(404).json({ message: "Form not found" });
+      res.json(form);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch form" });
+    }
+  });
+
+  app.put("/api/forms/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+      const form = await storage.getForm(id);
+      if (!form || form.userId !== userId) return res.status(404).json({ message: "Form not found" });
+      const { name, description, fields, submitButtonText, successMessage, notificationEmail, isActive } = req.body;
+      const updated = await storage.updateForm(id, {
+        name: name?.trim() || form.name,
+        description: description ?? form.description,
+        fields: fields ?? form.fields,
+        submitButtonText: submitButtonText || form.submitButtonText,
+        successMessage: successMessage || form.successMessage,
+        notificationEmail: notificationEmail ?? form.notificationEmail,
+        isActive: isActive ?? form.isActive,
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update form" });
+    }
+  });
+
+  app.delete("/api/forms/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+      const form = await storage.getForm(id);
+      if (!form || form.userId !== userId) return res.status(404).json({ message: "Form not found" });
+      await storage.deleteForm(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete form" });
+    }
+  });
+
+  app.get("/api/forms/:id/submissions", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+      const form = await storage.getForm(id);
+      if (!form || form.userId !== userId) return res.status(404).json({ message: "Form not found" });
+      const submissions = await storage.getFormSubmissions(id);
+      res.json(submissions);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch submissions" });
+    }
+  });
+
+  app.delete("/api/forms/:formId/submissions/:subId", isAuthenticated, async (req: any, res) => {
+    try {
+      const formId = parseInt(req.params.formId);
+      const subId = parseInt(req.params.subId);
+      const userId = req.user?.claims?.sub;
+      const form = await storage.getForm(formId);
+      if (!form || form.userId !== userId) return res.status(404).json({ message: "Form not found" });
+      await storage.deleteFormSubmission(subId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete submission" });
+    }
+  });
+
+  app.post("/api/forms/:id/submit", async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const form = await storage.getForm(id);
+      if (!form) return res.status(404).json({ message: "Form not found" });
+      if (!form.isActive) return res.status(403).json({ message: "This form is not accepting submissions" });
+      const submitterIp = req.ip || req.headers["x-forwarded-for"] as string || "";
+      const submission = await storage.createFormSubmission({
+        formId: id,
+        data: req.body || {},
+        submitterIp: submitterIp.toString().slice(0, 45),
+      });
+      res.json({ success: true, message: form.successMessage, submissionId: submission.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to submit form" });
+    }
+  });
+
   app.get("/site/:subdomain", async (req, res) => {
     try {
       const subdomain = req.params.subdomain.toLowerCase().trim();

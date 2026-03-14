@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projects, publishedApps, referrals, payments, usageLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog } from "@shared/schema";
+import { projects, publishedApps, referrals, payments, usageLogs, forms, formSubmissions, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -50,6 +50,15 @@ export interface IStorage {
   createUsageLog(log: InsertUsageLog): Promise<UsageLog>;
   getUsageByUser(userId: string): Promise<UsageLog[]>;
   getUsageStatsByUser(userId: string): Promise<{ totalGenerations: number; totalTokens: number; dailyUsage: { date: string; generations: number; tokens: number }[] }>;
+  getFormsByUser(userId: string): Promise<Form[]>;
+  getForm(id: number): Promise<Form | undefined>;
+  createForm(form: InsertForm): Promise<Form>;
+  updateForm(id: number, data: Partial<InsertForm>): Promise<Form>;
+  deleteForm(id: number): Promise<void>;
+  createFormSubmission(submission: InsertFormSubmission): Promise<FormSubmission>;
+  getFormSubmissions(formId: number): Promise<FormSubmission[]>;
+  deleteFormSubmission(id: number): Promise<void>;
+  getFormSubmissionCount(formId: number): Promise<number>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -290,6 +299,48 @@ class DatabaseStorage implements IStorage {
     })).sort((a, b) => a.date.localeCompare(b.date));
 
     return { totalGenerations, totalTokens, dailyUsage };
+  }
+
+  async getFormsByUser(userId: string): Promise<Form[]> {
+    return db.select().from(forms).where(eq(forms.userId, userId)).orderBy(desc(forms.createdAt));
+  }
+
+  async getForm(id: number): Promise<Form | undefined> {
+    const [form] = await db.select().from(forms).where(eq(forms.id, id));
+    return form;
+  }
+
+  async createForm(form: InsertForm): Promise<Form> {
+    const [created] = await db.insert(forms).values(form).returning();
+    return created;
+  }
+
+  async updateForm(id: number, data: Partial<InsertForm>): Promise<Form> {
+    const [updated] = await db.update(forms).set({ ...data, updatedAt: new Date() }).where(eq(forms.id, id)).returning();
+    return updated;
+  }
+
+  async deleteForm(id: number): Promise<void> {
+    await db.delete(formSubmissions).where(eq(formSubmissions.formId, id));
+    await db.delete(forms).where(eq(forms.id, id));
+  }
+
+  async createFormSubmission(submission: InsertFormSubmission): Promise<FormSubmission> {
+    const [created] = await db.insert(formSubmissions).values(submission).returning();
+    return created;
+  }
+
+  async getFormSubmissions(formId: number): Promise<FormSubmission[]> {
+    return db.select().from(formSubmissions).where(eq(formSubmissions.formId, formId)).orderBy(desc(formSubmissions.createdAt));
+  }
+
+  async deleteFormSubmission(id: number): Promise<void> {
+    await db.delete(formSubmissions).where(eq(formSubmissions.id, id));
+  }
+
+  async getFormSubmissionCount(formId: number): Promise<number> {
+    const [result] = await db.select({ value: count() }).from(formSubmissions).where(eq(formSubmissions.formId, formId));
+    return result?.value ?? 0;
   }
 }
 

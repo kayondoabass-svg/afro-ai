@@ -1,171 +1,32 @@
 # Afro AI
 
 ## Overview
-Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a registered business in Kampala, Uganda. It is a global AI-powered platform — born in Africa, built for the world — that helps creators build websites, web apps, games, tools, dashboards, and any digital product. It serves all 54 African countries plus the Americas, Europe, Asia, and beyond. Features include an AI-powered co-creation assistant, multi-page app generation, project management, ZIP project export, and a payment system (Pesapal).
-
-## Tech Stack
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
-- **Backend**: Express.js + Node.js
-- **Database**: PostgreSQL with Drizzle ORM
-- **Auth**: Google OAuth 2.0 (passport-google-oauth20)
-- **AI**: OpenAI via Replit AI Integrations (tiered: nano/mini/4.1 by plan)
-- **Payments**: Pesapal (Mobile Money, Visa, Mastercard, bank transfers)
-- **Routing**: wouter (frontend), Express (backend)
-
-## Project Structure
-- `client/src/pages/` - Landing, Dashboard, AI Chat, Deployments, Pricing, Billing, Referrals, Templates, Settings, Founder Dashboard, Admin Command, About, Contact, Privacy, Terms, Cookies pages
-- `client/src/components/` - AppSidebar, ThemeProvider, ThemeToggle, UI components
-- `server/routes.ts` - API routes (projects CRUD, publishing)
-- `server/storage.ts` - Database storage layer
-- `server/cloudflare.ts` - Cloudflare DNS API service for subdomain management
-- `server/pesapal.ts` - Pesapal payment gateway integration (API 3.0)
-- `server/security.ts` - Security: HTML scanning, CSP headers, security headers
-- `server/db.ts` - Database connection
-- `server/gemini.ts` - Google Gemini AI image analysis service
-- `server/replit_integrations/` - Auth, Chat, Image integrations
-- `shared/schema.ts` - Drizzle schemas (users, sessions, projects, conversations, messages, publishedApps, payments, usageLogs)
-- `shared/models/` - Auth and Chat model definitions
-- `shared/currencies.ts` - All 54 African countries with currency codes, symbols, and exchange rates
-
-## Key Features
-- Dark mode default with light mode toggle (African-inspired gold/amber theme)
-- Landing page with African heritage imagery, "How It Works" steps, testimonials, animated gradient text
-- Dashboard with project management (create, view, delete) and quick-start ideas for new users
-- AI-powered code generator with live preview (split-view: chat + iframe)
-- AI Content Creation Mode: smart emails, proposals, documents with user context (name, email, business) auto-filled — no placeholders
-- Image scanning/recognition via Google Gemini (ScanSearch button in AI chat)
-- Project continuity: conversations linked to projects via projectId, "Open & Build" resumes last conversation
-- File attachments in AI chat (photos, videos, screenshots) with OpenAI vision support
-- Tiered AI models by plan: Starter=gpt-4.1-nano, Pro=gpt-4.1-mini, Business=gpt-4.1
-- App publishing to {name}.afroaigroup.com via Cloudflare DNS + Express subdomain routing
-- Deployments page: detailed view of all published apps with URL, visibility, status, copy/delete
-- Pricing page with Pesapal payment integration
-- Templates page: 21 pre-built African business templates across 5 categories (Business, E-Commerce, Portfolio, Community, Events) with one-click "Use Template" to start building
-- Settings page: profile display, plan badge, country/currency preference selector, account stats
-- AI co-creation with 30/70 rule: AI asks clarifying questions first, then builds with predictive UX (auto-suggests M-Pesa, WhatsApp, local currencies)
-- Context-aware AI: on follow-up requests, the AI receives the last generated HTML as "CURRENT APP STATE" in its system prompt, so it modifies the existing code surgically instead of rebuilding from scratch
-- Performance-first code generation: lazy loading, <500KB pages, optimized for 2G/3G African networks
-- Dashboard shows live published sites, plan badge, and published apps count
-- Responsive design with sidebar navigation
-
-## Custom Domain Support
-- Users can connect their own domain (e.g. `mybusiness.com`) to any published app
-- `customDomain` and `customDomainVerified` fields added to `published_apps` table
-- Flow: User enters domain → system saves it → user adds CNAME record at their registrar → user clicks Verify → server does DNS lookup to confirm → marks as verified
-- Middleware checks incoming `Host` headers against verified custom domains and serves the correct app
-- API routes:
-  - `POST /api/published-apps/:id/connect-domain` - Save custom domain (body: domain)
-  - `POST /api/published-apps/:id/verify-domain` - DNS verification check
-  - `DELETE /api/published-apps/:id/custom-domain` - Remove custom domain
-- Deployments page shows "Connect Domain" button, DNS instructions, and verify button per app
-- Custom domain badge shown when active; yellow "Pending Verification" badge shown while unverified
-
-## App Publishing
-- Users can publish AI-generated apps to `{name}.afroaigroup.com` (unique subdomain per app)
-- Published apps stored in `published_apps` table (htmlContent, subdomain, title, appStatus, suspendedAt, suspendReason)
-- Name validation: 3-50 chars, lowercase alphanumeric + hyphens, reserved words blocked
-- Subdomain middleware detects `*.afroaigroup.com` requests via Host header and serves published HTML
-- Fallback route: `/site/:subdomain` also serves published apps (path-based access)
-- Publish dialog loads user's existing app from server API (per-user, no localStorage)
-- Users can update or delete their published apps (delete includes Cloudflare DNS cleanup)
-- Auto-test & auto-publish: after AI generates code, automated quality checks run (HTML structure, content, broken images); if checks pass and user has existing app, auto-republishes to their subdomain
-
-## App Suspension System
-- Published apps have `appStatus` field: "active" (default) or "suspended"
-- Suspended apps show a branded "Site Suspended" page with reason instead of app content
-- Founder can suspend/reactivate individual apps from Founder Dashboard (Ban/CheckCircle buttons)
-- Founder can suspend/reactivate all apps for a specific user via admin API
-- When a user pays (Pesapal IPN), their suspended apps are automatically reactivated
-- Admin API routes:
-  - `POST /api/admin/published-apps/:id/suspend` - Suspend single app (body: reason)
-  - `POST /api/admin/published-apps/:id/reactivate` - Reactivate single app
-  - `POST /api/admin/users/:userId/suspend-apps` - Suspend all user's apps
-  - `POST /api/admin/users/:userId/reactivate-apps` - Reactivate all user's apps
-- Deployments page shows red "Suspended" status with reason in expanded details
-- Dashboard Live Sites shows red icon for suspended apps
-
-## AI Model Tiers
-- **Starter (Free)**: gpt-4.1-nano, 16k max tokens - basic code generation
-- **Pro ($9/mo)**: gpt-4.1-mini, 32k max tokens - better quality designs
-- **Business ($29/mo)**: gpt-4.1, 32k max tokens - premium quality output
-- User plan stored in `users.plan` column (default: "starter")
-- Model selection happens server-side in chat/routes.ts based on DB lookup
-
-## API Routes
-- `GET /api/projects` - Get user's projects (auth required)
-- `POST /api/projects` - Create project (auth required)
-- `DELETE /api/projects/:id` - Delete project (auth required)
-- `GET /api/conversations` - Get all conversations
-- `POST /api/conversations` - Create conversation
-- `POST /api/conversations/:id/messages` - Send message with optional attachments (streaming SSE, vision support)
-- `DELETE /api/conversations/:id` - Delete conversation
-- `POST /api/upload` - Upload files (images/videos, max 10MB, auth required)
-- `POST /api/analyze-image` - Analyze image with Google Gemini AI (auth required, body: imageBase64, mimeType, prompt)
-- `GET /api/published-apps` - Get user's published apps (auth required)
-- `POST /api/publish` - Publish app to subdomain (auth required, body: subdomain, htmlContent, title)
-- `DELETE /api/published-apps/:id` - Delete published app and DNS record (auth required)
-- `GET /api/check-subdomain/:subdomain` - Check if subdomain is available
-- `GET /site/:subdomain` - Serve published app HTML
-- `GET /api/referral` - Get user's referral code, link, stats, and referral list (auth required)
-- `GET /api/usage` - Get user's AI usage stats (generations, tokens, daily breakdown, auth required)
-- `GET /api/payments` - Get user's payment history (auth required)
-- `GET /api/payments/:id/receipt` - Get formatted receipt data for a specific payment (auth required)
-- `POST /api/subscribe` - Create Pesapal payment order, returns redirect URL (auth required)
-- `GET /api/pesapal/ipn` - Pesapal IPN callback (processes payment, upgrades plan, records payment)
-- `GET /api/pesapal/callback` - User redirect after payment completion
-- Auth routes: `/api/login`, `/api/logout`, `/api/auth/user`, `/api/callback`
+Afro AI, a product of KEYO TECHNOLOGIES, is a global AI-powered platform designed to help creators build digital products such as websites, web apps, games, tools, and dashboards. Born in Africa, it serves a global market. Key capabilities include an AI co-creation assistant, multi-page app generation, project management, and ZIP project export. The platform aims to democratize digital creation and foster innovation worldwide.
 
 ## User Preferences
 - Dark mode as default
 - African-inspired color scheme (gold primary, warm tones)
 - Pesapal for payments across Africa (Mobile Money, Visa, Mastercard, bank transfers)
-- PESAPAL_CONSUMER_KEY, PESAPAL_CONSUMER_SECRET needed for payment processing
 
-## Founder / Admin System
-- Founder email: kayondoabass@gmail.com (hardcoded in server for security)
-- `isFounder` middleware: checks email match, returns 403 for non-founders
-- `/api/auth/user` response includes `isFounder: boolean` field
-- Founder Dashboard (`/founder`): Full platform analytics - all users, projects, published apps, conversations, messages
-- Admin Command Center (`/admin-command`): AI chat interface where founder can type natural language instructions to build/modify pages and publish directly to afroaigroup.com
-- Admin API routes: `/api/admin/stats`, `/api/admin/users`, `/api/admin/projects`, `/api/admin/published-apps` (all protected by isFounder middleware)
-- Sidebar shows "Founder" section with Crown icon only when isFounder is true
+## System Architecture
+The platform is built with a modern web stack: React, TypeScript, Vite, Tailwind CSS, and shadcn/ui for the frontend; Express.js and Node.js for the backend; and PostgreSQL with Drizzle ORM for the database. Authentication is handled via Google OAuth 2.0. AI capabilities are powered by OpenAI, with tiered models based on user plans.
 
-## Referral Commission System
-- Users get a unique 8-character referral code (auto-generated on first access)
-- Referral link format: `https://afroaigroup.com?ref=CODE`
-- Landing page captures `?ref=` param and passes it to `/api/login?ref=CODE`
-- On Google OAuth callback, ref code is stored in session, then used to create referral record
-- 5% commission when referred user upgrades to paid plan
-- Commission credited towards referrer's Afro AI plan subscription
-- Self-referral prevention: checked in both auth callback and storage layer
-- Duplicate prevention: unique index on referrals.referred_id
-- DB tables: `referrals` (id, referrer_id, referred_id, status, commission_amount, paid_plan, created_at)
-- User fields: referral_code (unique), referred_by, referral_credit (cents)
-- Referrals page (`/referrals`): Shows referral link, stats (total/paid/earnings/credit), how-it-works, referral list
+**Key Architectural Decisions & Features:**
+-   **AI Co-creation:** An AI-powered code generator with a live preview, enabling iterative development. It supports context-aware generation by feeding the last generated HTML back into the prompt, allowing surgical modifications.
+-   **Performance Optimization:** Code generation prioritizes lazy loading and small page sizes (<500KB) for optimal performance on slower networks common in Africa.
+-   **App Publishing:** Users can publish AI-generated apps to unique subdomains (e.g., `{name}.afroaigroup.com`) managed via Cloudflare DNS. Custom domain support allows users to connect their own domains.
+-   **Templating System:** Offers 21 pre-built African business templates across various categories for quick project initiation.
+-   **Project Management:** A dashboard allows users to create, view, and delete projects, and provides quick-start ideas. Conversations are linked to projects for continuity.
+-   **Form Builder:** Provides a robust form creation tool with various field types, submission tracking, and embeddable code snippets.
+-   **Tiered AI Models:** Different AI models (gpt-4.1-nano, gpt-4.1-mini, gpt-4.1) are offered based on user subscription plans.
+-   **Security:** Implements global security headers, content security policies for published apps, HTML content scanning to detect malicious patterns, and API rate limiting.
+-   **Referral System:** Includes a referral program with unique codes and commission tracking for plan upgrades.
+-   **Billing & Usage Tracking:** Integrates Pesapal for payments, tracks AI usage (tokens, generations), and provides detailed billing information and payment history.
+-   **Admin/Founder System:** A dedicated interface for founders/administrators to manage users, projects, published apps, and access analytics, including an AI chat for administrative commands.
 
-## Billing & Usage Tracking System
-- `payments` table: records every Pesapal transaction (id, userId, plan, amount, currency, pesapalTrackingId, merchantReference, paymentMethod, confirmationCode, status, createdAt)
-- `usage_logs` table: tracks every AI generation (id, userId, conversationId, model, tokensUsed, createdAt)
-- Payment flow: `/api/subscribe` creates pending payment record → Pesapal redirect → IPN/callback updates to completed/failed with payment method and confirmation code
-- Usage tracking: every AI chat completion logs the model used and estimated tokens consumed
-- Billing page (`/billing`): current plan card, AI usage chart (30-day bar chart with daily breakdown), payment history table, receipt modal with print support
-- Receipt includes: Afro AI branding, KEYO TECHNOLOGIES business details, transaction info, customer info, print/save button
-
-## Security
-- Global security headers: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy
-- Published app CSP headers: restricts scripts to trusted CDNs (jsdelivr, cloudflare, unpkg), blocks frame embedding except afroaigroup.com
-- HTML content scanning before publish: detects dangerous patterns (eval, document.cookie theft, crypto mining, external fetch, parent frame access); blocks content with 3+ high-severity issues
-- Rate limiting: API (100/15min), Auth (20/15min), Publish (30/hr), Chat AI (20/min)
-- iframe sandbox for preview: `allow-scripts allow-popups` only (blocks same-origin, navigation, forms)
-- Session security: httpOnly, secure (production), sameSite: lax, PostgreSQL-backed
-
-## Environment Variables
-- DATABASE_URL - PostgreSQL connection
-- SESSION_SECRET - Session encryption
-- AI_INTEGRATIONS_OPENAI_API_KEY - AI access (auto-configured)
-- AI_INTEGRATIONS_OPENAI_BASE_URL - AI endpoint (auto-configured)
-- CLOUDFLARE_API_TOKEN - Cloudflare API token for DNS management
-- CLOUDFLARE_ZONE_ID - Cloudflare zone ID for afroaigroup.com
-- PESAPAL_CONSUMER_KEY - Pesapal merchant consumer key
-- PESAPAL_CONSUMER_SECRET - Pesapal merchant consumer secret
-- PESAPAL_ENV - "production" or "sandbox" (defaults to sandbox)
+## External Dependencies
+-   **AI Services:** OpenAI (via Replit AI Integrations), Google Gemini (for image analysis).
+-   **Payment Gateway:** Pesapal (API 3.0) for mobile money, Visa, Mastercard, and bank transfers.
+-   **Authentication:** Google OAuth 2.0 (passport-google-oauth20).
+-   **Database:** PostgreSQL.
+-   **DNS Management:** Cloudflare DNS API.
