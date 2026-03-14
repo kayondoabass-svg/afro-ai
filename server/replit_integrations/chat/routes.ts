@@ -190,12 +190,32 @@ NAVIGATION:
 - Mobile hamburger menu with smooth slide-in animation
 - Active link indicators (underline, background, or color change)
 
-CARDS & COMPONENTS:
-- Cards with generous padding, subtle borders or shadows, rounded corners (12-16px)
-- Feature cards with icon/emoji at top, heading, and description
-- Testimonial cards with avatar, quote, name, and role
-- Pricing cards with highlighted "popular" option using border or shadow emphasis
+CARDS & COMPONENTS — GLASSMORPHISM STANDARD:
+- ALL cards must use glassmorphism by default: frosted glass look with backdrop-filter: blur(16px) saturate(180%), semi-transparent background rgba(255,255,255,0.05), and a subtle 1px border rgba(255,255,255,0.1)
+- Dark theme glass cards: background rgba(255,255,255,0.04), border rgba(255,255,255,0.08), box-shadow: 0 8px 32px rgba(0,0,0,0.3)
+- Light theme glass cards: background rgba(255,255,255,0.7), border rgba(255,255,255,0.5), box-shadow: 0 8px 32px rgba(0,0,0,0.08)
+- Cards get golden glow on hover: box-shadow adds 0 0 30px rgba(primary-color, 0.15) on hover
+- Use transform-style: preserve-3d and will-change: transform on all glass cards
+- Feature cards with icon/emoji at top, heading, and description — icon container has matching glass or color background
+- Testimonial cards with avatar, quote, name, and role — avatar uses initials with colored background circle
+- Pricing cards with highlighted "popular" option using gold/primary border glow emphasis
 - Image cards with overlay gradients for text readability
+
+VANILLA TILT 3D HOVER EFFECTS — MANDATORY FOR ALL WEBSITES:
+- ALWAYS add Vanilla Tilt to create premium 3D card hover interactions. It makes visitors fall in love instantly.
+- Load via CDN: <script src="https://cdnjs.cloudflare.com/ajax/libs/vanilla-tilt/1.8.1/vanilla-tilt.min.js"></script>
+- Wrap card grids with: <div class="cards-container" style="perspective: 1000px">
+- Add data-tilt to every card element. Initialize at the end of <script>:
+  VanillaTilt.init(document.querySelectorAll("[data-tilt]"), {
+    max: 8,          // max tilt degrees (keep 6-10 for subtle feel)
+    speed: 400,      // animation speed ms
+    glare: true,     // enables glare shine effect
+    "max-glare": 0.12, // glare intensity (0.1-0.2 is elegant)
+    scale: 1.03,     // slight zoom on hover
+  });
+- Adjust max tilt per section: feature cards max:8, step cards max:10, testimonials max:6, pricing cards max:7
+- Always include the initialization AFTER the DOM is loaded (place at bottom of body or in window.onload)
+- Combine with glassmorphism for the ultimate "love at first sight" effect
 
 IMAGES & MEDIA:
 - NEVER use external image hosting services like imgur.com, imgbb.com, or any third-party image hosts. These links break and expire.
@@ -230,6 +250,7 @@ ICONS:
 - Social media icons in footer
 
 ADVANCED POLISH:
+- Glassmorphism + Vanilla Tilt are NOT optional extras — they are the baseline standard for every site you generate. Every card, every panel, every feature block should feel like frosted glass with a 3D tilt. This is what creates "love at first sight."
 - Add a preloader/loading screen with CSS animation for premium feel
 - Custom scrollbar styling (webkit-scrollbar)
 - Selection color matching the brand (::selection)

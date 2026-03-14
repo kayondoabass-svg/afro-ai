@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
@@ -36,6 +35,60 @@ export default function LandingPage() {
   const refCode = params.get("ref");
   const [showError, setShowError] = useState(!!initialError);
   const loginUrl = refCode ? `/api/login?ref=${encodeURIComponent(refCode)}` : "/api/login";
+
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.id = "glass-tilt-styles";
+    style.textContent = `
+      .glass-card {
+        background: rgba(255,255,255,0.04);
+        backdrop-filter: blur(16px) saturate(180%);
+        -webkit-backdrop-filter: blur(16px) saturate(180%);
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
+        transition: box-shadow 0.3s ease, border-color 0.3s ease;
+        transform-style: preserve-3d;
+        will-change: transform;
+      }
+      .glass-card:hover {
+        border-color: rgba(212,175,55,0.25);
+        box-shadow: 0 16px 48px rgba(0,0,0,0.45), 0 0 32px rgba(212,175,55,0.08), inset 0 1px 0 rgba(255,255,255,0.12);
+      }
+      .glass-card .glass-inner {
+        transform: translateZ(20px);
+      }
+      .glass-card .glass-icon {
+        transform: translateZ(30px);
+      }
+      .glass-card .glass-title {
+        transform: translateZ(25px);
+      }
+      .vanilla-tilt-glare-wrapper { border-radius: inherit !important; }
+    `;
+    document.head.appendChild(style);
+
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/vanilla-tilt/1.8.1/vanilla-tilt.min.js";
+    script.onload = () => {
+      const VT = (window as any).VanillaTilt;
+      if (!VT) return;
+      const featureCards = document.querySelectorAll(".glass-card-feature");
+      VT.init(featureCards, { max: 8, speed: 400, glare: true, "max-glare": 0.12, scale: 1.02 });
+      const stepCards = document.querySelectorAll(".glass-card-step");
+      VT.init(stepCards, { max: 10, speed: 350, glare: true, "max-glare": 0.15, scale: 1.03 });
+      const testimonialCards = document.querySelectorAll(".glass-card-testimonial");
+      VT.init(testimonialCards, { max: 6, speed: 450, glare: true, "max-glare": 0.08, scale: 1.01 });
+      const pricingCards = document.querySelectorAll(".glass-card-pricing");
+      VT.init(pricingCards, { max: 7, speed: 400, glare: true, "max-glare": 0.1, scale: 1.02 });
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      style.remove();
+      script.remove();
+      document.querySelectorAll(".glass-card").forEach((el: any) => el._vanillaTilt?.destroy?.());
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
@@ -197,78 +250,25 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="hover-elevate group">
-              <CardContent className="p-6 space-y-4">
-                <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
-                  <Globe className="w-6 h-6 text-primary" />
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" style={{ perspective: "1000px" }}>
+            {[
+              { icon: Globe, title: t("features.website.title"), desc: t("features.website.desc"), testId: "text-feature-websites" },
+              { icon: Smartphone, title: t("features.app.title"), desc: t("features.app.desc"), testId: "text-feature-apps" },
+              { icon: MessageSquare, title: t("features.ai.title"), desc: t("features.ai.desc"), testId: "text-feature-ai" },
+              { icon: Store, title: t("features.store.title"), desc: t("features.store.desc"), testId: "text-feature-store" },
+              { icon: Code2, title: t("features.code.title"), desc: t("features.code.desc"), testId: "text-feature-code" },
+              { icon: Shield, title: t("features.security.title"), desc: t("features.security.desc"), testId: "text-feature-security" },
+            ].map((f, i) => (
+              <div key={i} className="glass-card glass-card-feature rounded-2xl p-6 space-y-4 cursor-default">
+                <div className="glass-icon w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center ring-1 ring-primary/20">
+                  <f.icon className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-websites">{t("features.website.title")}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("features.website.desc")}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate group">
-              <CardContent className="p-6 space-y-4">
-                <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
-                  <Smartphone className="w-6 h-6 text-primary" />
+                <div className="glass-inner space-y-2">
+                  <h3 className="glass-title text-lg font-semibold" data-testid={f.testId}>{f.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
                 </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-apps">{t("features.app.title")}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("features.app.desc")}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate group">
-              <CardContent className="p-6 space-y-4">
-                <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
-                  <MessageSquare className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-ai">{t("features.ai.title")}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("features.ai.desc")}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate group">
-              <CardContent className="p-6 space-y-4">
-                <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
-                  <Store className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-store">{t("features.store.title")}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("features.store.desc")}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate group">
-              <CardContent className="p-6 space-y-4">
-                <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
-                  <Code2 className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-code">{t("features.code.title")}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("features.code.desc")}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate group">
-              <CardContent className="p-6 space-y-4">
-                <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center">
-                  <Shield className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="text-lg font-semibold" data-testid="text-feature-security">{t("features.security.title")}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("features.security.desc")}
-                </p>
-              </CardContent>
-            </Card>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -285,23 +285,25 @@ export default function LandingPage() {
               <span className="animate-gradient-text"> Your Dream App</span>
             </h2>
           </div>
-          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto" style={{ perspective: "1000px" }}>
             {[
               { step: "01", icon: MessageSquare, title: "Describe Your Vision", desc: "Tell our AI what you want to build. Describe your website or app in plain language." },
               { step: "02", icon: Code2, title: "AI Builds It Live", desc: "Watch as AI generates your complete website or app in real-time with live preview." },
               { step: "03", icon: Rocket, title: "Publish Instantly", desc: "Launch your creation to the world with one click on your own .afroaigroup.com domain." },
             ].map((item, i) => (
-              <div key={i} className="text-center space-y-4 animate-shimmer rounded-xl p-6">
-                <div className="relative inline-flex">
-                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto animate-pulse-gold">
+              <div key={i} className="glass-card glass-card-step text-center space-y-4 rounded-2xl p-8 cursor-default">
+                <div className="glass-icon relative inline-flex">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/15 ring-1 ring-primary/25 flex items-center justify-center mx-auto">
                     <item.icon className="w-7 h-7 text-primary" />
                   </div>
-                  <span className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center" data-testid={`text-step-${item.step}`}>
+                  <span className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shadow-lg" data-testid={`text-step-${item.step}`}>
                     {item.step}
                   </span>
                 </div>
-                <h3 className="text-lg font-semibold" data-testid={`text-howit-title-${i}`}>{item.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                <div className="glass-inner space-y-2">
+                  <h3 className="glass-title text-lg font-semibold" data-testid={`text-howit-title-${i}`}>{item.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -355,33 +357,31 @@ export default function LandingPage() {
             </h2>
             <p className="text-muted-foreground">Hear from creators across the continent</p>
           </div>
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-3 gap-6" style={{ perspective: "1200px" }}>
             {[
               { name: "Amara Osei", country: "Ghana", text: "I built and launched my business website in under 30 minutes. Afro AI understands what African businesses need.", rating: 5 },
               { name: "Kwame Mensah", country: "Kenya", text: "The Mobile Money payment integration is a game changer. Finally, a platform that works with how Africa pays.", rating: 5 },
               { name: "Fatima Diallo", country: "Senegal", text: "I had no coding experience. Now I have a professional website for my fashion brand live on the internet.", rating: 5 },
             ].map((review, i) => (
-              <Card key={i} className="hover-elevate" data-testid={`card-testimonial-${i}`}>
-                <CardContent className="p-6 space-y-4">
-                  <div className="flex gap-0.5">
-                    {Array.from({ length: review.rating }).map((_, j) => (
-                      <Star key={j} className="w-4 h-4 fill-primary text-primary" />
-                    ))}
+              <div key={i} className="glass-card glass-card-testimonial rounded-2xl p-6 space-y-4 cursor-default" data-testid={`card-testimonial-${i}`}>
+                <div className="glass-icon flex gap-0.5">
+                  {Array.from({ length: review.rating }).map((_, j) => (
+                    <Star key={j} className="w-4 h-4 fill-primary text-primary" />
+                  ))}
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed italic">
+                  "{review.text}"
+                </p>
+                <div className="glass-inner flex items-center gap-2 pt-2 border-t border-white/5">
+                  <div className="w-9 h-9 rounded-full bg-primary/15 ring-1 ring-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+                    {review.name.charAt(0)}
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed italic">
-                    "{review.text}"
-                  </p>
-                  <div className="flex items-center gap-2 pt-2 border-t">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                      {review.name.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold">{review.name}</p>
-                      <p className="text-xs text-muted-foreground">{review.country}</p>
-                    </div>
+                  <div>
+                    <p className="text-sm font-semibold">{review.name}</p>
+                    <p className="text-xs text-muted-foreground">{review.country}</p>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -403,80 +403,74 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            <Card className="hover-elevate">
-              <CardContent className="p-6 space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold">{t("pricing.starter")}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{t("pricing.starter.desc")}</p>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold">{t("pricing.free")}</span>
-                </div>
-                <div className="space-y-3">
-                  {[t("pricing.starter.f1"), t("pricing.starter.f2"), t("pricing.starter.f3"), t("pricing.starter.f4")].map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <Check className="w-4 h-4 text-primary flex-shrink-0" />
-                      <span>{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <a href={loginUrl} className="block">
-                  <Button variant="outline" className="w-full" data-testid="button-plan-starter">{t("nav.getStarted")}</Button>
-                </a>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate ring-2 ring-primary relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge className="bg-primary text-primary-foreground">{t("pricing.mostPopular")}</Badge>
+          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto" style={{ perspective: "1200px" }}>
+            <div className="glass-card glass-card-pricing rounded-2xl p-6 space-y-6 cursor-default">
+              <div className="glass-inner">
+                <h3 className="text-lg font-semibold">{t("pricing.starter")}</h3>
+                <p className="text-sm text-muted-foreground mt-1">{t("pricing.starter.desc")}</p>
               </div>
-              <CardContent className="p-6 space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold">{t("pricing.pro")}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{t("pricing.pro.desc")}</p>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold">{t("pricing.pro.price")}</span>
-                  <span className="text-muted-foreground">{t("pricing.perMonth")}</span>
-                </div>
-                <div className="space-y-3">
-                  {[t("pricing.pro.f1"), t("pricing.pro.f2"), t("pricing.pro.f3"), t("pricing.pro.f4"), t("pricing.pro.f5")].map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <Check className="w-4 h-4 text-primary flex-shrink-0" />
-                      <span>{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <Button className="w-full" disabled data-testid="button-plan-pro">
-                  {t("pricing.comingSoon")}
-                </Button>
-              </CardContent>
-            </Card>
+              <div className="glass-title flex items-baseline gap-1">
+                <span className="text-4xl font-bold">{t("pricing.free")}</span>
+              </div>
+              <div className="space-y-3">
+                {[t("pricing.starter.f1"), t("pricing.starter.f2"), t("pricing.starter.f3"), t("pricing.starter.f4")].map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span>{f}</span>
+                  </div>
+                ))}
+              </div>
+              <a href={loginUrl} className="block">
+                <Button variant="outline" className="w-full" data-testid="button-plan-starter">{t("nav.getStarted")}</Button>
+              </a>
+            </div>
 
-            <Card className="hover-elevate">
-              <CardContent className="p-6 space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold">{t("pricing.business")}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{t("pricing.business.desc")}</p>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold">{t("pricing.business.price")}</span>
-                  <span className="text-muted-foreground">{t("pricing.perMonth")}</span>
-                </div>
-                <div className="space-y-3">
-                  {[t("pricing.business.f1"), t("pricing.business.f2"), t("pricing.business.f3"), t("pricing.business.f4"), t("pricing.business.f5"), t("pricing.business.f6")].map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <Check className="w-4 h-4 text-primary flex-shrink-0" />
-                      <span>{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <Button variant="outline" className="w-full" disabled data-testid="button-plan-business">
-                  {t("pricing.comingSoon")}
-                </Button>
-              </CardContent>
-            </Card>
+            <div className="glass-card glass-card-pricing rounded-2xl p-6 space-y-6 cursor-default relative" style={{ borderColor: "rgba(212,175,55,0.4)", boxShadow: "0 0 0 2px rgba(212,175,55,0.3), 0 16px 48px rgba(0,0,0,0.4), 0 0 40px rgba(212,175,55,0.1)" }}>
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <Badge className="bg-primary text-primary-foreground shadow-lg">{t("pricing.mostPopular")}</Badge>
+              </div>
+              <div className="glass-inner">
+                <h3 className="text-lg font-semibold">{t("pricing.pro")}</h3>
+                <p className="text-sm text-muted-foreground mt-1">{t("pricing.pro.desc")}</p>
+              </div>
+              <div className="glass-title flex items-baseline gap-1">
+                <span className="text-4xl font-bold">{t("pricing.pro.price")}</span>
+                <span className="text-muted-foreground">{t("pricing.perMonth")}</span>
+              </div>
+              <div className="space-y-3">
+                {[t("pricing.pro.f1"), t("pricing.pro.f2"), t("pricing.pro.f3"), t("pricing.pro.f4"), t("pricing.pro.f5")].map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span>{f}</span>
+                  </div>
+                ))}
+              </div>
+              <Button className="w-full" disabled data-testid="button-plan-pro">
+                {t("pricing.comingSoon")}
+              </Button>
+            </div>
+
+            <div className="glass-card glass-card-pricing rounded-2xl p-6 space-y-6 cursor-default">
+              <div className="glass-inner">
+                <h3 className="text-lg font-semibold">{t("pricing.business")}</h3>
+                <p className="text-sm text-muted-foreground mt-1">{t("pricing.business.desc")}</p>
+              </div>
+              <div className="glass-title flex items-baseline gap-1">
+                <span className="text-4xl font-bold">{t("pricing.business.price")}</span>
+                <span className="text-muted-foreground">{t("pricing.perMonth")}</span>
+              </div>
+              <div className="space-y-3">
+                {[t("pricing.business.f1"), t("pricing.business.f2"), t("pricing.business.f3"), t("pricing.business.f4"), t("pricing.business.f5"), t("pricing.business.f6")].map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span>{f}</span>
+                  </div>
+                ))}
+              </div>
+              <Button variant="outline" className="w-full" disabled data-testid="button-plan-business">
+                {t("pricing.comingSoon")}
+              </Button>
+            </div>
           </div>
 
           <p className="text-center text-sm text-muted-foreground mt-8">
