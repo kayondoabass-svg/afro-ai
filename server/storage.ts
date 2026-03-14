@@ -11,6 +11,7 @@ export interface IStorage {
   createProject(project: InsertProject): Promise<Project>;
   deleteProject(id: number): Promise<void>;
   getPublishedAppBySubdomain(subdomain: string): Promise<PublishedApp | undefined>;
+  getPublishedAppByCustomDomain(customDomain: string): Promise<PublishedApp | undefined>;
   getPublishedAppsByUser(userId: string): Promise<PublishedApp[]>;
   createPublishedApp(app: InsertPublishedApp): Promise<PublishedApp>;
   updatePublishedApp(id: number, data: Partial<InsertPublishedApp>): Promise<PublishedApp>;
@@ -72,6 +73,13 @@ class DatabaseStorage implements IStorage {
 
   async getPublishedAppBySubdomain(subdomain: string): Promise<PublishedApp | undefined> {
     const [app] = await db.select().from(publishedApps).where(eq(publishedApps.subdomain, subdomain));
+    return app;
+  }
+
+  async getPublishedAppByCustomDomain(customDomain: string): Promise<PublishedApp | undefined> {
+    const [app] = await db.select().from(publishedApps).where(
+      and(eq(publishedApps.customDomain, customDomain), eq(publishedApps.customDomainVerified, true))
+    );
     return app;
   }
 

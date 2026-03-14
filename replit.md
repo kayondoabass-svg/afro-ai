@@ -48,6 +48,18 @@ Afro AI is a product of KEYO TECHNOLOGIES (Registration No. 80030812159711), a r
 - Dashboard shows live published sites, plan badge, and published apps count
 - Responsive design with sidebar navigation
 
+## Custom Domain Support
+- Users can connect their own domain (e.g. `mybusiness.com`) to any published app
+- `customDomain` and `customDomainVerified` fields added to `published_apps` table
+- Flow: User enters domain → system saves it → user adds CNAME record at their registrar → user clicks Verify → server does DNS lookup to confirm → marks as verified
+- Middleware checks incoming `Host` headers against verified custom domains and serves the correct app
+- API routes:
+  - `POST /api/published-apps/:id/connect-domain` - Save custom domain (body: domain)
+  - `POST /api/published-apps/:id/verify-domain` - DNS verification check
+  - `DELETE /api/published-apps/:id/custom-domain` - Remove custom domain
+- Deployments page shows "Connect Domain" button, DNS instructions, and verify button per app
+- Custom domain badge shown when active; yellow "Pending Verification" badge shown while unverified
+
 ## App Publishing
 - Users can publish AI-generated apps to `{name}.afroaigroup.com` (unique subdomain per app)
 - Published apps stored in `published_apps` table (htmlContent, subdomain, title, appStatus, suspendedAt, suspendReason)

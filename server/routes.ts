@@ -67,37 +67,51 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use("/uploads", express.static(uploadDir));
 
+  const serveSuspendedPage = (res: any) => res.status(403).send(
+    '<!DOCTYPE html><html><head><title>Site Suspended</title></head>' +
+    '<body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#ef4444;">' +
+    '<div style="text-align:center;"><h1>Site Suspended</h1><p style="color:#888;">This site has been temporarily taken offline.</p>' +
+    '<a href="https://afroaigroup.com" style="color:#d4af37;">Afro AI</a></div></body></html>'
+  );
+
+  const serveNotFoundPage = (res: any) => res.status(404).send(
+    '<!DOCTYPE html><html><head><title>Not Found</title>' +
+    '<style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#d4af37;}' +
+    '.c{text-align:center;}h1{font-size:3rem;}p{color:#888;}</style></head>' +
+    '<body><div class="c"><h1>404</h1><p>This site doesn\'t exist yet.</p>' +
+    '<a href="https://afroaigroup.com" style="color:#d4af37;">Build one with Afro AI</a></div></body></html>'
+  );
+
   app.use(async (req, res, next) => {
     const host = req.hostname || req.headers.host?.split(":")[0] || "";
     const baseDomain = "afroaigroup.com";
+
     if (host !== baseDomain && host.endsWith("." + baseDomain)) {
       const subdomain = host.replace("." + baseDomain, "");
       if (subdomain && subdomain !== "www") {
         try {
           const publishedApp = await storage.getPublishedAppBySubdomain(subdomain);
           if (publishedApp) {
-            if (publishedApp.appStatus === "suspended") {
-              return res.status(403).send(
-                '<!DOCTYPE html><html><head><title>Site Suspended</title></head>' +
-                '<body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#ef4444;">' +
-                '<div style="text-align:center;"><h1>Site Suspended</h1><p style="color:#888;">This site has been temporarily taken offline.</p>' +
-                '<a href="https://afroaigroup.com" style="color:#d4af37;">Afro AI</a></div></body></html>'
-              );
-            }
+            if (publishedApp.appStatus === "suspended") return serveSuspendedPage(res);
             publishedAppHeaders(res);
             return res.send(publishedApp.htmlContent);
           }
-          return res.status(404).send(
-            '<!DOCTYPE html><html><head><title>Not Found</title>' +
-            '<style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#d4af37;}' +
-            '.c{text-align:center;}h1{font-size:3rem;}p{color:#888;}</style></head>' +
-            '<body><div class="c"><h1>404</h1><p>This site doesn\'t exist yet.</p>' +
-            '<a href="https://afroaigroup.com" style="color:#d4af37;">Build one with Afro AI</a></div></body></html>'
-          );
+          return serveNotFoundPage(res);
         } catch (err) {
           console.error("Subdomain routing error:", err);
           return res.status(500).send("Internal server error");
         }
+      }
+    } else if (host !== baseDomain && host !== "localhost" && !host.includes("replit") && !host.includes("127.0.0.1")) {
+      try {
+        const publishedApp = await storage.getPublishedAppByCustomDomain(host);
+        if (publishedApp) {
+          if (publishedApp.appStatus === "suspended") return serveSuspendedPage(res);
+          publishedAppHeaders(res);
+          return res.send(publishedApp.htmlContent);
+        }
+      } catch (err) {
+        console.error("Custom domain routing error:", err);
       }
     }
     next();
@@ -366,6 +380,106 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error checking subdomain:", error);
       res.status(500).json({ available: false, error: "Failed to check subdomain" });
+    }
+  });
+
+  app.post("/api/published-apps/:id/connect-domain", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+      const { domain } = req.body;
+
+      if (!domain) return res.status(400).json({ message: "Domain is required" });
+
+      const domainClean = domain.toLowerCase().trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      if (!/^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$/.test(domainClean) || domainClean.length < 4) {
+        return res.status(400).json({ message: "Invalid domain format" });
+      }
+      if (domainClean === "afroaigroup.com" || domainClean.endsWith(".afroaigroup.com")) {
+        return res.status(400).json({ message: "Cannot use an afroaigroup.com domain here" });
+      }
+
+      const userApps = await storage.getPublishedAppsByUser(userId);
+      const app = userApps.find((a) => a.id === id);
+      if (!app || app.userId !== userId) {
+        return res.status(404).json({ message: "App not found" });
+      }
+
+      const existing = await storage.getPublishedAppByCustomDomain(domainClean);
+      if (existing && existing.id !== id) {
+        return res.status(409).json({ message: "This domain is already connected to another app" });
+      }
+
+      await storage.updatePublishedApp(id, { customDomain: domainClean, customDomainVerified: false });
+      res.json({ success: true, domain: domainClean, message: "Domain saved. Now verify it by adding a CNAME record." });
+    } catch (error) {
+      console.error("Error connecting domain:", error);
+      res.status(500).json({ message: "Failed to connect domain" });
+    }
+  });
+
+  app.post("/api/published-apps/:id/verify-domain", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+
+      const userApps = await storage.getPublishedAppsByUser(userId);
+      const app = userApps.find((a) => a.id === id);
+      if (!app || app.userId !== userId) {
+        return res.status(404).json({ message: "App not found" });
+      }
+      if (!app.customDomain) {
+        return res.status(400).json({ message: "No custom domain set for this app" });
+      }
+
+      const dns = await import("dns");
+      const { Resolver } = dns.promises;
+      const resolver = new Resolver();
+      const target = "afroaigroup.com";
+      let verified = false;
+      let dnsError = "";
+
+      try {
+        const cnames = await resolver.resolveCname(app.customDomain);
+        verified = cnames.some((c) => c === target || c === `${target}.`);
+        if (!verified) {
+          const addresses = await resolver.resolve4(app.customDomain).catch(() => []);
+          verified = addresses.length > 0;
+          if (!verified) dnsError = `CNAME not pointing to ${target}. Found: ${cnames.join(", ")}`;
+        }
+      } catch (dnsErr: any) {
+        dnsError = dnsErr.code === "ENODATA" || dnsErr.code === "ENOTFOUND"
+          ? `No CNAME record found for ${app.customDomain}`
+          : `DNS lookup failed: ${dnsErr.message}`;
+      }
+
+      if (verified) {
+        await storage.updatePublishedApp(id, { customDomainVerified: true });
+        return res.json({ success: true, verified: true, message: "Domain verified successfully!" });
+      }
+      res.json({ success: false, verified: false, message: dnsError || "Domain not verified yet. DNS may take up to 24 hours to propagate." });
+    } catch (error) {
+      console.error("Error verifying domain:", error);
+      res.status(500).json({ message: "Verification failed" });
+    }
+  });
+
+  app.delete("/api/published-apps/:id/custom-domain", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+
+      const userApps = await storage.getPublishedAppsByUser(userId);
+      const app = userApps.find((a) => a.id === id);
+      if (!app || app.userId !== userId) {
+        return res.status(404).json({ message: "App not found" });
+      }
+
+      await storage.updatePublishedApp(id, { customDomain: null as any, customDomainVerified: false });
+      res.json({ success: true, message: "Custom domain removed" });
+    } catch (error) {
+      console.error("Error removing domain:", error);
+      res.status(500).json({ message: "Failed to remove domain" });
     }
   });
 
