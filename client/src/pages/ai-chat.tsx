@@ -756,9 +756,12 @@ export default function AIChatPage() {
     enabled: !!activeConversation,
   });
 
+  const [pendingWelcomeSend, setPendingWelcomeSend] = useState(false);
+
   const createConvoMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/conversations", { title: t("chat.newChat") });
+      const title = input.trim() || t("chat.newChat");
+      const res = await apiRequest("POST", "/api/conversations", { title });
       return res.json();
     },
     onSuccess: (data: Conversation) => {
@@ -766,6 +769,14 @@ export default function AIChatPage() {
       setActiveConversation(data.id);
     },
   });
+
+  // Auto-send input after welcome screen creates a conversation
+  useEffect(() => {
+    if (pendingWelcomeSend && activeConversation && input.trim() && !isStreaming) {
+      setPendingWelcomeSend(false);
+      setTimeout(() => handleSend(), 50);
+    }
+  }, [activeConversation, pendingWelcomeSend]);
 
   const deleteConvoMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -1611,57 +1622,108 @@ export default function AIChatPage() {
               </div>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center p-8">
-              <div className="text-center space-y-6 max-w-md">
-                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                  <img src={afroLogo} alt="Afro AI" className="w-12 h-12 object-contain" />
-                </div>
-                <h2 className="text-2xl font-bold font-serif" data-testid="text-chat-welcome">
-                  {t("chat.welcome")}
+            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-8" data-testid="welcome-screen">
+              {/* Greeting */}
+              <div className="text-center space-y-2">
+                <h1 className="text-3xl md:text-4xl font-light text-foreground/90 tracking-tight" data-testid="text-chat-welcome">
+                  Hi {user?.name?.split(" ")[0] || "there"},
+                </h1>
+                <h2 className="text-3xl md:text-4xl font-light text-foreground/60 tracking-tight">
+                  what do you want to make?
                 </h2>
-                <p className="text-muted-foreground">
-                  {t("chat.welcomeDesc")}
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              </div>
+
+              {/* Category chips — horizontally scrollable */}
+              <div className="w-full max-w-xl overflow-x-auto pb-1 scrollbar-none">
+                <div className="flex gap-2 w-max mx-auto px-2">
                   {[
-                    { text: "Build me a restaurant website with menu and booking", icon: Globe },
-                    { text: "Create a fitness tracking app with progress charts", icon: Smartphone },
-                    { text: "Design a portfolio website for a photographer", icon: Eye },
-                    { text: "Make an e-commerce store with product catalog", icon: Code2 },
+                    { label: "Website", icon: Globe },
+                    { label: "App", icon: Smartphone },
+                    { label: "Game", icon: Gamepad2 },
+                    { label: "Dashboard", icon: Monitor },
+                    { label: "Tool", icon: Code2 },
+                    { label: "Portfolio", icon: Eye },
+                  ].map((cat) => (
+                    <button
+                      key={cat.label}
+                      onClick={() => setInput((prev) => prev ? prev : `Build me a ${cat.label.toLowerCase()}: `)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-border/50 bg-card/40 hover:bg-card/80 hover:border-primary/40 transition-all text-sm text-foreground/70 hover:text-foreground whitespace-nowrap"
+                      data-testid={`chip-category-${cat.label.toLowerCase()}`}
+                    >
+                      <cat.icon className="w-3.5 h-3.5" />
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Main input box */}
+              <div className="w-full max-w-xl">
+                <div className="rounded-2xl border border-border/60 bg-card/50 backdrop-blur-sm p-4 space-y-3 shadow-lg">
+                  <Textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        if (input.trim()) { setPendingWelcomeSend(true); createConvoMutation.mutate(); }
+                      }
+                    }}
+                    placeholder="Describe your idea, Afro AI will bring it to life..."
+                    className="min-h-[80px] border-0 bg-transparent resize-none focus-visible:ring-0 p-0 text-base placeholder:text-muted-foreground/50"
+                    data-testid="input-welcome-message"
+                  />
+                  <div className="flex items-center justify-between">
+                    <label className="cursor-pointer p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground" title="Attach file">
+                      <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) { const reader = new FileReader(); reader.onload = (ev) => { const base64 = (ev.target?.result as string)?.split(",")[1]; if (base64) setPendingAttachments([{ type: "image", data: base64, mimeType: file.type, name: file.name }]); }; reader.readAsDataURL(file); }
+                      }} />
+                      <Plus className="w-5 h-5" />
+                    </label>
+                    <Button
+                      size="sm"
+                      onClick={() => { if (input.trim()) { setPendingWelcomeSend(true); createConvoMutation.mutate(); } }}
+                      disabled={!input.trim() || createConvoMutation.isPending}
+                      className="rounded-xl px-4"
+                      data-testid="button-welcome-send"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick suggestions — subtle, below input */}
+              <div className="w-full max-w-xl space-y-2">
+                <p className="text-xs text-muted-foreground/50 text-center">Try one of these</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
                     { text: "Build a football penalty shootout game", icon: Gamepad2 },
-                    { text: "Create an African endless runner game", icon: Swords },
-                  ].map((suggestion, i) => (
-                    <Card
+                    { text: "Restaurant website with menu & booking", icon: Globe },
+                    { text: "African endless runner game", icon: Swords },
+                    { text: "Fitness tracking app with charts", icon: Smartphone },
+                  ].map((s, i) => (
+                    <button
                       key={i}
-                      className="hover-elevate cursor-pointer group"
                       onClick={async () => {
+                        setInput(s.text);
                         try {
-                          const res = await apiRequest("POST", "/api/conversations", { title: suggestion.text });
+                          const res = await apiRequest("POST", "/api/conversations", { title: s.text });
                           const convo = await res.json();
                           queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
                           setActiveConversation(convo.id);
-                          setTimeout(() => setInput(suggestion.text), 100);
+                          setTimeout(() => setInput(s.text), 100);
                         } catch {}
                       }}
-                      data-testid={`card-suggestion-${i}`}
+                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/30 bg-card/20 hover:bg-card/60 hover:border-border/60 transition-all text-left text-sm text-muted-foreground hover:text-foreground"
+                      data-testid={`suggestion-${i}`}
                     >
-                      <div className="p-3 text-sm text-muted-foreground flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <suggestion.icon className="w-4 h-4 text-primary" />
-                        </div>
-                        <span>{suggestion.text}</span>
-                      </div>
-                    </Card>
+                      <s.icon className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                      <span className="truncate">{s.text}</span>
+                    </button>
                   ))}
                 </div>
-                <Button
-                  onClick={() => createConvoMutation.mutate()}
-                  disabled={createConvoMutation.isPending}
-                  data-testid="button-start-chat"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  {t("chat.startChat")}
-                </Button>
               </div>
             </div>
           )}
