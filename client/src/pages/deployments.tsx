@@ -32,10 +32,11 @@ import {
   AlertTriangle,
   RefreshCw,
   Link2,
-  Link2Off,
   CheckCircle2,
   XCircle,
-  Info,
+  History,
+  RotateCcw,
+  Upload,
 } from "lucide-react";
 import type { PublishedApp } from "@shared/schema";
 
@@ -56,6 +57,28 @@ function formatSize(htmlContent: string) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function reasonLabel(reason: string) {
+  if (reason === "publish") return "Published";
+  if (reason === "pre-restore") return "Before Restore";
+  if (reason === "payment") return "Paid Version";
+  return reason;
+}
+
+function reasonColor(reason: string) {
+  if (reason === "publish") return "bg-primary/10 text-primary border-primary/20";
+  if (reason === "pre-restore") return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20";
+  if (reason === "payment") return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20";
+  return "bg-muted text-muted-foreground";
+}
+
+type AppVersion = {
+  id: number;
+  versionNumber: number;
+  title: string;
+  snapshotReason: string;
+  createdAt: string;
+};
+
 type DomainDialogApp = { app: PublishedApp; mode: "connect" | "instructions" };
 
 export default function DeploymentsPage() {
@@ -69,9 +92,23 @@ export default function DeploymentsPage() {
   const [domainDialog, setDomainDialog] = useState<DomainDialogApp | null>(null);
   const [domainInput, setDomainInput] = useState("");
   const [verifyingId, setVerifyingId] = useState<number | null>(null);
+  const [versionApp, setVersionApp] = useState<PublishedApp | null>(null);
+  const [restoringVersionId, setRestoringVersionId] = useState<number | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<AppVersion | null>(null);
 
   const { data: apps, isLoading } = useQuery<PublishedApp[]>({
     queryKey: ["/api/published-apps"],
+  });
+
+  const { data: versions, isLoading: versionsLoading } = useQuery<AppVersion[]>({
+    queryKey: ["/api/published-apps", versionApp?.id, "versions"],
+    queryFn: async () => {
+      if (!versionApp) return [];
+      const res = await fetch(`/api/published-apps/${versionApp.id}/versions`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load versions");
+      return res.json();
+    },
+    enabled: !!versionApp,
   });
 
   const deleteMutation = useMutation({
@@ -85,6 +122,25 @@ export default function DeploymentsPage() {
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message || "Failed to delete app", variant: "destructive" });
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async ({ appId, versionId }: { appId: number; versionId: number }) => {
+      return await apiRequest("POST", `/api/published-apps/${appId}/restore/${versionId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps", versionApp?.id, "versions"] });
+      setConfirmRestore(null);
+      toast({
+        title: "Version restored!",
+        description: "Your app is now live with the restored version. The previous version was saved automatically.",
+      });
+    },
+    onError: (err: any) => {
+      setConfirmRestore(null);
+      toast({ title: "Restore failed", description: err.message || "Failed to restore version", variant: "destructive" });
     },
   });
 
@@ -208,7 +264,7 @@ export default function DeploymentsPage() {
                             <Globe className={`w-5 h-5 ${app.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
                           </div>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <h3 className="font-semibold text-lg truncate" data-testid={`text-app-title-${app.id}`}>{app.title}</h3>
                               {app.customDomain && app.customDomainVerified && (
                                 <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-primary/20 flex-shrink-0">
@@ -224,7 +280,17 @@ export default function DeploymentsPage() {
                             <p className="text-sm text-muted-foreground">Published {formatDate(app.createdAt)}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setVersionApp(app)}
+                            title="View version history"
+                            data-testid={`button-history-${app.id}`}
+                          >
+                            <History className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline ml-1">History</span>
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -427,6 +493,7 @@ export default function DeploymentsPage() {
         )}
       </div>
 
+      {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteApp} onOpenChange={() => setDeleteApp(null)}>
         <DialogContent>
           <DialogHeader>
@@ -436,7 +503,7 @@ export default function DeploymentsPage() {
             </DialogTitle>
             <DialogDescription>
               Are you sure you want to delete <strong>{deleteApp?.title}</strong>? This will remove the app from{" "}
-              <strong>{deleteApp?.subdomain}.afroaigroup.com</strong>. This action cannot be undone.
+              <strong>{deleteApp?.subdomain}.afroaigroup.com</strong> along with all its version history. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -459,6 +526,144 @@ export default function DeploymentsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Version History Dialog */}
+      <Dialog open={!!versionApp} onOpenChange={(open) => { if (!open) { setVersionApp(null); setConfirmRestore(null); } }}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-5 h-5 text-primary" />
+              Version History
+            </DialogTitle>
+            <DialogDescription>
+              <span className="font-medium">{versionApp?.title}</span> — every time you republish, the previous version is saved here. Restore any version instantly.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-2 py-2 min-h-0">
+            {/* Current live version */}
+            {versionApp && (
+              <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                    <Globe className="w-4 h-4 text-green-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold truncate">{versionApp.title}</p>
+                      <Badge className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20 flex-shrink-0">
+                        Live
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Current version · {formatDate(versionApp.updatedAt)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {versionsLoading ? (
+              <div className="space-y-2 pt-2">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="w-8 h-8 rounded-full" />
+                      <div className="space-y-1 flex-1">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-48" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : versions && versions.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                {versions.map((version) => (
+                  <div
+                    key={version.id}
+                    className="rounded-lg border border-border bg-muted/30 p-3 flex items-center justify-between gap-3"
+                    data-testid={`card-version-${version.id}`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-xs font-bold text-muted-foreground">
+                        v{version.versionNumber}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-medium truncate">{version.title}</p>
+                          <Badge variant="outline" className={`text-xs flex-shrink-0 ${reasonColor(version.snapshotReason)}`}>
+                            {reasonLabel(version.snapshotReason)}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{formatDate(version.createdAt)}</p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-shrink-0 h-7 px-2 text-xs"
+                      onClick={() => setConfirmRestore(version)}
+                      data-testid={`button-restore-version-${version.id}`}
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Restore
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Upload className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">No previous versions yet.</p>
+                <p className="text-xs mt-1">Versions are saved automatically each time you republish.</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-border/50">
+            <Button variant="outline" onClick={() => { setVersionApp(null); setConfirmRestore(null); }} data-testid="button-close-history">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={!!confirmRestore} onOpenChange={(open) => { if (!open) setConfirmRestore(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="w-5 h-5 text-primary" />
+              Restore Version {confirmRestore?.versionNumber}?
+            </DialogTitle>
+            <DialogDescription>
+              This will replace the live version of <strong>{versionApp?.title}</strong> with the snapshot from{" "}
+              <strong>{confirmRestore ? formatDate(confirmRestore.createdAt) : ""}</strong>. The current live version will be saved automatically so you can restore it again if needed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmRestore(null)} data-testid="button-cancel-restore">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (versionApp && confirmRestore) {
+                  restoreMutation.mutate({ appId: versionApp.id, versionId: confirmRestore.id });
+                }
+              }}
+              disabled={restoreMutation.isPending}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              data-testid="button-confirm-restore"
+            >
+              {restoreMutation.isPending ? (
+                <><RefreshCw className="w-4 h-4 animate-spin" />Restoring...</>
+              ) : (
+                <><RotateCcw className="w-4 h-4" />Restore This Version</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Domain Dialog */}
       <Dialog open={!!domainDialog} onOpenChange={(open) => { if (!open) setDomainDialog(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -483,120 +688,87 @@ export default function DeploymentsPage() {
                   onChange={(e) => setDomainInput(e.target.value)}
                   data-testid="input-custom-domain"
                 />
-                <p className="text-xs text-muted-foreground">Enter your domain without http:// or https://</p>
               </div>
-
-              {domainDialog.app.customDomain && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                  onClick={() => {
-                    removeDomainMutation.mutate(domainDialog.app.id);
-                    setDomainDialog(null);
-                  }}
-                  disabled={removeDomainMutation.isPending}
-                  data-testid="button-remove-domain"
-                >
-                  <Link2Off className="w-4 h-4 mr-2" />
-                  Remove Domain
-                </Button>
-              )}
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDomainDialog(null)}>Cancel</Button>
-                <Button
-                  onClick={() => {
-                    if (!domainInput.trim()) return;
-                    connectDomainMutation.mutate({ id: domainDialog.app.id, domain: domainInput.trim() });
-                  }}
-                  disabled={connectDomainMutation.isPending || !domainInput.trim()}
-                  data-testid="button-save-domain"
-                >
-                  {connectDomainMutation.isPending ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" />Saving...</> : "Save & Continue"}
-                </Button>
-              </DialogFooter>
+              <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+                <p className="text-xs font-medium">You'll need to add a CNAME record:</p>
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-mono bg-muted px-1 rounded">CNAME</span> → <span className="font-mono bg-muted px-1 rounded">afroaigroup.com</span>
+                </p>
+              </div>
             </div>
           )}
 
           {domainDialog?.mode === "instructions" && domainDialog.app.customDomain && (
             <div className="space-y-4 py-2">
               <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Info className="w-4 h-4 text-primary flex-shrink-0" />
-                  <p className="text-sm font-medium">Add this DNS record to your domain</p>
-                </div>
-                <div className="bg-background rounded-lg border p-3 space-y-2 font-mono text-xs">
-                  <div className="grid grid-cols-3 gap-2 text-muted-foreground text-[11px] font-sans font-medium uppercase tracking-wider pb-1 border-b">
-                    <span>Type</span>
-                    <span>Name</span>
-                    <span>Value</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <span className="text-primary font-bold">CNAME</span>
-                    <span className="truncate">{domainDialog.app.customDomain.startsWith("www.") ? "www" : "@"}</span>
-                    <span className="truncate text-green-500">afroaigroup.com</span>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Go to your domain registrar (GoDaddy, Namecheap, etc.) → DNS settings → Add the record above. DNS changes can take up to 24 hours to propagate.
+                <p className="text-sm font-medium flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-primary" />
+                  Add this DNS record to your domain provider:
                 </p>
-              </div>
-
-              {domainDialog.app.customDomainVerified ? (
-                <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-lg p-3">
-                  <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-green-500">Domain Verified</p>
-                    <p className="text-xs text-muted-foreground">Your app is live at <span className="font-mono">https://{domainDialog.app.customDomain}</span></p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Type</p>
+                    <p className="font-mono bg-muted px-2 py-1 rounded">CNAME</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Name / Host</p>
+                    <p className="font-mono bg-muted px-2 py-1 rounded">{domainDialog.app.customDomain.startsWith("www.") ? "www" : "@"}</p>
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                    <p className="text-muted-foreground">Value / Points To</p>
+                    <p className="font-mono bg-muted px-2 py-1 rounded break-all">afroaigroup.com</p>
                   </div>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-                  <XCircle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">Pending Verification</p>
-                    <p className="text-xs text-muted-foreground">Click Verify once you've added the DNS record.</p>
-                  </div>
+                <p className="text-xs text-muted-foreground">DNS changes can take up to 24 hours to propagate. Click Verify once you've added the record.</p>
+              </div>
+              {domainDialog.app.customDomainVerified && (
+                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 bg-green-500/10 rounded-lg p-3">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <p className="text-sm font-medium">Domain verified and live!</p>
                 </div>
               )}
-
-              <DialogFooter className="gap-2 flex-wrap">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDomainDialog({ ...domainDialog, mode: "connect" })}
-                  data-testid="button-change-domain"
-                >
-                  Change Domain
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                  onClick={() => {
-                    removeDomainMutation.mutate(domainDialog.app.id);
-                    setDomainDialog(null);
-                  }}
-                  disabled={removeDomainMutation.isPending}
-                  data-testid="button-remove-domain-instructions"
-                >
-                  <Link2Off className="w-4 h-4 mr-2" />Remove
-                </Button>
-                <Button
-                  onClick={() => verifyDomain(domainDialog.app.id)}
-                  disabled={verifyingId === domainDialog.app.id || !!domainDialog.app.customDomainVerified}
-                  data-testid="button-verify-domain-dialog"
-                >
-                  {verifyingId === domainDialog.app.id
-                    ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" />Verifying...</>
-                    : domainDialog.app.customDomainVerified
-                    ? <><CheckCircle2 className="w-4 h-4 mr-2 text-green-500" />Verified</>
-                    : <><CheckCircle2 className="w-4 h-4 mr-2" />Verify Domain</>}
-                </Button>
-              </DialogFooter>
             </div>
           )}
+
+          <DialogFooter className="gap-2 flex-wrap">
+            {domainDialog?.app.customDomain && (
+              <Button
+                variant="outline"
+                className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                onClick={() => {
+                  if (domainDialog?.app.id) removeDomainMutation.mutate(domainDialog.app.id);
+                  setDomainDialog(null);
+                }}
+                disabled={removeDomainMutation.isPending}
+                data-testid="button-remove-domain"
+              >
+                Remove Domain
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setDomainDialog(null)}>Cancel</Button>
+            {domainDialog?.mode === "connect" && (
+              <Button
+                onClick={() => {
+                  if (domainDialog?.app.id && domainInput.trim()) {
+                    connectDomainMutation.mutate({ id: domainDialog.app.id, domain: domainInput.trim() });
+                  }
+                }}
+                disabled={!domainInput.trim() || connectDomainMutation.isPending}
+                data-testid="button-save-domain"
+              >
+                {connectDomainMutation.isPending ? <><RefreshCw className="w-4 h-4 animate-spin" />Saving...</> : "Save & Get Instructions"}
+              </Button>
+            )}
+            {domainDialog?.mode === "instructions" && !domainDialog.app.customDomainVerified && (
+              <Button
+                onClick={() => verifyDomain(domainDialog.app.id)}
+                disabled={verifyingId === domainDialog.app.id}
+                data-testid="button-verify-now"
+              >
+                {verifyingId === domainDialog.app.id ? <><RefreshCw className="w-4 h-4 animate-spin" />Verifying...</> : <><CheckCircle2 className="w-4 h-4" />Verify Domain</>}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

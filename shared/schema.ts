@@ -52,6 +52,18 @@ export const insertPublishedAppSchema = createInsertSchema(publishedApps).omit({
 export type PublishedApp = typeof publishedApps.$inferSelect;
 export type InsertPublishedApp = z.infer<typeof insertPublishedAppSchema>;
 
+export const publishedAppVersions = pgTable("published_app_versions", {
+  id: serial("id").primaryKey(),
+  publishedAppId: integer("published_app_id").notNull().references(() => publishedApps.id, { onDelete: "cascade" }),
+  htmlContent: text("html_content").notNull(),
+  title: text("title").notNull(),
+  versionNumber: integer("version_number").notNull().default(1),
+  snapshotReason: varchar("snapshot_reason").notNull().default("publish"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export type PublishedAppVersion = typeof publishedAppVersions.$inferSelect;
+
 export const referrals = pgTable("referrals", {
   id: serial("id").primaryKey(),
   referrerId: varchar("referrer_id").notNull().references(() => users.id),

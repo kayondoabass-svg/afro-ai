@@ -307,6 +307,8 @@ export async function registerRoutes(
       sendStep("deploy", "active");
       let result;
       if (existing && existing.userId === userId) {
+        await storage.createAppVersion(existing.id, existing.htmlContent, existing.title, "publish");
+        await storage.deleteOldVersions(existing.id, 20);
         result = await storage.updatePublishedApp(existing.id, {
           htmlContent,
           title,
@@ -331,6 +333,41 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error publishing app:", error);
       sendError(error.message || "Failed to publish app");
+    }
+  });
+
+  app.get("/api/published-apps/:id/versions", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub || req.user?.id;
+      const apps = await storage.getPublishedAppsByUser(userId);
+      const app = apps.find(a => a.id === id);
+      if (!app) return res.status(404).json({ error: "App not found or access denied" });
+      const versions = await storage.getAppVersions(id);
+      res.json(versions.map(v => ({
+        id: v.id,
+        versionNumber: v.versionNumber,
+        title: v.title,
+        snapshotReason: v.snapshotReason,
+        createdAt: v.createdAt,
+      })));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/published-apps/:id/restore/:versionId", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const versionId = parseInt(req.params.versionId);
+      const userId = req.user.id;
+      const apps = await storage.getPublishedAppsByUser(userId);
+      const app = apps.find(a => a.id === id);
+      if (!app) return res.status(404).json({ error: "App not found or access denied" });
+      const restored = await storage.restoreAppVersion(id, versionId);
+      res.json({ success: true, app: restored });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

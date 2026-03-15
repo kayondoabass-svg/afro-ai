@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projects, publishedApps, referrals, payments, usageLogs, forms, formSubmissions, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -59,6 +59,11 @@ export interface IStorage {
   getFormSubmissions(formId: number): Promise<FormSubmission[]>;
   deleteFormSubmission(id: number): Promise<void>;
   getFormSubmissionCount(formId: number): Promise<number>;
+  createAppVersion(publishedAppId: number, htmlContent: string, title: string, reason: string): Promise<PublishedAppVersion>;
+  getAppVersions(publishedAppId: number): Promise<PublishedAppVersion[]>;
+  getAppVersion(id: number): Promise<PublishedAppVersion | undefined>;
+  restoreAppVersion(publishedAppId: number, versionId: number): Promise<PublishedApp>;
+  deleteOldVersions(publishedAppId: number, keepCount: number): Promise<void>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -341,6 +346,61 @@ class DatabaseStorage implements IStorage {
   async getFormSubmissionCount(formId: number): Promise<number> {
     const [result] = await db.select({ value: count() }).from(formSubmissions).where(eq(formSubmissions.formId, formId));
     return result?.value ?? 0;
+  }
+
+  async createAppVersion(publishedAppId: number, htmlContent: string, title: string, reason: string): Promise<PublishedAppVersion> {
+    const versions = await db.select({ versionNumber: publishedAppVersions.versionNumber })
+      .from(publishedAppVersions)
+      .where(eq(publishedAppVersions.publishedAppId, publishedAppId))
+      .orderBy(desc(publishedAppVersions.versionNumber))
+      .limit(1);
+    const nextVersion = (versions[0]?.versionNumber ?? 0) + 1;
+    const [created] = await db.insert(publishedAppVersions).values({
+      publishedAppId,
+      htmlContent,
+      title,
+      versionNumber: nextVersion,
+      snapshotReason: reason,
+    }).returning();
+    return created;
+  }
+
+  async getAppVersions(publishedAppId: number): Promise<PublishedAppVersion[]> {
+    return db.select().from(publishedAppVersions)
+      .where(eq(publishedAppVersions.publishedAppId, publishedAppId))
+      .orderBy(desc(publishedAppVersions.versionNumber));
+  }
+
+  async getAppVersion(id: number): Promise<PublishedAppVersion | undefined> {
+    const [version] = await db.select().from(publishedAppVersions).where(eq(publishedAppVersions.id, id));
+    return version;
+  }
+
+  async restoreAppVersion(publishedAppId: number, versionId: number): Promise<PublishedApp> {
+    const version = await this.getAppVersion(versionId);
+    if (!version || version.publishedAppId !== publishedAppId) {
+      throw new Error("Version not found or does not belong to this app");
+    }
+    const current = await db.select().from(publishedApps).where(eq(publishedApps.id, publishedAppId)).limit(1);
+    if (current[0]) {
+      await this.createAppVersion(publishedAppId, current[0].htmlContent, current[0].title, "pre-restore");
+    }
+    const [updated] = await db.update(publishedApps)
+      .set({ htmlContent: version.htmlContent, title: version.title, updatedAt: new Date() })
+      .where(eq(publishedApps.id, publishedAppId))
+      .returning();
+    return updated;
+  }
+
+  async deleteOldVersions(publishedAppId: number, keepCount: number): Promise<void> {
+    const versions = await db.select({ id: publishedAppVersions.id })
+      .from(publishedAppVersions)
+      .where(eq(publishedAppVersions.publishedAppId, publishedAppId))
+      .orderBy(desc(publishedAppVersions.versionNumber));
+    const toDelete = versions.slice(keepCount);
+    for (const v of toDelete) {
+      await db.delete(publishedAppVersions).where(eq(publishedAppVersions.id, v.id));
+    }
   }
 }
 
