@@ -40,6 +40,8 @@ import {
   ScanSearch,
   Camera,
   Undo2,
+  Gamepad2,
+  Swords,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -1626,6 +1628,8 @@ export default function AIChatPage() {
                     { text: "Create a fitness tracking app with progress charts", icon: Smartphone },
                     { text: "Design a portfolio website for a photographer", icon: Eye },
                     { text: "Make an e-commerce store with product catalog", icon: Code2 },
+                    { text: "Build a football penalty shootout game", icon: Gamepad2 },
+                    { text: "Create an African endless runner game", icon: Swords },
                   ].map((suggestion, i) => (
                     <Card
                       key={i}
