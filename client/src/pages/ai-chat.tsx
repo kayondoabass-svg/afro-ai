@@ -1020,14 +1020,25 @@ export default function AIChatPage() {
         return;
       }
       const apps = await appsRes.json();
-      if (apps.length === 0) {
+
+      // Extract title from generated HTML to find the correct matching app
+      const titleMatch = code.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const generatedTitle = titleMatch ? titleMatch[1].trim() : "";
+
+      // Find a published app whose title matches the generated app's title (case-insensitive)
+      const matchedApp = apps.find((a: any) =>
+        generatedTitle && a.title && a.title.toLowerCase() === generatedTitle.toLowerCase()
+      );
+
+      // Only auto-publish if we found a matching app — never overwrite a different project
+      if (!matchedApp) {
         setAutoPublishStatus("test-passed");
         toast({ title: "Ready to Publish", description: "Tests passed! Click 'Publish to Web' to go live." });
         setTimeout(() => setAutoPublishStatus("idle"), 4000);
         return;
       }
 
-      const existingApp = apps[0];
+      const existingApp = matchedApp;
       setAutoPublishStatus("publishing");
 
       const publishRes = await fetch("/api/publish", {

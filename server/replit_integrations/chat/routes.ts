@@ -459,6 +459,17 @@ Many African users access the internet on 2G/3G networks with high data costs. G
 - Social links should include WhatsApp, Instagram, Facebook, Twitter/X, TikTok (in that order of importance for African businesses)
 - Business hours should reflect African time zones (EAT, WAT, CAT, SAST)
 
+=== CONTRAST & READABILITY (ZERO TOLERANCE) ===
+CRITICAL: Invisible text is a fatal error. Before finalizing any generated site, verify these rules:
+- NEVER put white or near-white text on a white or light-colored background
+- NEVER put dark text on a dark background without sufficient contrast (minimum 4.5:1 ratio)
+- Navigation links: if the navbar background is light (white, grey, cream), text MUST be dark (#111 or #222). If navbar is dark, text must be light (#fff or #eee)
+- When using glassmorphism on light backgrounds: use dark text (#1a1a1a), dark borders (rgba(0,0,0,0.15))
+- When using glassmorphism on dark backgrounds: use light text (#ffffff or #f0f0f0), light borders (rgba(255,255,255,0.1))
+- Hero sections with background images: ALWAYS add a dark overlay (rgba(0,0,0,0.5)) so white text is readable
+- Input placeholders, muted text, and captions: minimum opacity 0.65 on their background color
+- Before writing </style>, mentally scan: "Can every text element on every section be read clearly?"
+
 === CONTENT RULES ===
 - Use realistic, contextual placeholder content - NEVER use "Lorem ipsum"
 - Business names should sound real and professional
@@ -786,15 +797,19 @@ export function registerChatRoutes(app: Express): void {
         const dateStr = today.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
         const tomorrowStr = tomorrow.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
-        contextPrompt += `\n\n=== USER CONTEXT (USE THIS IN CONTENT CREATION) ===
+        contextPrompt += `\n\n=== USER CONTEXT ===
 Today's date: ${dateStr}
 Tomorrow's date: ${tomorrowStr}
 User's name: ${userProfile.name || "Unknown"}
 User's email: ${userProfile.email || "Unknown"}
 User's plan: ${userProfile.plan || "starter"}
 Platform: Afro AI (afroaigroup.com) — AI-powered website and app builder
-Business: KEYO TECHNOLOGIES, Registration No. 80030812159711, Kampala, Uganda
-When writing emails, proposals, or documents for this user, use these real details instead of placeholders. Personalize everything.`;
+Builder's business: KEYO TECHNOLOGIES, Registration No. 80030812159711, Kampala, Uganda
+
+CRITICAL — HOW TO USE THESE DETAILS:
+- Use the builder's business details (KEYO TECHNOLOGIES) ONLY when the user explicitly asks to write something about THEMSELVES or their own company — e.g. an invoice, proposal, email signature, or personal document for KEYO TECHNOLOGIES.
+- When building websites, apps, or tools FOR A CLIENT or with a different name/brand (e.g. "Easy Mails", "Mama's Kitchen", "Ade's Shop"), NEVER use KEYO TECHNOLOGIES details. Use placeholder contact info (contact@[appname].com, +[country code] 700 000 000, [City], [Country]) that matches the client's brand.
+- NEVER inject the builder's personal address, phone, or email into a client's website unless specifically asked.`;
       }
 
       if (lastGeneratedCode) {
