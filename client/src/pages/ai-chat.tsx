@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -252,6 +253,7 @@ function PublishDialog({ code, open, onOpenChange }: {
   onOpenChange: (open: boolean) => void;
 }) {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [subdomain, setSubdomain] = useState("");
   const [title, setTitle] = useState("");
   const [checking, setChecking] = useState(false);
@@ -453,18 +455,45 @@ function PublishDialog({ code, open, onOpenChange }: {
               </div>
             )}
             {publishedUrl && (
-              <div className="bg-card rounded-lg p-4 border mt-2">
-                <p className="text-sm text-muted-foreground mb-2">Your app is live at:</p>
-                <a
-                  href={publishedUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline flex items-center gap-1 font-medium"
-                  data-testid="link-published-url"
-                >
-                  {publishedUrl}
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+              <div className="space-y-3 mt-2">
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    <p className="text-sm font-semibold text-green-600 dark:text-green-400">Your app is live!</p>
+                  </div>
+                  <a
+                    href={publishedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline flex items-center gap-1 font-medium text-sm"
+                    data-testid="link-published-url"
+                  >
+                    {publishedUrl}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary flex-shrink-0" />
+                    <p className="text-sm font-semibold">Want a custom domain?</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Replace <span className="font-mono text-primary">.afroaigroup.com</span> with your own domain like <span className="font-mono">mybusiness.com</span> — free to connect, SSL included.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Buy a domain at <strong>Namecheap</strong> or <strong>Truehost Africa</strong> (accepts mobile money), then connect it in Deployments.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full mt-1 border-primary/30 text-primary hover:bg-primary/10"
+                    onClick={() => { onOpenChange(false); setLocation("/deployments"); }}
+                    data-testid="button-connect-domain-cta"
+                  >
+                    <Globe className="w-3.5 h-3.5 mr-1" />
+                    Connect Custom Domain
+                  </Button>
+                </div>
               </div>
             )}
           </div>
