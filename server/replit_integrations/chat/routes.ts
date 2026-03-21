@@ -407,14 +407,63 @@ IMAGES & MEDIA:
 - Use object-fit: cover for consistent image sizing
 - Consider image overlays with gradient for text placement
 
-RESPONSIVE DESIGN:
-- Mobile-first approach using min-width media queries
-- Breakpoints: 640px (sm), 768px (md), 1024px (lg), 1280px (xl)
-- Navigation collapses to hamburger on mobile
-- Grid columns reduce: 4 cols -> 2 cols -> 1 col
-- Font sizes scale down proportionally on mobile
-- Touch-friendly tap targets (min 44px)
-- Horizontal padding: 16px mobile, 24px tablet, 48px desktop
+RESPONSIVE DESIGN — ZERO TOLERANCE FOR BROKEN MOBILE:
+Every site MUST work perfectly on mobile phones (320px+), tablets (768px), and desktops (1024px+). Never generate a site that breaks, overflows, cuts off, or fails to scroll on any device.
+
+MANDATORY HTML head tag — always include BOTH:
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="[your primary color]">
+
+MANDATORY CSS reset — always include at the top of every <style> tag:
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; min-height: 100vh; }
+img, video, canvas, svg { max-width: 100%; height: auto; display: block; }
+
+MANDATORY container pattern — never use fixed pixel widths for page containers:
+.container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 640px) { .container { padding: 0 24px; } }
+@media (min-width: 1024px) { .container { padding: 0 48px; } }
+
+MANDATORY grid pattern — always use auto-fit so grids collapse automatically:
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+On mobile: 1 column. Tablet: 2 columns. Desktop: 3-4 columns. This happens automatically with auto-fit.
+
+MANDATORY navigation — always include a working hamburger menu for mobile:
+- Show full nav links on desktop (display: flex)
+- Hide nav links on mobile, show hamburger button (display: none / display: block)
+- Toggle a .nav-open class on the nav with JavaScript onclick
+- Mobile nav links stack vertically, full width, min 56px tap height
+- Use this pattern:
+<button class="hamburger" onclick="document.querySelector('nav').classList.toggle('open')" aria-label="Menu">☰</button>
+.nav-links { display: flex; gap: 24px; }
+@media (max-width: 768px) {
+  .hamburger { display: block; }
+  .nav-links { display: none; flex-direction: column; position: absolute; top: 100%; left: 0; width: 100%; background: var(--nav-bg); padding: 16px; gap: 0; }
+  .nav-links.open, nav.open .nav-links { display: flex; }
+  .nav-links a { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+}
+
+MANDATORY text scaling — font sizes must shrink on mobile:
+h1: clamp(28px, 6vw, 64px) — never a fixed large px on mobile
+h2: clamp(22px, 4vw, 42px)
+body: clamp(14px, 2vw, 16px)
+Use clamp() for all headings so they scale fluidly across screen sizes.
+
+MANDATORY touch targets — every clickable element min 44px tall:
+button, a, input, select { min-height: 44px; }
+
+MANDATORY flex wrapping — flex rows must wrap on small screens:
+.row { display: flex; flex-wrap: wrap; gap: 16px; }
+.row > * { flex: 1 1 280px; } /* items wrap below 280px */
+
+BANNED PATTERNS — these break mobile and are FORBIDDEN:
+- width: 800px (or any large fixed width on containers) — use max-width instead
+- overflow: hidden on body or html — prevents scrolling
+- position: absolute/fixed elements that extend off-screen
+- font-size: 48px without clamp() — will be too big on mobile
+- flex rows without flex-wrap: wrap
+- horizontal scroll bars (always caused by missing box-sizing or fixed widths)
 
 FOOTER:
 - Multi-column footer with links, contact info, social icons
@@ -535,8 +584,24 @@ COMMON MISTAKES TO AVOID:
 - Must work perfectly without any external dependencies except CDN fonts/icons
 - Clean, well-organized code with CSS custom properties (variables) for colors
 - Use semantic HTML5 elements (header, nav, main, section, article, footer)
-- Include proper meta viewport tag for mobile
 - Include favicon link (use a data URI or emoji favicon)
+
+MANDATORY <head> section — every generated page MUST include all of these:
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="[primary color]">
+<title>[Page Title]</title>
+
+MANDATORY responsive self-check — before outputting code, verify:
+✓ Does the page have the viewport meta tag? (If no → add it)
+✓ Does the CSS have box-sizing: border-box on *? (If no → add it)
+✓ Does body have overflow-x: hidden? (If no → add it)
+✓ Are all headings using clamp() for font sizes? (If no → convert them)
+✓ Does navigation have a hamburger menu for mobile? (If no → add it)
+✓ Are all grid containers using auto-fit or explicit media queries? (If no → fix them)
+✓ Do all images have max-width: 100% and height: auto? (If no → add it)
+✓ Are there any fixed pixel widths on containers wider than 100%? (If yes → replace with max-width)
+This checklist is NON-NEGOTIABLE. A broken mobile experience is a failed deliverable.
 
 === BROWSER APIs & ADVANCED FEATURES ===
 When the user requests features that use browser APIs (camera, geolocation, audio, etc.), you MUST implement them correctly:
