@@ -31,6 +31,7 @@ The platform is built with a modern web stack: React, TypeScript, Vite, Tailwind
 -   **Marketplace:** Community template marketplace at `/marketplace`. Users can publish their published apps as listings (title, category, tags, description). Others can browse by category/search and clone listings — which opens the HTML in AI chat for customization. Tracks download counts. `marketplace_listings` table.
 -   **PWA Builder:** At `/pwa`, users select a published app and generate PWA files: `manifest.json`, `sw.js` (service worker), and an HTML head snippet. Files can be copied or downloaded. Step-by-step install guide included.
 -   **Collaboration:** Project team management at `/collaborate`. Project owners can invite collaborators by email with viewer/editor roles. Invitees see shared projects under "Shared with Me" tab. `project_collaborators` table tracks invite email, role, and status.
+-   **Domain Store:** Domain registration via name.com reseller API at `/domains`. Users search for domains (checks .com, .net, .org, .io, .co, .africa, .shop, .tech, .app, .store, + African TLDs). Pricing shown with 35% markup over reseller cost. Registration triggers Pesapal payment; on completion, domain is registered via name.com API. Nameserver management included. `domain_orders` table. Credentials: `NAMEDOTCOM_API_TOKEN` + `NAMEDOTCOM_API_USER`.
 
 ## External Dependencies
 -   **AI Services:** OpenAI (via Replit AI Integrations), Google Gemini (for image analysis).

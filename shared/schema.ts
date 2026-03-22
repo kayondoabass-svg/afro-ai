@@ -244,3 +244,32 @@ export const projectCollaborators = pgTable("project_collaborators", {
 export const insertProjectCollaboratorSchema = createInsertSchema(projectCollaborators).omit({ id: true, invitedAt: true });
 export type ProjectCollaborator = typeof projectCollaborators.$inferSelect;
 export type InsertProjectCollaborator = z.infer<typeof insertProjectCollaboratorSchema>;
+
+// ============ DOMAIN ORDERS ============
+export const domainOrders = pgTable("domain_orders", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  domainName: text("domain_name").notNull(),
+  status: varchar("status").notNull().default("pending_payment"), // pending_payment, active, expired, failed
+  pricePaid: integer("price_paid_cents").notNull().default(0),
+  costPrice: integer("cost_price_cents").notNull().default(0),
+  years: integer("years").notNull().default(1),
+  expiryDate: text("expiry_date"),
+  nameservers: text("nameservers").array(),
+  contactFirstName: text("contact_first_name"),
+  contactLastName: text("contact_last_name"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  contactAddress: text("contact_address"),
+  contactCity: text("contact_city"),
+  contactState: text("contact_state"),
+  contactZip: text("contact_zip"),
+  contactCountry: text("contact_country").default("UG"),
+  namecomOrderId: text("namecom_order_id"),
+  pesapalOrderId: text("pesapal_order_id"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertDomainOrderSchema = createInsertSchema(domainOrders).omit({ id: true, createdAt: true });
+export type DomainOrder = typeof domainOrders.$inferSelect;
+export type InsertDomainOrder = z.infer<typeof insertDomainOrderSchema>;

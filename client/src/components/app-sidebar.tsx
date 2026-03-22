@@ -35,6 +35,7 @@ import {
   Store,
   Smartphone,
   Users,
+  Globe,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -60,6 +61,7 @@ export function AppSidebar() {
     { title: "Marketplace", url: "/marketplace", icon: Store },
     { title: "PWA Builder", url: "/pwa", icon: Smartphone },
     { title: "Collaborate", url: "/collaborate", icon: Users },
+    { title: "Domain Store", url: "/domains", icon: Globe },
     { title: "Referrals", url: "/referrals", icon: Gift },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
     { title: "Billing & Usage", url: "/billing", icon: Receipt },

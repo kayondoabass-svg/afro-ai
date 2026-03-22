@@ -46,7 +46,7 @@ integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_openai_ai_int
 [userenv.shared]
 CLOUDFLARE_ZONE_ID = "054b9e09ddbce13503c356da74184d9c"
 BASE_URL = "https://afroaigroup.com"
-NAMECHEAP_API_USER = "kayondoabass@gmail.com"
-NAMECHEAP_USERNAME = "kayondoabass@gmail.com"
-NAMECHEAP_ENV = "production"
-NAMECHEAP_CLIENT_IP = "34.171.230.40"
+NAMEDOTCOM_API_USER = "kayondoabass@gmail.com"
+NAMEDOTCOM_API_URL = "https://api.name.com/v4"
+NAMEDOTCOM_TEST_API_USER = "kayondoabass@gmail.com-test"
+NAMEDOTCOM_TEST_API_URL = "https://api.dev.name.com/v4"

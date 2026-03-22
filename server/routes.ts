@@ -7,6 +7,7 @@ import { insertProjectSchema } from "@shared/schema";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
 import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./pesapal";
 import { analyzeImage } from "./gemini";
+import { checkDomainAvailability, checkSingleDomain, registerDomain, listDomains, getDomainInfo, renewDomain, setNameservers, getCostPrice } from "./namedotcom";
 import { scanHtmlContent, publishedAppHeaders } from "./security";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
@@ -1288,6 +1289,149 @@ export async function registerRoutes(
   app.delete("/api/collaborate/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.removeCollaborator(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ DOMAIN RESELLER (name.com) ============
+  app.post("/api/domains/check", isAuthenticated, async (req: any, res) => {
+    try {
+      const { query } = req.body;
+      if (!query) return res.status(400).json({ message: "Search query required" });
+      const results = await checkDomainAvailability(query.trim());
+      res.json(results);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/domains/check-single", isAuthenticated, async (req: any, res) => {
+    try {
+      const { domainName } = req.body;
+      if (!domainName) return res.status(400).json({ message: "Domain name required" });
+      const result = await checkSingleDomain(domainName.trim().toLowerCase());
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/domains/my", isAuthenticated, async (req: any, res) => {
+    try {
+      const orders = await storage.getDomainOrdersByUser(req.user.id);
+      res.json(orders);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/domains/order", isAuthenticated, async (req: any, res) => {
+    try {
+      const { domainName, years, contact } = req.body;
+      if (!domainName || !contact) return res.status(400).json({ message: "Domain name and contact info required" });
+
+      // Get cost price
+      const costPrice = await getCostPrice(domainName);
+      if (!costPrice) return res.status(400).json({ message: "Domain not available or could not get price" });
+
+      const MARKUP = 0.35;
+      const retailPrice = parseFloat((costPrice * (1 + MARKUP)).toFixed(2));
+      const priceCents = Math.round(retailPrice * 100);
+      const costCents = Math.round(costPrice * 100);
+
+      // Create pending order
+      const order = await storage.createDomainOrder({
+        userId: req.user.id,
+        domainName,
+        status: "pending_payment",
+        pricePaid: priceCents,
+        costPrice: costCents,
+        years: years || 1,
+        contactFirstName: contact.firstName,
+        contactLastName: contact.lastName,
+        contactEmail: contact.email,
+        contactPhone: contact.phone,
+        contactAddress: contact.address,
+        contactCity: contact.city,
+        contactState: contact.state,
+        contactZip: contact.zip,
+        contactCountry: contact.country || "UG",
+      });
+
+      // Create Pesapal payment
+      try {
+        const baseUrl = `https://${req.headers.host}`;
+        const ipnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`);
+        const pesapalResp = await submitOrder({
+          id: `domain-${order.id}`,
+          amount: retailPrice,
+          currency: "USD",
+          description: `Domain registration: ${domainName} (${years || 1} year)`,
+          callbackUrl: `${baseUrl}/domains?order=${order.id}&status=success`,
+          ipnId,
+          email: contact.email || req.user.email,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+          phone: contact.phone,
+        });
+
+        if (pesapalResp.redirect_url) {
+          await storage.updateDomainOrder(order.id, { pesapalOrderId: pesapalResp.order_tracking_id });
+          return res.json({ orderId: order.id, paymentUrl: pesapalResp.redirect_url, amount: retailPrice });
+        }
+      } catch (payErr) {
+        console.error("Pesapal error:", payErr);
+      }
+
+      res.json({ orderId: order.id, amount: retailPrice, message: "Order created, payment pending" });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/domains/activate/:orderId", isAuthenticated, async (req: any, res) => {
+    try {
+      const orderId = parseInt(req.params.orderId);
+      const order = await storage.getDomainOrder(orderId);
+      if (!order || order.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      if (order.status === "active") return res.json({ message: "Already active", order });
+
+      const contact = {
+        firstName: order.contactFirstName || "Admin",
+        lastName: order.contactLastName || "Admin",
+        email: order.contactEmail || req.user.email,
+        phone: order.contactPhone || "+256700000000",
+        address1: order.contactAddress || "Kampala",
+        city: order.contactCity || "Kampala",
+        state: order.contactState || "Central",
+        zip: order.contactZip || "00000",
+        country: order.contactCountry || "UG",
+      };
+
+      const costPriceDollars = order.costPrice / 100;
+      const result = await registerDomain(order.domainName, contact, costPriceDollars, order.years);
+      const expiryDate = result.domain?.expireDate || result.expireDate || "";
+      const nameservers = result.domain?.nameservers || result.nameservers || [];
+      const updated = await storage.updateDomainOrder(orderId, {
+        status: "active",
+        namecomOrderId: String(result.order?.orderId || result.orderId || ""),
+        expiryDate,
+        nameservers,
+      });
+      res.json({ success: true, order: updated });
+    } catch (e: any) {
+      await storage.updateDomainOrder(parseInt(req.params.orderId), { status: "failed" }).catch(() => {});
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/domains/info/:domainName", isAuthenticated, async (req: any, res) => {
+    try {
+      const info = await getDomainInfo(req.params.domainName);
+      res.json(info);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/domains/nameservers/:orderId", isAuthenticated, async (req: any, res) => {
+    try {
+      const orderId = parseInt(req.params.orderId);
+      const order = await storage.getDomainOrder(orderId);
+      if (!order || order.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      const { nameservers } = req.body;
+      await setNameservers(order.domainName, nameservers);
+      await storage.updateDomainOrder(orderId, { nameservers });
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

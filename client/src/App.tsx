@@ -37,6 +37,7 @@ import AnalyticsPage from "@/pages/analytics";
 import MarketplacePage from "@/pages/marketplace";
 import PwaBuilderPage from "@/pages/pwa-builder";
 import CollaborationPage from "@/pages/collaboration";
+import DomainsPage from "@/pages/domains";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -77,6 +78,7 @@ function AuthenticatedLayout() {
               <Route path="/marketplace" component={MarketplacePage} />
               <Route path="/pwa" component={PwaBuilderPage} />
               <Route path="/collaborate" component={CollaborationPage} />
+              <Route path="/domains" component={DomainsPage} />
               <Route path="/about" component={AboutPage} />
               <Route path="/contact" component={ContactPage} />
               <Route path="/privacy" component={PrivacyPage} />

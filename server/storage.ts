@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -99,6 +99,11 @@ export interface IStorage {
   addCollaborator(data: InsertProjectCollaborator): Promise<ProjectCollaborator>;
   updateCollaboratorStatus(id: number, status: string, userId?: string): Promise<void>;
   removeCollaborator(id: number): Promise<void>;
+  // Domain Orders
+  getDomainOrdersByUser(userId: string): Promise<DomainOrder[]>;
+  getDomainOrder(id: number): Promise<DomainOrder | undefined>;
+  createDomainOrder(order: InsertDomainOrder): Promise<DomainOrder>;
+  updateDomainOrder(id: number, data: Partial<InsertDomainOrder>): Promise<DomainOrder>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -604,6 +609,26 @@ class DatabaseStorage implements IStorage {
 
   async removeCollaborator(id: number): Promise<void> {
     await db.delete(projectCollaborators).where(eq(projectCollaborators.id, id));
+  }
+
+  // ============ DOMAIN ORDERS ============
+  async getDomainOrdersByUser(userId: string): Promise<DomainOrder[]> {
+    return db.select().from(domainOrders).where(eq(domainOrders.userId, userId)).orderBy(desc(domainOrders.createdAt));
+  }
+
+  async getDomainOrder(id: number): Promise<DomainOrder | undefined> {
+    const [row] = await db.select().from(domainOrders).where(eq(domainOrders.id, id));
+    return row;
+  }
+
+  async createDomainOrder(order: InsertDomainOrder): Promise<DomainOrder> {
+    const [created] = await db.insert(domainOrders).values(order).returning();
+    return created;
+  }
+
+  async updateDomainOrder(id: number, data: Partial<InsertDomainOrder>): Promise<DomainOrder> {
+    const [updated] = await db.update(domainOrders).set(data).where(eq(domainOrders.id, id)).returning();
+    return updated;
   }
 }
 
