@@ -252,23 +252,35 @@ export default function LandingPage() {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" style={{ perspective: "1000px" }}>
             {[
-              { icon: Globe, title: t("features.website.title"), desc: t("features.website.desc"), testId: "text-feature-websites" },
-              { icon: Smartphone, title: t("features.app.title"), desc: t("features.app.desc"), testId: "text-feature-apps" },
-              { icon: MessageSquare, title: t("features.ai.title"), desc: t("features.ai.desc"), testId: "text-feature-ai" },
-              { icon: Store, title: t("features.store.title"), desc: t("features.store.desc"), testId: "text-feature-store" },
-              { icon: Code2, title: t("features.code.title"), desc: t("features.code.desc"), testId: "text-feature-code" },
-              { icon: Shield, title: t("features.security.title"), desc: t("features.security.desc"), testId: "text-feature-security" },
+              { icon: Globe, title: t("features.website.title"), desc: t("features.website.desc"), testId: "text-feature-websites", href: loginUrl, cta: "Build a website →" },
+              { icon: Smartphone, title: t("features.app.title"), desc: t("features.app.desc"), testId: "text-feature-apps", href: loginUrl, cta: "Build an app →" },
+              { icon: MessageSquare, title: t("features.ai.title"), desc: t("features.ai.desc"), testId: "text-feature-ai", href: loginUrl, cta: "Start chatting →" },
+              { icon: Store, title: t("features.store.title"), desc: t("features.store.desc"), testId: "text-feature-store", href: "/marketplace", cta: "Browse marketplace →" },
+              { icon: Code2, title: t("features.code.title"), desc: t("features.code.desc"), testId: "text-feature-code", href: "/templates", cta: "Browse templates →" },
+              { icon: Shield, title: t("features.security.title"), desc: t("features.security.desc"), testId: "text-feature-security", href: loginUrl, cta: "Get started free →" },
             ].map((f, i) => (
-              <div key={i} className="glass-card glass-card-feature rounded-2xl p-6 space-y-4 cursor-default">
-                <div className="glass-icon w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center ring-1 ring-primary/20">
-                  <f.icon className="w-6 h-6 text-primary" />
+              <a key={i} href={f.href} className="block group">
+                <div className="glass-card glass-card-feature rounded-2xl p-6 space-y-4 cursor-pointer h-full" style={{ transition: "border-color 0.2s" }}>
+                  <div className="glass-icon w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center ring-1 ring-primary/20">
+                    <f.icon className="w-6 h-6 text-primary" />
+                  </div>
+                  <div className="glass-inner space-y-2">
+                    <h3 className="glass-title text-lg font-semibold" data-testid={f.testId}>{f.title}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
+                  </div>
+                  <p className="text-xs text-primary font-medium group-hover:underline">{f.cta}</p>
                 </div>
-                <div className="glass-inner space-y-2">
-                  <h3 className="glass-title text-lg font-semibold" data-testid={f.testId}>{f.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
-                </div>
-              </div>
+              </a>
             ))}
+          </div>
+
+          <div className="text-center mt-10">
+            <a href={loginUrl}>
+              <Button size="lg" data-testid="button-features-start">
+                Start Building Free
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </a>
           </div>
         </div>
       </section>
@@ -287,25 +299,36 @@ export default function LandingPage() {
           </div>
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto" style={{ perspective: "1000px" }}>
             {[
-              { step: "01", icon: MessageSquare, title: "Describe Your Vision", desc: "Tell our AI what you want to build. Describe your website or app in plain language." },
-              { step: "02", icon: Code2, title: "AI Builds It Live", desc: "Watch as AI generates your complete website or app in real-time with live preview." },
-              { step: "03", icon: Rocket, title: "Publish Instantly", desc: "Launch your creation to the world with one click on your own .afroaigroup.com domain." },
+              { step: "01", icon: MessageSquare, title: "Describe Your Vision", desc: "Tell our AI what you want to build. Describe your website or app in plain language.", href: loginUrl },
+              { step: "02", icon: Code2, title: "AI Builds It Live", desc: "Watch as AI generates your complete website or app in real-time with live preview.", href: loginUrl },
+              { step: "03", icon: Rocket, title: "Publish Instantly", desc: "Launch your creation to the world with one click on your own .afroaigroup.com domain.", href: loginUrl },
             ].map((item, i) => (
-              <div key={i} className="glass-card glass-card-step text-center space-y-4 rounded-2xl p-8 cursor-default">
-                <div className="glass-icon relative inline-flex">
-                  <div className="w-16 h-16 rounded-2xl bg-primary/15 ring-1 ring-primary/25 flex items-center justify-center mx-auto">
-                    <item.icon className="w-7 h-7 text-primary" />
+              <a key={i} href={item.href} className="block group">
+                <div className="glass-card glass-card-step text-center space-y-4 rounded-2xl p-8 cursor-pointer h-full">
+                  <div className="glass-icon relative inline-flex">
+                    <div className="w-16 h-16 rounded-2xl bg-primary/15 ring-1 ring-primary/25 flex items-center justify-center mx-auto">
+                      <item.icon className="w-7 h-7 text-primary" />
+                    </div>
+                    <span className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shadow-lg" data-testid={`text-step-${item.step}`}>
+                      {item.step}
+                    </span>
                   </div>
-                  <span className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shadow-lg" data-testid={`text-step-${item.step}`}>
-                    {item.step}
-                  </span>
+                  <div className="glass-inner space-y-2">
+                    <h3 className="glass-title text-lg font-semibold" data-testid={`text-howit-title-${i}`}>{item.title}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                  </div>
                 </div>
-                <div className="glass-inner space-y-2">
-                  <h3 className="glass-title text-lg font-semibold" data-testid={`text-howit-title-${i}`}>{item.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
-                </div>
-              </div>
+              </a>
             ))}
+          </div>
+
+          <div className="text-center mt-10">
+            <a href={loginUrl}>
+              <Button size="lg" className="animate-pulse-gold" data-testid="button-howit-start">
+                Try It Now — Free
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </a>
           </div>
         </div>
       </section>
@@ -343,6 +366,19 @@ export default function LandingPage() {
                     <span className="text-sm font-medium">{item.text}</span>
                   </div>
                 ))}
+              </div>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <a href={loginUrl}>
+                  <Button data-testid="button-africa-start">
+                    Start Building Free
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </a>
+                <a href="/domains">
+                  <Button variant="outline" data-testid="button-africa-domains">
+                    Get an African Domain
+                  </Button>
+                </a>
               </div>
             </div>
           </div>
@@ -570,19 +606,22 @@ export default function LandingPage() {
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.product")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <a href="#features" className="block hover:text-primary transition-colors" data-testid="link-footer-website-builder">{t("footer.websiteBuilder")}</a>
-                <a href="#features" className="block hover:text-primary transition-colors" data-testid="link-footer-app-designer">{t("footer.appDesigner")}</a>
-                <a href="#features" className="block hover:text-primary transition-colors" data-testid="link-footer-ai-assistant">{t("footer.aiAssistant")}</a>
-                <a href="#features" className="block hover:text-primary transition-colors" data-testid="link-footer-app-store">{t("footer.appStoreLaunch")}</a>
+                <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-website-builder">{t("footer.websiteBuilder")}</a>
+                <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-app-designer">{t("footer.appDesigner")}</a>
+                <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-ai-assistant">{t("footer.aiAssistant")}</a>
+                <a href="/templates" className="block hover:text-primary transition-colors" data-testid="link-footer-templates">Templates</a>
+                <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">Marketplace</a>
+                <a href="/domains" className="block hover:text-primary transition-colors" data-testid="link-footer-domains">Domain Store</a>
               </div>
             </div>
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.company")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <a href="/about" className="block hover:text-primary transition-colors" data-testid="link-footer-about">{t("footer.aboutUs")}</a>
-                <a href="mailto:Support@afroaigroup.com" className="block hover:text-primary transition-colors" data-testid="link-footer-careers">{t("footer.careers")}</a>
-                <a href="/about" className="block hover:text-primary transition-colors" data-testid="link-footer-blog">{t("footer.blog")}</a>
+                <a href="/blog" className="block hover:text-primary transition-colors" data-testid="link-footer-blog">{t("footer.blog")}</a>
                 <a href="/contact" className="block hover:text-primary transition-colors" data-testid="link-footer-contact">{t("footer.contact")}</a>
+                <a href="mailto:Support@afroaigroup.com" className="block hover:text-primary transition-colors" data-testid="link-footer-careers">Support</a>
+                <a href="/pricing" className="block hover:text-primary transition-colors" data-testid="link-footer-pricing">Pricing</a>
               </div>
             </div>
             <div className="space-y-3">
