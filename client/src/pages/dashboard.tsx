@@ -58,7 +58,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import type { Project, PublishedApp } from "@shared/schema";
 
@@ -69,6 +69,24 @@ export default function DashboardPage() {
   const [, navigate] = useLocation();
   const [showNewProject, setShowNewProject] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [paymentSuccess, setPaymentSuccess] = useState<{ plan: string } | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const plan = params.get("plan");
+    if (payment === "success" && plan) {
+      setPaymentSuccess({ plan });
+      window.history.replaceState({}, "", "/");
+    } else if (payment === "pending") {
+      toast({ title: "Payment pending", description: "Your payment is being processed. Your plan will be updated shortly.", variant: "default" });
+      window.history.replaceState({}, "", "/");
+    } else if (payment === "failed") {
+      const reason = params.get("reason") || "Payment was not completed.";
+      toast({ title: "Payment not completed", description: reason, variant: "destructive" });
+      window.history.replaceState({}, "", "/");
+    }
+  }, []);
 
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -138,6 +156,29 @@ export default function DashboardPage() {
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+        {/* Plan upgrade success banner */}
+        {paymentSuccess && (
+          <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-5 flex items-start gap-4">
+            <Rocket className="w-6 h-6 text-yellow-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold text-yellow-300 capitalize">
+                Welcome to the {paymentSuccess.plan} plan!
+              </p>
+              <p className="text-sm text-yellow-200/70 mt-1">
+                Your upgrade was successful. You now have access to all {paymentSuccess.plan} features including more AI generations and advanced capabilities.
+              </p>
+            </div>
+            <button
+              onClick={() => setPaymentSuccess(null)}
+              className="text-yellow-400/60 hover:text-yellow-300 text-xl leading-none"
+              data-testid="button-dismiss-payment-success"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Avatar className="w-12 h-12">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Globe, Search, CheckCircle2, XCircle, Loader2, ShoppingCart, Star,
@@ -80,16 +80,27 @@ export default function DomainsPage() {
     onError: (e: any) => toast({ title: "Search failed", description: e.message, variant: "destructive" }),
   });
 
+  const [paymentReturnOrder, setPaymentReturnOrder] = useState<number | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("status");
+    const orderId = params.get("order");
+    if (status === "success" && orderId) {
+      setPaymentReturnOrder(parseInt(orderId));
+      window.history.replaceState({}, "", "/domains");
+    }
+  }, []);
+
   const orderMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/domains/order", data).then(r => r.json()),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/domains/my"] });
       setRegisterOpen(false);
       if (data.paymentUrl) {
-        toast({ title: "Redirecting to payment..." });
-        window.open(data.paymentUrl, "_blank");
+        window.location.href = data.paymentUrl;
       } else {
-        toast({ title: "Order created!", description: `Domain order for ${selectedDomain?.domainName} placed. Pay via your dashboard.` });
+        toast({ title: "Order created!", description: `Domain order for ${selectedDomain?.domainName} placed. Complete payment to activate.` });
       }
     },
     onError: (e: any) => toast({ title: "Order failed", description: e.message, variant: "destructive" }),
@@ -139,6 +150,35 @@ export default function DomainsPage() {
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
       <div className="max-w-5xl mx-auto space-y-8">
+
+        {/* Post-payment return banner */}
+        {paymentReturnOrder && (
+          <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-6 h-6 text-yellow-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold text-yellow-300">Payment received!</p>
+                <p className="text-sm text-yellow-200/70 mt-0.5">
+                  Your payment was processed. Click <strong>Activate Domain</strong> below to complete registration with the domain registrar.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="bg-yellow-500 hover:bg-yellow-400 text-black font-semibold shrink-0"
+              onClick={() => {
+                activateMutation.mutate(paymentReturnOrder);
+                setPaymentReturnOrder(null);
+              }}
+              disabled={activateMutation.isPending}
+              data-testid="button-activate-domain"
+            >
+              {activateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Activate Domain
+            </Button>
+          </div>
+        )}
+
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
