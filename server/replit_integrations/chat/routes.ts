@@ -910,10 +910,10 @@ CRITICAL — HOW TO USE THESE DETAILS:
       }
 
       if (lastGeneratedCode) {
-        const codePreview = lastGeneratedCode.length > 12000
-          ? lastGeneratedCode.substring(0, 12000) + "\n<!-- ... truncated for context ... -->"
+        const codePreview = lastGeneratedCode.length > 80000
+          ? lastGeneratedCode.substring(0, 80000) + "\n<!-- ... truncated for context ... -->"
           : lastGeneratedCode;
-        contextPrompt += `\n\n=== CURRENT APP STATE ===\nThe user has an existing app/website you previously built. Below is the current code — this is the SOURCE OF TRUTH. Every line, section, style, and script in this code was intentionally placed there.\n\`\`\`html\n${codePreview}\n\`\`\`\n\nYou are now in EDITOR MODE. Follow these rules strictly:\n1. This code is your starting point — copy it entirely, then apply ONLY the requested changes\n2. Do NOT delete any existing sections, features, styles, or scripts unless explicitly told to\n3. Do NOT change colors, fonts, branding, or layout unless the user specifically asks\n4. If adding a new section, insert it in the logical place within the existing structure\n5. If changing a style, only modify the specific CSS property mentioned\n6. Return the COMPLETE updated HTML file with surgical changes applied`;
+        contextPrompt += `\n\n=== CURRENT APP STATE ===\nThe user has an existing app/website you previously built. Below is the COMPLETE current code — this is the SOURCE OF TRUTH. Every single line, section, style, and script in this code was intentionally placed there. You MUST use this as your starting point.\n\`\`\`html\n${codePreview}\n\`\`\`\n\nYou are now in EDITOR MODE. Follow these rules strictly:\n1. This code is your starting point — copy it ENTIRELY and COMPLETELY, then apply ONLY the requested changes\n2. Do NOT delete any existing sections, features, styles, or scripts unless explicitly told to\n3. Do NOT change colors, fonts, branding, or layout unless the user specifically asks\n4. If adding a new section, insert it in the logical place within the existing structure\n5. If changing a style, only modify the specific CSS property mentioned\n6. Return the COMPLETE updated HTML file with surgical changes applied — every line of the original must appear in your response unless explicitly removed`;
       }
 
       const systemMessage = {
