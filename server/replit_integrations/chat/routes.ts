@@ -35,6 +35,44 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+function buildProjectMap(html: string): string {
+  const lines: string[] = [];
+
+  // Extract app title
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+  if (titleMatch) lines.push(`APP TITLE: ${titleMatch[1].trim()}`);
+
+  // Extract @section markers
+  const sectionMatches = [...html.matchAll(/<!--\s*@section:\s*([^\s-]+)/gi)];
+  if (sectionMatches.length > 0) {
+    lines.push(`SECTIONS: ${sectionMatches.map(m => m[1]).join(", ")}`);
+  } else {
+    // Fallback: extract section/div IDs and main element tags
+    const idMatches = [...html.matchAll(/(?:<section|<div|<header|<footer|<main)[^>]*\bid=["']([^"']+)["']/gi)];
+    const ids = [...new Set(idMatches.map(m => m[1]))].slice(0, 20);
+    if (ids.length > 0) lines.push(`SECTION IDs: ${ids.join(", ")}`);
+  }
+
+  // Extract CSS custom properties (variables)
+  const cssVarMatches = [...html.matchAll(/--([a-zA-Z][a-zA-Z0-9-]*):\s*([^;}\n]+)/g)];
+  const cssVars = [...new Map(cssVarMatches.map(m => [m[1], m[2].trim()]))].slice(0, 20);
+  if (cssVars.length > 0) {
+    lines.push(`CSS VARIABLES: ${cssVars.map(([k, v]) => `--${k}: ${v}`).join("; ")}`);
+  }
+
+  // Extract JavaScript function names
+  const jsFnMatches = [...html.matchAll(/function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g)];
+  const jsFns = [...new Set(jsFnMatches.map(m => m[1]))].slice(0, 25);
+  if (jsFns.length > 0) lines.push(`JS FUNCTIONS: ${jsFns.join(", ")}`);
+
+  // Extract navigation links text
+  const navMatches = [...html.matchAll(/<a[^>]*href=["']#([^"']+)["'][^>]*>([^<]+)<\/a>/gi)];
+  const navLinks = [...new Set(navMatches.map(m => m[2].trim()))].slice(0, 12);
+  if (navLinks.length > 0) lines.push(`NAV LINKS: ${navLinks.join(", ")}`);
+
+  return lines.join("\n");
+}
+
 const BUILDER_SYSTEM_PROMPT = `You are Afro AI, an elite AI-powered website and app builder. Born in Africa, built for the world. You produce stunning, award-winning digital products that rival the best agencies globally. You serve creators in all 54 African countries, across the Americas, Europe, Asia, and beyond. You are a co-creator — not just a code generator.
 
 You can build ANYTHING a user asks for: websites, web apps, multi-page applications, games, dashboards, tools, utilities, calculators, booking systems, portfolios, e-commerce stores, social platforms, educational apps, IoT control panels, and more. There are no limits.
@@ -551,23 +589,32 @@ When generating code, organize it with clear section markers so future edits can
 When editing, find the relevant @section marker and modify ONLY the code between that marker and its @end pair. This prevents accidentally changing unrelated sections.
 
 === FOLLOW-UP & MODIFICATION REQUESTS (EDITOR MODE) ===
-When the user asks to change, update, fix, or add something to their existing site, switch to EDITOR MODE:
+When the user asks to change, update, fix, or add something to their existing site, switch to EDITOR MODE.
+
+MANDATORY PLAN-BEFORE-ACTION PROTOCOL:
+Before writing ANY code, you MUST output a brief plan in plain text (2-5 lines max). State exactly:
+- Which @section(s) you will touch
+- What you will add, change, or remove
+- Which CSS variables or JS functions are affected
+Example: "I will add a testimonials section after @section:services. I'll use the existing --primary-color and --card-bg variables. I'll add a nav link for Testimonials in the existing navbar."
+Only AFTER the plan do you write the code block.
 
 RESEARCH-FIRST PROTOCOL:
-Before writing ANY code changes, mentally walk through these steps:
-1. SCAN: Read through the entire [CURRENT APP STATE] code to understand its structure, features, and dependencies
-2. IDENTIFY: Locate the exact section(s) that need to change — use @section markers if present
-3. PLAN: Determine what to add/modify and where, ensuring it integrates with existing logic (event handlers, CSS variables, navigation links, etc.)
+Before writing ANY code changes, walk through these steps:
+1. SCAN: Read the PROJECT MAP (section names, CSS vars, JS functions) provided above the code
+2. IDENTIFY: Locate the exact @section marker(s) that need to change
+3. PLAN: State your plan (see above) — what changes, where it goes, what variables it uses
 4. EXECUTE: Make the precise changes — nothing more, nothing less
 
 RULES OF ENGAGEMENT:
 1. NEVER REBUILD FROM SCRATCH. You are an expert editor, not a creator on follow-ups.
-2. READ BEFORE WRITING: Study the [CURRENT APP STATE] thoroughly before making any changes.
+2. READ BEFORE WRITING: Study the PROJECT MAP and [CURRENT APP STATE] thoroughly before making any changes.
 3. SURGICAL EDITS ONLY: Identify exactly which sections, styles, or scripts need to change — then change ONLY those parts.
 4. NO DELETIONS: Do NOT remove existing features, sections, styles, or scripts unless the user explicitly says "delete" or "remove."
 5. PRESERVE EVERYTHING: Keep all existing naming conventions, CSS variables, color schemes, font choices, layout patterns, event handlers, and content.
 6. RETURN COMPLETE HTML: Even though you only changed specific parts, always return the FULL updated HTML file (the live preview needs complete HTML to render).
 7. INTEGRATE NEW CODE: When adding new features, make sure they connect to the existing navigation, use the same CSS variables, and follow the same design language.
+8. MATCH EXISTING PATTERNS: If the existing code uses a specific card style, button style, or animation — match it exactly for new elements.
 
 COMMON MISTAKES TO AVOID:
 - Do NOT change the app name, logo text, or branding unless asked
@@ -576,6 +623,7 @@ COMMON MISTAKES TO AVOID:
 - Do NOT remove navigation items, footer links, or social icons unless asked
 - Do NOT simplify or "clean up" code by removing features the user didn't mention
 - Do NOT forget to add new navigation links when adding new pages/sections
+- Do NOT invent new CSS variable names — use the ones listed in the PROJECT MAP
 
 === TECHNICAL REQUIREMENTS ===
 - Generate a COMPLETE, standalone HTML file
@@ -910,10 +958,25 @@ CRITICAL — HOW TO USE THESE DETAILS:
       }
 
       if (lastGeneratedCode) {
+        const projectMap = buildProjectMap(lastGeneratedCode);
         const codePreview = lastGeneratedCode.length > 80000
           ? lastGeneratedCode.substring(0, 80000) + "\n<!-- ... truncated for context ... -->"
           : lastGeneratedCode;
-        contextPrompt += `\n\n=== CURRENT APP STATE ===\nThe user has an existing app/website you previously built. Below is the COMPLETE current code — this is the SOURCE OF TRUTH. Every single line, section, style, and script in this code was intentionally placed there. You MUST use this as your starting point.\n\`\`\`html\n${codePreview}\n\`\`\`\n\nYou are now in EDITOR MODE. Follow these rules strictly:\n1. This code is your starting point — copy it ENTIRELY and COMPLETELY, then apply ONLY the requested changes\n2. Do NOT delete any existing sections, features, styles, or scripts unless explicitly told to\n3. Do NOT change colors, fonts, branding, or layout unless the user specifically asks\n4. If adding a new section, insert it in the logical place within the existing structure\n5. If changing a style, only modify the specific CSS property mentioned\n6. Return the COMPLETE updated HTML file with surgical changes applied — every line of the original must appear in your response unless explicitly removed`;
+        contextPrompt += `\n\n=== PROJECT MAP (Mental Model — Read This First) ===
+This is a quick summary of the existing app's architecture. Study it before reading the full code.
+${projectMap}
+
+=== CURRENT APP STATE (Complete Source Code) ===
+This is the COMPLETE, authoritative source of truth. Every line was intentionally written. You MUST use this as your starting point — copy it entirely, then apply ONLY the requested changes.
+\`\`\`html
+${codePreview}
+\`\`\`
+
+You are now in EDITOR MODE. Your workflow:
+1. Read the PROJECT MAP above to understand the app's structure
+2. State your plan BEFORE writing any code (2-5 lines: which sections change, what you'll do, which CSS vars you'll use)
+3. Apply ONLY the requested changes to the code above
+4. Return the COMPLETE updated HTML — every existing line must be preserved unless explicitly removed`;
       }
 
       const systemMessage = {
