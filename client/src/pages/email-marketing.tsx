@@ -180,7 +180,7 @@ export default function EmailMarketingPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden min-h-0">
         <Tabs defaultValue="subscribers" className="h-full flex flex-col">
           <TabsList className="mx-4 md:mx-6 mt-3 w-fit">
             <TabsTrigger value="subscribers" className="gap-2" data-testid="tab-subscribers">

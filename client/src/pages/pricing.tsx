@@ -125,7 +125,7 @@ export default function PricingPage() {
   };
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto min-h-0">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         <div className="text-center space-y-4">
           <Badge variant="outline" className="mx-auto">

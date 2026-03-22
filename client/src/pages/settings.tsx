@@ -62,7 +62,7 @@ export default function SettingsPage() {
 
   if (userLoading) {
     return (
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
           <Skeleton className="h-8 w-48" />
           <Card><CardContent className="p-6 space-y-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-4 w-40" /></CardContent></Card>
@@ -73,7 +73,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto min-h-0">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         <h1 className="text-2xl font-bold" data-testid="text-settings-title">Settings</h1>
 

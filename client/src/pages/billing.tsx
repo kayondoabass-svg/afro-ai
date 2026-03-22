@@ -272,7 +272,7 @@ export default function BillingPage() {
   });
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto min-h-0">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold font-serif flex items-center gap-2" data-testid="text-billing-title">

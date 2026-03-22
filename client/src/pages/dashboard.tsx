@@ -154,7 +154,7 @@ export default function DashboardPage() {
   const firstName = user?.firstName || "Creator";
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto min-h-0">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
 
         {/* Plan upgrade success banner */}

@@ -151,7 +151,7 @@ export default function FounderDashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
           <Skeleton className="h-10 w-64" />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -170,7 +170,7 @@ export default function FounderDashboardPage() {
   const paygBalance = `$${((stats?.totalPaygBalanceCents ?? 0) / 100).toFixed(2)}`;
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto min-h-0">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
 
         {/* Header */}

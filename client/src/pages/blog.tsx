@@ -129,7 +129,7 @@ export default function BlogPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+      <div className="flex-1 overflow-y-auto min-h-0 p-4 md:p-6">
         {isLoading ? (
           <div className={`grid gap-4 ${view === "grid" ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1"}`}>
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-48 rounded-xl" />)}
