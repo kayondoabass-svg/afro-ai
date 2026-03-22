@@ -25,6 +25,12 @@ export const users = pgTable("users", {
   referralCode: varchar("referral_code").unique(),
   referredBy: varchar("referred_by"),
   referralCredit: integer("referral_credit").notNull().default(0),
+  // Pay-as-you-go credits (stored in cents, e.g. 500 = $5.00)
+  paygBalance: integer("payg_balance").notNull().default(0),
+  paygLimit: integer("payg_limit").notNull().default(1000), // default $10 limit
+  paygSpent: integer("payg_spent").notNull().default(0),
+  // Free trial tracking
+  freeTrialStarted: timestamp("free_trial_started"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
