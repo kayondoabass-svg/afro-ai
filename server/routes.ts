@@ -283,6 +283,21 @@ export async function registerRoutes(
         sendStep("check", "error", "Subdomain taken");
         return sendError("This subdomain is already taken");
       }
+
+      // Free plan: 1 app limit
+      if (!existing) {
+        const userRecord = await storage.getUser(userId);
+        if (userRecord?.plan === "starter") {
+          const activeCount = await storage.countActiveAppsForUser(userId);
+          if (activeCount >= 1) {
+            sendStep("check", "error", "Free plan limit reached");
+            return sendError("Free plan allows 1 published app. Upgrade to Pro or Business to publish more apps.");
+          }
+          // Start free trial timer on first publish
+          await storage.setFreeTrialStarted(userId);
+        }
+      }
+
       sendStep("check", "done", existing ? "Updating existing app" : "Subdomain available");
 
       sendStep("dns", "active");
@@ -664,30 +679,38 @@ export async function registerRoutes(
         `);
       }
       if (publishedApp.appStatus === "suspended") {
+        const isFreeExpiry = publishedApp.suspendReason?.includes("30-day");
         return res.status(403).send(`<!DOCTYPE html>
-          <html><head><title>Site Suspended</title>
+          <html><head><title>Site Suspended — Afro AI</title>
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <style>
             *{margin:0;padding:0;box-sizing:border-box;}
             body{font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0a0a0a;color:#fff;padding:20px;}
-            .container{text-align:center;max-width:480px;}
-            .icon{width:80px;height:80px;border-radius:50%;background:rgba(239,68,68,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;}
-            .icon svg{width:40px;height:40px;color:#ef4444;}
-            h1{font-size:1.75rem;font-weight:700;margin-bottom:12px;color:#ef4444;}
-            p{color:#888;font-size:0.95rem;line-height:1.6;margin-bottom:8px;}
-            .reason{background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:12px 16px;margin:20px 0;font-size:0.85rem;color:#ccc;}
-            a{color:#d4af37;text-decoration:none;font-weight:500;}
-            a:hover{text-decoration:underline;}
-            .footer{margin-top:32px;padding-top:20px;border-top:1px solid #222;font-size:0.8rem;color:#555;}
+            .container{text-align:center;max-width:520px;}
+            .icon{width:80px;height:80px;border-radius:50%;background:rgba(212,175,55,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;}
+            .icon svg{width:40px;height:40px;stroke:#d4af37;}
+            h1{font-size:1.75rem;font-weight:700;margin-bottom:12px;color:#d4af37;}
+            p{color:#aaa;font-size:0.95rem;line-height:1.6;margin-bottom:10px;}
+            .reason{background:rgba(212,175,55,0.08);border:1px solid rgba(212,175,55,0.25);border-radius:10px;padding:14px 18px;margin:20px 0;font-size:0.88rem;color:#ccc;line-height:1.5;}
+            .cta{display:inline-block;margin-top:8px;padding:12px 28px;background:#d4af37;color:#000;border-radius:8px;font-weight:700;font-size:0.95rem;text-decoration:none;}
+            .cta:hover{background:#e5c455;}
+            a.plain{color:#d4af37;text-decoration:none;}
+            a.plain:hover{text-decoration:underline;}
+            .footer{margin-top:32px;padding-top:20px;border-top:1px solid #1a1a1a;font-size:0.8rem;color:#444;}
           </style></head>
           <body>
             <div class="container">
-              <div class="icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg></div>
-              <h1>Site Suspended</h1>
-              <p>This website has been temporarily taken offline.</p>
-              ${publishedApp.suspendReason ? `<div class="reason">${publishedApp.suspendReason}</div>` : ""}
-              <p>If you are the owner of this site, please check your <a href="https://afroaigroup.com">Afro AI dashboard</a> for more details.</p>
-              <div class="footer">Powered by <a href="https://afroaigroup.com">Afro AI</a></div>
+              <div class="icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
+              <h1>${isFreeExpiry ? "Free Trial Ended" : "Site Suspended"}</h1>
+              ${isFreeExpiry
+                ? `<p>This app was built on Afro AI's free plan, which keeps your app live for <strong>30 days</strong>. That window has now closed.</p>
+                   <div class="reason">Upgrade to <strong>Pro ($15/mo)</strong> or <strong>Business ($29.90/mo)</strong> to restore this site instantly and keep all your apps live forever.</div>
+                   <a class="cta" href="https://afroaigroup.com/pricing">Upgrade Now — Restore Instantly</a>`
+                : `<p>This website has been temporarily taken offline.</p>
+                   ${publishedApp.suspendReason ? `<div class="reason">${publishedApp.suspendReason}</div>` : ""}
+                   <p>If you are the owner, log in to your <a class="plain" href="https://afroaigroup.com">Afro AI dashboard</a> to resolve this.</p>`
+              }
+              <div class="footer">Built with <a class="plain" href="https://afroaigroup.com">Afro AI</a> — Born in Africa, Built for the World</div>
             </div>
           </body></html>
         `);
@@ -870,7 +893,9 @@ export async function registerRoutes(
 
   let cachedIpnId: string | null = null;
 
-  const PLAN_PRICES_USD: Record<string, number> = { pro: 9, business: 29 };
+  const PLAN_PRICES_USD: Record<string, number> = { pro: 15, business: 29.90 };
+  const PAYG_PACK_PRICES_USD: Record<string, number> = { pack5: 5, pack10: 10, pack20: 20, pack50: 50 };
+  const PAYG_PACK_CREDITS: Record<string, number> = { pack5: 500, pack10: 1000, pack20: 2000, pack50: 5000 };
 
   app.post("/api/subscribe", apiLimiter, isAuthenticated, async (req: any, res) => {
     try {
@@ -954,6 +979,79 @@ export async function registerRoutes(
     }
   });
 
+  // PAYG: Get current credit balance
+  app.get("/api/payg/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const status = await storage.getPaygStatus(userId);
+      res.json(status);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // PAYG: Set spending limit
+  app.post("/api/payg/limit", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { limitDollars } = req.body;
+      if (!limitDollars || limitDollars < 1 || limitDollars > 500) {
+        return res.status(400).json({ message: "Limit must be between $1 and $500" });
+      }
+      await storage.setPaygLimit(userId, Math.round(limitDollars * 100));
+      res.json({ success: true, limitCents: Math.round(limitDollars * 100) });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // PAYG: Buy credit pack via Pesapal
+  app.post("/api/payg/topup", apiLimiter, isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { pack, countryCode } = req.body;
+      if (!PAYG_PACK_PRICES_USD[pack]) {
+        return res.status(400).json({ message: "Invalid pack. Choose: pack5, pack10, pack20, pack50" });
+      }
+      const userEmail = req.user.claims.email || req.user.claims.preferred_username;
+      const usdAmount = PAYG_PACK_PRICES_USD[pack];
+      const credits = PAYG_PACK_CREDITS[pack];
+      let currency = "USD";
+      let amount = usdAmount;
+      if (countryCode) {
+        const { getCurrencyForCountry, convertUsdToLocal } = await import("@shared/currencies");
+        const currencyInfo = getCurrencyForCountry(countryCode);
+        if (currencyInfo) {
+          currency = currencyInfo.currencyCode;
+          amount = Math.round(convertUsdToLocal(usdAmount, countryCode));
+        }
+      }
+      const baseUrl = process.env.BASE_URL || `https://${req.headers.host}`;
+      if (!cachedIpnId) {
+        cachedIpnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`);
+      }
+      const merchantReference = `payg-${pack}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
+      const order = await submitOrder({
+        id: merchantReference,
+        currency,
+        amount,
+        description: `Afro AI Credits — $${usdAmount} pack (${credits / 100} AI generations)`,
+        callback_url: `${baseUrl}/api/pesapal/callback`,
+        notification_id: cachedIpnId,
+        billing_address: { email_address: userEmail },
+      });
+      await storage.createPayment({
+        userId,
+        plan: `payg-${pack}`,
+        amount: amount.toString(),
+        currency,
+        pesapalTrackingId: order.order_tracking_id,
+        merchantReference,
+        status: "pending",
+      });
+      res.json({ redirectUrl: order.redirect_url, credits, usdAmount });
+    } catch (e: any) {
+      console.error("PAYG top-up error:", e);
+      res.status(500).json({ message: e.message || "Failed to initiate top-up" });
+    }
+  });
+
   async function processCompletedPayment(merchantRef: string, status: any) {
     const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
     if (!existingPayment) {
@@ -979,6 +1077,23 @@ export async function registerRoutes(
 
     const userId = existingPayment.userId;
     const plan = existingPayment.plan;
+
+    // PAYG credit pack — add credits, don't change plan
+    if (plan.startsWith("payg-")) {
+      const packKey = plan.replace("payg-", "");
+      const creditMap: Record<string, number> = { pack5: 500, pack10: 1000, pack20: 2000, pack50: 5000 };
+      const credits = creditMap[packKey] || 0;
+      if (credits > 0) {
+        await storage.addPaygBalance(userId, credits);
+        // Set user to payg plan if they were on starter
+        const userRecord = await storage.getUser(userId);
+        if (userRecord?.plan === "starter") {
+          await storage.updateUserPlan(userId, "payg");
+        }
+        console.log(`User ${userId} topped up ${credits} PAYG credits ($${credits / 100})`);
+      }
+      return true;
+    }
 
     await storage.updateUserPlan(userId, plan);
     await storage.reactivateAppsByUser(userId);

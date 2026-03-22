@@ -16,13 +16,17 @@ const chatLimiter = rateLimit({
   message: { error: "Too many AI requests. Please slow down." },
 });
 
-type UserPlan = "starter" | "pro" | "business";
+type UserPlan = "starter" | "pro" | "business" | "payg";
+
+const PAYG_COST_PER_GENERATION_CENTS = 2; // $0.02 per AI generation
 
 function getModelForPlan(plan: UserPlan): { model: string; maxTokens: number } {
   switch (plan) {
     case "business":
       return { model: "gpt-4.1", maxTokens: 32000 };
     case "pro":
+      return { model: "gpt-4.1-mini", maxTokens: 32000 };
+    case "payg":
       return { model: "gpt-4.1-mini", maxTokens: 32000 };
     case "starter":
     default:
@@ -880,12 +884,13 @@ export function registerChatRoutes(app: Express): void {
 
       let userPlan: UserPlan = "starter";
       let userProfile: { name?: string; email?: string; plan?: string } = {};
+      let paygUserId: string | null = null;
       try {
         const authUser = (req as any).user;
         if (authUser?.claims?.sub) {
           const [dbUser] = await db.select().from(users).where(eq(users.id, authUser.claims.sub));
           if (dbUser) {
-            if (dbUser.plan && ["starter", "pro", "business"].includes(dbUser.plan)) {
+            if (dbUser.plan && ["starter", "pro", "business", "payg"].includes(dbUser.plan)) {
               userPlan = dbUser.plan as UserPlan;
             }
             userProfile = {
@@ -893,6 +898,25 @@ export function registerChatRoutes(app: Express): void {
               email: dbUser.email || undefined,
               plan: dbUser.plan || "starter",
             };
+            // PAYG balance check
+            if (dbUser.plan === "payg") {
+              paygUserId = dbUser.id;
+              const balance = dbUser.paygBalance ?? 0;
+              const limit = dbUser.paygLimit ?? 1000;
+              const spent = dbUser.paygSpent ?? 0;
+              if (balance <= 0) {
+                res.setHeader("Content-Type", "text/event-stream");
+                res.write(`data: ${JSON.stringify({ type: "error", message: "Your PAYG credits are empty. Top up to continue generating." })}\n\n`);
+                res.end();
+                return;
+              }
+              if (spent >= limit) {
+                res.setHeader("Content-Type", "text/event-stream");
+                res.write(`data: ${JSON.stringify({ type: "error", message: `You've reached your spending limit of $${(limit / 100).toFixed(2)}. Increase your limit or top up more credits.` })}\n\n`);
+                res.end();
+                return;
+              }
+            }
           }
         }
       } catch (planErr) {
@@ -1064,6 +1088,10 @@ You are now in EDITOR MODE. Your workflow:
             model,
             tokensUsed: completionTokens,
           });
+          // Deduct PAYG credits after successful generation
+          if (paygUserId && authUser.claims.sub === paygUserId) {
+            await storage.deductPaygBalance(paygUserId, PAYG_COST_PER_GENERATION_CENTS);
+          }
         }
       } catch (usageErr) {
         console.error("Error logging usage:", usageErr);

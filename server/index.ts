@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { securityHeaders } from "./security";
+import { storage } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -81,6 +82,18 @@ httpServer.listen(
 
 (async () => {
   await registerRoutes(httpServer, app);
+
+  // Run free-plan expiry check on startup and every 6 hours
+  const runExpiryCheck = async () => {
+    try {
+      const count = await storage.suspendExpiredFreeApps();
+      if (count > 0) console.log(`[scheduler] Suspended ${count} expired free-plan app(s).`);
+    } catch (e) {
+      console.error("[scheduler] Expiry check failed:", e);
+    }
+  };
+  runExpiryCheck();
+  setInterval(runExpiryCheck, 6 * 60 * 60 * 1000);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

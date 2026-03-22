@@ -43,6 +43,16 @@ export interface IStorage {
   getUserReferralStats(userId: string): Promise<{ totalReferrals: number; paidReferrals: number; totalEarnings: number; credit: number }>;
   updateUserPlan(userId: string, plan: string): Promise<void>;
   getUser(userId: string): Promise<any | undefined>;
+  // PAYG credit management
+  addPaygBalance(userId: string, cents: number): Promise<void>;
+  deductPaygBalance(userId: string, cents: number): Promise<void>;
+  setPaygLimit(userId: string, limitCents: number): Promise<void>;
+  getPaygStatus(userId: string): Promise<{ balance: number; limit: number; spent: number }>;
+  // Free trial
+  setFreeTrialStarted(userId: string): Promise<void>;
+  suspendExpiredFreeApps(): Promise<number>;
+  // Free plan app count
+  countActiveAppsForUser(userId: string): Promise<number>;
   createPayment(payment: InsertPayment): Promise<Payment>;
   updatePaymentByMerchantRef(merchantRef: string, data: Partial<InsertPayment>): Promise<Payment | undefined>;
   getPaymentsByUser(userId: string): Promise<Payment[]>;
@@ -288,6 +298,69 @@ class DatabaseStorage implements IStorage {
   async getUser(userId: string): Promise<any | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     return user;
+  }
+
+  async addPaygBalance(userId: string, cents: number): Promise<void> {
+    await db.update(users).set({
+      paygBalance: sql`payg_balance + ${cents}`,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  }
+
+  async deductPaygBalance(userId: string, cents: number): Promise<void> {
+    await db.update(users).set({
+      paygBalance: sql`GREATEST(payg_balance - ${cents}, 0)`,
+      paygSpent: sql`payg_spent + ${cents}`,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  }
+
+  async setPaygLimit(userId: string, limitCents: number): Promise<void> {
+    await db.update(users).set({ paygLimit: limitCents, updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async getPaygStatus(userId: string): Promise<{ balance: number; limit: number; spent: number }> {
+    const [user] = await db.select({ balance: users.paygBalance, limit: users.paygLimit, spent: users.paygSpent }).from(users).where(eq(users.id, userId));
+    return user || { balance: 0, limit: 1000, spent: 0 };
+  }
+
+  async setFreeTrialStarted(userId: string): Promise<void> {
+    const [user] = await db.select({ freeTrialStarted: users.freeTrialStarted }).from(users).where(eq(users.id, userId));
+    if (!user?.freeTrialStarted) {
+      await db.update(users).set({ freeTrialStarted: new Date(), updatedAt: new Date() }).where(eq(users.id, userId));
+    }
+  }
+
+  async suspendExpiredFreeApps(): Promise<number> {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const starterUsers = await db.select({ id: users.id }).from(users).where(eq(users.plan, "starter"));
+    let suspended = 0;
+    for (const u of starterUsers) {
+      const expiredApps = await db.select({ id: publishedApps.id }).from(publishedApps).where(
+        and(
+          eq(publishedApps.userId, u.id),
+          eq(publishedApps.appStatus, "active"),
+          sql`${publishedApps.createdAt} < ${thirtyDaysAgo}`,
+        )
+      );
+      for (const app of expiredApps) {
+        await db.update(publishedApps).set({
+          appStatus: "suspended",
+          suspendedAt: new Date(),
+          suspendReason: "Free plan 30-day limit reached. Upgrade to keep your app live.",
+          updatedAt: new Date(),
+        }).where(eq(publishedApps.id, app.id));
+        suspended++;
+      }
+    }
+    return suspended;
+  }
+
+  async countActiveAppsForUser(userId: string): Promise<number> {
+    const [row] = await db.select({ count: count() }).from(publishedApps).where(
+      and(eq(publishedApps.userId, userId), eq(publishedApps.appStatus, "active"))
+    );
+    return row?.count || 0;
   }
 
   async createPayment(payment: InsertPayment): Promise<Payment> {
