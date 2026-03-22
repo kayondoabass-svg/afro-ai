@@ -24,16 +24,9 @@ export interface IStorage {
   getAllUsers(): Promise<any[]>;
   getAllProjects(): Promise<any[]>;
   getAllPublishedApps(): Promise<any[]>;
-  getPlatformStats(): Promise<{
-    totalUsers: number;
-    totalProjects: number;
-    totalPublishedApps: number;
-    totalConversations: number;
-    totalMessages: number;
-    recentUsers: any[];
-    recentProjects: any[];
-    recentPublishedApps: any[];
-  }>;
+  getPlatformStats(): Promise<any>;
+  adminSetUserPlan(userId: string, plan: string): Promise<void>;
+  adminAddPaygCredits(userId: string, cents: number): Promise<void>;
   getUserReferralCode(userId: string): Promise<string>;
   getUserByReferralCode(code: string): Promise<any | undefined>;
   createReferral(referral: InsertReferral): Promise<Referral>;
@@ -226,10 +219,31 @@ class DatabaseStorage implements IStorage {
     const [publishedCount] = await db.select({ value: count() }).from(publishedApps);
     const [convoCount] = await db.select({ value: count() }).from(conversations);
     const [msgCount] = await db.select({ value: count() }).from(messages);
+    const [suspendedCount] = await db.select({ value: count() }).from(publishedApps).where(eq(publishedApps.appStatus, "suspended"));
+    const [domainOrderCount] = await db.select({ value: count() }).from(domainOrders);
 
-    const recentUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(10);
+    // Plan breakdown
+    const allUsers = await db.select({ plan: users.plan, paygBalance: users.paygBalance, paygSpent: users.paygSpent }).from(users);
+    const planBreakdown = { starter: 0, pro: 0, business: 0, payg: 0, other: 0 };
+    let totalPaygBalanceCents = 0, totalPaygSpentCents = 0;
+    for (const u of allUsers) {
+      const p = (u.plan || "starter").toLowerCase();
+      if (p === "pro") planBreakdown.pro++;
+      else if (p === "business") planBreakdown.business++;
+      else if (p === "payg") planBreakdown.payg++;
+      else if (p === "starter") planBreakdown.starter++;
+      else planBreakdown.other++;
+      totalPaygBalanceCents += u.paygBalance ?? 0;
+      totalPaygSpentCents += u.paygSpent ?? 0;
+    }
+
+    // Estimated MRR (monthly recurring revenue in USD)
+    const estimatedMRR = (planBreakdown.pro * 1500 + planBreakdown.business * 2990) / 100;
+
+    const recentUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(15);
     const recentProjects = await db.select().from(projects).orderBy(desc(projects.createdAt)).limit(10);
-    const recentPublishedApps = await db.select().from(publishedApps).orderBy(desc(publishedApps.createdAt)).limit(10);
+    const recentPublishedApps = await db.select().from(publishedApps).orderBy(desc(publishedApps.createdAt)).limit(15);
+    const recentDomainOrders = await db.select().from(domainOrders).orderBy(desc(domainOrders.createdAt)).limit(10);
 
     return {
       totalUsers: userCount.value,
@@ -237,10 +251,25 @@ class DatabaseStorage implements IStorage {
       totalPublishedApps: publishedCount.value,
       totalConversations: convoCount.value,
       totalMessages: msgCount.value,
+      suspendedApps: suspendedCount.value,
+      totalDomainOrders: domainOrderCount.value,
+      planBreakdown,
+      estimatedMRR,
+      totalPaygBalanceCents,
+      totalPaygSpentCents,
       recentUsers,
       recentProjects,
       recentPublishedApps,
+      recentDomainOrders,
     };
+  }
+
+  async adminSetUserPlan(userId: string, plan: string): Promise<void> {
+    await db.update(users).set({ plan }).where(eq(users.id, userId));
+  }
+
+  async adminAddPaygCredits(userId: string, cents: number): Promise<void> {
+    await db.update(users).set({ paygBalance: sql`payg_balance + ${cents}` }).where(eq(users.id, userId));
   }
   async getUserReferralCode(userId: string): Promise<string> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));

@@ -840,6 +840,37 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/users/:userId/set-plan", isFounder, async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const { plan } = req.body;
+      if (!["starter", "pro", "business", "payg"].includes(plan)) {
+        return res.status(400).json({ message: "Invalid plan" });
+      }
+      await storage.adminSetUserPlan(userId, plan);
+      res.json({ message: `Plan updated to ${plan}` });
+    } catch (error) {
+      console.error("Error setting user plan:", error);
+      res.status(500).json({ message: "Failed to update plan" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/add-credits", isFounder, async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const { dollars } = req.body;
+      if (!dollars || isNaN(dollars) || dollars <= 0) {
+        return res.status(400).json({ message: "Invalid amount" });
+      }
+      const cents = Math.round(parseFloat(dollars) * 100);
+      await storage.adminAddPaygCredits(userId, cents);
+      res.json({ message: `Added $${dollars} PAYG credits` });
+    } catch (error) {
+      console.error("Error adding credits:", error);
+      res.status(500).json({ message: "Failed to add credits" });
+    }
+  });
+
   app.post("/api/admin/users/:userId/reactivate-apps", isFounder, async (req: any, res) => {
     try {
       const { userId } = req.params;

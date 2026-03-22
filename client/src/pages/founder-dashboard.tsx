@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   Users,
@@ -22,6 +24,12 @@ import {
   ExternalLink,
   Ban,
   CheckCircle,
+  DollarSign,
+  Coins,
+  ShoppingBag,
+  AlertTriangle,
+  BarChart3,
+  CreditCard,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -30,38 +38,52 @@ interface PlatformStats {
   totalPublishedApps: number;
   totalConversations: number;
   totalMessages: number;
+  suspendedApps: number;
+  totalDomainOrders: number;
+  planBreakdown: { starter: number; pro: number; business: number; payg: number; other: number };
+  estimatedMRR: number;
+  totalPaygBalanceCents: number;
+  totalPaygSpentCents: number;
   recentUsers: any[];
   recentProjects: any[];
   recentPublishedApps: any[];
+  recentDomainOrders: any[];
 }
 
-function StatCard({ icon: Icon, label, value, color }: {
-  icon: any;
-  label: string;
-  value: number;
-  color: string;
+function StatCard({ icon: Icon, label, value, sub, color }: {
+  icon: any; label: string; value: string | number; sub?: string; color: string;
 }) {
   return (
     <Card data-testid={`stat-card-${label.toLowerCase().replace(/\s/g, "-")}`}>
       <CardContent className="p-5 flex items-center gap-4">
-        <div className={`w-12 h-12 rounded-lg ${color} flex items-center justify-center flex-shrink-0`}>
-          <Icon className="w-6 h-6" />
+        <div className={`w-11 h-11 rounded-lg ${color} flex items-center justify-center flex-shrink-0`}>
+          <Icon className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-3xl font-bold">{value}</p>
-          <p className="text-sm text-muted-foreground">{label}</p>
+          <p className="text-2xl font-bold leading-tight">{value}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
+          {sub && <p className="text-xs text-primary mt-0.5">{sub}</p>}
         </div>
       </CardContent>
     </Card>
   );
 }
 
+const PLAN_COLORS: Record<string, string> = {
+  starter: "bg-muted text-muted-foreground",
+  pro: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  business: "bg-primary/10 text-primary border-primary/30",
+  payg: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
+};
+
 export default function FounderDashboardPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const isFounder = (user as any)?.isFounder === true;
-
   const { toast } = useToast();
+
+  const [selectedPlan, setSelectedPlan] = useState<Record<string, string>>({});
+  const [creditAmount, setCreditAmount] = useState<Record<string, string>>({});
 
   const { data: stats, isLoading } = useQuery<PlatformStats>({
     queryKey: ["/api/admin/stats"],
@@ -74,7 +96,6 @@ export default function FounderDashboardPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
       toast({ title: "App suspended", description: "The app is now offline." });
     },
     onError: (err: any) => {
@@ -88,11 +109,37 @@ export default function FounderDashboardPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
       toast({ title: "App reactivated", description: "The app is back online." });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message || "Failed to reactivate app", variant: "destructive" });
+    },
+  });
+
+  const setPlanMutation = useMutation({
+    mutationFn: async ({ userId, plan }: { userId: string; plan: string }) => {
+      await apiRequest("POST", `/api/admin/users/${userId}/set-plan`, { plan });
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Plan updated", description: `User plan changed to ${vars.plan}.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to update plan", variant: "destructive" });
+    },
+  });
+
+  const addCreditsMutation = useMutation({
+    mutationFn: async ({ userId, dollars }: { userId: string; dollars: string }) => {
+      await apiRequest("POST", `/api/admin/users/${userId}/add-credits`, { dollars });
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Credits added", description: `$${vars.dollars} PAYG credits added.` });
+      setCreditAmount(prev => ({ ...prev, [vars.userId]: "" }));
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to add credits", variant: "destructive" });
     },
   });
 
@@ -105,14 +152,11 @@ export default function FounderDashboardPage() {
   if (isLoading) {
     return (
       <div className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-          <div className="flex items-center gap-3">
-            <Skeleton className="w-10 h-10 rounded-lg" />
-            <Skeleton className="h-8 w-64" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {[1, 2, 3, 4, 5].map(i => (
-              <Card key={i}><CardContent className="p-5"><Skeleton className="h-16 w-full" /></CardContent></Card>
+        <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+          <Skeleton className="h-10 w-64" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[1,2,3,4,5,6,7,8].map(i => (
+              <Card key={i}><CardContent className="p-5"><Skeleton className="h-14 w-full" /></CardContent></Card>
             ))}
           </div>
         </div>
@@ -120,51 +164,169 @@ export default function FounderDashboardPage() {
     );
   }
 
+  const pb = stats?.planBreakdown ?? { starter: 0, pro: 0, business: 0, payg: 0, other: 0 };
+  const mrrDisplay = `$${(stats?.estimatedMRR ?? 0).toFixed(2)}`;
+  const paygSpent = `$${((stats?.totalPaygSpentCents ?? 0) / 100).toFixed(2)}`;
+  const paygBalance = `$${((stats?.totalPaygBalanceCents ?? 0) / 100).toFixed(2)}`;
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+        {/* Header */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
             <Crown className="w-6 h-6 text-primary-foreground" />
           </div>
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-founder-title">Founder Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Complete platform overview & analytics</p>
+            <p className="text-sm text-muted-foreground">Complete platform overview — KEYO TECHNOLOGIES</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Top stats row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           <StatCard icon={Users} label="Total Users" value={stats?.totalUsers ?? 0} color="bg-blue-500/10 text-blue-500" />
-          <StatCard icon={Folder} label="Total Projects" value={stats?.totalProjects ?? 0} color="bg-primary/10 text-primary" />
-          <StatCard icon={Globe} label="Published Apps" value={stats?.totalPublishedApps ?? 0} color="bg-green-500/10 text-green-500" />
+          <StatCard icon={Folder} label="Projects" value={stats?.totalProjects ?? 0} color="bg-primary/10 text-primary" />
+          <StatCard icon={Globe} label="Published" value={stats?.totalPublishedApps ?? 0} color="bg-green-500/10 text-green-500" />
+          <StatCard icon={AlertTriangle} label="Suspended" value={stats?.suspendedApps ?? 0} color="bg-red-500/10 text-red-500" />
           <StatCard icon={MessagesSquare} label="Conversations" value={stats?.totalConversations ?? 0} color="bg-purple-500/10 text-purple-500" />
           <StatCard icon={MessageSquare} label="AI Messages" value={stats?.totalMessages ?? 0} color="bg-orange-500/10 text-orange-500" />
+          <StatCard icon={DollarSign} label="Est. MRR" value={mrrDisplay} color="bg-green-500/10 text-green-500" />
+          <StatCard icon={ShoppingBag} label="Domain Orders" value={stats?.totalDomainOrders ?? 0} color="bg-indigo-500/10 text-indigo-500" />
         </div>
 
+        {/* Plan breakdown + PAYG */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-4 h-4 text-primary" />
+                <h3 className="font-semibold text-sm">Plan Breakdown</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: "Starter (Free)", value: pb.starter, color: "text-muted-foreground", bg: "bg-muted/50" },
+                  { label: "Pro ($15/mo)", value: pb.pro, color: "text-blue-400", bg: "bg-blue-500/10" },
+                  { label: "Business ($29.90/mo)", value: pb.business, color: "text-primary", bg: "bg-primary/10" },
+                  { label: "Pay As You Go", value: pb.payg, color: "text-yellow-400", bg: "bg-yellow-500/10" },
+                ].map(p => (
+                  <div key={p.label} className={`${p.bg} rounded-lg p-3`} data-testid={`plan-count-${p.label.split(" ")[0].toLowerCase()}`}>
+                    <p className={`text-2xl font-bold ${p.color}`}>{p.value}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{p.label}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Coins className="w-4 h-4 text-yellow-400" />
+                <h3 className="font-semibold text-sm">PAYG & Revenue</h3>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-2 border-b border-border/50">
+                  <span className="text-sm text-muted-foreground">Est. Monthly Revenue (MRR)</span>
+                  <span className="font-bold text-green-400" data-testid="text-mrr">{mrrDisplay}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-border/50">
+                  <span className="text-sm text-muted-foreground">Total PAYG Spent (all users)</span>
+                  <span className="font-bold text-primary" data-testid="text-payg-spent">{paygSpent}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-border/50">
+                  <span className="text-sm text-muted-foreground">Total PAYG Balance (remaining)</span>
+                  <span className="font-bold" data-testid="text-payg-balance">{paygBalance}</span>
+                </div>
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-sm text-muted-foreground">Platform Health</span>
+                  <span className="font-bold text-green-400">
+                    {stats && stats.totalProjects > 0
+                      ? ((stats.totalPublishedApps / stats.totalProjects) * 100).toFixed(0) + "% publish rate"
+                      : "—"}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Users + Apps + Domains */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Users */}
           <Card>
             <CardContent className="p-0">
               <div className="flex items-center gap-2 p-4 border-b">
                 <Users className="w-4 h-4 text-blue-500" />
-                <h3 className="font-semibold text-sm">Recent Users</h3>
+                <h3 className="font-semibold text-sm">Users</h3>
                 <Badge variant="secondary" className="ml-auto text-xs">{stats?.totalUsers ?? 0}</Badge>
               </div>
-              <ScrollArea className="h-[320px]">
+              <ScrollArea className="h-[400px]">
                 <div className="p-2 space-y-1">
                   {stats?.recentUsers && stats.recentUsers.length > 0 ? (
                     stats.recentUsers.map((u: any) => (
-                      <div key={u.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`admin-user-${u.id}`}>
-                        <Avatar className="w-8 h-8">
-                          <AvatarImage src={u.profileImageUrl || undefined} />
-                          <AvatarFallback className="bg-blue-500/10 text-blue-500 text-xs">
-                            {(u.firstName || "?").charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{u.firstName} {u.lastName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                      <div key={u.id} className="p-2 rounded-md hover:bg-muted/50 transition-colors space-y-2" data-testid={`admin-user-${u.id}`}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="w-7 h-7">
+                            <AvatarImage src={u.profileImageUrl || undefined} />
+                            <AvatarFallback className="bg-blue-500/10 text-blue-500 text-xs">
+                              {(u.firstName || "?").charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{u.firstName} {u.lastName}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>
+                          </div>
+                          <Badge variant="outline" className={`text-[10px] px-1.5 flex-shrink-0 ${PLAN_COLORS[u.plan || "starter"]}`}>
+                            {u.plan || "starter"}
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className="text-xs flex-shrink-0">{u.plan || "starter"}</Badge>
+                        {/* Admin actions */}
+                        <div className="flex items-center gap-1 pl-9">
+                          <Select
+                            value={selectedPlan[u.id] || u.plan || "starter"}
+                            onValueChange={(v) => setSelectedPlan(prev => ({ ...prev, [u.id]: v }))}
+                          >
+                            <SelectTrigger className="h-6 text-[10px] w-24 px-1.5" data-testid={`select-plan-${u.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="starter">Starter</SelectItem>
+                              <SelectItem value="pro">Pro</SelectItem>
+                              <SelectItem value="business">Business</SelectItem>
+                              <SelectItem value="payg">PAYG</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-[10px] px-2"
+                            disabled={setPlanMutation.isPending}
+                            onClick={() => setPlanMutation.mutate({ userId: u.id, plan: selectedPlan[u.id] || u.plan || "starter" })}
+                            data-testid={`button-set-plan-${u.id}`}
+                          >
+                            Set
+                          </Button>
+                          <Input
+                            type="number"
+                            placeholder="$"
+                            className="h-6 text-[10px] w-14 px-1.5"
+                            value={creditAmount[u.id] || ""}
+                            onChange={(e) => setCreditAmount(prev => ({ ...prev, [u.id]: e.target.value }))}
+                            data-testid={`input-credits-${u.id}`}
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-[10px] px-2 text-yellow-400 border-yellow-500/30"
+                            disabled={addCreditsMutation.isPending || !creditAmount[u.id]}
+                            onClick={() => addCreditsMutation.mutate({ userId: u.id, dollars: creditAmount[u.id] })}
+                            data-testid={`button-add-credits-${u.id}`}
+                          >
+                            +₵
+                          </Button>
+                        </div>
                       </div>
                     ))
                   ) : (
@@ -175,93 +337,50 @@ export default function FounderDashboardPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-0">
-              <div className="flex items-center gap-2 p-4 border-b">
-                <Folder className="w-4 h-4 text-primary" />
-                <h3 className="font-semibold text-sm">Recent Projects</h3>
-                <Badge variant="secondary" className="ml-auto text-xs">{stats?.totalProjects ?? 0}</Badge>
-              </div>
-              <ScrollArea className="h-[320px]">
-                <div className="p-2 space-y-1">
-                  {stats?.recentProjects && stats.recentProjects.length > 0 ? (
-                    stats.recentProjects.map((p: any) => (
-                      <div key={p.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`admin-project-${p.id}`}>
-                        <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <Folder className="w-4 h-4 text-primary" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{p.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">By: {p.userId?.slice(0, 8)}...</p>
-                        </div>
-                        <Badge variant="outline" className="text-xs flex-shrink-0">{p.status}</Badge>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-8">No projects yet</p>
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
+          {/* Published Apps */}
           <Card>
             <CardContent className="p-0">
               <div className="flex items-center gap-2 p-4 border-b">
                 <Globe className="w-4 h-4 text-green-500" />
                 <h3 className="font-semibold text-sm">Published Apps</h3>
                 <Badge variant="secondary" className="ml-auto text-xs">{stats?.totalPublishedApps ?? 0}</Badge>
+                {(stats?.suspendedApps ?? 0) > 0 && (
+                  <Badge variant="destructive" className="text-[10px] px-1.5">{stats?.suspendedApps} suspended</Badge>
+                )}
               </div>
-              <ScrollArea className="h-[320px]">
+              <ScrollArea className="h-[400px]">
                 <div className="p-2 space-y-1">
                   {stats?.recentPublishedApps && stats.recentPublishedApps.length > 0 ? (
                     stats.recentPublishedApps.map((a: any) => (
-                      <div key={a.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`admin-app-${a.id}`}>
-                        <div className={`w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 ${a.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
-                          <Globe className={`w-4 h-4 ${a.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
+                      <div key={a.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`admin-app-${a.id}`}>
+                        <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${a.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
+                          <Globe className={`w-3.5 h-3.5 ${a.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium truncate">{a.title}</p>
+                          <div className="flex items-center gap-1">
+                            <p className="text-xs font-medium truncate">{a.title}</p>
                             {a.appStatus === "suspended" && (
-                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Suspended</Badge>
+                              <Badge variant="destructive" className="text-[10px] px-1 py-0">⏸</Badge>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate">{a.subdomain}.afroaigroup.com</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{a.subdomain}.afroaigroup.com</p>
                         </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
                           {a.appStatus === "suspended" ? (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7 text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                              onClick={() => reactivateMutation.mutate(a.id)}
-                              disabled={reactivateMutation.isPending}
-                              title="Reactivate app"
-                              data-testid={`button-reactivate-${a.id}`}
-                            >
-                              <CheckCircle className="w-4 h-4" />
+                            <Button size="icon" variant="ghost" className="h-6 w-6 text-green-500 hover:bg-green-500/10"
+                              onClick={() => reactivateMutation.mutate(a.id)} disabled={reactivateMutation.isPending}
+                              title="Reactivate" data-testid={`button-reactivate-${a.id}`}>
+                              <CheckCircle className="w-3.5 h-3.5" />
                             </Button>
                           ) : (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                            <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500 hover:bg-red-500/10"
                               onClick={() => suspendMutation.mutate({ id: a.id, reason: "Suspended by administrator" })}
-                              disabled={suspendMutation.isPending}
-                              title="Suspend app"
-                              data-testid={`button-suspend-${a.id}`}
-                            >
-                              <Ban className="w-4 h-4" />
+                              disabled={suspendMutation.isPending} title="Suspend" data-testid={`button-suspend-${a.id}`}>
+                              <Ban className="w-3.5 h-3.5" />
                             </Button>
                           )}
-                          <a
-                            href={`/site/${a.subdomain}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:text-primary/80"
-                          >
-                            <ExternalLink className="w-4 h-4" />
+                          <a href={`/site/${a.subdomain}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
+                            <ExternalLink className="w-3.5 h-3.5" />
                           </a>
                         </div>
                       </div>
@@ -273,51 +392,107 @@ export default function FounderDashboardPage() {
               </ScrollArea>
             </CardContent>
           </Card>
+
+          {/* Domain Orders */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="flex items-center gap-2 p-4 border-b">
+                <ShoppingBag className="w-4 h-4 text-indigo-500" />
+                <h3 className="font-semibold text-sm">Domain Orders</h3>
+                <Badge variant="secondary" className="ml-auto text-xs">{stats?.totalDomainOrders ?? 0}</Badge>
+              </div>
+              <ScrollArea className="h-[400px]">
+                <div className="p-2 space-y-1">
+                  {stats?.recentDomainOrders && stats.recentDomainOrders.length > 0 ? (
+                    stats.recentDomainOrders.map((d: any) => (
+                      <div key={d.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`admin-domain-${d.id}`}>
+                        <div className="w-7 h-7 rounded-md bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
+                          <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{d.domain}</p>
+                          <p className="text-[10px] text-muted-foreground">${((d.amountUsd || 0)).toFixed(2)} · {new Date(d.createdAt).toLocaleDateString()}</p>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] px-1.5 flex-shrink-0 ${
+                          d.status === "active" ? "text-green-400 border-green-500/30" :
+                          d.status === "pending" ? "text-yellow-400 border-yellow-500/30" : ""
+                        }`}>
+                          {d.status}
+                        </Badge>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-8">No domain orders yet</p>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
         </div>
 
+        {/* Platform Health */}
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <Activity className="w-5 h-5 text-primary" />
               <h3 className="font-semibold">Platform Health</h3>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-green-500" />
-                  <span className="text-sm font-medium">Avg Messages/Conversation</span>
+                <div className="flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-green-500" />
+                  <span className="text-xs font-medium">Avg Msg/Conv</span>
                 </div>
                 <p className="text-2xl font-bold" data-testid="text-avg-messages">
-                  {stats && stats.totalConversations > 0
-                    ? (stats.totalMessages / stats.totalConversations).toFixed(1)
-                    : "0"}
+                  {stats && stats.totalConversations > 0 ? (stats.totalMessages / stats.totalConversations).toFixed(1) : "0"}
                 </p>
               </div>
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-medium">Avg Projects/User</span>
+                <div className="flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-xs font-medium">Avg Projects/User</span>
                 </div>
                 <p className="text-2xl font-bold" data-testid="text-avg-projects">
-                  {stats && stats.totalUsers > 0
-                    ? (stats.totalProjects / stats.totalUsers).toFixed(1)
-                    : "0"}
+                  {stats && stats.totalUsers > 0 ? (stats.totalProjects / stats.totalUsers).toFixed(1) : "0"}
                 </p>
               </div>
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-green-500" />
-                  <span className="text-sm font-medium">Publish Rate</span>
+                <div className="flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-green-500" />
+                  <span className="text-xs font-medium">Publish Rate</span>
                 </div>
                 <p className="text-2xl font-bold" data-testid="text-publish-rate">
-                  {stats && stats.totalProjects > 0
-                    ? ((stats.totalPublishedApps / stats.totalProjects) * 100).toFixed(0) + "%"
-                    : "0%"}
+                  {stats && stats.totalProjects > 0 ? ((stats.totalPublishedApps / stats.totalProjects) * 100).toFixed(0) + "%" : "0%"}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <CreditCard className="w-3.5 h-3.5 text-yellow-400" />
+                  <span className="text-xs font-medium">Paying Users</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="text-paying-users">
+                  {pb.pro + pb.business + pb.payg}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {stats && stats.totalUsers > 0
+                    ? (((pb.pro + pb.business + pb.payg) / stats.totalUsers) * 100).toFixed(0) + "% conversion"
+                    : "—"}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Admin command centre link */}
+        <div className="text-center pb-4">
+          <a href="/admin-command">
+            <Button variant="outline" className="gap-2" data-testid="button-admin-command">
+              <Crown className="w-4 h-4 text-primary" />
+              Open AI Admin Command Centre
+            </Button>
+          </a>
+        </div>
+
       </div>
     </div>
   );
