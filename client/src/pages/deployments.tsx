@@ -37,6 +37,7 @@ import {
   History,
   RotateCcw,
   Upload,
+  ShoppingCart,
 } from "lucide-react";
 import type { PublishedApp } from "@shared/schema";
 
@@ -680,8 +681,24 @@ export default function DeploymentsPage() {
 
           {domainDialog?.mode === "connect" && (
             <div className="space-y-4 py-2">
+              <a
+                href="/domains"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 rounded-lg bg-primary/10 border border-primary/20 hover:bg-primary/15 transition-colors group"
+                data-testid="link-buy-domain"
+              >
+                <div className="w-9 h-9 rounded-md bg-primary flex items-center justify-center flex-shrink-0">
+                  <ShoppingCart className="w-4 h-4 text-primary-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-primary">Don't have a domain yet?</p>
+                  <p className="text-xs text-muted-foreground">Buy one from Afro AI — .com, .africa, .co, .io & more. Pay via mobile money, Visa, or Mastercard.</p>
+                </div>
+                <ExternalLink className="w-4 h-4 text-primary flex-shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </a>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Your Domain</label>
+                <label className="text-sm font-medium">Already have a domain? Connect it:</label>
                 <Input
                   placeholder="e.g. mybusiness.com or www.mybusiness.com"
                   value={domainInput}
