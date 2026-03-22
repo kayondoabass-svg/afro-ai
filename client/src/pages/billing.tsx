@@ -65,17 +65,22 @@ const PLAN_DETAILS: Record<string, { name: string; price: string; features: stri
   starter: {
     name: "Starter",
     price: "Free",
-    features: ["GPT-4.1 Nano", "16K tokens", "Basic code generation"],
+    features: ["GPT-4.1 Nano", "16K context", "1 app (30-day live)", "Basic code generation"],
   },
   pro: {
     name: "Pro",
-    price: "$9/mo",
-    features: ["GPT-4.1 Mini", "32K tokens", "Advanced designs", "Priority support"],
+    price: "$15/mo",
+    features: ["GPT-4.1 Mini", "32K context", "Unlimited apps (forever)", "Custom domain", "All platform features"],
   },
   business: {
     name: "Business",
-    price: "$29/mo",
-    features: ["GPT-4.1", "32K tokens", "Premium quality", "Priority support", "Custom branding"],
+    price: "$29.90/mo",
+    features: ["GPT-4.1 Full", "32K context", "Best quality AI", "Team collaboration", "White-label", "Priority support"],
+  },
+  payg: {
+    name: "Pay As You Go",
+    price: "$0.02/gen",
+    features: ["GPT-4.1 Mini", "32K context", "Credit packs from $5", "No monthly fee", "User-set spending limit"],
   },
 };
 

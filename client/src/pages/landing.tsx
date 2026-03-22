@@ -404,6 +404,7 @@ export default function LandingPage() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto" style={{ perspective: "1200px" }}>
+            {/* Starter */}
             <div className="glass-card glass-card-pricing rounded-2xl p-6 space-y-6 cursor-default">
               <div className="glass-inner">
                 <h3 className="text-lg font-semibold">{t("pricing.starter")}</h3>
@@ -412,19 +413,24 @@ export default function LandingPage() {
               <div className="glass-title flex items-baseline gap-1">
                 <span className="text-4xl font-bold">{t("pricing.free")}</span>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {[t("pricing.starter.f1"), t("pricing.starter.f2"), t("pricing.starter.f3"), t("pricing.starter.f4")].map((f, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
                     <Check className="w-4 h-4 text-primary flex-shrink-0" />
                     <span>{f}</span>
                   </div>
                 ))}
+                <div className="flex items-start gap-2 text-xs text-yellow-400/80 pt-1 border-t border-white/5 mt-1">
+                  <span className="mt-0.5">⏱</span>
+                  <span>App suspends after 30 days — upgrade to keep it live</span>
+                </div>
               </div>
               <a href={loginUrl} className="block">
                 <Button variant="outline" className="w-full" data-testid="button-plan-starter">{t("nav.getStarted")}</Button>
               </a>
             </div>
 
+            {/* Pro */}
             <div className="glass-card glass-card-pricing rounded-2xl p-6 space-y-6 cursor-default relative" style={{ borderColor: "rgba(212,175,55,0.4)", boxShadow: "0 0 0 2px rgba(212,175,55,0.3), 0 16px 48px rgba(0,0,0,0.4), 0 0 40px rgba(212,175,55,0.1)" }}>
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                 <Badge className="bg-primary text-primary-foreground shadow-lg">{t("pricing.mostPopular")}</Badge>
@@ -437,7 +443,7 @@ export default function LandingPage() {
                 <span className="text-4xl font-bold">{t("pricing.pro.price")}</span>
                 <span className="text-muted-foreground">{t("pricing.perMonth")}</span>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {[t("pricing.pro.f1"), t("pricing.pro.f2"), t("pricing.pro.f3"), t("pricing.pro.f4"), t("pricing.pro.f5")].map((f, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
                     <Check className="w-4 h-4 text-primary flex-shrink-0" />
@@ -445,11 +451,12 @@ export default function LandingPage() {
                   </div>
                 ))}
               </div>
-              <Button className="w-full" disabled data-testid="button-plan-pro">
-                {t("pricing.comingSoon")}
-              </Button>
+              <a href="/pricing" className="block">
+                <Button className="w-full" data-testid="button-plan-pro">Subscribe — $15/mo</Button>
+              </a>
             </div>
 
+            {/* Business */}
             <div className="glass-card glass-card-pricing rounded-2xl p-6 space-y-6 cursor-default">
               <div className="glass-inner">
                 <h3 className="text-lg font-semibold">{t("pricing.business")}</h3>
@@ -459,7 +466,7 @@ export default function LandingPage() {
                 <span className="text-4xl font-bold">{t("pricing.business.price")}</span>
                 <span className="text-muted-foreground">{t("pricing.perMonth")}</span>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {[t("pricing.business.f1"), t("pricing.business.f2"), t("pricing.business.f3"), t("pricing.business.f4"), t("pricing.business.f5"), t("pricing.business.f6")].map((f, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
                     <Check className="w-4 h-4 text-primary flex-shrink-0" />
@@ -467,13 +474,52 @@ export default function LandingPage() {
                   </div>
                 ))}
               </div>
-              <Button variant="outline" className="w-full" disabled data-testid="button-plan-business">
-                {t("pricing.comingSoon")}
-              </Button>
+              <a href="/pricing" className="block">
+                <Button variant="outline" className="w-full" data-testid="button-plan-business">Subscribe — $29.90/mo</Button>
+              </a>
             </div>
           </div>
 
-          <p className="text-center text-sm text-muted-foreground mt-8">
+          {/* PAYG + Founder callout row */}
+          <div className="grid md:grid-cols-2 gap-4 max-w-5xl mx-auto mt-6">
+            {/* Pay As You Go */}
+            <div className="glass-card rounded-2xl p-5 flex items-start gap-4" style={{ borderColor: "rgba(212,175,55,0.2)" }}>
+              <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-lg">💳</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <h4 className="font-semibold text-sm">Pay As You Go</h4>
+                  <Badge variant="outline" className="text-xs border-yellow-500/30 text-yellow-400">No monthly fee</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">Buy credit packs from <strong className="text-foreground">$5</strong>. Use them anytime at <strong className="text-foreground">$0.02/generation</strong>. Set a spending limit so you never overspend.</p>
+                <div className="flex gap-2 flex-wrap">
+                  {[["$5","250 gens"],["$10","500 gens"],["$20","1K gens"],["$50","2.5K gens"]].map(([price, gens]) => (
+                    <a key={price} href="/pricing" className="px-2.5 py-1 rounded-lg border border-yellow-500/30 text-xs font-medium hover:border-yellow-500/60 transition-colors">
+                      {price} <span className="text-muted-foreground">· {gens}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Founder / Enterprise */}
+            <div className="glass-card rounded-2xl p-5 flex items-start gap-4" style={{ borderColor: "rgba(212,175,55,0.15)" }}>
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-lg">🏛</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <h4 className="font-semibold text-sm">Founder Access</h4>
+                  <Badge variant="outline" className="text-xs border-primary/30 text-primary">Enterprise</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mb-2">Full platform management: user oversight, app control, analytics command centre, domain management, and admin AI commands.</p>
+                <a href="mailto:hello@afroaigroup.com" className="text-xs text-primary font-medium hover:underline">Contact KEYO TECHNOLOGIES →</a>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-center text-sm text-muted-foreground mt-6">
             {t("pricing.pesapal")}
           </p>
         </div>

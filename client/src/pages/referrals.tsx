@@ -177,7 +177,7 @@ export default function ReferralsPage() {
             <div className="space-y-2 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto text-lg font-bold text-primary">2</div>
               <h3 className="font-semibold">They Sign Up & Upgrade</h3>
-              <p className="text-sm text-muted-foreground">When they sign up using your link and upgrade to Pro ($9) or Business ($29), you earn commission.</p>
+              <p className="text-sm text-muted-foreground">When they sign up using your link and upgrade to Pro ($15) or Business ($29.90), you earn commission.</p>
             </div>
             <div className="space-y-2 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto text-lg font-bold text-primary">3</div>
