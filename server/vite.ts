@@ -48,7 +48,10 @@ export async function setupVite(server: Server, app: Express) {
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
-      const page = await vite.transformIndexHtml(url, template);
+      let page = await vite.transformIndexHtml(url, template);
+      const canonicalUrl = `https://afroaigroup.com${req.path === "/" ? "/" : req.path}`;
+      page = page.replace(/(<link rel="canonical" href=")[^"]*(")/,`$1${canonicalUrl}$2`);
+      page = page.replace(/(<meta property="og:url" content=")[^"]*(")/,`$1${canonicalUrl}$2`);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);

@@ -12,8 +12,19 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  // fall through to index.html if the file doesn't exist
-  app.use("/{*path}", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+  // fall through to index.html with dynamic canonical URL injection per page
+  app.use("/{*path}", (req, res) => {
+    const indexPath = path.resolve(distPath, "index.html");
+    let html = fs.readFileSync(indexPath, "utf-8");
+    const canonicalUrl = `https://afroaigroup.com${req.path === "/" ? "/" : req.path}`;
+    html = html.replace(
+      /(<link rel="canonical" href=")[^"]*(")/,
+      `$1${canonicalUrl}$2`
+    );
+    html = html.replace(
+      /(<meta property="og:url" content=")[^"]*(")/,
+      `$1${canonicalUrl}$2`
+    );
+    res.set("Content-Type", "text/html").send(html);
   });
 }

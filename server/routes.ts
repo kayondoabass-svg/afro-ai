@@ -81,10 +81,6 @@ export async function registerRoutes(
   <url><loc>https://afroaigroup.com/marketplace</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
   <url><loc>https://afroaigroup.com/domains</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://afroaigroup.com/blog</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://afroaigroup.com/forms</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://afroaigroup.com/pwa</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://afroaigroup.com/collaborate</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://afroaigroup.com/analytics</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>
   <url><loc>https://afroaigroup.com/login</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
 </urlset>`);
   });
