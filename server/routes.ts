@@ -68,6 +68,27 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use("/uploads", express.static(uploadDir));
 
+  // Serve SEO files explicitly so crawlers always find them
+  app.get("/robots.txt", (_req, res) => {
+    res.type("text/plain").send("User-agent: *\nAllow: /\n\nSitemap: https://afroaigroup.com/sitemap.xml\n");
+  });
+  app.get("/sitemap.xml", (_req, res) => {
+    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://afroaigroup.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://afroaigroup.com/pricing</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://afroaigroup.com/templates</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/marketplace</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/domains</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://afroaigroup.com/blog</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://afroaigroup.com/forms</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://afroaigroup.com/pwa</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://afroaigroup.com/collaborate</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://afroaigroup.com/analytics</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://afroaigroup.com/login</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
+</urlset>`);
+  });
+
   const serveSuspendedPage = (res: any) => res.status(403).send(
     '<!DOCTYPE html><html><head><title>Site Suspended</title></head>' +
     '<body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#ef4444;">' +
