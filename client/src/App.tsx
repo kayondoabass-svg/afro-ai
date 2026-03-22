@@ -30,6 +30,9 @@ import TemplatesPage from "@/pages/templates";
 import SettingsPage from "@/pages/settings";
 import BillingPage from "@/pages/billing";
 import FormsPage from "@/pages/forms";
+import BlockBuilderPage from "@/pages/block-builder";
+import BlogPage from "@/pages/blog";
+import EmailMarketingPage from "@/pages/email-marketing";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -63,6 +66,9 @@ function AuthenticatedLayout() {
               <Route path="/settings" component={SettingsPage} />
               <Route path="/billing" component={BillingPage} />
               <Route path="/forms" component={FormsPage} />
+              <Route path="/builder" component={BlockBuilderPage} />
+              <Route path="/blog" component={BlogPage} />
+              <Route path="/email" component={EmailMarketingPage} />
               <Route path="/about" component={AboutPage} />
               <Route path="/contact" component={ContactPage} />
               <Route path="/privacy" component={PrivacyPage} />

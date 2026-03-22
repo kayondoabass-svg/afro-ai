@@ -28,6 +28,9 @@ import {
   Settings,
   Receipt,
   ClipboardList,
+  Layers,
+  BookOpen,
+  Mail,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -43,9 +46,12 @@ export function AppSidebar() {
   const menuItems = [
     { title: t("sidebar.dashboard"), url: "/dashboard", icon: LayoutDashboard },
     { title: t("sidebar.aiChat"), url: "/chat", icon: MessageSquare },
+    { title: "Block Builder", url: "/builder", icon: Layers },
     { title: "Templates", url: "/templates", icon: LayoutTemplate },
     { title: "Deployments", url: "/deployments", icon: Rocket },
     { title: "Forms", url: "/forms", icon: ClipboardList },
+    { title: "Blog & CMS", url: "/blog", icon: BookOpen },
+    { title: "Email Marketing", url: "/email", icon: Mail },
     { title: "Referrals", url: "/referrals", icon: Gift },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
     { title: "Billing & Usage", url: "/billing", icon: Receipt },

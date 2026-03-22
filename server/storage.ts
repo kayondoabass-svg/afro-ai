@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -64,6 +64,22 @@ export interface IStorage {
   getAppVersion(id: number): Promise<PublishedAppVersion | undefined>;
   restoreAppVersion(publishedAppId: number, versionId: number): Promise<PublishedApp>;
   deleteOldVersions(publishedAppId: number, keepCount: number): Promise<void>;
+  // Blog
+  getBlogPostsByUser(userId: string): Promise<BlogPost[]>;
+  getBlogPost(id: number): Promise<BlogPost | undefined>;
+  createBlogPost(post: InsertBlogPost): Promise<BlogPost>;
+  updateBlogPost(id: number, data: Partial<InsertBlogPost>): Promise<BlogPost>;
+  deleteBlogPost(id: number): Promise<void>;
+  // Email Marketing
+  getEmailSubscribersByUser(userId: string): Promise<EmailSubscriber[]>;
+  addEmailSubscriber(sub: InsertEmailSubscriber): Promise<EmailSubscriber>;
+  updateEmailSubscriberStatus(id: number, status: string): Promise<void>;
+  deleteEmailSubscriber(id: number): Promise<void>;
+  getEmailCampaignsByUser(userId: string): Promise<EmailCampaign[]>;
+  getEmailCampaign(id: number): Promise<EmailCampaign | undefined>;
+  createEmailCampaign(campaign: InsertEmailCampaign): Promise<EmailCampaign>;
+  updateEmailCampaign(id: number, data: Partial<InsertEmailCampaign>): Promise<EmailCampaign>;
+  deleteEmailCampaign(id: number): Promise<void>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -401,6 +417,72 @@ class DatabaseStorage implements IStorage {
     for (const v of toDelete) {
       await db.delete(publishedAppVersions).where(eq(publishedAppVersions.id, v.id));
     }
+  }
+
+  // ============ BLOG ============
+  async getBlogPostsByUser(userId: string): Promise<BlogPost[]> {
+    return db.select().from(blogPosts).where(eq(blogPosts.userId, userId)).orderBy(desc(blogPosts.createdAt));
+  }
+
+  async getBlogPost(id: number): Promise<BlogPost | undefined> {
+    const [post] = await db.select().from(blogPosts).where(eq(blogPosts.id, id));
+    return post;
+  }
+
+  async createBlogPost(post: InsertBlogPost): Promise<BlogPost> {
+    const [created] = await db.insert(blogPosts).values(post).returning();
+    return created;
+  }
+
+  async updateBlogPost(id: number, data: Partial<InsertBlogPost>): Promise<BlogPost> {
+    const [updated] = await db.update(blogPosts).set({ ...data, updatedAt: new Date() }).where(eq(blogPosts.id, id)).returning();
+    return updated;
+  }
+
+  async deleteBlogPost(id: number): Promise<void> {
+    await db.delete(blogPosts).where(eq(blogPosts.id, id));
+  }
+
+  // ============ EMAIL SUBSCRIBERS ============
+  async getEmailSubscribersByUser(userId: string): Promise<EmailSubscriber[]> {
+    return db.select().from(emailSubscribers).where(eq(emailSubscribers.userId, userId)).orderBy(desc(emailSubscribers.subscribedAt));
+  }
+
+  async addEmailSubscriber(sub: InsertEmailSubscriber): Promise<EmailSubscriber> {
+    const [created] = await db.insert(emailSubscribers).values(sub).returning();
+    return created;
+  }
+
+  async updateEmailSubscriberStatus(id: number, status: string): Promise<void> {
+    await db.update(emailSubscribers).set({ status }).where(eq(emailSubscribers.id, id));
+  }
+
+  async deleteEmailSubscriber(id: number): Promise<void> {
+    await db.delete(emailSubscribers).where(eq(emailSubscribers.id, id));
+  }
+
+  // ============ EMAIL CAMPAIGNS ============
+  async getEmailCampaignsByUser(userId: string): Promise<EmailCampaign[]> {
+    return db.select().from(emailCampaigns).where(eq(emailCampaigns.userId, userId)).orderBy(desc(emailCampaigns.createdAt));
+  }
+
+  async getEmailCampaign(id: number): Promise<EmailCampaign | undefined> {
+    const [campaign] = await db.select().from(emailCampaigns).where(eq(emailCampaigns.id, id));
+    return campaign;
+  }
+
+  async createEmailCampaign(campaign: InsertEmailCampaign): Promise<EmailCampaign> {
+    const [created] = await db.insert(emailCampaigns).values(campaign).returning();
+    return created;
+  }
+
+  async updateEmailCampaign(id: number, data: Partial<InsertEmailCampaign>): Promise<EmailCampaign> {
+    const [updated] = await db.update(emailCampaigns).set(data).where(eq(emailCampaigns.id, id)).returning();
+    return updated;
+  }
+
+  async deleteEmailCampaign(id: number): Promise<void> {
+    await db.delete(emailCampaigns).where(eq(emailCampaigns.id, id));
   }
 }
 

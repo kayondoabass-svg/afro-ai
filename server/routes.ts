@@ -1062,5 +1062,119 @@ export async function registerRoutes(
     }
   });
 
+  // ============ BLOG / CMS ROUTES ============
+  app.get("/api/blog", isAuthenticated, async (req: any, res) => {
+    try {
+      const posts = await storage.getBlogPostsByUser(req.user.id);
+      res.json(posts);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/blog", isAuthenticated, async (req: any, res) => {
+    try {
+      const { title, content, excerpt, coverImage, status } = req.body;
+      if (!title) return res.status(400).json({ message: "Title is required" });
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") + "-" + Date.now();
+      const post = await storage.createBlogPost({
+        userId: req.user.id, title, slug, content: content || "", excerpt: excerpt || null,
+        coverImage: coverImage || null, status: status || "draft",
+        publishedAt: status === "published" ? new Date() : null,
+      });
+      res.json(post);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.put("/api/blog/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const post = await storage.getBlogPost(id);
+      if (!post || post.userId !== req.user.id) return res.status(404).json({ message: "Post not found" });
+      const { title, content, excerpt, coverImage, status } = req.body;
+      const updated = await storage.updateBlogPost(id, {
+        title, content, excerpt, coverImage, status,
+        publishedAt: status === "published" && !post.publishedAt ? new Date() : post.publishedAt,
+      });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/blog/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const post = await storage.getBlogPost(id);
+      if (!post || post.userId !== req.user.id) return res.status(404).json({ message: "Post not found" });
+      await storage.deleteBlogPost(id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ EMAIL SUBSCRIBERS ROUTES ============
+  app.get("/api/email/subscribers", isAuthenticated, async (req: any, res) => {
+    try {
+      const subs = await storage.getEmailSubscribersByUser(req.user.id);
+      res.json(subs);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/email/subscribers", isAuthenticated, async (req: any, res) => {
+    try {
+      const { email, name, tags } = req.body;
+      if (!email) return res.status(400).json({ message: "Email is required" });
+      const sub = await storage.addEmailSubscriber({ userId: req.user.id, email, name: name || null, status: "active", tags: tags || [] });
+      res.json(sub);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/email/subscribers/:id/status", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.updateEmailSubscriberStatus(parseInt(req.params.id), req.body.status);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/email/subscribers/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteEmailSubscriber(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ EMAIL CAMPAIGNS ROUTES ============
+  app.get("/api/email/campaigns", isAuthenticated, async (req: any, res) => {
+    try {
+      const campaigns = await storage.getEmailCampaignsByUser(req.user.id);
+      res.json(campaigns);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/email/campaigns", isAuthenticated, async (req: any, res) => {
+    try {
+      const { name, subject, htmlContent } = req.body;
+      if (!name || !subject) return res.status(400).json({ message: "Name and subject are required" });
+      const campaign = await storage.createEmailCampaign({ userId: req.user.id, name, subject, htmlContent: htmlContent || "", status: "draft", recipientCount: 0 });
+      res.json(campaign);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.put("/api/email/campaigns/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const campaign = await storage.getEmailCampaign(id);
+      if (!campaign || campaign.userId !== req.user.id) return res.status(404).json({ message: "Campaign not found" });
+      const updated = await storage.updateEmailCampaign(id, req.body);
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/email/campaigns/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const campaign = await storage.getEmailCampaign(id);
+      if (!campaign || campaign.userId !== req.user.id) return res.status(404).json({ message: "Campaign not found" });
+      await storage.deleteEmailCampaign(id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   return httpServer;
 }

@@ -785,6 +785,26 @@ export default function AIChatPage() {
     enabled: !!activeConversation,
   });
 
+  // Handle prompts from Block Builder and Email Marketing
+  useEffect(() => {
+    const builderPrompt = sessionStorage.getItem("builder_prompt");
+    const emailContext = sessionStorage.getItem("email_campaign_context");
+    if (builderPrompt || emailContext) {
+      sessionStorage.removeItem("builder_prompt");
+      sessionStorage.removeItem("email_campaign_context");
+      const promptText = builderPrompt || "Write me a professional HTML email newsletter. Make it beautiful, mobile-responsive, with a header logo area, hero section with headline and CTA button, content section, and a footer with unsubscribe link. Use inline CSS so it works in all email clients. Output complete HTML only.";
+      (async () => {
+        try {
+          const res = await apiRequest("POST", "/api/conversations", { title: builderPrompt ? "Block Builder Page" : "Email Campaign" });
+          const convo = await res.json();
+          queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+          setActiveConversation(convo.id);
+          setTimeout(() => setInput(promptText), 400);
+        } catch {}
+      })();
+    }
+  }, []);
+
   const [pendingWelcomeSend, setPendingWelcomeSend] = useState(false);
 
   const createConvoMutation = useMutation({

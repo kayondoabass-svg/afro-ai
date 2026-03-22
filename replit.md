@@ -18,7 +18,11 @@ The platform is built with a modern web stack: React, TypeScript, Vite, Tailwind
 -   **Templating System:** Offers 21 pre-built African business templates across various categories for quick project initiation.
 -   **Project Management:** A dashboard allows users to create, view, and delete projects, and provides quick-start ideas. Conversations are linked to projects for continuity.
 -   **Form Builder:** Provides a robust form creation tool with various field types, submission tracking, and embeddable code snippets.
+-   **Block Builder:** A visual block-based page composer with 27 pre-built section blocks across 9 categories. Users select and reorder blocks, configure app name/style/color theme, then click "Generate with AI" to produce a complete page. Passes the blueprint as a structured prompt to the AI chat via sessionStorage.
+-   **Blog & CMS:** Full blog management system with create/edit/delete posts, draft/published status, cover image, excerpt, and content editor. Posts stored in the `blog_posts` DB table.
+-   **Email Marketing:** Subscriber management (add, import CSV, export CSV, toggle status, delete) and campaign builder (create, edit, preview HTML, copy HTML, download). Campaigns can be generated via AI. Subscribers in `email_subscribers` table; campaigns in `email_campaigns` table.
 -   **Tiered AI Models:** Different AI models (gpt-4.1-nano, gpt-4.1-mini, gpt-4.1) are offered based on user subscription plans.
+-   **Context-Aware Editing:** Editor mode uses 80K character code window, auto-generated Project Map (sections, CSS vars, JS functions, nav links), Plan-Before-Action protocol, and a mandatory Reflect self-check step before output.
 -   **Security:** Implements global security headers, content security policies for published apps, HTML content scanning to detect malicious patterns, and API rate limiting.
 -   **Referral System:** Includes a referral program with unique codes and commission tracking for plan upgrades.
 -   **Billing & Usage Tracking:** Integrates Pesapal for payments, tracks AI usage (tokens, generations), and provides detailed billing information and payment history.
