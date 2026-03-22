@@ -33,6 +33,10 @@ import FormsPage from "@/pages/forms";
 import BlockBuilderPage from "@/pages/block-builder";
 import BlogPage from "@/pages/blog";
 import EmailMarketingPage from "@/pages/email-marketing";
+import AnalyticsPage from "@/pages/analytics";
+import MarketplacePage from "@/pages/marketplace";
+import PwaBuilderPage from "@/pages/pwa-builder";
+import CollaborationPage from "@/pages/collaboration";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -69,6 +73,10 @@ function AuthenticatedLayout() {
               <Route path="/builder" component={BlockBuilderPage} />
               <Route path="/blog" component={BlogPage} />
               <Route path="/email" component={EmailMarketingPage} />
+              <Route path="/analytics" component={AnalyticsPage} />
+              <Route path="/marketplace" component={MarketplacePage} />
+              <Route path="/pwa" component={PwaBuilderPage} />
+              <Route path="/collaborate" component={CollaborationPage} />
               <Route path="/about" component={AboutPage} />
               <Route path="/contact" component={ContactPage} />
               <Route path="/privacy" component={PrivacyPage} />

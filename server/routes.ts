@@ -692,6 +692,8 @@ export async function registerRoutes(
         `);
       }
       publishedAppHeaders(res);
+      // Record analytics view (fire and forget)
+      storage.recordAppView(publishedApp.id).catch(() => {});
       res.send(publishedApp.htmlContent);
     } catch (error) {
       console.error("Error serving published app:", error);
@@ -1173,6 +1175,147 @@ export async function registerRoutes(
       if (!campaign || campaign.userId !== req.user.id) return res.status(404).json({ message: "Campaign not found" });
       await storage.deleteEmailCampaign(id);
       res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ ANALYTICS ============
+  app.get("/api/analytics", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const data = await storage.getAppViewsByUser(userId);
+      res.json(data);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/analytics/:appId", isAuthenticated, async (req: any, res) => {
+    try {
+      const stats = await storage.getAppViewStats(parseInt(req.params.appId));
+      res.json(stats);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ MARKETPLACE ============
+  app.get("/api/marketplace", async (req: any, res) => {
+    try {
+      const { category, search } = req.query;
+      const listings = await storage.getMarketplaceListings(category as string, search as string);
+      res.json(listings);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/marketplace/mine", isAuthenticated, async (req: any, res) => {
+    try {
+      const listings = await storage.getMarketplaceListingsByUser(req.user.id);
+      res.json(listings);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/marketplace/:id", async (req: any, res) => {
+    try {
+      const listing = await storage.getMarketplaceListing(parseInt(req.params.id));
+      if (!listing) return res.status(404).json({ message: "Not found" });
+      res.json(listing);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/marketplace", isAuthenticated, async (req: any, res) => {
+    try {
+      const listing = await storage.createMarketplaceListing({ ...req.body, userId: req.user.id });
+      res.json(listing);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/marketplace/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getMarketplaceListing(id);
+      if (!existing || existing.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      const updated = await storage.updateMarketplaceListing(id, req.body);
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/marketplace/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getMarketplaceListing(id);
+      if (!existing || existing.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      await storage.deleteMarketplaceListing(id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/marketplace/:id/clone", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const listing = await storage.getMarketplaceListing(id);
+      if (!listing) return res.status(404).json({ message: "Not found" });
+      await storage.incrementListingDownloads(id);
+      res.json({ htmlContent: listing.htmlContent, title: listing.title });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ COLLABORATION ============
+  app.get("/api/collaborate/project/:projectId", isAuthenticated, async (req: any, res) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      if (!project || project.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      const collaborators = await storage.getCollaboratorsByProject(projectId);
+      res.json(collaborators);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/collaborate/shared", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user as any;
+      const email = user.email || user.claims?.email || "";
+      const shared = await storage.getSharedProjectsByEmail(email);
+      res.json(shared);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/collaborate/invite", isAuthenticated, async (req: any, res) => {
+    try {
+      const { projectId, inviteEmail, role } = req.body;
+      const project = await storage.getProject(parseInt(projectId));
+      if (!project || project.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      const collaborator = await storage.addCollaborator({ projectId: parseInt(projectId), inviteEmail, role: role || "viewer", status: "pending" });
+      res.json(collaborator);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/collaborate/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.removeCollaborator(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ PWA GENERATOR ============
+  app.post("/api/pwa/generate", isAuthenticated, async (req: any, res) => {
+    try {
+      const { publishedAppId } = req.body;
+      const app = await storage.getPublishedAppById(parseInt(publishedAppId));
+      if (!app || app.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      const appName = app.appName || "My App";
+      const slug = app.subdomain;
+      const manifest = {
+        name: appName,
+        short_name: appName.substring(0, 12),
+        start_url: `/site/${slug}`,
+        display: "standalone",
+        background_color: "#0a0a0a",
+        theme_color: "#d4af37",
+        description: `${appName} - Built with Afro AI`,
+        icons: [
+          { src: "https://afroaigroup.com/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "https://afroaigroup.com/icon-512.png", sizes: "512x512", type: "image/png" }
+        ]
+      };
+      const serviceWorker = `const CACHE_NAME='afroai-pwa-v1';const URLS=['./'];self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(URLS))));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));`;
+      const pwaSnippet = `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#d4af37">\n<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>`;
+      res.json({ manifest, serviceWorker, pwaSnippet, appName });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

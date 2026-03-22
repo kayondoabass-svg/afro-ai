@@ -27,6 +27,10 @@ The platform is built with a modern web stack: React, TypeScript, Vite, Tailwind
 -   **Referral System:** Includes a referral program with unique codes and commission tracking for plan upgrades.
 -   **Billing & Usage Tracking:** Integrates Pesapal for payments, tracks AI usage (tokens, generations), and provides detailed billing information and payment history.
 -   **Admin/Founder System:** A dedicated interface for founders/administrators to manage users, projects, published apps, and access analytics, including an AI chat for administrative commands.
+-   **Analytics:** Server-side view tracking on `/site/:subdomain` — daily counts stored in `app_views` table. Dashboard at `/analytics` shows bar charts (last 14 days) per published app, total views, and top performers.
+-   **Marketplace:** Community template marketplace at `/marketplace`. Users can publish their published apps as listings (title, category, tags, description). Others can browse by category/search and clone listings — which opens the HTML in AI chat for customization. Tracks download counts. `marketplace_listings` table.
+-   **PWA Builder:** At `/pwa`, users select a published app and generate PWA files: `manifest.json`, `sw.js` (service worker), and an HTML head snippet. Files can be copied or downloaded. Step-by-step install guide included.
+-   **Collaboration:** Project team management at `/collaborate`. Project owners can invite collaborators by email with viewer/editor roles. Invitees see shared projects under "Shared with Me" tab. `project_collaborators` table tracks invite email, role, and status.
 
 ## External Dependencies
 -   **AI Services:** OpenAI (via Replit AI Integrations), Google Gemini (for image analysis).

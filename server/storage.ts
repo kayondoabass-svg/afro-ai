@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -13,6 +13,7 @@ export interface IStorage {
   getPublishedAppBySubdomain(subdomain: string): Promise<PublishedApp | undefined>;
   getPublishedAppByCustomDomain(customDomain: string): Promise<PublishedApp | undefined>;
   getPublishedAppsByUser(userId: string): Promise<PublishedApp[]>;
+  getPublishedAppById(id: number): Promise<PublishedApp | undefined>;
   createPublishedApp(app: InsertPublishedApp): Promise<PublishedApp>;
   updatePublishedApp(id: number, data: Partial<InsertPublishedApp>): Promise<PublishedApp>;
   deletePublishedApp(id: number): Promise<void>;
@@ -80,6 +81,24 @@ export interface IStorage {
   createEmailCampaign(campaign: InsertEmailCampaign): Promise<EmailCampaign>;
   updateEmailCampaign(id: number, data: Partial<InsertEmailCampaign>): Promise<EmailCampaign>;
   deleteEmailCampaign(id: number): Promise<void>;
+  // Analytics
+  recordAppView(publishedAppId: number): Promise<void>;
+  getAppViewsByUser(userId: string): Promise<{ app: PublishedApp; views: AppView[] }[]>;
+  getAppViewStats(publishedAppId: number): Promise<{ date: string; views: number }[]>;
+  // Marketplace
+  getMarketplaceListings(category?: string, search?: string): Promise<MarketplaceListing[]>;
+  getMarketplaceListingsByUser(userId: string): Promise<MarketplaceListing[]>;
+  getMarketplaceListing(id: number): Promise<MarketplaceListing | undefined>;
+  createMarketplaceListing(listing: InsertMarketplaceListing): Promise<MarketplaceListing>;
+  updateMarketplaceListing(id: number, data: Partial<InsertMarketplaceListing>): Promise<MarketplaceListing>;
+  deleteMarketplaceListing(id: number): Promise<void>;
+  incrementListingDownloads(id: number): Promise<void>;
+  // Collaboration
+  getCollaboratorsByProject(projectId: number): Promise<ProjectCollaborator[]>;
+  getSharedProjectsByEmail(email: string): Promise<{ project: Project; collaborator: ProjectCollaborator }[]>;
+  addCollaborator(data: InsertProjectCollaborator): Promise<ProjectCollaborator>;
+  updateCollaboratorStatus(id: number, status: string, userId?: string): Promise<void>;
+  removeCollaborator(id: number): Promise<void>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -115,6 +134,11 @@ class DatabaseStorage implements IStorage {
 
   async getPublishedAppsByUser(userId: string): Promise<PublishedApp[]> {
     return db.select().from(publishedApps).where(eq(publishedApps.userId, userId)).orderBy(desc(publishedApps.createdAt));
+  }
+
+  async getPublishedAppById(id: number): Promise<PublishedApp | undefined> {
+    const [row] = await db.select().from(publishedApps).where(eq(publishedApps.id, id));
+    return row;
   }
 
   async createPublishedApp(app: InsertPublishedApp): Promise<PublishedApp> {
@@ -483,6 +507,103 @@ class DatabaseStorage implements IStorage {
 
   async deleteEmailCampaign(id: number): Promise<void> {
     await db.delete(emailCampaigns).where(eq(emailCampaigns.id, id));
+  }
+
+  // ============ ANALYTICS ============
+  async recordAppView(publishedAppId: number): Promise<void> {
+    const today = new Date().toISOString().split("T")[0];
+    await db.execute(sql`
+      INSERT INTO app_views (published_app_id, view_date, views)
+      VALUES (${publishedAppId}, ${today}, 1)
+      ON CONFLICT (published_app_id, view_date)
+      DO UPDATE SET views = app_views.views + 1
+    `);
+  }
+
+  async getAppViewsByUser(userId: string): Promise<{ app: PublishedApp; views: AppView[] }[]> {
+    const userApps = await db.select().from(publishedApps).where(eq(publishedApps.userId, userId));
+    const result = [];
+    for (const app of userApps) {
+      const views = await db.select().from(appViews)
+        .where(eq(appViews.publishedAppId, app.id))
+        .orderBy(desc(appViews.viewDate))
+        .limit(30);
+      result.push({ app, views });
+    }
+    return result;
+  }
+
+  async getAppViewStats(publishedAppId: number): Promise<{ date: string; views: number }[]> {
+    const rows = await db.select().from(appViews)
+      .where(eq(appViews.publishedAppId, publishedAppId))
+      .orderBy(appViews.viewDate)
+      .limit(30);
+    return rows.map(r => ({ date: r.viewDate, views: r.views }));
+  }
+
+  // ============ MARKETPLACE ============
+  async getMarketplaceListings(category?: string, search?: string): Promise<MarketplaceListing[]> {
+    let query = db.select().from(marketplaceListings).where(eq(marketplaceListings.status, "active"));
+    const rows = await query.orderBy(desc(marketplaceListings.downloads));
+    return rows.filter(r =>
+      (!category || category === "all" || r.category === category) &&
+      (!search || r.title.toLowerCase().includes(search.toLowerCase()) || (r.description || "").toLowerCase().includes(search.toLowerCase()))
+    );
+  }
+
+  async getMarketplaceListingsByUser(userId: string): Promise<MarketplaceListing[]> {
+    return db.select().from(marketplaceListings).where(eq(marketplaceListings.userId, userId)).orderBy(desc(marketplaceListings.createdAt));
+  }
+
+  async getMarketplaceListing(id: number): Promise<MarketplaceListing | undefined> {
+    const [row] = await db.select().from(marketplaceListings).where(eq(marketplaceListings.id, id));
+    return row;
+  }
+
+  async createMarketplaceListing(listing: InsertMarketplaceListing): Promise<MarketplaceListing> {
+    const [created] = await db.insert(marketplaceListings).values(listing).returning();
+    return created;
+  }
+
+  async updateMarketplaceListing(id: number, data: Partial<InsertMarketplaceListing>): Promise<MarketplaceListing> {
+    const [updated] = await db.update(marketplaceListings).set(data).where(eq(marketplaceListings.id, id)).returning();
+    return updated;
+  }
+
+  async deleteMarketplaceListing(id: number): Promise<void> {
+    await db.delete(marketplaceListings).where(eq(marketplaceListings.id, id));
+  }
+
+  async incrementListingDownloads(id: number): Promise<void> {
+    await db.execute(sql`UPDATE marketplace_listings SET downloads = downloads + 1 WHERE id = ${id}`);
+  }
+
+  // ============ COLLABORATION ============
+  async getCollaboratorsByProject(projectId: number): Promise<ProjectCollaborator[]> {
+    return db.select().from(projectCollaborators).where(eq(projectCollaborators.projectId, projectId)).orderBy(desc(projectCollaborators.invitedAt));
+  }
+
+  async getSharedProjectsByEmail(email: string): Promise<{ project: Project; collaborator: ProjectCollaborator }[]> {
+    const collabs = await db.select().from(projectCollaborators).where(eq(projectCollaborators.inviteEmail, email));
+    const result = [];
+    for (const collab of collabs) {
+      const [project] = await db.select().from(projects).where(eq(projects.id, collab.projectId));
+      if (project) result.push({ project, collaborator: collab });
+    }
+    return result;
+  }
+
+  async addCollaborator(data: InsertProjectCollaborator): Promise<ProjectCollaborator> {
+    const [created] = await db.insert(projectCollaborators).values(data).returning();
+    return created;
+  }
+
+  async updateCollaboratorStatus(id: number, status: string, userId?: string): Promise<void> {
+    await db.update(projectCollaborators).set({ status, ...(userId ? { userId } : {}) }).where(eq(projectCollaborators.id, id));
+  }
+
+  async removeCollaborator(id: number): Promise<void> {
+    await db.delete(projectCollaborators).where(eq(projectCollaborators.id, id));
   }
 }
 

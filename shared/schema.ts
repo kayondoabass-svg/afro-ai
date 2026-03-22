@@ -200,3 +200,47 @@ export const emailCampaigns = pgTable("email_campaigns", {
 export const insertEmailCampaignSchema = createInsertSchema(emailCampaigns).omit({ id: true, createdAt: true });
 export type EmailCampaign = typeof emailCampaigns.$inferSelect;
 export type InsertEmailCampaign = z.infer<typeof insertEmailCampaignSchema>;
+
+// ============ ANALYTICS ============
+export const appViews = pgTable("app_views", {
+  id: serial("id").primaryKey(),
+  publishedAppId: integer("published_app_id").notNull().references(() => publishedApps.id, { onDelete: "cascade" }),
+  viewDate: text("view_date").notNull(),
+  views: integer("views").notNull().default(1),
+});
+export type AppView = typeof appViews.$inferSelect;
+
+// ============ MARKETPLACE ============
+export const marketplaceListings = pgTable("marketplace_listings", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: varchar("category").notNull().default("website"),
+  htmlContent: text("html_content").notNull(),
+  thumbnailUrl: text("thumbnail_url"),
+  tags: text("tags").array(),
+  price: integer("price").notNull().default(0),
+  downloads: integer("downloads").notNull().default(0),
+  status: varchar("status").notNull().default("active"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertMarketplaceListingSchema = createInsertSchema(marketplaceListings).omit({ id: true, createdAt: true });
+export type MarketplaceListing = typeof marketplaceListings.$inferSelect;
+export type InsertMarketplaceListing = z.infer<typeof insertMarketplaceListingSchema>;
+
+// ============ COLLABORATION ============
+export const projectCollaborators = pgTable("project_collaborators", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  inviteEmail: varchar("invite_email").notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  role: varchar("role").notNull().default("viewer"),
+  status: varchar("status").notNull().default("pending"),
+  invitedAt: timestamp("invited_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertProjectCollaboratorSchema = createInsertSchema(projectCollaborators).omit({ id: true, invitedAt: true });
+export type ProjectCollaborator = typeof projectCollaborators.$inferSelect;
+export type InsertProjectCollaborator = z.infer<typeof insertProjectCollaboratorSchema>;
