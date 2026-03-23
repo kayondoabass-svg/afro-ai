@@ -122,7 +122,7 @@ export default function BlockBuilderPage() {
   };
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex-1 flex min-h-0 overflow-hidden">
       {/* Left: Block Library */}
       <div className="w-80 min-w-[280px] border-r bg-background flex flex-col overflow-hidden">
         <div className="p-4 border-b">

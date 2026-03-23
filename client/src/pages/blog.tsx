@@ -75,7 +75,7 @@ export default function BlogPage() {
   const drafts = posts.filter(p => p.status === "draft").length;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
       <div className="border-b p-4 md:p-6 bg-background">
         <div className="flex items-center justify-between gap-4 flex-wrap">

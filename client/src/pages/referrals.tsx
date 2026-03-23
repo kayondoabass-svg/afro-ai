@@ -74,7 +74,7 @@ export default function ReferralsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 overflow-auto" data-testid="page-referrals">
+    <div className="flex-1 overflow-auto min-h-0 p-6 space-y-6" data-testid="page-referrals">
       <div className="space-y-1">
         <h1 className="text-2xl font-bold font-serif flex items-center gap-2" data-testid="text-referrals-title">
           <Gift className="w-6 h-6 text-primary" />
