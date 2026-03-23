@@ -450,15 +450,36 @@ export default function AdminCommandPage() {
       <div className="space-y-3">
         {textOnly && <p className="whitespace-pre-wrap break-words">{textOnly}</p>}
         {code && (
-          <div className="flex flex-wrap gap-2 mt-2">
-            <Button size="sm" variant="outline" onClick={() => { setPreviewCode(code); setShowPreview(true); }} data-testid="button-admin-view-preview">
-              <Eye className="w-3 h-3" />Preview
+          <div className="flex flex-wrap gap-2 mt-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-border/60 hover:border-primary/50"
+              onClick={() => { setPreviewCode(code); setShowPreview(true); }}
+              data-testid="button-admin-view-preview"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Preview
             </Button>
-            <Button size="sm" variant="outline" onClick={() => { setPreviewCode(code); handleDownload(); }} data-testid="button-admin-download">
-              <Download className="w-3 h-3" />Download
+            <Button
+              size="sm"
+              variant="default"
+              className="gap-1.5 bg-primary hover:bg-primary/90"
+              onClick={() => { setPreviewCode(code); setShowPublish(true); }}
+              data-testid="button-admin-publish"
+            >
+              <Rocket className="w-3.5 h-3.5" />
+              Republish
             </Button>
-            <Button size="sm" variant="default" onClick={() => { setPreviewCode(code); setShowPublish(true); }} data-testid="button-admin-publish">
-              <Rocket className="w-3 h-3" />Publish
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5 text-muted-foreground"
+              onClick={() => { setPreviewCode(code); handleDownload(); }}
+              data-testid="button-admin-download"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download
             </Button>
           </div>
         )}
@@ -489,25 +510,8 @@ export default function AdminCommandPage() {
                 <div>
                   <h3 className="text-lg font-semibold">Welcome, Founder</h3>
                   <p className="text-sm text-muted-foreground max-w-md mx-auto mt-2">
-                    Tell me what you want to build or change. I'll generate the code instantly and you can publish it directly to your domain.
+                    Tell me what to add or edit.
                   </p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto">
-                  {[
-                    "Build me a landing page for Afro AI with a signup form",
-                    "Create a pricing page with Starter, Pro, and Business plans",
-                    "Make a portfolio showcase page for African creators",
-                    "Build a mobile-friendly coming soon page for our app",
-                  ].map((suggestion, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setInput(suggestion)}
-                      className="text-left p-3 rounded-lg border border-border/50 hover:border-primary/50 hover:bg-primary/5 transition-all text-sm text-muted-foreground hover:text-foreground"
-                      data-testid={`button-suggestion-${i}`}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
                 </div>
               </div>
             )}
