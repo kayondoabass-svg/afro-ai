@@ -615,6 +615,12 @@ export default function LandingPage() {
               </div>
             </div>
             <div className="space-y-3">
+              <h4 className="font-semibold text-sm">Earn</h4>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <a href="/affiliate" className="block hover:text-primary transition-colors" data-testid="link-footer-affiliate">Affiliate Program</a>
+              </div>
+            </div>
+            <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.company")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <a href="/about" className="block hover:text-primary transition-colors" data-testid="link-footer-about">{t("footer.aboutUs")}</a>

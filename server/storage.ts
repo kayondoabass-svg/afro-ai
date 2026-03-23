@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -35,6 +35,10 @@ export interface IStorage {
   addReferralCredit(userId: string, amount: number): Promise<void>;
   getUserReferralStats(userId: string): Promise<{ totalReferrals: number; paidReferrals: number; totalEarnings: number; credit: number }>;
   updateUserPlan(userId: string, plan: string): Promise<void>;
+  createAffiliateApplication(data: InsertAffiliateApplication): Promise<AffiliateApplication>;
+  getAffiliateApplicationByEmail(email: string): Promise<AffiliateApplication | undefined>;
+  getAllAffiliateApplications(): Promise<AffiliateApplication[]>;
+  updateAffiliateStatus(id: number, status: string): Promise<void>;
   getUser(userId: string): Promise<any | undefined>;
   // PAYG credit management
   addPaygBalance(userId: string, cents: number): Promise<void>;
@@ -322,6 +326,24 @@ class DatabaseStorage implements IStorage {
   }
   async updateUserPlan(userId: string, plan: string): Promise<void> {
     await db.update(users).set({ plan, updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async createAffiliateApplication(data: InsertAffiliateApplication): Promise<AffiliateApplication> {
+    const [created] = await db.insert(affiliateApplications).values(data).returning();
+    return created;
+  }
+
+  async getAffiliateApplicationByEmail(email: string): Promise<AffiliateApplication | undefined> {
+    const [app] = await db.select().from(affiliateApplications).where(eq(affiliateApplications.email, email));
+    return app;
+  }
+
+  async getAllAffiliateApplications(): Promise<AffiliateApplication[]> {
+    return db.select().from(affiliateApplications).orderBy(desc(affiliateApplications.createdAt));
+  }
+
+  async updateAffiliateStatus(id: number, status: string): Promise<void> {
+    await db.update(affiliateApplications).set({ status }).where(eq(affiliateApplications.id, id));
   }
 
   async getUser(userId: string): Promise<any | undefined> {

@@ -1626,5 +1626,36 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // === AFFILIATE PROGRAM ===
+  app.post("/api/affiliate/apply", async (req, res) => {
+    try {
+      const { fullName, email, phone, country, promotionMethod, socialMedia } = req.body;
+      if (!fullName || !email) return res.status(400).json({ message: "Name and email are required" });
+      const existing = await storage.getAffiliateApplicationByEmail(email);
+      if (existing) return res.status(409).json({ message: "This email is already registered as an affiliate", referralCode: existing.referralCode });
+      const code = "AFF" + Math.random().toString(36).slice(2, 8).toUpperCase();
+      const application = await storage.createAffiliateApplication({ fullName, email, phone: phone || null, country: country || null, promotionMethod: promotionMethod || null, socialMedia: socialMedia || null, referralCode: code, status: "pending" });
+      res.json({ success: true, referralCode: application.referralCode, referralLink: `https://afroaigroup.com?ref=${application.referralCode}` });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/affiliate/applications", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.isFounder) return res.status(403).json({ message: "Forbidden" });
+      const applications = await storage.getAllAffiliateApplications();
+      res.json(applications);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/affiliate/applications/:id/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.isFounder) return res.status(403).json({ message: "Forbidden" });
+      await storage.updateAffiliateStatus(parseInt(req.params.id), req.body.status);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   return httpServer;
 }

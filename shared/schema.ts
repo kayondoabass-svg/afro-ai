@@ -273,3 +273,20 @@ export const domainOrders = pgTable("domain_orders", {
 export const insertDomainOrderSchema = createInsertSchema(domainOrders).omit({ id: true, createdAt: true });
 export type DomainOrder = typeof domainOrders.$inferSelect;
 export type InsertDomainOrder = z.infer<typeof insertDomainOrderSchema>;
+
+export const affiliateApplications = pgTable("affiliate_applications", {
+  id: serial("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  email: varchar("email").notNull().unique(),
+  phone: varchar("phone"),
+  country: varchar("country"),
+  promotionMethod: text("promotion_method"),
+  socialMedia: text("social_media"),
+  referralCode: varchar("referral_code").notNull().unique(),
+  status: varchar("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertAffiliateApplicationSchema = createInsertSchema(affiliateApplications).omit({ id: true, createdAt: true });
+export type AffiliateApplication = typeof affiliateApplications.$inferSelect;
+export type InsertAffiliateApplication = z.infer<typeof insertAffiliateApplicationSchema>;

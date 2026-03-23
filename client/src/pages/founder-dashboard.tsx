@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   BarChart3,
   CreditCard,
+  Gift,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -88,6 +89,21 @@ export default function FounderDashboardPage() {
   const { data: stats, isLoading } = useQuery<PlatformStats>({
     queryKey: ["/api/admin/stats"],
     enabled: isFounder,
+  });
+
+  const { data: affiliateApps } = useQuery<any[]>({
+    queryKey: ["/api/affiliate/applications"],
+    enabled: isFounder,
+  });
+
+  const updateAffiliateMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      await apiRequest("PATCH", `/api/affiliate/applications/${id}/status`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications"] });
+      toast({ title: "Status updated" });
+    },
   });
 
   const suspendMutation = useMutation({
@@ -429,6 +445,56 @@ export default function FounderDashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Affiliate Applications */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="flex items-center gap-2 p-4 border-b">
+              <Gift className="w-4 h-4 text-primary" />
+              <h3 className="font-semibold text-sm">Affiliate Applications</h3>
+              <Badge variant="secondary" className="ml-auto text-xs">{affiliateApps?.length ?? 0}</Badge>
+            </div>
+            <ScrollArea className="h-[300px]">
+              <div className="p-2 space-y-1">
+                {affiliateApps && affiliateApps.length > 0 ? (
+                  affiliateApps.map((a: any) => (
+                    <div key={a.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`affiliate-app-${a.id}`}>
+                      <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Gift className="w-3.5 h-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{a.fullName}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{a.email} · <span className="text-primary font-mono">{a.referralCode}</span></p>
+                        {a.country && <p className="text-[10px] text-muted-foreground">{a.country}</p>}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Badge variant="outline" className={`text-[10px] px-1.5 ${
+                          a.status === "approved" ? "text-green-400 border-green-500/30" :
+                          a.status === "rejected" ? "text-red-400 border-red-500/30" :
+                          "text-yellow-400 border-yellow-500/30"
+                        }`}>
+                          {a.status}
+                        </Badge>
+                        {a.status === "pending" && (
+                          <>
+                            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-green-400 hover:text-green-300" onClick={() => updateAffiliateMutation.mutate({ id: a.id, status: "approved" })} data-testid={`button-approve-affiliate-${a.id}`}>
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-400 hover:text-red-300" onClick={() => updateAffiliateMutation.mutate({ id: a.id, status: "rejected" })} data-testid={`button-reject-affiliate-${a.id}`}>
+                              <Ban className="w-3.5 h-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">No affiliate applications yet</p>
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
 
         {/* Platform Health */}
         <Card>
