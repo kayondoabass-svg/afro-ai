@@ -1671,39 +1671,15 @@ export default function AIChatPage() {
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-8" data-testid="welcome-screen">
+            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-6" data-testid="welcome-screen">
               {/* Greeting */}
               <div className="text-center space-y-2">
                 <h1 className="text-3xl md:text-4xl font-light text-foreground/90 tracking-tight" data-testid="text-chat-welcome">
                   Hi {user?.name?.split(" ")[0] || "there"},
                 </h1>
-                <h2 className="text-3xl md:text-4xl font-light text-foreground/60 tracking-tight">
-                  what do you want to make?
+                <h2 className="text-2xl md:text-3xl font-light text-foreground/50 tracking-tight">
+                  tell me what to add or edit.
                 </h2>
-              </div>
-
-              {/* Category chips — horizontally scrollable */}
-              <div className="w-full max-w-xl overflow-x-auto pb-1 scrollbar-none">
-                <div className="flex gap-2 w-max mx-auto px-2">
-                  {[
-                    { label: "Website", icon: Globe },
-                    { label: "App", icon: Smartphone },
-                    { label: "Game", icon: Gamepad2 },
-                    { label: "Dashboard", icon: Monitor },
-                    { label: "Tool", icon: Code2 },
-                    { label: "Portfolio", icon: Eye },
-                  ].map((cat) => (
-                    <button
-                      key={cat.label}
-                      onClick={() => setInput((prev) => prev ? prev : `Build me a ${cat.label.toLowerCase()}: `)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-border/50 bg-card/40 hover:bg-card/80 hover:border-primary/40 transition-all text-sm text-foreground/70 hover:text-foreground whitespace-nowrap"
-                      data-testid={`chip-category-${cat.label.toLowerCase()}`}
-                    >
-                      <cat.icon className="w-3.5 h-3.5" />
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {/* Main input box */}
