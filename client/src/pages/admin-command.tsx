@@ -239,6 +239,7 @@ export default function AdminCommandPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showPublish, setShowPublish] = useState(false);
+  const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -264,6 +265,12 @@ export default function AdminCommandPage() {
       }
     }
   }, [streamingContent]);
+
+  const openPreview = (code: string) => {
+    setPreviewCode(code);
+    setShowPreview(true);
+    setMobileView("preview");
+  };
 
   if (!isFounder) return null;
 
@@ -363,8 +370,7 @@ export default function AdminCommandPage() {
             if (data.done) {
               const code = extractHtmlCode(fullResponse);
               if (code) {
-                setPreviewCode(code);
-                setShowPreview(true);
+                openPreview(code);
               }
               const assistantMsg: CommandMessage = {
                 id: Date.now() + 1,
@@ -455,7 +461,7 @@ export default function AdminCommandPage() {
               size="sm"
               variant="outline"
               className="gap-1.5 border-border/60 hover:border-primary/50"
-              onClick={() => { setPreviewCode(code); setShowPreview(true); }}
+              onClick={() => openPreview(code)}
               data-testid="button-admin-view-preview"
             >
               <Eye className="w-3.5 h-3.5" />
@@ -488,16 +494,22 @@ export default function AdminCommandPage() {
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden">
-      <div className={`flex flex-col ${showPreview && previewCode ? "w-1/2 min-w-[320px]" : "flex-1"}`}>
+    <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className={`flex flex-col min-h-0 ${showPreview && previewCode ? "md:w-1/2 md:min-w-[320px]" : "flex-1"} ${mobileView === "preview" && showPreview && previewCode ? "hidden md:flex" : "flex"}`}>
         <div className="flex items-center gap-3 px-4 py-3 border-b bg-card/50">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
             <Terminal className="w-4 h-4 text-primary-foreground" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <h2 className="font-semibold text-sm" data-testid="text-command-title">Founder Command Center</h2>
             <p className="text-xs text-muted-foreground">Type what you want to build or change. AI will generate it instantly.</p>
           </div>
+          {showPreview && previewCode && (
+            <Button size="sm" variant="outline" className="md:hidden gap-1.5 flex-shrink-0" onClick={() => setMobileView("preview")} data-testid="button-switch-to-preview">
+              <Eye className="w-3.5 h-3.5" />
+              Preview
+            </Button>
+          )}
         </div>
 
         <ScrollArea className="flex-1 p-4">
@@ -652,9 +664,12 @@ export default function AdminCommandPage() {
       </div>
 
       {showPreview && previewCode && (
-        <div className={`flex flex-col bg-background border-l ${isFullscreen ? "fixed inset-0 z-50" : "flex-1"}`}>
+        <div className={`flex-col bg-background border-l ${isFullscreen ? "fixed inset-0 z-50 flex" : `flex-1 ${mobileView === "preview" ? "flex" : "hidden md:flex"}`}`}>
           <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-card/80">
             <div className="flex items-center gap-2">
+              <Button size="icon" variant="ghost" className="md:hidden h-7 w-7" onClick={() => setMobileView("chat")} data-testid="button-back-to-chat">
+                <X className="w-4 h-4" />
+              </Button>
               <Eye className="w-4 h-4 text-primary" />
               <span className="text-sm font-medium" data-testid="text-admin-preview-label">Live Preview</span>
             </div>
@@ -700,7 +715,7 @@ export default function AdminCommandPage() {
               <Button size="icon" variant="ghost" onClick={() => setIsFullscreen(!isFullscreen)} data-testid="button-admin-preview-fullscreen">
                 {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </Button>
-              <Button size="icon" variant="ghost" onClick={() => setShowPreview(false)} data-testid="button-admin-preview-close">
+              <Button size="icon" variant="ghost" onClick={() => { setShowPreview(false); setMobileView("chat"); }} data-testid="button-admin-preview-close">
                 <X className="w-4 h-4" />
               </Button>
             </div>
