@@ -977,6 +977,8 @@ export async function registerRoutes(
   const PLAN_PRICES_USD: Record<string, number> = { pro: 15, business: 29.90 };
   const PAYG_PACK_PRICES_USD: Record<string, number> = { pack5: 5, pack10: 10, pack20: 20, pack50: 50 };
   const PAYG_PACK_CREDITS: Record<string, number> = { pack5: 500, pack10: 1000, pack20: 2000, pack50: 5000 };
+  // Currencies confirmed supported by Pesapal production API
+  const PESAPAL_SUPPORTED_CURRENCIES = new Set(["USD", "KES", "UGX", "TZS", "RWF", "ZMW", "GHS", "ZAR", "NGN", "EGP", "XAF", "XOF", "GBP", "EUR"]);
 
   app.post("/api/subscribe", apiLimiter, isAuthenticated, async (req: any, res) => {
     try {
@@ -1004,10 +1006,11 @@ export async function registerRoutes(
       if (countryCode) {
         const { getCurrencyForCountry, convertUsdToLocal } = await import("@shared/currencies");
         const currencyInfo = getCurrencyForCountry(countryCode);
-        if (currencyInfo) {
-          currency = currencyInfo.currencyCode;
+        if (currencyInfo && PESAPAL_SUPPORTED_CURRENCIES.has(currencyInfo.code)) {
+          currency = currencyInfo.code;
           amount = Math.round(convertUsdToLocal(usdAmount, countryCode));
         }
+        // If currency not supported by Pesapal, keep USD amount as-is
       }
 
       const baseUrl = process.env.BASE_URL || `https://${req.headers.host}`;
@@ -1022,6 +1025,8 @@ export async function registerRoutes(
       }
 
       const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
+
+      console.log(`[Subscribe] Plan=${plan} countryCode=${countryCode || "none"} amount=${amount} currency=${currency} usdAmount=${usdAmount}`);
 
       let order;
       try {
@@ -1105,10 +1110,11 @@ export async function registerRoutes(
       if (countryCode) {
         const { getCurrencyForCountry, convertUsdToLocal } = await import("@shared/currencies");
         const currencyInfo = getCurrencyForCountry(countryCode);
-        if (currencyInfo) {
-          currency = currencyInfo.currencyCode;
+        if (currencyInfo && PESAPAL_SUPPORTED_CURRENCIES.has(currencyInfo.code)) {
+          currency = currencyInfo.code;
           amount = Math.round(convertUsdToLocal(usdAmount, countryCode));
         }
+        // If currency not supported by Pesapal, keep USD amount as-is
       }
       const baseUrl = process.env.BASE_URL || `https://${req.headers.host}`;
       if (!cachedIpnId) {
