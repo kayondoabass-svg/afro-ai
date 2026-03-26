@@ -6,12 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Trash2, Zap, Code, TestTube, CheckCircle, XCircle, Clock, Globe, Lock, Key } from "lucide-react";
+import { Plus, Trash2, Zap, Code, TestTube, CheckCircle, XCircle, Clock, Globe, Lock } from "lucide-react";
 
 interface ApiIntegration {
   id: number;
@@ -22,6 +20,7 @@ interface ApiIntegration {
   authType: string;
   authKey: string | null;
   authValue: string | null;
+  authConfig: string | null;
   description: string | null;
   lastTestedAt: string | null;
   lastTestStatus: number | null;
@@ -29,22 +28,37 @@ interface ApiIntegration {
 }
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
 const AUTH_TYPES = [
-  { value: "none", label: "No Auth" },
-  { value: "apikey", label: "API Key" },
-  { value: "bearer", label: "Bearer Token" },
-  { value: "basic", label: "Basic Auth" },
+  { value: "none",        label: "No Auth",               desc: "Public API — no authentication required" },
+  { value: "apikey",      label: "API Key",                desc: "Custom header key/value pair" },
+  { value: "bearer",      label: "Bearer Token",           desc: "Authorization: Bearer <token>" },
+  { value: "basic",       label: "Basic Auth",             desc: "Username & password (Base64 encoded)" },
+  { value: "oauth2",      label: "OAuth 2.0 (Client Credentials)", desc: "Auto-fetch access token using client ID & secret" },
+  { value: "awssigv4",    label: "AWS Signature v4",       desc: "Sign requests for AWS services (S3, Lambda, API Gateway)" },
+  { value: "digest",      label: "Digest Auth",            desc: "HTTP Digest challenge-response (MD5)" },
+  { value: "hmac",        label: "HMAC Signature",         desc: "Sign requests with a shared secret (Shopify, custom APIs)" },
+  { value: "customtoken", label: "Custom Token Header",    desc: "Any header name with a static token value" },
 ];
 
 const METHOD_COLORS: Record<string, string> = {
-  GET: "bg-green-500/20 text-green-400 border-green-500/30",
-  POST: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  PUT: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  PATCH: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  GET:    "bg-green-500/20 text-green-400 border-green-500/30",
+  POST:   "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  PUT:    "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  PATCH:  "bg-purple-500/20 text-purple-400 border-purple-500/30",
   DELETE: "bg-red-500/20 text-red-400 border-red-500/30",
 };
 
-const emptyForm = { name: "", baseUrl: "", method: "GET", headers: "", authType: "none", authKey: "", authValue: "", description: "" };
+const emptyForm = {
+  name: "", baseUrl: "", method: "GET", headers: "",
+  authType: "none", authKey: "", authValue: "", description: "",
+  authConfig: {} as Record<string, string>,
+};
+
+function parseAuthConfig(raw: string | null): Record<string, string> {
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
+}
 
 export default function ApiIntegrationsPage() {
   const { toast } = useToast();
@@ -76,17 +90,26 @@ export default function ApiIntegrationsPage() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  function setAc(key: string, val: string) {
+    setForm(f => ({ ...f, authConfig: { ...f.authConfig, [key]: val } }));
+  }
+
   function openNew() { setEditing(null); setForm(emptyForm); setTestResult(null); setOpen(true); }
   function openEdit(item: ApiIntegration) {
     setEditing(item);
-    setForm({ name: item.name, baseUrl: item.baseUrl, method: item.method, headers: item.headers || "", authType: item.authType, authKey: item.authKey || "", authValue: item.authValue || "", description: item.description || "" });
+    setForm({
+      name: item.name, baseUrl: item.baseUrl, method: item.method,
+      headers: item.headers || "", authType: item.authType,
+      authKey: item.authKey || "", authValue: item.authValue || "",
+      description: item.description || "",
+      authConfig: parseAuthConfig(item.authConfig),
+    });
     setTestResult(null);
     setOpen(true);
   }
 
   async function handleTest(id: number) {
-    setTestingId(id);
-    setTestResult(null);
+    setTestingId(id); setTestResult(null);
     try {
       const res = await apiRequest("POST", `/api/integrations/${id}/test`, {});
       const data = await res.json();
@@ -94,9 +117,7 @@ export default function ApiIntegrationsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
     } catch (e: any) {
       setTestResult({ error: e.message });
-    } finally {
-      setTestingId(null);
-    }
+    } finally { setTestingId(null); }
   }
 
   async function handleSnippet(id: number) {
@@ -109,7 +130,14 @@ export default function ApiIntegrationsPage() {
   }
 
   function handleSubmit() {
-    const payload = { ...form, headers: form.headers || null, authKey: form.authKey || null, authValue: form.authValue || null, description: form.description || null };
+    const payload = {
+      ...form,
+      headers: form.headers || null,
+      authKey: form.authKey || null,
+      authValue: form.authValue || null,
+      description: form.description || null,
+      authConfig: Object.keys(form.authConfig).length ? JSON.stringify(form.authConfig) : null,
+    };
     if (editing) updateMutation.mutate({ id: editing.id, data: payload });
     else createMutation.mutate(payload);
   }
@@ -123,6 +151,8 @@ export default function ApiIntegrationsPage() {
       </span>
     );
   };
+
+  const authLabel = AUTH_TYPES.find(a => a.value === form.authType)?.label || "Unknown";
 
   return (
     <div className="flex-1 overflow-auto min-h-0 p-6">
@@ -139,6 +169,15 @@ export default function ApiIntegrationsPage() {
           </Button>
         </div>
 
+        {/* Auth Type Overview */}
+        <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+          {AUTH_TYPES.map(a => (
+            <div key={a.value} className="bg-card border border-border rounded-lg px-3 py-2 text-center">
+              <p className="text-xs font-semibold text-foreground">{a.label}</p>
+            </div>
+          ))}
+        </div>
+
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[1,2,3].map(i => <div key={i} className="h-40 rounded-xl bg-muted animate-pulse" />)}
@@ -148,7 +187,7 @@ export default function ApiIntegrationsPage() {
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <Globe className="w-12 h-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">No integrations yet</h3>
-              <p className="text-muted-foreground mb-4 max-w-sm">Connect your AI-generated apps to weather APIs, payment APIs, databases, or any REST service.</p>
+              <p className="text-muted-foreground mb-4 max-w-sm">Connect your AI-generated apps to any REST API — weather, payments, AI models, databases, and more.</p>
               <Button onClick={openNew} data-testid="button-add-first-integration"><Plus className="w-4 h-4 mr-2" />Add your first integration</Button>
             </CardContent>
           </Card>
@@ -171,6 +210,9 @@ export default function ApiIntegrationsPage() {
                 <CardContent className="space-y-3">
                   <p className="text-xs font-mono text-muted-foreground truncate bg-muted/50 px-2 py-1 rounded">{item.baseUrl}</p>
                   <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">
+                      {AUTH_TYPES.find(a => a.value === item.authType)?.label || item.authType}
+                    </span>
                     {item.lastTestStatus && statusBadge(item.lastTestStatus)}
                     {item.lastTestedAt && (
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -181,7 +223,7 @@ export default function ApiIntegrationsPage() {
                   <div className="flex gap-2 pt-1">
                     <Button size="sm" variant="outline" onClick={() => openEdit(item)} data-testid={`button-edit-integration-${item.id}`} className="flex-1">Edit</Button>
                     <Button size="sm" variant="outline" onClick={() => handleTest(item.id)} disabled={testingId === item.id} data-testid={`button-test-integration-${item.id}`}>
-                      <TestTube className="w-3.5 h-3.5 mr-1" />{testingId === item.id ? "Testing…" : "Test"}
+                      <TestTube className="w-3.5 h-3.5 mr-1" />{testingId === item.id ? "…" : "Test"}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => handleSnippet(item.id)} data-testid={`button-snippet-integration-${item.id}`}>
                       <Code className="w-3.5 h-3.5" />
@@ -238,7 +280,7 @@ export default function ApiIntegrationsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2 space-y-1">
                   <Label>Name *</Label>
-                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. OpenWeather API" data-testid="input-integration-name" />
+                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Stripe Payments" data-testid="input-integration-name" />
                 </div>
                 <div className="col-span-2 space-y-1">
                   <Label>Base URL *</Label>
@@ -253,11 +295,24 @@ export default function ApiIntegrationsPage() {
                 </div>
                 <div className="space-y-1">
                   <Label>Auth Type</Label>
-                  <Select value={form.authType} onValueChange={v => setForm(f => ({ ...f, authType: v }))}>
+                  <Select value={form.authType} onValueChange={v => setForm(f => ({ ...f, authType: v, authKey: "", authValue: "", authConfig: {} }))}>
                     <SelectTrigger data-testid="select-integration-auth"><SelectValue /></SelectTrigger>
-                    <SelectContent>{AUTH_TYPES.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {AUTH_TYPES.map(a => (
+                        <SelectItem key={a.value} value={a.value}>
+                          <div>
+                            <div className="font-medium">{a.label}</div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
+                  {form.authType !== "none" && (
+                    <p className="text-xs text-muted-foreground">{AUTH_TYPES.find(a => a.value === form.authType)?.desc}</p>
+                  )}
                 </div>
+
+                {/* API Key */}
                 {form.authType === "apikey" && (
                   <>
                     <div className="space-y-1">
@@ -270,18 +325,124 @@ export default function ApiIntegrationsPage() {
                     </div>
                   </>
                 )}
-                {(form.authType === "bearer" || form.authType === "basic") && (
+
+                {/* Bearer Token */}
+                {form.authType === "bearer" && (
                   <div className="col-span-2 space-y-1">
-                    <Label>{form.authType === "bearer" ? "Bearer Token" : "user:password"}</Label>
-                    <Input type="password" value={form.authValue} onChange={e => setForm(f => ({ ...f, authValue: e.target.value }))} placeholder={form.authType === "bearer" ? "eyJ..." : "username:password"} data-testid="input-integration-authvalue" />
+                    <Label>Bearer Token</Label>
+                    <Input type="password" value={form.authValue} onChange={e => setForm(f => ({ ...f, authValue: e.target.value }))} placeholder="eyJhbGciOiJIUzI1NiJ9..." data-testid="input-integration-authvalue" />
                   </div>
                 )}
+
+                {/* Basic Auth */}
+                {form.authType === "basic" && (
+                  <div className="col-span-2 space-y-1">
+                    <Label>Username : Password</Label>
+                    <Input type="password" value={form.authValue} onChange={e => setForm(f => ({ ...f, authValue: e.target.value }))} placeholder="username:password" data-testid="input-integration-authvalue" />
+                  </div>
+                )}
+
+                {/* Custom Token */}
+                {form.authType === "customtoken" && (
+                  <>
+                    <div className="space-y-1">
+                      <Label>Header Name</Label>
+                      <Input value={form.authKey} onChange={e => setForm(f => ({ ...f, authKey: e.target.value }))} placeholder="X-Custom-Token" data-testid="input-integration-authkey" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Token Value</Label>
+                      <Input type="password" value={form.authValue} onChange={e => setForm(f => ({ ...f, authValue: e.target.value }))} placeholder="my-secret-token" data-testid="input-integration-authvalue" />
+                    </div>
+                  </>
+                )}
+
+                {/* OAuth 2.0 */}
+                {form.authType === "oauth2" && (
+                  <>
+                    <div className="col-span-2 space-y-1">
+                      <Label>Token URL</Label>
+                      <Input value={form.authConfig.tokenUrl || ""} onChange={e => setAc("tokenUrl", e.target.value)} placeholder="https://auth.example.com/oauth/token" data-testid="input-oauth-tokenurl" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Client ID</Label>
+                      <Input value={form.authConfig.clientId || ""} onChange={e => setAc("clientId", e.target.value)} placeholder="your_client_id" data-testid="input-oauth-clientid" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Client Secret</Label>
+                      <Input type="password" value={form.authConfig.clientSecret || ""} onChange={e => setAc("clientSecret", e.target.value)} placeholder="your_client_secret" data-testid="input-oauth-clientsecret" />
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label>Scope <span className="text-muted-foreground">(optional)</span></Label>
+                      <Input value={form.authConfig.scope || ""} onChange={e => setAc("scope", e.target.value)} placeholder="read write" data-testid="input-oauth-scope" />
+                    </div>
+                  </>
+                )}
+
+                {/* AWS Signature v4 */}
+                {form.authType === "awssigv4" && (
+                  <>
+                    <div className="space-y-1">
+                      <Label>Access Key ID</Label>
+                      <Input value={form.authConfig.accessKey || ""} onChange={e => setAc("accessKey", e.target.value)} placeholder="AKIAIOSFODNN7EXAMPLE" data-testid="input-aws-accesskey" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Secret Access Key</Label>
+                      <Input type="password" value={form.authConfig.secretKey || ""} onChange={e => setAc("secretKey", e.target.value)} placeholder="wJalrXUtnFEMI/K7MDENG..." data-testid="input-aws-secretkey" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>AWS Region</Label>
+                      <Input value={form.authConfig.region || ""} onChange={e => setAc("region", e.target.value)} placeholder="us-east-1" data-testid="input-aws-region" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Service</Label>
+                      <Input value={form.authConfig.service || ""} onChange={e => setAc("service", e.target.value)} placeholder="execute-api" data-testid="input-aws-service" />
+                    </div>
+                  </>
+                )}
+
+                {/* Digest Auth */}
+                {form.authType === "digest" && (
+                  <div className="col-span-2 space-y-1">
+                    <Label>Username : Password</Label>
+                    <Input type="password" value={form.authValue} onChange={e => setForm(f => ({ ...f, authValue: e.target.value }))} placeholder="username:password" data-testid="input-integration-authvalue" />
+                    <p className="text-xs text-muted-foreground">Credentials are used in MD5 challenge-response flow</p>
+                  </div>
+                )}
+
+                {/* HMAC Signature */}
+                {form.authType === "hmac" && (
+                  <>
+                    <div className="space-y-1">
+                      <Label>Signature Header</Label>
+                      <Input value={form.authKey} onChange={e => setForm(f => ({ ...f, authKey: e.target.value }))} placeholder="X-Signature" data-testid="input-hmac-header" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Algorithm</Label>
+                      <Select value={form.authConfig.algorithm || "sha256"} onValueChange={v => setAc("algorithm", v)}>
+                        <SelectTrigger data-testid="select-hmac-algorithm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sha256">HMAC-SHA256</SelectItem>
+                          <SelectItem value="sha512">HMAC-SHA512</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Shared Secret</Label>
+                      <Input type="password" value={form.authConfig.secret || ""} onChange={e => setAc("secret", e.target.value)} placeholder="your-shared-secret" data-testid="input-hmac-secret" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Prefix <span className="text-muted-foreground">(optional)</span></Label>
+                      <Input value={form.authConfig.prefix || ""} onChange={e => setAc("prefix", e.target.value)} placeholder="sha256=" data-testid="input-hmac-prefix" />
+                    </div>
+                  </>
+                )}
+
                 <div className="col-span-2 space-y-1">
-                  <Label>Custom Headers (JSON)</Label>
-                  <Textarea value={form.headers} onChange={e => setForm(f => ({ ...f, headers: e.target.value }))} placeholder={'{"Accept": "application/json"}'} rows={2} className="font-mono text-xs" data-testid="input-integration-headers" />
+                  <Label>Custom Headers <span className="text-muted-foreground">(JSON, optional)</span></Label>
+                  <Textarea value={form.headers} onChange={e => setForm(f => ({ ...f, headers: e.target.value }))} placeholder={'{"Accept": "application/json", "X-Version": "2"}'} rows={2} className="font-mono text-xs" data-testid="input-integration-headers" />
                 </div>
                 <div className="col-span-2 space-y-1">
-                  <Label>Description</Label>
+                  <Label>Description <span className="text-muted-foreground">(optional)</span></Label>
                   <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What does this API do?" data-testid="input-integration-description" />
                 </div>
               </div>

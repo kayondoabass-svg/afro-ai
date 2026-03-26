@@ -300,9 +300,10 @@ export const apiIntegrations = pgTable("api_integrations", {
   baseUrl: text("base_url").notNull(),
   method: varchar("method").notNull().default("GET"),
   headers: text("headers"), // JSON string
-  authType: varchar("auth_type").notNull().default("none"), // none | apikey | bearer | basic
-  authKey: text("auth_key"),   // header name for api key
-  authValue: text("auth_value"), // secret / token
+  authType: varchar("auth_type").notNull().default("none"), // none | apikey | bearer | basic | oauth2 | awssigv4 | digest | hmac | customtoken
+  authKey: text("auth_key"),   // header name for api key / HMAC header / OAuth2 scope
+  authValue: text("auth_value"), // secret / token / user:pass
+  authConfig: text("auth_config"), // JSON for extended auth (OAuth2, AWS, HMAC config)
   description: text("description"),
   lastTestedAt: timestamp("last_tested_at"),
   lastTestStatus: integer("last_test_status"),

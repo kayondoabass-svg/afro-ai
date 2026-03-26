@@ -1780,13 +1780,61 @@ export async function registerRoutes(
       if (!integration || integration.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
       const headers: Record<string, string> = {};
       if (integration.headers) { try { Object.assign(headers, JSON.parse(integration.headers)); } catch {} }
+      const authCfg = integration.authConfig ? (() => { try { return JSON.parse(integration.authConfig!); } catch { return {}; } })() : {};
+
       if (integration.authType === "apikey" && integration.authKey && integration.authValue) {
         headers[integration.authKey] = integration.authValue;
       } else if (integration.authType === "bearer" && integration.authValue) {
         headers["Authorization"] = `Bearer ${integration.authValue}`;
       } else if (integration.authType === "basic" && integration.authValue) {
         headers["Authorization"] = `Basic ${Buffer.from(integration.authValue).toString("base64")}`;
+      } else if (integration.authType === "customtoken" && integration.authKey && integration.authValue) {
+        headers[integration.authKey] = integration.authValue;
+      } else if (integration.authType === "oauth2" && authCfg.tokenUrl && authCfg.clientId && authCfg.clientSecret) {
+        const tokenRes = await fetch(authCfg.tokenUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ grant_type: "client_credentials", client_id: authCfg.clientId, client_secret: authCfg.clientSecret, ...(authCfg.scope ? { scope: authCfg.scope } : {}) }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const tokenData = await tokenRes.json();
+        if (tokenData.access_token) headers["Authorization"] = `Bearer ${tokenData.access_token}`;
+        else throw new Error(`OAuth2 token error: ${JSON.stringify(tokenData)}`);
+      } else if (integration.authType === "hmac" && integration.authKey && authCfg.secret) {
+        const { createHmac } = await import("crypto");
+        const ts = Date.now().toString();
+        const payload = `${ts}.${integration.baseUrl}`;
+        const sig = createHmac(authCfg.algorithm || "sha256", authCfg.secret).update(payload).digest("hex");
+        headers[integration.authKey] = `${authCfg.prefix || ""}${sig}`;
+        headers["X-Timestamp"] = ts;
+      } else if (integration.authType === "awssigv4" && authCfg.accessKey && authCfg.secretKey) {
+        const aws4 = (await import("aws4")).default;
+        const urlObj = new URL(integration.baseUrl);
+        const opts: any = {
+          host: urlObj.hostname, path: urlObj.pathname + urlObj.search,
+          method: integration.method, service: authCfg.service || "execute-api",
+          region: authCfg.region || "us-east-1",
+        };
+        aws4.sign(opts, { accessKeyId: authCfg.accessKey, secretAccessKey: authCfg.secretKey });
+        Object.assign(headers, opts.headers);
+      } else if (integration.authType === "digest" && integration.authValue) {
+        const [digestUser, ...restParts] = integration.authValue.split(":");
+        const digestPass = restParts.join(":");
+        const challengeRes = await fetch(integration.baseUrl, { method: integration.method, signal: AbortSignal.timeout(5000) });
+        const wwwAuth = challengeRes.headers.get("www-authenticate") || "";
+        const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
+        const nonceMatch = wwwAuth.match(/nonce="([^"]+)"/);
+        if (realmMatch && nonceMatch) {
+          const { createHash } = await import("crypto");
+          const realm = realmMatch[1]; const nonce = nonceMatch[1];
+          const urlPath = new URL(integration.baseUrl).pathname;
+          const ha1 = createHash("md5").update(`${digestUser}:${realm}:${digestPass}`).digest("hex");
+          const ha2 = createHash("md5").update(`${integration.method}:${urlPath}`).digest("hex");
+          const response = createHash("md5").update(`${ha1}:${nonce}:${ha2}`).digest("hex");
+          headers["Authorization"] = `Digest username="${digestUser}", realm="${realm}", nonce="${nonce}", uri="${urlPath}", response="${response}"`;
+        }
       }
+
       const start = Date.now();
       const isBodyMethod = ["POST","PUT","PATCH"].includes(integration.method);
       if (isBodyMethod) headers["Content-Type"] = "application/json";
@@ -1813,11 +1861,26 @@ export async function registerRoutes(
       const i = await storage.getApiIntegration(id);
       if (!i || i.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
       let authLine = "";
+      let preSnippet = "";
+      const cfg = i.authConfig ? (() => { try { return JSON.parse(i.authConfig!); } catch { return {}; } })() : {};
       if (i.authType === "apikey" && i.authKey) authLine = `\n    "${i.authKey}": "YOUR_API_KEY",`;
       else if (i.authType === "bearer") authLine = `\n    "Authorization": "Bearer YOUR_TOKEN",`;
-      else if (i.authType === "basic") authLine = `\n    "Authorization": "Basic btoa('user:pass')",`;
+      else if (i.authType === "basic") authLine = `\n    "Authorization": "Basic " + btoa("user:password"),`;
+      else if (i.authType === "customtoken" && i.authKey) authLine = `\n    "${i.authKey}": "YOUR_TOKEN",`;
+      else if (i.authType === "oauth2") {
+        preSnippet = `// Step 1: Get OAuth2 access token\nconst tokenRes = await fetch("${cfg.tokenUrl || "YOUR_TOKEN_URL"}", {\n  method: "POST",\n  headers: { "Content-Type": "application/x-www-form-urlencoded" },\n  body: new URLSearchParams({ grant_type: "client_credentials", client_id: "YOUR_CLIENT_ID", client_secret: "YOUR_CLIENT_SECRET"${cfg.scope ? `, scope: "${cfg.scope}"` : ""} })\n});\nconst { access_token } = await tokenRes.json();\n\n// Step 2: Call API with token\n`;
+        authLine = `\n    "Authorization": \`Bearer \${access_token}\`,`;
+      } else if (i.authType === "hmac" && i.authKey) {
+        preSnippet = `// Generate HMAC signature\nconst ts = Date.now().toString();\nconst sig = await crypto.subtle.importKey("raw", new TextEncoder().encode("YOUR_SECRET"), { name: "HMAC", hash: "${cfg.algorithm === "sha512" ? "SHA-512" : "SHA-256"}" }, false, ["sign"]).then(k => crypto.subtle.sign("HMAC", k, new TextEncoder().encode(ts + "." + "${i.baseUrl}"))).then(b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""));\n\n`;
+        authLine = `\n    "${i.authKey}": "${cfg.prefix || ""}"+sig,\n    "X-Timestamp": ts,`;
+      } else if (i.authType === "awssigv4") {
+        preSnippet = `// AWS SigV4 requires server-side signing via aws4 or @aws-sdk\n// Install: npm install aws4\nconst aws4 = require("aws4");\nconst opts = aws4.sign({ host: "${new URL(i.baseUrl).hostname}", path: "${new URL(i.baseUrl).pathname}", method: "${i.method}", service: "${cfg.service || "execute-api"}", region: "${cfg.region || "us-east-1"}" }, { accessKeyId: "YOUR_ACCESS_KEY", secretAccessKey: "YOUR_SECRET_KEY" });\n\n`;
+      } else if (i.authType === "digest") {
+        preSnippet = `// Digest Auth requires a challenge-response round-trip\n// First GET to retrieve WWW-Authenticate header, then compute MD5 digest\n// Consider using a library like 'node-fetch' with digest auth support\n\n`;
+        authLine = `\n    "Authorization": "Digest username=\\"user\\", realm=\\"realm\\", nonce=\\"nonce\\", uri=\\"${new URL(i.baseUrl).pathname}\\", response=\\"md5hash\\"",`;
+      }
       const isBody = ["POST","PUT","PATCH"].includes(i.method);
-      const snippet = `// ${i.name}\nconst response = await fetch("${i.baseUrl}", {\n  method: "${i.method}",\n  headers: {${authLine}\n    "Content-Type": "application/json"\n  }${isBody ? ',\n  body: JSON.stringify({\n    // your request body here\n  })' : ''}\n});\n\nconst data = await response.json();\nconsole.log(data);`;
+      const snippet = `${preSnippet}// ${i.name}\nconst response = await fetch("${i.baseUrl}", {\n  method: "${i.method}",\n  headers: {${authLine}\n    "Content-Type": "application/json"\n  }${isBody ? ',\n  body: JSON.stringify({\n    // your request body here\n  })' : ''}\n});\n\nconst data = await response.json();\nconsole.log(data);`;
       res.json({ snippet });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
