@@ -1068,7 +1068,11 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error creating subscription:", error);
-      res.status(500).json({ message: error.message || "Failed to create subscription" });
+      const msg = error.message || "";
+      const friendlyMsg = msg.includes("amount_exceeds_default_limit") || msg.includes("amount exceeds")
+        ? "Payment gateway limit reached. Our team is working to resolve this — please try again shortly or contact support@afroaigroup.com."
+        : msg || "Failed to create subscription";
+      res.status(500).json({ message: friendlyMsg });
     }
   });
 
@@ -1154,7 +1158,11 @@ export async function registerRoutes(
       res.json({ redirectUrl: order.redirect_url, credits, usdAmount });
     } catch (e: any) {
       console.error("PAYG top-up error:", e);
-      res.status(500).json({ message: e.message || "Failed to initiate top-up" });
+      const msg2 = e.message || "";
+      const friendlyMsg2 = msg2.includes("amount_exceeds_default_limit") || msg2.includes("amount exceeds")
+        ? "Payment gateway limit reached. Our team is working to resolve this — please try again shortly or contact support@afroaigroup.com."
+        : msg2 || "Failed to initiate top-up";
+      res.status(500).json({ message: friendlyMsg2 });
     }
   });
 
