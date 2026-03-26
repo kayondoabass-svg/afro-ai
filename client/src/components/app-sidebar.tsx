@@ -36,6 +36,9 @@ import {
   Smartphone,
   Users,
   Globe,
+  Zap,
+  Search,
+  Link2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -62,6 +65,9 @@ export function AppSidebar() {
     { title: "PWA Builder", url: "/pwa", icon: Smartphone },
     { title: "Collaborate", url: "/collaborate", icon: Users },
     { title: "Domain Store", url: "/domains", icon: Globe },
+    { title: "API Integrations", url: "/integrations", icon: Link2 },
+    { title: "SEO Tools", url: "/seo", icon: Search },
+    { title: "Webhooks", url: "/webhooks", icon: Zap },
     { title: "Referrals", url: "/referrals", icon: Gift },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
     { title: "Billing & Usage", url: "/billing", icon: Receipt },

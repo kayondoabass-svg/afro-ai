@@ -290,3 +290,58 @@ export const affiliateApplications = pgTable("affiliate_applications", {
 export const insertAffiliateApplicationSchema = createInsertSchema(affiliateApplications).omit({ id: true, createdAt: true });
 export type AffiliateApplication = typeof affiliateApplications.$inferSelect;
 export type InsertAffiliateApplication = z.infer<typeof insertAffiliateApplicationSchema>;
+
+// ============ API INTEGRATIONS ============
+export const apiIntegrations = pgTable("api_integrations", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  name: varchar("name").notNull(),
+  baseUrl: text("base_url").notNull(),
+  method: varchar("method").notNull().default("GET"),
+  headers: text("headers"), // JSON string
+  authType: varchar("auth_type").notNull().default("none"), // none | apikey | bearer | basic
+  authKey: text("auth_key"),   // header name for api key
+  authValue: text("auth_value"), // secret / token
+  description: text("description"),
+  lastTestedAt: timestamp("last_tested_at"),
+  lastTestStatus: integer("last_test_status"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertApiIntegrationSchema = createInsertSchema(apiIntegrations).omit({ id: true, createdAt: true, lastTestedAt: true, lastTestStatus: true });
+export type ApiIntegration = typeof apiIntegrations.$inferSelect;
+export type InsertApiIntegration = z.infer<typeof insertApiIntegrationSchema>;
+
+// ============ WEBHOOKS ============
+export const webhooks = pgTable("webhooks", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  publishedAppId: integer("published_app_id").references(() => publishedApps.id, { onDelete: "cascade" }),
+  name: varchar("name").notNull(),
+  url: text("url").notNull(),
+  events: text("events").array().notNull().default(sql`'{}'::text[]`),
+  secret: varchar("secret"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastTriggeredAt: timestamp("last_triggered_at"),
+  lastStatus: integer("last_status"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertWebhookSchema = createInsertSchema(webhooks).omit({ id: true, createdAt: true, lastTriggeredAt: true, lastStatus: true });
+export type Webhook = typeof webhooks.$inferSelect;
+export type InsertWebhook = z.infer<typeof insertWebhookSchema>;
+
+// ============ APP SEO ============
+export const appSeo = pgTable("app_seo", {
+  id: serial("id").primaryKey(),
+  publishedAppId: integer("published_app_id").notNull().unique().references(() => publishedApps.id, { onDelete: "cascade" }),
+  seoTitle: text("seo_title"),
+  seoDescription: text("seo_description"),
+  seoKeywords: text("seo_keywords"),
+  ogImage: text("og_image"),
+  ogTitle: text("og_title"),
+  robots: varchar("robots").notNull().default("index, follow"),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertAppSeoSchema = createInsertSchema(appSeo).omit({ id: true, updatedAt: true });
+export type AppSeo = typeof appSeo.$inferSelect;
+export type InsertAppSeo = z.infer<typeof insertAppSeoSchema>;

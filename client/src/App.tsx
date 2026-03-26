@@ -39,6 +39,9 @@ import PwaBuilderPage from "@/pages/pwa-builder";
 import CollaborationPage from "@/pages/collaboration";
 import DomainsPage from "@/pages/domains";
 import AffiliatePage from "@/pages/affiliate";
+import ApiIntegrationsPage from "@/pages/api-integrations";
+import SeoToolsPage from "@/pages/seo-tools";
+import WebhooksPage from "@/pages/webhooks";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -81,6 +84,9 @@ function AuthenticatedLayout() {
               <Route path="/collaborate" component={CollaborationPage} />
               <Route path="/domains" component={DomainsPage} />
               <Route path="/affiliate" component={AffiliatePage} />
+              <Route path="/integrations" component={ApiIntegrationsPage} />
+              <Route path="/seo" component={SeoToolsPage} />
+              <Route path="/webhooks" component={WebhooksPage} />
               <Route path="/about" component={AboutPage} />
               <Route path="/contact" component={ContactPage} />
               <Route path="/privacy" component={PrivacyPage} />

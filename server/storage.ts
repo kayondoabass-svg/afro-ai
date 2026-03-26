@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -39,6 +39,22 @@ export interface IStorage {
   getAffiliateApplicationByEmail(email: string): Promise<AffiliateApplication | undefined>;
   getAllAffiliateApplications(): Promise<AffiliateApplication[]>;
   updateAffiliateStatus(id: number, status: string): Promise<void>;
+  // API Integrations
+  getApiIntegrations(userId: string): Promise<ApiIntegration[]>;
+  getApiIntegration(id: number): Promise<ApiIntegration | undefined>;
+  createApiIntegration(data: InsertApiIntegration): Promise<ApiIntegration>;
+  updateApiIntegration(id: number, data: Partial<InsertApiIntegration & { lastTestedAt?: Date; lastTestStatus?: number }>): Promise<ApiIntegration>;
+  deleteApiIntegration(id: number): Promise<void>;
+  // Webhooks
+  getWebhooks(userId: string): Promise<Webhook[]>;
+  getWebhook(id: number): Promise<Webhook | undefined>;
+  createWebhook(data: InsertWebhook): Promise<Webhook>;
+  updateWebhook(id: number, data: Partial<InsertWebhook & { lastTriggeredAt?: Date; lastStatus?: number }>): Promise<Webhook>;
+  deleteWebhook(id: number): Promise<void>;
+  getWebhooksByEvent(userId: string, event: string, publishedAppId?: number): Promise<Webhook[]>;
+  // App SEO
+  getAppSeo(publishedAppId: number): Promise<AppSeo | undefined>;
+  upsertAppSeo(data: InsertAppSeo): Promise<AppSeo>;
   getUser(userId: string): Promise<any | undefined>;
   // PAYG credit management
   addPaygBalance(userId: string, cents: number): Promise<void>;
@@ -753,6 +769,66 @@ class DatabaseStorage implements IStorage {
   async updateDomainOrder(id: number, data: Partial<InsertDomainOrder>): Promise<DomainOrder> {
     const [updated] = await db.update(domainOrders).set(data).where(eq(domainOrders.id, id)).returning();
     return updated;
+  }
+
+  // ============ API INTEGRATIONS ============
+  async getApiIntegrations(userId: string): Promise<ApiIntegration[]> {
+    return db.select().from(apiIntegrations).where(eq(apiIntegrations.userId, userId)).orderBy(desc(apiIntegrations.createdAt));
+  }
+  async getApiIntegration(id: number): Promise<ApiIntegration | undefined> {
+    const [row] = await db.select().from(apiIntegrations).where(eq(apiIntegrations.id, id));
+    return row;
+  }
+  async createApiIntegration(data: InsertApiIntegration): Promise<ApiIntegration> {
+    const [created] = await db.insert(apiIntegrations).values(data).returning();
+    return created;
+  }
+  async updateApiIntegration(id: number, data: Partial<InsertApiIntegration & { lastTestedAt?: Date; lastTestStatus?: number }>): Promise<ApiIntegration> {
+    const [updated] = await db.update(apiIntegrations).set(data as any).where(eq(apiIntegrations.id, id)).returning();
+    return updated;
+  }
+  async deleteApiIntegration(id: number): Promise<void> {
+    await db.delete(apiIntegrations).where(eq(apiIntegrations.id, id));
+  }
+
+  // ============ WEBHOOKS ============
+  async getWebhooks(userId: string): Promise<Webhook[]> {
+    return db.select().from(webhooks).where(eq(webhooks.userId, userId)).orderBy(desc(webhooks.createdAt));
+  }
+  async getWebhook(id: number): Promise<Webhook | undefined> {
+    const [row] = await db.select().from(webhooks).where(eq(webhooks.id, id));
+    return row;
+  }
+  async createWebhook(data: InsertWebhook): Promise<Webhook> {
+    const [created] = await db.insert(webhooks).values(data).returning();
+    return created;
+  }
+  async updateWebhook(id: number, data: Partial<InsertWebhook & { lastTriggeredAt?: Date; lastStatus?: number }>): Promise<Webhook> {
+    const [updated] = await db.update(webhooks).set(data as any).where(eq(webhooks.id, id)).returning();
+    return updated;
+  }
+  async deleteWebhook(id: number): Promise<void> {
+    await db.delete(webhooks).where(eq(webhooks.id, id));
+  }
+  async getWebhooksByEvent(userId: string, event: string, publishedAppId?: number): Promise<Webhook[]> {
+    const rows = await db.select().from(webhooks)
+      .where(and(eq(webhooks.userId, userId), eq(webhooks.isActive, true)));
+    return rows.filter(w => w.events.includes(event) && (publishedAppId == null || w.publishedAppId == null || w.publishedAppId === publishedAppId));
+  }
+
+  // ============ APP SEO ============
+  async getAppSeo(publishedAppId: number): Promise<AppSeo | undefined> {
+    const [row] = await db.select().from(appSeo).where(eq(appSeo.publishedAppId, publishedAppId));
+    return row;
+  }
+  async upsertAppSeo(data: InsertAppSeo): Promise<AppSeo> {
+    const existing = await this.getAppSeo(data.publishedAppId);
+    if (existing) {
+      const [updated] = await db.update(appSeo).set({ ...data, updatedAt: new Date() }).where(eq(appSeo.publishedAppId, data.publishedAppId)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(appSeo).values(data).returning();
+    return created;
   }
 }
 

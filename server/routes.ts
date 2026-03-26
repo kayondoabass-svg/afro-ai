@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import crypto from "crypto";
 import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder } from "./replit_integrations/auth";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { storage } from "./storage";
@@ -692,6 +693,8 @@ export async function registerRoutes(
         submitterIp: submitterIp.toString().slice(0, 45),
       });
       res.json({ success: true, message: form.successMessage, submissionId: submission.id });
+      // Fire form.submitted webhooks (fire-and-forget)
+      fireWebhooks(form.userId, "form.submitted", { formId: id, formName: form.name, submissionId: submission.id, data: req.body || {} }).catch(() => {});
     } catch (error) {
       res.status(500).json({ message: "Failed to submit form" });
     }
@@ -750,7 +753,22 @@ export async function registerRoutes(
       publishedAppHeaders(res);
       // Record analytics view (fire and forget)
       storage.recordAppView(publishedApp.id).catch(() => {});
-      res.send(publishedApp.htmlContent);
+      // Inject SEO tags if configured
+      const seo = await storage.getAppSeo(publishedApp.id).catch(() => null);
+      let html = publishedApp.htmlContent;
+      if (seo && (seo.seoTitle || seo.seoDescription || seo.seoKeywords || seo.ogImage)) {
+        const seoTags: string[] = [];
+        if (seo.seoTitle) seoTags.push(`<title>${seo.seoTitle}</title>`);
+        if (seo.seoDescription) seoTags.push(`<meta name="description" content="${seo.seoDescription}">`);
+        if (seo.seoKeywords) seoTags.push(`<meta name="keywords" content="${seo.seoKeywords}">`);
+        if (seo.robots) seoTags.push(`<meta name="robots" content="${seo.robots}">`);
+        if (seo.ogTitle || seo.seoTitle) seoTags.push(`<meta property="og:title" content="${seo.ogTitle || seo.seoTitle}">`);
+        if (seo.seoDescription) seoTags.push(`<meta property="og:description" content="${seo.seoDescription}">`);
+        if (seo.ogImage) seoTags.push(`<meta property="og:image" content="${seo.ogImage}"><meta name="twitter:image" content="${seo.ogImage}"><meta name="twitter:card" content="summary_large_image">`);
+        const injection = seoTags.join("\n  ");
+        html = html.replace(/<\/head>/i, `  ${injection}\n</head>`);
+      }
+      res.send(html);
     } catch (error) {
       console.error("Error serving published app:", error);
       res.status(500).send("Internal server error");
@@ -1688,6 +1706,198 @@ export async function registerRoutes(
       if (!user?.isFounder) return res.status(403).json({ message: "Forbidden" });
       await storage.updateAffiliateStatus(parseInt(req.params.id), req.body.status);
       res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ WEBHOOK DELIVERY HELPER ============
+  async function fireWebhooks(userId: string, event: string, payload: any, publishedAppId?: number) {
+    try {
+      const hooks = await storage.getWebhooksByEvent(userId, event, publishedAppId);
+      for (const hook of hooks) {
+        try {
+          const body = JSON.stringify({ event, timestamp: new Date().toISOString(), ...payload });
+          const headers: Record<string, string> = { "Content-Type": "application/json", "User-Agent": "AfroAI-Webhooks/1.0" };
+          if (hook.secret) {
+            const sig = crypto.createHmac("sha256", hook.secret).update(body).digest("hex");
+            headers["X-Afroai-Signature"] = `sha256=${sig}`;
+          }
+          const result = await fetch(hook.url, { method: "POST", headers, body, signal: AbortSignal.timeout(10000) });
+          await storage.updateWebhook(hook.id, { lastTriggeredAt: new Date(), lastStatus: result.status });
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // ============ API INTEGRATIONS ============
+  app.get("/api/integrations", isAuthenticated, async (req: any, res) => {
+    try { res.json(await storage.getApiIntegrations(req.user.id)); } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/integrations", isAuthenticated, async (req: any, res) => {
+    try {
+      const created = await storage.createApiIntegration({ ...req.body, userId: req.user.id });
+      res.json(created);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/integrations/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getApiIntegration(id);
+      if (!existing || existing.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      res.json(await storage.updateApiIntegration(id, req.body));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/integrations/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getApiIntegration(id);
+      if (!existing || existing.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      await storage.deleteApiIntegration(id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/integrations/:id/test", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const integration = await storage.getApiIntegration(id);
+      if (!integration || integration.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      const headers: Record<string, string> = {};
+      if (integration.headers) { try { Object.assign(headers, JSON.parse(integration.headers)); } catch {} }
+      if (integration.authType === "apikey" && integration.authKey && integration.authValue) {
+        headers[integration.authKey] = integration.authValue;
+      } else if (integration.authType === "bearer" && integration.authValue) {
+        headers["Authorization"] = `Bearer ${integration.authValue}`;
+      } else if (integration.authType === "basic" && integration.authValue) {
+        headers["Authorization"] = `Basic ${Buffer.from(integration.authValue).toString("base64")}`;
+      }
+      const start = Date.now();
+      const isBodyMethod = ["POST","PUT","PATCH"].includes(integration.method);
+      if (isBodyMethod) headers["Content-Type"] = "application/json";
+      const testRes = await fetch(integration.baseUrl, {
+        method: integration.method,
+        headers,
+        ...(isBodyMethod ? { body: JSON.stringify(req.body.body || {}) } : {}),
+        signal: AbortSignal.timeout(10000),
+      });
+      const elapsed = Date.now() - start;
+      const ct = testRes.headers.get("content-type") || "";
+      const responseBody = ct.includes("application/json") ? await testRes.json() : await testRes.text();
+      await storage.updateApiIntegration(id, { lastTestedAt: new Date(), lastTestStatus: testRes.status });
+      res.json({ status: testRes.status, elapsed, body: responseBody, headers: Object.fromEntries(testRes.headers.entries()) });
+    } catch (e: any) {
+      try { await storage.updateApiIntegration(parseInt(req.params.id), { lastTestStatus: 0 }); } catch {}
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/integrations/:id/snippet", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const i = await storage.getApiIntegration(id);
+      if (!i || i.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      let authLine = "";
+      if (i.authType === "apikey" && i.authKey) authLine = `\n    "${i.authKey}": "YOUR_API_KEY",`;
+      else if (i.authType === "bearer") authLine = `\n    "Authorization": "Bearer YOUR_TOKEN",`;
+      else if (i.authType === "basic") authLine = `\n    "Authorization": "Basic btoa('user:pass')",`;
+      const isBody = ["POST","PUT","PATCH"].includes(i.method);
+      const snippet = `// ${i.name}\nconst response = await fetch("${i.baseUrl}", {\n  method: "${i.method}",\n  headers: {${authLine}\n    "Content-Type": "application/json"\n  }${isBody ? ',\n  body: JSON.stringify({\n    // your request body here\n  })' : ''}\n});\n\nconst data = await response.json();\nconsole.log(data);`;
+      res.json({ snippet });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ WEBHOOKS ============
+  app.get("/api/webhooks", isAuthenticated, async (req: any, res) => {
+    try { res.json(await storage.getWebhooks(req.user.id)); } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/webhooks", isAuthenticated, async (req: any, res) => {
+    try {
+      const created = await storage.createWebhook({ ...req.body, userId: req.user.id });
+      res.json(created);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/webhooks/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getWebhook(id);
+      if (!existing || existing.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      res.json(await storage.updateWebhook(id, req.body));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/webhooks/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getWebhook(id);
+      if (!existing || existing.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      await storage.deleteWebhook(id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/webhooks/:id/test", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const hook = await storage.getWebhook(id);
+      if (!hook || hook.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      const body = JSON.stringify({ event: "test", timestamp: new Date().toISOString(), message: "Test webhook from Afro AI", hookId: hook.id, hookName: hook.name });
+      const headers: Record<string, string> = { "Content-Type": "application/json", "User-Agent": "AfroAI-Webhooks/1.0" };
+      if (hook.secret) {
+        const sig = crypto.createHmac("sha256", hook.secret).update(body).digest("hex");
+        headers["X-Afroai-Signature"] = `sha256=${sig}`;
+      }
+      const testRes = await fetch(hook.url, { method: "POST", headers, body, signal: AbortSignal.timeout(10000) });
+      await storage.updateWebhook(id, { lastTriggeredAt: new Date(), lastStatus: testRes.status });
+      res.json({ status: testRes.status, ok: testRes.ok });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ APP SEO ============
+  app.get("/api/seo/:publishedAppId", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.publishedAppId);
+      const appRecord = await storage.getPublishedAppById(id);
+      if (!appRecord || appRecord.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      res.json(await storage.getAppSeo(id) || {});
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.put("/api/seo/:publishedAppId", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.publishedAppId);
+      const appRecord = await storage.getPublishedAppById(id);
+      if (!appRecord || appRecord.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      res.json(await storage.upsertAppSeo({ publishedAppId: id, ...req.body }));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/seo/:publishedAppId/analyze", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.publishedAppId);
+      const appRecord = await storage.getPublishedAppById(id);
+      if (!appRecord || appRecord.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      const seo = await storage.getAppSeo(id);
+      const htmlSnippet = appRecord.htmlContent.slice(0, 4000);
+      const prompt = `You are an SEO expert. Analyze this webpage and return a JSON object with exactly these fields:
+{"score":number,"issues":[{"issue":string,"fix":string}],"suggestedTitle":string,"suggestedDescription":string,"suggestedKeywords":string}
+
+App: ${appRecord.title}
+Current SEO settings: ${JSON.stringify(seo || {})}
+HTML excerpt: ${htmlSnippet}
+
+Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 chars, keywords comma-separated.`;
+      const { OpenAI } = await import("openai");
+      const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const completion = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+      });
+      res.json(JSON.parse(completion.choices[0].message.content || "{}"));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
