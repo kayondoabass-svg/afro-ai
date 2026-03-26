@@ -43,6 +43,8 @@ import {
   Undo2,
   Gamepad2,
   Swords,
+  ShieldAlert,
+  Key,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -76,6 +78,27 @@ interface ConversationWithMessages extends Conversation {
 function extractHtmlCode(text: string): string | null {
   const match = text.match(/```html\s*\n([\s\S]*?)```/);
   return match ? match[1].trim() : null;
+}
+
+function looksLikeSecret(text: string): boolean {
+  if (text.length < 16) return false;
+  const patterns = [
+    /\bsk[-_][A-Za-z0-9]{20,}/,                        // OpenAI / Stripe secret key
+    /\bpk[-_][A-Za-z0-9]{20,}/,                        // Stripe publishable key
+    /\bAIza[A-Za-z0-9_-]{20,}/,                        // Google API key
+    /\bAKIA[A-Z0-9]{16}/,                              // AWS Access Key
+    /\bghp_[A-Za-z0-9]{36}/,                           // GitHub personal access token
+    /\bghs_[A-Za-z0-9]{36}/,                           // GitHub server token
+    /\bgho_[A-Za-z0-9]{36}/,                           // GitHub OAuth token
+    /\bxoxb-[0-9]+-[0-9A-Za-z-]+/,                    // Slack Bot token
+    /\bxoxp-[0-9]+-[0-9A-Za-z-]+/,                    // Slack User token
+    /\beya[A-Za-z0-9_-]{40,}/,                         // JWT access token
+    /Bearer\s+[A-Za-z0-9_.~+/=-]{20,}/i,              // Bearer token
+    /\bSG\.[A-Za-z0-9_-]{22,}\.[A-Za-z0-9_-]{43,}/,   // SendGrid API key
+    /[A-Fa-f0-9]{32,}/,                                // Long hex string (API keys, secrets)
+    /[A-Za-z0-9+/]{40,}={0,2}/,                        // Base64 encoded secret
+  ];
+  return patterns.some(p => p.test(text));
 }
 
 function extractAllCodeBlocks(text: string): string | null {
@@ -732,6 +755,41 @@ export default function AIChatPage() {
   const [analyzingImage, setAnalyzingImage] = useState(false);
   const [imageAnalysisResult, setImageAnalysisResult] = useState<string | null>(null);
   const [analysisImagePreview, setAnalysisImagePreview] = useState<string | null>(null);
+  const [secretWarningDismissed, setSecretWarningDismissed] = useState(false);
+
+  function handleInputChange(val: string) {
+    setInput(val);
+    if (!looksLikeSecret(val)) setSecretWarningDismissed(false);
+  }
+
+  const showSecretWarning = looksLikeSecret(input) && !secretWarningDismissed;
+
+  const SecretWarningBanner = (
+    <div className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-950/60 px-4 py-3 text-sm animate-in fade-in slide-in-from-bottom-2 duration-200" data-testid="banner-secret-warning">
+      <ShieldAlert className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-amber-300 flex items-center gap-1.5"><Key className="w-3.5 h-3.5" /> Security Warning</p>
+        <p className="text-amber-200/80 text-xs mt-0.5 leading-relaxed">This looks like a secret or API key. Never paste credentials directly in chat. Store it securely in <strong>API Integrations</strong>.</p>
+        <div className="flex gap-2 mt-2">
+          <button
+            onClick={() => { setLocation("/integrations"); setSecretWarningDismissed(true); }}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 transition-colors"
+            data-testid="button-secret-add-integration"
+          >
+            <Key className="w-3 h-3" /> Add to Integrations
+          </button>
+          <button
+            onClick={() => setSecretWarningDismissed(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-muted/50 border border-border text-muted-foreground hover:bg-muted transition-colors"
+            data-testid="button-secret-dismiss"
+          >
+            <X className="w-3 h-3" /> Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1648,17 +1706,20 @@ export default function AIChatPage() {
                         <ScanSearch className="w-4 h-4" />
                       )}
                     </Button>
-                    <Textarea
-                      ref={textareaRef}
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder={t("chat.placeholder")}
-                      disabled={isStreaming}
-                      className="resize-none min-h-[44px] max-h-[120px]"
-                      rows={1}
-                      data-testid="input-chat-message"
-                    />
+                    <div className="flex-1 flex flex-col gap-1.5">
+                      {showSecretWarning && SecretWarningBanner}
+                      <Textarea
+                        ref={textareaRef}
+                        value={input}
+                        onChange={(e) => handleInputChange(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder={t("chat.placeholder")}
+                        disabled={isStreaming}
+                        className="resize-none min-h-[44px] max-h-[120px]"
+                        rows={1}
+                        data-testid="input-chat-message"
+                      />
+                    </div>
                     <Button
                       onClick={handleSend}
                       disabled={(!input.trim() && pendingAttachments.length === 0) || isStreaming}
@@ -1709,9 +1770,10 @@ export default function AIChatPage() {
               {/* Main input box */}
               <div className="w-full max-w-xl">
                 <div className="rounded-2xl border border-border/60 bg-card/50 backdrop-blur-sm p-4 space-y-3 shadow-lg">
+                  {showSecretWarning && SecretWarningBanner}
                   <Textarea
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(e) => handleInputChange(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
