@@ -70,18 +70,33 @@ export async function registerRoutes(
 
   // Serve SEO files explicitly so crawlers always find them
   app.get("/robots.txt", (_req, res) => {
-    res.type("text/plain").send("User-agent: *\nAllow: /\n\nSitemap: https://afroaigroup.com/sitemap.xml\n");
+    res.type("text/plain").send(
+      "User-agent: *\n" +
+      "Allow: /\n" +
+      "Disallow: /api/\n" +
+      "Disallow: /admin-command\n" +
+      "Disallow: /founder-dashboard\n" +
+      "Disallow: /dashboard\n" +
+      "Disallow: /chat\n" +
+      "Disallow: /settings\n\n" +
+      "Sitemap: https://afroaigroup.com/sitemap.xml\n"
+    );
   });
   app.get("/sitemap.xml", (_req, res) => {
+    const today = new Date().toISOString().split("T")[0];
     res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://afroaigroup.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://afroaigroup.com/pricing</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>
-  <url><loc>https://afroaigroup.com/templates</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://afroaigroup.com/marketplace</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
-  <url><loc>https://afroaigroup.com/domains</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://afroaigroup.com/blog</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://afroaigroup.com/login</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://afroaigroup.com/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://afroaigroup.com/pricing</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://afroaigroup.com/templates</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/marketplace</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/domains</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://afroaigroup.com/blog</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://afroaigroup.com/affiliate</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://afroaigroup.com/about</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://afroaigroup.com/contact</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://afroaigroup.com/privacy</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://afroaigroup.com/terms</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
 </urlset>`);
   });
 

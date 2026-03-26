@@ -49,9 +49,16 @@ export async function setupVite(server: Server, app: Express) {
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
       let page = await vite.transformIndexHtml(url, template);
-      const canonicalUrl = `https://afroaigroup.com${req.path === "/" ? "/" : req.path}`;
-      page = page.replace(/(<link rel="canonical" href=")[^"]*(")/,`$1${canonicalUrl}$2`);
-      page = page.replace(/(<meta property="og:url" content=")[^"]*(")/,`$1${canonicalUrl}$2`);
+      // Extract just the pathname (no query string)
+      const pathname = req.originalUrl.split("?")[0] || "/";
+      const canonicalUrl = `https://afroaigroup.com${pathname}`;
+      // Remove any existing canonical/og:url tags (handles any attribute ordering)
+      page = page.replace(/<link[^>]*rel=["']canonical["'][^>]*>/gi, "");
+      page = page.replace(/<link[^>]*rel=canonical[^>]*>/gi, "");
+      page = page.replace(/<meta[^>]*property=["']og:url["'][^>]*>/gi, "");
+      // Inject fresh canonical + og:url before </head>
+      const injection = `  <link rel="canonical" href="${canonicalUrl}" />\n  <meta property="og:url" content="${canonicalUrl}" />\n`;
+      page = page.replace("</head>", `${injection}</head>`);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);

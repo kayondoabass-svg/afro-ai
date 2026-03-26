@@ -16,15 +16,16 @@ export function serveStatic(app: Express) {
   app.use("/{*path}", (req, res) => {
     const indexPath = path.resolve(distPath, "index.html");
     let html = fs.readFileSync(indexPath, "utf-8");
-    const canonicalUrl = `https://afroaigroup.com${req.path === "/" ? "/" : req.path}`;
-    html = html.replace(
-      /(<link rel="canonical" href=")[^"]*(")/,
-      `$1${canonicalUrl}$2`
-    );
-    html = html.replace(
-      /(<meta property="og:url" content=")[^"]*(")/,
-      `$1${canonicalUrl}$2`
-    );
+    // Extract just the pathname (no query string)
+    const pathname = (req.originalUrl || req.path || "/").split("?")[0] || "/";
+    const canonicalUrl = `https://afroaigroup.com${pathname}`;
+    // Remove any existing canonical/og:url tags (handles any attribute ordering)
+    html = html.replace(/<link[^>]*rel=["']canonical["'][^>]*>/gi, "");
+    html = html.replace(/<link[^>]*rel=canonical[^>]*>/gi, "");
+    html = html.replace(/<meta[^>]*property=["']og:url["'][^>]*>/gi, "");
+    // Inject fresh canonical + og:url before </head>
+    const injection = `  <link rel="canonical" href="${canonicalUrl}" />\n  <meta property="og:url" content="${canonicalUrl}" />\n`;
+    html = html.replace("</head>", `${injection}</head>`);
     res.set("Content-Type", "text/html").send(html);
   });
 }
