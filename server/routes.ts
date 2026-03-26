@@ -990,21 +990,28 @@ export async function registerRoutes(
 
       const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
 
-      const order = await submitOrder({
-        id: merchantReference,
-        currency,
-        amount,
-        description: `Afro AI ${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan Subscription`,
-        callback_url: `${baseUrl}/api/pesapal/callback`,
-        notification_id: cachedIpnId,
-        billing_address: {
-          email_address: userEmail,
-          phone_number: phoneNumber || undefined,
-          country_code: countryCode || undefined,
-          first_name: firstName || undefined,
-          last_name: lastName || undefined,
-        },
-      });
+      let order;
+      try {
+        order = await submitOrder({
+          id: merchantReference,
+          currency,
+          amount,
+          description: `Afro AI ${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan Subscription`,
+          callback_url: `${baseUrl}/api/pesapal/callback`,
+          notification_id: cachedIpnId,
+          billing_address: {
+            email_address: userEmail,
+            phone_number: phoneNumber || undefined,
+            country_code: countryCode || undefined,
+            first_name: firstName || undefined,
+            last_name: lastName || undefined,
+          },
+        });
+      } catch (orderErr: any) {
+        console.error("[Subscribe] Pesapal order failed, clearing cached IPN:", orderErr.message);
+        cachedIpnId = null; // force fresh IPN registration on next attempt
+        throw orderErr;
+      }
 
       await storage.createPayment({
         userId,
@@ -1072,18 +1079,30 @@ export async function registerRoutes(
       }
       const baseUrl = process.env.BASE_URL || `https://${req.headers.host}`;
       if (!cachedIpnId) {
-        cachedIpnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`);
+        try {
+          cachedIpnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`);
+        } catch (err) {
+          console.error("[PAYG] Failed to register IPN URL:", err);
+          return res.status(500).json({ message: "Payment service configuration error" });
+        }
       }
       const merchantReference = `payg-${pack}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
-      const order = await submitOrder({
-        id: merchantReference,
-        currency,
-        amount,
-        description: `Afro AI Credits — $${usdAmount} pack (${credits / 100} AI generations)`,
-        callback_url: `${baseUrl}/api/pesapal/callback`,
-        notification_id: cachedIpnId,
-        billing_address: { email_address: userEmail },
-      });
+      let order;
+      try {
+        order = await submitOrder({
+          id: merchantReference,
+          currency,
+          amount,
+          description: `Afro AI Credits — $${usdAmount} pack (${credits / 100} AI generations)`,
+          callback_url: `${baseUrl}/api/pesapal/callback`,
+          notification_id: cachedIpnId,
+          billing_address: { email_address: userEmail },
+        });
+      } catch (orderErr: any) {
+        console.error("[PAYG] Pesapal order failed, clearing cached IPN:", orderErr.message);
+        cachedIpnId = null;
+        throw orderErr;
+      }
       await storage.createPayment({
         userId,
         plan: `payg-${pack}`,

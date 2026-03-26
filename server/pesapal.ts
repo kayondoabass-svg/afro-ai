@@ -114,14 +114,23 @@ export async function registerIpnUrl(ipnUrl: string): Promise<string> {
     }),
   });
 
+  const rawText = await res.text();
+  console.log(`[Pesapal] registerIPN status=${res.status} body=${rawText}`);
+
   if (!res.ok) {
-    throw new Error(`Pesapal IPN registration failed with status ${res.status}`);
+    throw new Error(`Pesapal IPN registration failed with status ${res.status}: ${rawText}`);
   }
 
-  const data = (await res.json()) as PesapalIpnRegistration;
+  let data: any;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error(`Pesapal IPN returned invalid JSON: ${rawText}`);
+  }
 
   if (data.error) {
-    throw new Error(`Pesapal IPN registration error: ${data.error}`);
+    const errMsg = typeof data.error === "object" ? JSON.stringify(data.error) : String(data.error);
+    throw new Error(`Pesapal IPN registration error: ${errMsg}`);
   }
 
   return data.ipn_id;
@@ -140,17 +149,30 @@ export async function submitOrder(order: PesapalOrderRequest): Promise<PesapalOr
     body: JSON.stringify(order),
   });
 
+  const rawText = await res.text();
+  console.log(`[Pesapal] submitOrder status=${res.status} body=${rawText}`);
+
   if (!res.ok) {
-    throw new Error(`Pesapal order submission failed with status ${res.status}`);
+    throw new Error(`Pesapal order submission failed with status ${res.status}: ${rawText}`);
   }
 
-  const data = (await res.json()) as PesapalOrderResponse;
+  let data: any;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error(`Pesapal returned invalid JSON: ${rawText}`);
+  }
 
   if (data.error) {
-    throw new Error(`Pesapal order error: ${data.error}`);
+    const errMsg = typeof data.error === "object" ? JSON.stringify(data.error) : String(data.error);
+    throw new Error(`Pesapal order error: ${errMsg}`);
   }
 
-  return data;
+  if (!data.redirect_url) {
+    throw new Error(`Pesapal order missing redirect_url. Response: ${rawText}`);
+  }
+
+  return data as PesapalOrderResponse;
 }
 
 export async function getTransactionStatus(orderTrackingId: string): Promise<PesapalTransactionStatus> {
