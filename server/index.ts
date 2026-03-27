@@ -85,6 +85,15 @@ httpServer.listen(
 (async () => {
   await registerRoutes(httpServer, app);
 
+  // Verify Pesapal credentials on startup
+  try {
+    const { getAuthToken } = await import("./pesapal");
+    await getAuthToken();
+    console.log("[Pesapal] ✓ Credentials verified successfully");
+  } catch (e: any) {
+    console.error("[Pesapal] ✗ Credential check failed:", e.message);
+  }
+
   // Run free-plan expiry check on startup and every 6 hours
   const runExpiryCheck = async () => {
     try {

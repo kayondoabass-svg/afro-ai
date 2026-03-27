@@ -794,6 +794,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/test-pesapal", isFounder, async (req, res) => {
+    try {
+      const { getAuthToken } = await import("./pesapal");
+      const token = await getAuthToken();
+      res.json({ success: true, message: "Pesapal credentials verified successfully", tokenPreview: token.slice(0, 20) + "..." });
+    } catch (e: any) {
+      res.status(400).json({ success: false, message: e.message });
+    }
+  });
+
   app.get("/api/admin/stats", isFounder, async (req, res) => {
     try {
       const stats = await storage.getPlatformStats();
