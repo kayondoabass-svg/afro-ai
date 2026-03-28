@@ -179,7 +179,7 @@ export default function ChatbotLandingPage() {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button
               size="lg"
-              onClick={() => navigate("/login")}
+              onClick={() => navigate("/chatbot-checkout?plan=starter")}
               className="bg-primary text-primary-foreground gap-2 text-base px-8"
               data-testid="button-hero-cta"
             >
@@ -188,7 +188,7 @@ export default function ChatbotLandingPage() {
             <Button
               size="lg"
               variant="outline"
-              onClick={() => navigate("/login")}
+              onClick={() => navigate("/chatbot-checkout?plan=business")}
               className="gap-2 text-base px-8"
               data-testid="button-hero-secondary"
             >
@@ -393,7 +393,7 @@ export default function ChatbotLandingPage() {
                   <Button
                     className={`w-full mb-6 ${plan.ctaVariant === "default" ? "bg-primary text-primary-foreground" : ""}`}
                     variant={plan.ctaVariant}
-                    onClick={() => navigate("/login")}
+                    onClick={() => navigate(`/chatbot-checkout?plan=${plan.name.toLowerCase()}&billing=${billingAnnual ? "annual" : "monthly"}`)}
                     data-testid={`button-plan-${plan.name.toLowerCase()}`}
                   >
                     {plan.cta} <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
@@ -575,7 +575,7 @@ export default function ChatbotLandingPage() {
               </p>
               <Button
                 size="lg"
-                onClick={() => navigate("/login")}
+                onClick={() => navigate("/chatbot-checkout?plan=starter")}
                 className="bg-primary text-primary-foreground gap-2 text-base px-10"
                 data-testid="button-final-cta"
               >

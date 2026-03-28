@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,7 +44,9 @@ const EMBED_SNIPPET = (apiKey: string) =>
 
 export default function ChatbotsPage() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [showCreate, setShowCreate] = useState(false);
+  const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
   const [selected, setSelected] = useState<ChatbotWidget | null>(null);
   const [showKey, setShowKey] = useState<Record<number, boolean>>({});
   const [copied, setCopied] = useState<string | null>(null);
@@ -57,6 +60,16 @@ export default function ChatbotsPage() {
   const [omitCategories, setOmitCategories] = useState<string[]>([]);
   const [showOmitList, setShowOmitList] = useState(false);
   const [createdWidget, setCreatedWidget] = useState<ChatbotWidget | null>(null);
+
+  // Welcome flow: detect ?welcome=true after payment
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("welcome") === "true") {
+      setShowWelcomeBanner(true);
+      setShowCreate(true);
+      window.history.replaceState({}, "", "/chatbots");
+    }
+  }, []);
 
   const toggleOmit = (id: string) =>
     setOmitCategories(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -82,8 +95,15 @@ export default function ChatbotsPage() {
 
   const { data: widgets = [], isLoading } = useQuery<ChatbotWidget[]>({ queryKey: ["/api/chatbots"] });
 
+  const { data: subscription } = useQuery({ queryKey: ["/api/chatbot-subscription"] });
+
   const createMutation = useMutation({
-    mutationFn: (data: typeof form) => apiRequest("POST", "/api/chatbots", data).then(r => r.json()),
+    mutationFn: async (data: typeof form) => {
+      const r = await apiRequest("POST", "/api/chatbots", data);
+      const json = await r.json();
+      if (!r.ok) throw json;
+      return json;
+    },
     onSuccess: (w) => {
       queryClient.setQueryData(["/api/chatbots"], (old: any) => Array.isArray(old) ? [w, ...old] : [w]);
       queryClient.invalidateQueries({ queryKey: ["/api/chatbots"] });
@@ -93,7 +113,18 @@ export default function ChatbotsPage() {
       setShowOmitList(false);
       setForm({ name: "", websiteUrl: "", knowledgeBase: "", primaryColor: "#D4A017", greeting: "Hi! How can I help you today?", widgetTitle: "AI Assistant", placeholder: "Type your question..." });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: any) => {
+      if (e.message === "SUBSCRIPTION_REQUIRED" || e.message === "BOT_LIMIT_REACHED") {
+        toast({
+          title: "Plan limit reached",
+          description: `Upgrade your chatbot plan to create more bots.`,
+          variant: "destructive",
+        });
+        setTimeout(() => navigate("/chatbot-api#pricing"), 1500);
+      } else {
+        toast({ title: "Error", description: e.message || "Failed to create chatbot", variant: "destructive" });
+      }
+    },
   });
 
   const updateMutation = useMutation({
@@ -121,8 +152,24 @@ export default function ChatbotsPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const sub = subscription as any;
+  const planLabel = sub ? sub.plan?.replace("chatbot-", "").charAt(0).toUpperCase() + sub.plan?.replace("chatbot-", "").slice(1) : null;
+
   return (
     <div className="flex flex-col h-screen bg-background">
+      {/* Welcome banner (shown after payment redirect) */}
+      {showWelcomeBanner && (
+        <div className="bg-green-500/10 border-b border-green-500/30 px-6 py-3 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-green-400 flex-shrink-0" />
+            <p className="text-sm font-medium text-green-400">
+              Payment successful! Your chatbot plan is active. Create your first bot below.
+            </p>
+          </div>
+          <button onClick={() => setShowWelcomeBanner(false)} className="text-green-400/60 hover:text-green-400 text-lg leading-none">×</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-border/60 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -130,13 +177,27 @@ export default function ChatbotsPage() {
             <Bot className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-bold">Chatbot API</h1>
-            <p className="text-xs text-muted-foreground">Embed AI customer service on any website</p>
+            <h1 className="text-lg font-bold flex items-center gap-2">
+              Chatbot API
+              {planLabel && (
+                <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30 capitalize">{planLabel}</Badge>
+              )}
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              {sub ? `${sub.repliesLimit - sub.repliesUsed} AI replies remaining this month` : "Embed AI customer service on any website"}
+            </p>
           </div>
         </div>
-        <Button onClick={() => setShowCreate(true)} size="sm" className="gap-2" data-testid="button-create-chatbot">
-          <Plus className="w-4 h-4" /> New Chatbot
-        </Button>
+        <div className="flex items-center gap-2">
+          {!sub && (
+            <Button variant="outline" size="sm" onClick={() => navigate("/chatbot-api#pricing")} className="gap-1.5 text-xs border-primary/40 text-primary hover:bg-primary/10" data-testid="button-upgrade-plan">
+              <Zap className="w-3.5 h-3.5" /> Upgrade Plan
+            </Button>
+          )}
+          <Button onClick={() => setShowCreate(true)} size="sm" className="gap-2" data-testid="button-create-chatbot">
+            <Plus className="w-4 h-4" /> New Chatbot
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto min-h-0">

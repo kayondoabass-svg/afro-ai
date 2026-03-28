@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -67,6 +67,11 @@ export interface IStorage {
   getWidgetConversation(widgetId: number, sessionId: string): Promise<WidgetConversation | undefined>;
   upsertWidgetConversation(widgetId: number, sessionId: string, messages: any[]): Promise<WidgetConversation>;
   getWidgetConversations(widgetId: number): Promise<WidgetConversation[]>;
+  // Chatbot Subscriptions
+  getChatbotSubscription(userId: string): Promise<ChatbotSubscription | undefined>;
+  createChatbotSubscription(data: InsertChatbotSubscription): Promise<ChatbotSubscription>;
+  updateChatbotSubscription(userId: string, data: Partial<InsertChatbotSubscription>): Promise<ChatbotSubscription>;
+  incrementChatbotRepliesUsed(userId: string): Promise<void>;
   getUser(userId: string): Promise<any | undefined>;
   // PAYG credit management
   addPaygBalance(userId: string, cents: number): Promise<void>;
@@ -895,6 +900,31 @@ class DatabaseStorage implements IStorage {
   }
   async getWidgetConversations(widgetId: number): Promise<WidgetConversation[]> {
     return db.select().from(widgetConversations).where(eq(widgetConversations.widgetId, widgetId)).orderBy(desc(widgetConversations.createdAt));
+  }
+
+  async getChatbotSubscription(userId: string): Promise<ChatbotSubscription | undefined> {
+    const [sub] = await db.select().from(chatbotSubscriptions)
+      .where(and(eq(chatbotSubscriptions.userId, userId), eq(chatbotSubscriptions.status, "active")))
+      .orderBy(desc(chatbotSubscriptions.createdAt)).limit(1);
+    return sub;
+  }
+
+  async createChatbotSubscription(data: InsertChatbotSubscription): Promise<ChatbotSubscription> {
+    const [sub] = await db.insert(chatbotSubscriptions).values(data).returning();
+    return sub;
+  }
+
+  async updateChatbotSubscription(userId: string, data: Partial<InsertChatbotSubscription>): Promise<ChatbotSubscription> {
+    const [sub] = await db.update(chatbotSubscriptions).set(data)
+      .where(and(eq(chatbotSubscriptions.userId, userId), eq(chatbotSubscriptions.status, "active")))
+      .returning();
+    return sub;
+  }
+
+  async incrementChatbotRepliesUsed(userId: string): Promise<void> {
+    await db.update(chatbotSubscriptions)
+      .set({ repliesUsed: sql`${chatbotSubscriptions.repliesUsed} + 1` })
+      .where(and(eq(chatbotSubscriptions.userId, userId), eq(chatbotSubscriptions.status, "active")));
   }
 }
 

@@ -378,3 +378,20 @@ export const widgetConversations = pgTable("widget_conversations", {
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 export type WidgetConversation = typeof widgetConversations.$inferSelect;
+
+// ============ CHATBOT SUBSCRIPTIONS ============
+export const chatbotSubscriptions = pgTable("chatbot_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  plan: varchar("plan").notNull(), // starter | business | agency
+  status: varchar("status").notNull().default("active"), // active | cancelled
+  repliesUsed: integer("replies_used").notNull().default(0),
+  repliesLimit: integer("replies_limit").notNull().default(1000),
+  botsLimit: integer("bots_limit").notNull().default(1), // -1 = unlimited
+  activatedAt: timestamp("activated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertChatbotSubscriptionSchema = createInsertSchema(chatbotSubscriptions).omit({ id: true, createdAt: true });
+export type ChatbotSubscription = typeof chatbotSubscriptions.$inferSelect;
+export type InsertChatbotSubscription = z.infer<typeof insertChatbotSubscriptionSchema>;

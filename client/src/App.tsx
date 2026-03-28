@@ -44,6 +44,7 @@ import SeoToolsPage from "@/pages/seo-tools";
 import WebhooksPage from "@/pages/webhooks";
 import ChatbotsPage from "@/pages/chatbots";
 import ChatbotLandingPage from "@/pages/chatbot-landing";
+import ChatbotCheckoutPage from "@/pages/chatbot-checkout";
 import ArticlesPage from "@/pages/articles";
 import ArticlePage from "@/pages/article";
 import NotFound from "@/pages/not-found";
@@ -93,6 +94,7 @@ function AuthenticatedLayout() {
               <Route path="/webhooks" component={WebhooksPage} />
               <Route path="/chatbots" component={ChatbotsPage} />
               <Route path="/chatbot-api" component={ChatbotLandingPage} />
+              <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
               <Route path="/articles/:slug" component={ArticlePage} />
               <Route path="/articles" component={ArticlesPage} />
               <Route path="/about" component={AboutPage} />
@@ -136,6 +138,7 @@ function AppRouter() {
         <Route path="/cookies" component={CookiePolicyPage} />
         <Route path="/refund-policy" component={RefundPolicyPage} />
         <Route path="/chatbot-api" component={ChatbotLandingPage} />
+        <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
         <Route path="/articles/:slug" component={ArticlePage} />
         <Route path="/articles" component={ArticlesPage} />
         <Route component={LandingPage} />

@@ -1049,7 +1049,12 @@ export async function registerRoutes(
 
   let cachedIpnId: string | null = null;
 
-  const PLAN_PRICES_USD: Record<string, number> = { pro: 15, business: 29.90 };
+  const PLAN_PRICES_USD: Record<string, number> = { pro: 15, business: 29.90, "chatbot-starter": 19, "chatbot-business": 49, "chatbot-agency": 99 };
+  const CHATBOT_PLAN_CONFIG: Record<string, { repliesLimit: number; botsLimit: number }> = {
+    "chatbot-starter":  { repliesLimit: 1000,  botsLimit: 1 },
+    "chatbot-business": { repliesLimit: 5000,  botsLimit: 5 },
+    "chatbot-agency":   { repliesLimit: 20000, botsLimit: -1 },
+  };
   const PAYG_PACK_PRICES_USD: Record<string, number> = { pack5: 5, pack10: 10, pack20: 20, pack50: 50 };
   const PAYG_PACK_CREDITS: Record<string, number> = { pack5: 500, pack10: 1000, pack20: 2000, pack50: 5000 };
   // Currencies confirmed supported by Pesapal production API
@@ -1064,9 +1069,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Plan is required" });
       }
 
-      const validPlans = ["pro", "business"];
+      const validPlans = ["pro", "business", "chatbot-starter", "chatbot-business", "chatbot-agency"];
       if (!validPlans.includes(plan)) {
-        return res.status(400).json({ message: "Invalid plan. Must be 'pro' or 'business'" });
+        return res.status(400).json({ message: "Invalid plan" });
       }
 
       const userEmail = req.user.claims.email || req.user.claims.preferred_username;
@@ -1267,6 +1272,21 @@ export async function registerRoutes(
     const userId = existingPayment.userId;
     const plan = existingPayment.plan;
 
+    // Chatbot subscription — activate or upgrade chatbot plan
+    if (plan.startsWith("chatbot-")) {
+      const cfg = CHATBOT_PLAN_CONFIG[plan];
+      if (cfg) {
+        const existing = await storage.getChatbotSubscription(userId);
+        if (existing) {
+          await storage.updateChatbotSubscription(userId, { plan, repliesLimit: cfg.repliesLimit, botsLimit: cfg.botsLimit, repliesUsed: 0 });
+        } else {
+          await storage.createChatbotSubscription({ userId, plan, repliesLimit: cfg.repliesLimit, botsLimit: cfg.botsLimit, status: "active", repliesUsed: 0 });
+        }
+        console.log(`User ${userId} activated chatbot plan ${plan}`);
+      }
+      return true;
+    }
+
     // PAYG credit pack — add credits, don't change plan
     if (plan.startsWith("payg-")) {
       const packKey = plan.replace("payg-", "");
@@ -1353,7 +1373,11 @@ export async function registerRoutes(
       if (isPaymentComplete(status)) {
         await processCompletedPayment(merchantRef, status);
         const payment = await storage.getPaymentByMerchantRef(merchantRef);
-        return res.redirect(`/?payment=success&plan=${encodeURIComponent(payment?.plan || "pro")}`);
+        const paidPlan = payment?.plan || "pro";
+        if (paidPlan.startsWith("chatbot-")) {
+          return res.redirect(`/chatbots?welcome=true&plan=${encodeURIComponent(paidPlan)}`);
+        }
+        return res.redirect(`/?payment=success&plan=${encodeURIComponent(paidPlan)}`);
       } else if (isPaymentFailed(status)) {
         const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
         if (existingPayment && existingPayment.status === "pending") {
@@ -2103,6 +2127,14 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
   });
 
   // Auth-protected widget management routes
+  // GET chatbot subscription status
+  app.get("/api/chatbot-subscription", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    const sub = await storage.getChatbotSubscription(userId);
+    res.json(sub || null);
+  });
+
   app.get("/api/chatbots", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     if (!userId) return res.status(401).json({ message: "Not authenticated" });
@@ -2116,6 +2148,17 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       if (!userId) return res.status(401).json({ message: "User not authenticated" });
       const { name, websiteUrl, knowledgeBase, primaryColor, greeting, widgetTitle, placeholder } = req.body;
       if (!name) return res.status(400).json({ message: "Name required" });
+      // Enforce chatbot subscription limits
+      const sub = await storage.getChatbotSubscription(userId);
+      const existingWidgets = await storage.getChatbotWidgetsByUser(userId);
+      if (!sub) {
+        // Allow 1 chatbot without subscription (for trial/testing)
+        if (existingWidgets.length >= 1) {
+          return res.status(403).json({ message: "SUBSCRIPTION_REQUIRED", limit: 1 });
+        }
+      } else if (sub.botsLimit !== -1 && existingWidgets.length >= sub.botsLimit) {
+        return res.status(403).json({ message: "BOT_LIMIT_REACHED", limit: sub.botsLimit, plan: sub.plan });
+      }
       // Generate a collision-safe unique API key (retry up to 5 times)
       let apiKey = "";
       for (let i = 0; i < 5; i++) {
