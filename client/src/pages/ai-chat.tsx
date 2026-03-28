@@ -653,7 +653,7 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify, onShowHistory, historyCount }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -666,6 +666,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   onVerify?: () => void;
   onShowHistory?: () => void;
   historyCount?: number;
+  onAddAuth?: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
@@ -752,6 +753,19 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
               <Smartphone className="w-3.5 h-3.5" />
             </Button>
           </div>
+          {onAddAuth && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onAddAuth}
+              className="gap-1 border-border/60 hover:border-amber-400/60 hover:text-amber-500"
+              title="Add user login to your app with Firebase Authentication"
+              data-testid="button-add-auth"
+            >
+              <Lock className="w-3 h-3" />
+              <span className="hidden sm:inline">Add Login</span>
+            </Button>
+          )}
           {onShowHistory && (
             <Button
               size="sm"
@@ -2368,6 +2382,7 @@ export default function AIChatPage() {
               onAutoFix={handleAutoFix}
               onShowHistory={() => setShowHistoryPanel(true)}
               historyCount={appVersionsList?.length ?? 0}
+              onAddAuth={() => { setAuthStep(1); setShowAuthModal(true); }}
             />
           </div>
         )}
@@ -2484,6 +2499,124 @@ export default function AIChatPage() {
           onOpenChange={setShowPublishFromChat}
         />
       )}
+
+      {/* Auth Builder Modal */}
+      <Dialog open={showAuthModal} onOpenChange={(open) => { setShowAuthModal(open); if (!open) setAuthStep(1); }}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="w-5 h-5 text-amber-500" />
+              Add Login to Your App
+            </DialogTitle>
+            <DialogDescription>
+              Protect your app with real user authentication powered by Firebase — free and works instantly.
+            </DialogDescription>
+          </DialogHeader>
+
+          {authStep === 1 && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">App name (shown on login screen)</Label>
+                <Input
+                  value={authAppTitle}
+                  onChange={(e) => setAuthAppTitle(e.target.value)}
+                  placeholder="My Awesome App"
+                  data-testid="input-auth-app-title"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Authentication method</Label>
+                <div className="grid gap-2">
+                  {[
+                    { value: "google", icon: <svg className="w-4 h-4" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>, label: "Google Sign-In", desc: "One-click login — most popular & easiest for users" },
+                    { value: "email", icon: <Mail className="w-4 h-4 text-blue-500" />, label: "Email & Password", desc: "Traditional email/password with registration & forgot password" },
+                    { value: "both", icon: <UserCheck className="w-4 h-4 text-green-500" />, label: "Both (recommended)", desc: "Give users the choice of Google or email sign-in" },
+                  ].map(({ value, icon, label, desc }) => (
+                    <button
+                      key={value}
+                      onClick={() => setAuthType(value as "google" | "email" | "both")}
+                      className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${authType === value ? "border-amber-400/60 bg-amber-50/10" : "border-border/60 hover:border-border"}`}
+                      data-testid={`button-auth-type-${value}`}
+                    >
+                      <div className="mt-0.5 shrink-0">{icon}</div>
+                      <div>
+                        <div className="font-medium text-sm flex items-center gap-2">
+                          {label}
+                          {authType === value && <Check className="w-3.5 h-3.5 text-amber-500" />}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Button className="w-full gap-2" onClick={() => setAuthStep(2)} data-testid="button-auth-next">
+                Next: Set up Firebase
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+
+          {authStep === 2 && (
+            <div className="space-y-4 py-2">
+              {/* Firebase setup guide */}
+              <div className="rounded-xl border border-amber-400/30 bg-amber-50/5 p-4 space-y-3">
+                <div className="flex items-center gap-2 font-semibold text-sm text-amber-600 dark:text-amber-400">
+                  <KeyRound className="w-4 h-4" />
+                  How to get your Firebase config (free)
+                </div>
+                <ol className="space-y-2 text-sm text-muted-foreground">
+                  {[
+                    <>Go to <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">console.firebase.google.com</a> → Create a project</>,
+                    <>Click <strong>Add app</strong> → choose Web ({"</>"})</>,
+                    <>Under <strong>Authentication</strong> → Enable {authType === "google" ? "Google" : authType === "email" ? "Email/Password" : "Google + Email/Password"} providers</>,
+                    <>Go back to Project Settings → copy the <strong>firebaseConfig</strong> values below</>,
+                  ].map((step, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-bold">{i + 1}</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">API Key <span className="text-red-400">*</span></Label>
+                  <Input value={firebaseConfig.apiKey} onChange={(e) => setFirebaseConfig(f => ({ ...f, apiKey: e.target.value }))} placeholder="AIzaSy..." data-testid="input-firebase-api-key" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Auth Domain <span className="text-red-400">*</span></Label>
+                  <Input value={firebaseConfig.authDomain} onChange={(e) => setFirebaseConfig(f => ({ ...f, authDomain: e.target.value }))} placeholder="your-project.firebaseapp.com" data-testid="input-firebase-auth-domain" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Project ID <span className="text-red-400">*</span></Label>
+                  <Input value={firebaseConfig.projectId} onChange={(e) => setFirebaseConfig(f => ({ ...f, projectId: e.target.value }))} placeholder="your-project-id" data-testid="input-firebase-project-id" />
+                </div>
+              </div>
+
+              <div className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-3">
+                Your Firebase config is embedded directly into your app's code — it's never stored on Afro AI's servers. Firebase has a generous free tier.
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setAuthStep(1)} className="flex-1" data-testid="button-auth-back">Back</Button>
+                <Button
+                  className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
+                  onClick={handleInjectAuth}
+                  disabled={!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || injectingAuth}
+                  data-testid="button-inject-auth"
+                >
+                  {injectingAuth ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                  {injectingAuth ? "Adding login..." : "Add Login Now"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       <Dialog open={showImageAnalysis} onOpenChange={(open) => {
         setShowImageAnalysis(open);
         if (!open) {
