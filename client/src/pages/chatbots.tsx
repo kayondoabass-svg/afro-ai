@@ -421,6 +421,8 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
   const [kbScanning, setKbScanning] = useState(false);
   const [kbOmitCats, setKbOmitCats] = useState<string[]>([]);
   const [kbShowOmit, setKbShowOmit] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{ verified: boolean; message: string } | null>(null);
 
   const toggleKbOmit = (id: string) =>
     setKbOmitCats(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -442,6 +444,20 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
       toast({ title: "Scan failed", description: "Could not reach that URL.", variant: "destructive" });
     } finally {
       setKbScanning(false);
+    }
+  };
+
+  const verifyInstallation = async () => {
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const r = await apiRequest("POST", `/api/chatbots/${widget.id}/verify`, {});
+      const data = await r.json();
+      setVerifyResult(data);
+    } catch {
+      setVerifyResult({ verified: false, message: "Could not run verification. Please try again." });
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -529,6 +545,49 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
                 <p className="text-muted-foreground">Customers get AI answers 24/7</p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Verify Installation */}
+        <Card className={verifyResult ? (verifyResult.verified ? "border-green-500/40" : "border-red-500/40") : ""}>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold text-sm flex items-center gap-1.5">
+                  <ScanLine className="w-4 h-4 text-primary" /> Verify Installation
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {widget.websiteUrl
+                    ? `Check if the script is live on ${widget.websiteUrl}`
+                    : "Add a website URL in Settings, then verify"}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={verifying || !widget.websiteUrl}
+                onClick={verifyInstallation}
+                className="gap-1.5 flex-shrink-0 border-primary/40 text-primary hover:bg-primary/10"
+                data-testid="button-verify-installation"
+              >
+                {verifying
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Checking…</>
+                  : <><ScanLine className="w-3.5 h-3.5" />Verify Now</>}
+              </Button>
+            </div>
+            {verifyResult && (
+              <div className={`rounded-lg p-3 text-sm flex items-start gap-2.5 ${
+                verifyResult.verified
+                  ? "bg-green-500/10 border border-green-500/30 text-green-400"
+                  : "bg-red-500/10 border border-red-500/30 text-red-400"
+              }`}>
+                {verifyResult.verified
+                  ? <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  : <Loader2 className="w-4 h-4 flex-shrink-0 mt-0.5 hidden" />}
+                {!verifyResult.verified && <span className="text-red-400 font-bold flex-shrink-0">✕</span>}
+                <span className="text-xs leading-relaxed">{verifyResult.message}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -2190,6 +2190,44 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
     }
   });
 
+  // Verify chatbot script is installed on the website
+  app.post("/api/chatbots/:id/verify", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+      const id = parseInt(req.params.id);
+      const widget = await storage.getChatbotWidgetById(id);
+      if (!widget || widget.userId !== userId) return res.status(404).json({ message: "Not found" });
+      if (!widget.websiteUrl) return res.status(400).json({ verified: false, message: "No website URL set for this chatbot. Add one in Settings first." });
+
+      const target = widget.websiteUrl.startsWith("http") ? widget.websiteUrl : `https://${widget.websiteUrl}`;
+      let html = "";
+      try {
+        const r = await fetch(target, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; AfroAI-Verifier/1.0)" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!r.ok) return res.json({ verified: false, message: `Could not reach ${target} — got status ${r.status}. Make sure the URL is correct and publicly accessible.` });
+        html = await r.text();
+      } catch (fetchErr: any) {
+        return res.json({ verified: false, message: `Could not reach ${target}. The website may be offline or blocking bots. Try opening it in your browser first.` });
+      }
+
+      const hasKey = html.includes(widget.apiKey);
+      const hasWidgetJs = html.includes("widget.js");
+
+      if (hasKey) {
+        return res.json({ verified: true, message: `Script detected on ${target} — your chatbot is live and working!` });
+      } else if (hasWidgetJs) {
+        return res.json({ verified: false, message: `Found widget.js on ${target} but with a different API key. Make sure you pasted the correct script for this chatbot.` });
+      } else {
+        return res.json({ verified: false, message: `Script not found on ${target}. Paste the embed code before the </body> tag and save the page, then try again.` });
+      }
+    } catch (e: any) {
+      res.status(500).json({ verified: false, message: e.message || "Verification failed" });
+    }
+  });
+
   app.patch("/api/chatbots/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
