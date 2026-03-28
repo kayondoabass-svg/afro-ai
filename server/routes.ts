@@ -862,6 +862,13 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/payments", isFounder, async (_req, res) => {
+    try {
+      const allPayments = await storage.getAllPayments(200);
+      res.json(allPayments);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   app.get("/api/admin/stats", isFounder, async (req, res) => {
     try {
       const stats = await storage.getPlatformStats();

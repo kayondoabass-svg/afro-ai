@@ -31,6 +31,10 @@ import {
   BarChart3,
   CreditCard,
   Gift,
+  Receipt,
+  CircleCheck,
+  CircleX,
+  Clock,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -94,6 +98,12 @@ export default function FounderDashboardPage() {
   const { data: affiliateApps } = useQuery<any[]>({
     queryKey: ["/api/affiliate/applications"],
     enabled: isFounder,
+  });
+
+  const { data: allPayments = [] } = useQuery<any[]>({
+    queryKey: ["/api/admin/payments"],
+    enabled: isFounder,
+    refetchInterval: 30000,
   });
 
   const updateAffiliateMutation = useMutation({
@@ -492,6 +502,109 @@ export default function FounderDashboardPage() {
                   <p className="text-sm text-muted-foreground text-center py-8">No affiliate applications yet</p>
                 )}
               </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+
+        {/* Payment Activity Log (IPN Events) */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="flex items-center gap-2 p-4 border-b border-border/60">
+              <Receipt className="w-4 h-4 text-green-400" />
+              <h3 className="font-semibold text-sm">Payment Activity Log</h3>
+              <Badge variant="secondary" className="ml-auto text-xs">{allPayments.length} records</Badge>
+              <span className="text-xs text-muted-foreground">Auto-refreshes every 30s</span>
+            </div>
+
+            {/* Summary row */}
+            <div className="grid grid-cols-3 divide-x divide-border/50 border-b border-border/60">
+              {[
+                {
+                  label: "Successful",
+                  count: allPayments.filter(p => p.status === "completed").length,
+                  total: allPayments.filter(p => p.status === "completed").reduce((s: number, p: any) => s + parseFloat(p.amount || 0), 0),
+                  color: "text-green-400",
+                  icon: CircleCheck,
+                },
+                {
+                  label: "Pending",
+                  count: allPayments.filter(p => p.status === "pending").length,
+                  total: allPayments.filter(p => p.status === "pending").reduce((s: number, p: any) => s + parseFloat(p.amount || 0), 0),
+                  color: "text-yellow-400",
+                  icon: Clock,
+                },
+                {
+                  label: "Failed",
+                  count: allPayments.filter(p => p.status === "failed").length,
+                  total: allPayments.filter(p => p.status === "failed").reduce((s: number, p: any) => s + parseFloat(p.amount || 0), 0),
+                  color: "text-red-400",
+                  icon: CircleX,
+                },
+              ].map(s => (
+                <div key={s.label} className="p-4 space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <s.icon className={`w-3.5 h-3.5 ${s.color}`} />
+                    <span className="text-xs text-muted-foreground">{s.label}</span>
+                  </div>
+                  <p className={`text-xl font-bold ${s.color}`}>{s.count}</p>
+                  <p className="text-xs text-muted-foreground">${s.total.toFixed(2)} total</p>
+                </div>
+              ))}
+            </div>
+
+            <ScrollArea className="h-80">
+              {allPayments.length > 0 ? (
+                <div className="divide-y divide-border/40">
+                  {allPayments.map((p: any) => {
+                    const statusIcon = p.status === "completed"
+                      ? <CircleCheck className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+                      : p.status === "failed"
+                      ? <CircleX className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                      : <Clock className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />;
+                    const statusColor = p.status === "completed"
+                      ? "bg-green-500/10 text-green-400 border-green-500/20"
+                      : p.status === "failed"
+                      ? "bg-red-500/10 text-red-400 border-red-500/20"
+                      : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20";
+                    return (
+                      <div key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors" data-testid={`payment-row-${p.id}`}>
+                        {statusIcon}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{p.plan}</span>
+                            <Badge variant="outline" className={`text-xs ${statusColor}`}>{p.status}</Badge>
+                            {p.paymentMethod && <span className="text-xs text-muted-foreground hidden sm:block">{p.paymentMethod}</span>}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-muted-foreground font-mono truncate">{p.merchantReference}</span>
+                            {p.pesapalTrackingId && (
+                              <span className="text-xs text-muted-foreground hidden md:block">· Pesapal: {p.pesapalTrackingId}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-sm font-bold text-green-400">${parseFloat(p.amount || 0).toFixed(2)}</p>
+                          <p className="text-xs text-muted-foreground">{p.currency}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0 hidden sm:block">
+                          <p className="text-xs text-muted-foreground">
+                            {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {p.createdAt ? new Date(p.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-2 py-12 text-muted-foreground">
+                  <Receipt className="w-8 h-8 opacity-30" />
+                  <p className="text-sm">No payment records yet</p>
+                  <p className="text-xs">Payments appear here instantly when Pesapal sends an IPN notification</p>
+                </div>
+              )}
             </ScrollArea>
           </CardContent>
         </Card>
