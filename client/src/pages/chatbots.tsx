@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Bot, Plus, Trash2, Copy, Check, Code2, MessageSquare, Globe, Settings,
+  Bot, Plus, Trash2, Copy, Check, Code2, MessageSquare, Globe, Settings2 as Settings,
   Eye, EyeOff, Loader2, ExternalLink, Zap, Key, BookOpen, Palette, ScanLine, Sparkles
 } from "lucide-react";
 import type { ChatbotWidget } from "@shared/schema";
@@ -56,6 +56,7 @@ export default function ChatbotsPage() {
   const [scanning, setScanning] = useState(false);
   const [omitCategories, setOmitCategories] = useState<string[]>([]);
   const [showOmitList, setShowOmitList] = useState(false);
+  const [createdWidget, setCreatedWidget] = useState<ChatbotWidget | null>(null);
 
   const toggleOmit = (id: string) =>
     setOmitCategories(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -86,12 +87,11 @@ export default function ChatbotsPage() {
     onSuccess: (w) => {
       queryClient.setQueryData(["/api/chatbots"], (old: any) => Array.isArray(old) ? [w, ...old] : [w]);
       queryClient.invalidateQueries({ queryKey: ["/api/chatbots"] });
-      setShowCreate(false);
       setSelected(w);
+      setCreatedWidget(w);
       setOmitCategories([]);
       setShowOmitList(false);
       setForm({ name: "", websiteUrl: "", knowledgeBase: "", primaryColor: "#D4A017", greeting: "Hi! How can I help you today?", widgetTitle: "AI Assistant", placeholder: "Type your question..." });
-      toast({ title: "Chatbot created!", description: "Your API key is ready to embed." });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -234,8 +234,67 @@ export default function ChatbotsPage() {
       </div>
 
       {/* Create Dialog */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+      <Dialog open={showCreate || !!createdWidget} onOpenChange={(open) => { if (!open) { setShowCreate(false); setCreatedWidget(null); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-auto">
+          {createdWidget ? (
+            /* ── SUCCESS STEP ── */
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-green-400">
+                  <Check className="w-5 h-5" /> Chatbot Ready!
+                </DialogTitle>
+                <DialogDescription>Copy the code below and paste it into your website.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm space-y-1">
+                  <p className="font-semibold text-green-400">Your chatbot is live</p>
+                  <p className="text-xs text-muted-foreground">Paste one line of code into any website and the chat bubble appears instantly.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold">Step 1 — Copy this code</Label>
+                  <div className="relative">
+                    <pre className="bg-muted/60 rounded-xl p-4 text-xs font-mono overflow-x-auto border border-border/60 whitespace-pre-wrap break-all leading-relaxed pr-20">
+{EMBED_SNIPPET(createdWidget.apiKey)}
+                    </pre>
+                    <Button
+                      size="sm" variant="secondary"
+                      className="absolute top-2 right-2 gap-1.5 text-xs"
+                      onClick={() => copy(EMBED_SNIPPET(createdWidget.apiKey), "new-embed")}
+                      data-testid="button-copy-new-embed"
+                    >
+                      {copied === "new-embed" ? <><Check className="w-3.5 h-3.5 text-green-500" />Copied!</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border/50 bg-muted/20 p-4 space-y-2 text-xs">
+                  <p className="font-semibold text-sm">Step 2 — Paste into the website HTML</p>
+                  <p className="text-muted-foreground">Open the website's HTML file (or CMS editor) and paste the code just before the <code className="bg-muted px-1 rounded">&lt;/body&gt;</code> closing tag.</p>
+                  <div className="bg-muted/60 rounded-lg p-3 font-mono text-xs border border-border/40 space-y-0.5">
+                    <div className="text-muted-foreground">  &lt;p&gt;Your page content&lt;/p&gt;</div>
+                    <div className="text-green-400 font-semibold">  &lt;script src="afroaigroup.com/widget.js" data-key="..."&gt;&lt;/script&gt;  ← paste here</div>
+                    <div className="text-muted-foreground">&lt;/body&gt;</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs space-y-1">
+                  <p className="font-semibold text-amber-400">No developer? No problem.</p>
+                  <p className="text-muted-foreground">If you use WordPress, Wix, Squarespace, or Webflow — go to the site settings, find "Custom Code" or "Footer Code", and paste there.</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setCreatedWidget(null); setShowCreate(false); }}>
+                  Done
+                </Button>
+                <Button onClick={() => { setCreatedWidget(null); setShowCreate(false); }} className="gap-2">
+                  <Settings className="w-4 h-4" /> Open Settings
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+          /* ── CREATE FORM ── */
+          <>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Bot className="w-5 h-5 text-primary" /> Create New Chatbot</DialogTitle>
             <DialogDescription>Set up a chatbot and get an API key to embed on any website.</DialogDescription>
@@ -323,6 +382,8 @@ export default function ChatbotsPage() {
               {createMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating…</> : <><Key className="w-4 h-4 mr-2" />Generate API Key</>}
             </Button>
           </DialogFooter>
+          </>
+          )}
         </DialogContent>
       </Dialog>
 
