@@ -739,6 +739,62 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   );
 }
 
+function MarkdownText({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^### /.test(line)) {
+      elements.push(<h3 key={i} className="text-sm font-bold mt-3 mb-1 text-foreground">{renderInline(line.slice(4))}</h3>);
+    } else if (/^## /.test(line)) {
+      elements.push(<h2 key={i} className="text-base font-bold mt-3 mb-1 text-foreground">{renderInline(line.slice(3))}</h2>);
+    } else if (/^# /.test(line)) {
+      elements.push(<h1 key={i} className="text-lg font-bold mt-3 mb-1 text-foreground">{renderInline(line.slice(2))}</h1>);
+    } else if (/^---+$/.test(line.trim())) {
+      elements.push(<hr key={i} className="border-border/50 my-2" />);
+    } else if (/^[-*] /.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*] /.test(lines[i])) {
+        items.push(lines[i].slice(2));
+        i++;
+      }
+      elements.push(<ul key={`ul-${i}`} className="list-disc list-inside space-y-0.5 my-1 ml-2">{items.map((it, j) => <li key={j} className="text-sm">{renderInline(it)}</li>)}</ul>);
+      continue;
+    } else if (/^\d+\. /.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\. /.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+\. /, ""));
+        i++;
+      }
+      elements.push(<ol key={`ol-${i}`} className="list-decimal list-inside space-y-0.5 my-1 ml-2">{items.map((it, j) => <li key={j} className="text-sm">{renderInline(it)}</li>)}</ol>);
+      continue;
+    } else if (line.trim() === "") {
+      if (elements.length > 0) elements.push(<div key={`sp-${i}`} className="h-1" />);
+    } else {
+      elements.push(<p key={i} className="text-sm leading-relaxed break-words">{renderInline(line)}</p>);
+    }
+    i++;
+  }
+  return <div className="space-y-0.5">{elements}</div>;
+}
+
+function renderInline(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
+  let last = 0, m;
+  let key = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    if (m[2]) parts.push(<strong key={key++} className="font-semibold">{m[2]}</strong>);
+    else if (m[3]) parts.push(<em key={key++} className="italic">{m[3]}</em>);
+    else if (m[4]) parts.push(<code key={key++} className="bg-muted/60 rounded px-1 py-0.5 text-xs font-mono">{m[4]}</code>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 export default function AIChatPage() {
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -1418,7 +1474,7 @@ export default function AIChatPage() {
 
     return (
       <div className="space-y-3">
-        {textOnly && <p className="whitespace-pre-wrap break-words">{textOnly}</p>}
+        {textOnly && <MarkdownText text={textOnly} />}
         {code && (
           <>
             <BuildProgress code={code} isComplete={true} />
@@ -1902,6 +1958,24 @@ export default function AIChatPage() {
             </div>
           )}
         </div>
+
+        {!previewCode && mobileView === "preview" && (
+          <div className="flex flex-col items-center justify-center w-full h-full bg-muted/20 gap-4 text-center p-8">
+            <div className="w-16 h-16 rounded-2xl bg-muted/40 flex items-center justify-center">
+              <Monitor className="w-8 h-8 text-muted-foreground/40" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">No preview yet</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Ask Afro AI to build something and it will appear here</p>
+            </div>
+            <button
+              onClick={() => setMobileView("chat")}
+              className="text-xs text-primary underline underline-offset-2"
+            >
+              Back to chat
+            </button>
+          </div>
+        )}
 
         {previewCode && showPreview && (
           <div className={`${isFullscreen ? "" : "w-full md:w-1/2"} ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
