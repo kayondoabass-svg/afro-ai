@@ -90,13 +90,14 @@ export default function ChatbotCheckoutPage() {
     }
     setPaying(true);
     try {
-      const data = await apiRequest("POST", "/api/subscribe", {
+      const res = await apiRequest("POST", "/api/subscribe", {
         plan: `chatbot-${planKey}`,
         countryCode: country || undefined,
         firstName: firstName.trim(),
         lastName: lastName.trim() || undefined,
         phoneNumber: phone.trim() || undefined,
       });
+      const data = await res.json();
       if (data.redirectUrl) {
         window.location.href = data.redirectUrl;
       } else {

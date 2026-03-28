@@ -99,7 +99,12 @@ export default function ChatbotsPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof form) => {
-      const r = await apiRequest("POST", "/api/chatbots", data);
+      const r = await fetch("/api/chatbots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
       const json = await r.json();
       if (!r.ok) throw json;
       return json;
