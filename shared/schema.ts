@@ -360,6 +360,8 @@ export const chatbotWidgets = pgTable("chatbot_widgets", {
   widgetTitle: text("widget_title").notNull().default("AI Assistant"),
   placeholder: text("placeholder").notNull().default("Type your question..."),
   isActive: boolean("is_active").notNull().default(true),
+  showBranding: boolean("show_branding").notNull().default(true),
+  whiteLabelName: text("white_label_name"),
   conversationCount: integer("conversation_count").notNull().default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

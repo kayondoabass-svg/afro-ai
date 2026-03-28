@@ -410,7 +410,40 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
             <div className="w-10 h-10 rounded-lg border border-border" style={{ backgroundColor: edit.primaryColor }} />
           </div>
         </div>
-        <Button onClick={() => onUpdate({ name: edit.name, websiteUrl: edit.websiteUrl, widgetTitle: edit.widgetTitle, greeting: edit.greeting, placeholder: edit.placeholder, primaryColor: edit.primaryColor })} disabled={isUpdating} className="w-full">
+        {/* Branding */}
+        <div className="rounded-xl border border-border/60 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold">"Powered by Afro AI" badge</p>
+              <p className="text-xs text-muted-foreground">Show a small badge at the bottom of the chat window</p>
+            </div>
+            <Switch
+              checked={edit.showBranding !== false}
+              onCheckedChange={(v) => setEdit(f => ({ ...f, showBranding: v }))}
+              data-testid="switch-show-branding"
+            />
+          </div>
+          {edit.showBranding === false && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">White-label name (shown instead)</Label>
+              <Input
+                value={(edit as any).whiteLabelName || ""}
+                onChange={e => setEdit(f => ({ ...f, whiteLabelName: e.target.value } as any))}
+                placeholder="e.g. URA Smart Assistant"
+              />
+              <p className="text-xs text-muted-foreground">Leave blank to show no branding at all.</p>
+            </div>
+          )}
+          {edit.showBranding !== false && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground border-t border-border/40 pt-2">
+              <span>Preview:</span>
+              <a className="text-[#666] no-underline">Powered by <strong className="text-[#D4A017]">Afro AI</strong></a>
+              <span className="ml-auto text-green-500 font-medium">Free marketing for you ✓</span>
+            </div>
+          )}
+        </div>
+
+        <Button onClick={() => onUpdate({ name: edit.name, websiteUrl: edit.websiteUrl, widgetTitle: edit.widgetTitle, greeting: edit.greeting, placeholder: edit.placeholder, primaryColor: edit.primaryColor, showBranding: edit.showBranding !== false, whiteLabelName: (edit as any).whiteLabelName || null })} disabled={isUpdating} className="w-full">
           {isUpdating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</> : "Save Settings"}
         </Button>
       </TabsContent>
