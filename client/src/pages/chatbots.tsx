@@ -84,9 +84,12 @@ export default function ChatbotsPage() {
   const createMutation = useMutation({
     mutationFn: (data: typeof form) => apiRequest("POST", "/api/chatbots", data).then(r => r.json()),
     onSuccess: (w) => {
+      queryClient.setQueryData(["/api/chatbots"], (old: any) => Array.isArray(old) ? [w, ...old] : [w]);
       queryClient.invalidateQueries({ queryKey: ["/api/chatbots"] });
       setShowCreate(false);
       setSelected(w);
+      setOmitCategories([]);
+      setShowOmitList(false);
       setForm({ name: "", websiteUrl: "", knowledgeBase: "", primaryColor: "#D4A017", greeting: "Hi! How can I help you today?", widgetTitle: "AI Assistant", placeholder: "Type your question..." });
       toast({ title: "Chatbot created!", description: "Your API key is ready to embed." });
     },
@@ -141,7 +144,7 @@ export default function ChatbotsPage() {
           <div className="flex items-center justify-center h-full">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
-        ) : widgets.length === 0 ? (
+        ) : widgets.length === 0 && !selected ? (
           <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
             <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center">
               <Bot className="w-10 h-10 text-primary" />
