@@ -346,3 +346,33 @@ export const appSeo = pgTable("app_seo", {
 export const insertAppSeoSchema = createInsertSchema(appSeo).omit({ id: true, updatedAt: true });
 export type AppSeo = typeof appSeo.$inferSelect;
 export type InsertAppSeo = z.infer<typeof insertAppSeoSchema>;
+
+// ============ CHATBOT WIDGETS ============
+export const chatbotWidgets = pgTable("chatbot_widgets", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  websiteUrl: text("website_url"),
+  apiKey: varchar("api_key", { length: 64 }).notNull().unique(),
+  knowledgeBase: text("knowledge_base"),
+  primaryColor: varchar("primary_color", { length: 20 }).notNull().default("#D4A017"),
+  greeting: text("greeting").notNull().default("Hi! How can I help you today?"),
+  widgetTitle: text("widget_title").notNull().default("AI Assistant"),
+  placeholder: text("placeholder").notNull().default("Type your question..."),
+  isActive: boolean("is_active").notNull().default(true),
+  conversationCount: integer("conversation_count").notNull().default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertChatbotWidgetSchema = createInsertSchema(chatbotWidgets).omit({ id: true, apiKey: true, conversationCount: true, createdAt: true });
+export type ChatbotWidget = typeof chatbotWidgets.$inferSelect;
+export type InsertChatbotWidget = z.infer<typeof insertChatbotWidgetSchema>;
+
+export const widgetConversations = pgTable("widget_conversations", {
+  id: serial("id").primaryKey(),
+  widgetId: integer("widget_id").notNull().references(() => chatbotWidgets.id, { onDelete: "cascade" }),
+  sessionId: varchar("session_id", { length: 128 }).notNull(),
+  messages: text("messages").notNull().default("[]"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export type WidgetConversation = typeof widgetConversations.$inferSelect;

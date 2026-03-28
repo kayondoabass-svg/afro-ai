@@ -42,6 +42,7 @@ import AffiliatePage from "@/pages/affiliate";
 import ApiIntegrationsPage from "@/pages/api-integrations";
 import SeoToolsPage from "@/pages/seo-tools";
 import WebhooksPage from "@/pages/webhooks";
+import ChatbotsPage from "@/pages/chatbots";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -87,6 +88,7 @@ function AuthenticatedLayout() {
               <Route path="/integrations" component={ApiIntegrationsPage} />
               <Route path="/seo" component={SeoToolsPage} />
               <Route path="/webhooks" component={WebhooksPage} />
+              <Route path="/chatbots" component={ChatbotsPage} />
               <Route path="/about" component={AboutPage} />
               <Route path="/contact" component={ContactPage} />
               <Route path="/privacy" component={PrivacyPage} />

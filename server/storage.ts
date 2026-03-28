@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -55,6 +55,17 @@ export interface IStorage {
   // App SEO
   getAppSeo(publishedAppId: number): Promise<AppSeo | undefined>;
   upsertAppSeo(data: InsertAppSeo): Promise<AppSeo>;
+  // Chatbot Widgets
+  getChatbotWidgetsByUser(userId: string): Promise<ChatbotWidget[]>;
+  getChatbotWidgetById(id: number): Promise<ChatbotWidget | undefined>;
+  getChatbotWidgetByApiKey(apiKey: string): Promise<ChatbotWidget | undefined>;
+  createChatbotWidget(data: InsertChatbotWidget & { apiKey: string }): Promise<ChatbotWidget>;
+  updateChatbotWidget(id: number, data: Partial<InsertChatbotWidget>): Promise<ChatbotWidget>;
+  deleteChatbotWidget(id: number): Promise<void>;
+  incrementWidgetConversationCount(widgetId: number): Promise<void>;
+  getWidgetConversation(widgetId: number, sessionId: string): Promise<WidgetConversation | undefined>;
+  upsertWidgetConversation(widgetId: number, sessionId: string, messages: any[]): Promise<WidgetConversation>;
+  getWidgetConversations(widgetId: number): Promise<WidgetConversation[]>;
   getUser(userId: string): Promise<any | undefined>;
   // PAYG credit management
   addPaygBalance(userId: string, cents: number): Promise<void>;
@@ -829,6 +840,51 @@ class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(appSeo).values(data).returning();
     return created;
+  }
+
+  // ============ CHATBOT WIDGETS ============
+  async getChatbotWidgetsByUser(userId: string): Promise<ChatbotWidget[]> {
+    return db.select().from(chatbotWidgets).where(eq(chatbotWidgets.userId, userId)).orderBy(desc(chatbotWidgets.createdAt));
+  }
+  async getChatbotWidgetById(id: number): Promise<ChatbotWidget | undefined> {
+    const [row] = await db.select().from(chatbotWidgets).where(eq(chatbotWidgets.id, id));
+    return row;
+  }
+  async getChatbotWidgetByApiKey(apiKey: string): Promise<ChatbotWidget | undefined> {
+    const [row] = await db.select().from(chatbotWidgets).where(eq(chatbotWidgets.apiKey, apiKey));
+    return row;
+  }
+  async createChatbotWidget(data: InsertChatbotWidget & { apiKey: string }): Promise<ChatbotWidget> {
+    const [created] = await db.insert(chatbotWidgets).values(data).returning();
+    return created;
+  }
+  async updateChatbotWidget(id: number, data: Partial<InsertChatbotWidget>): Promise<ChatbotWidget> {
+    const [updated] = await db.update(chatbotWidgets).set(data as any).where(eq(chatbotWidgets.id, id)).returning();
+    return updated;
+  }
+  async deleteChatbotWidget(id: number): Promise<void> {
+    await db.delete(chatbotWidgets).where(eq(chatbotWidgets.id, id));
+  }
+  async incrementWidgetConversationCount(widgetId: number): Promise<void> {
+    await db.update(chatbotWidgets).set({ conversationCount: sql`${chatbotWidgets.conversationCount} + 1` }).where(eq(chatbotWidgets.id, widgetId));
+  }
+  async getWidgetConversation(widgetId: number, sessionId: string): Promise<WidgetConversation | undefined> {
+    const [row] = await db.select().from(widgetConversations).where(and(eq(widgetConversations.widgetId, widgetId), eq(widgetConversations.sessionId, sessionId)));
+    return row;
+  }
+  async upsertWidgetConversation(widgetId: number, sessionId: string, msgs: any[]): Promise<WidgetConversation> {
+    const existing = await this.getWidgetConversation(widgetId, sessionId);
+    const messagesJson = JSON.stringify(msgs);
+    if (existing) {
+      const [updated] = await db.update(widgetConversations).set({ messages: messagesJson, updatedAt: new Date() }).where(eq(widgetConversations.id, existing.id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(widgetConversations).values({ widgetId, sessionId, messages: messagesJson }).returning();
+    await this.incrementWidgetConversationCount(widgetId);
+    return created;
+  }
+  async getWidgetConversations(widgetId: number): Promise<WidgetConversation[]> {
+    return db.select().from(widgetConversations).where(eq(widgetConversations.widgetId, widgetId)).orderBy(desc(widgetConversations.createdAt));
   }
 }
 

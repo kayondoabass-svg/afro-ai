@@ -2046,5 +2046,186 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ============ CHATBOT WIDGETS ============
+  // Public CORS-enabled chat endpoint (used by embedded widgets on external sites)
+  app.options("/api/widget-chat/:apiKey", (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.sendStatus(200);
+  });
+
+  app.post("/api/widget-chat/:apiKey", async (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    try {
+      const { apiKey } = req.params;
+      const { message, sessionId, history = [] } = req.body;
+      if (!message || !sessionId) return res.status(400).json({ message: "message and sessionId required" });
+      const widget = await storage.getChatbotWidgetByApiKey(apiKey);
+      if (!widget || !widget.isActive) return res.status(404).json({ message: "Widget not found or inactive" });
+
+      const OpenAI = (await import("openai")).default;
+      const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
+
+      const systemPrompt = `You are a helpful AI customer service assistant for ${widget.name}${widget.websiteUrl ? ` (${widget.websiteUrl})` : ""}. 
+Answer questions based ONLY on the knowledge base provided below. Be concise, friendly, and professional.
+If you don't know the answer from the knowledge base, say "I don't have that information right now. Please contact our team directly."
+Do NOT make up information. Do NOT go off-topic.
+
+KNOWLEDGE BASE:
+${widget.knowledgeBase || "No specific knowledge base provided. Answer general questions helpfully."}`;
+
+      const messages: any[] = [
+        { role: "system", content: systemPrompt },
+        ...history.slice(-8).map((m: any) => ({ role: m.role, content: m.content })),
+        { role: "user", content: message },
+      ];
+
+      const completion = await client.chat.completions.create({ model: "gpt-4.1-mini", messages, max_tokens: 500 });
+      const reply = completion.choices[0].message.content || "I'm sorry, I couldn't process that.";
+
+      // Save conversation
+      const updatedHistory = [...history, { role: "user", content: message }, { role: "assistant", content: reply }];
+      await storage.upsertWidgetConversation(widget.id, sessionId, updatedHistory);
+
+      res.json({ reply });
+    } catch (e: any) {
+      console.error("[widget-chat] error:", e.message);
+      res.status(500).json({ message: "AI service temporarily unavailable" });
+    }
+  });
+
+  // Auth-protected widget management routes
+  app.get("/api/chatbots", isAuthenticated, async (req: any, res) => {
+    const widgets = await storage.getChatbotWidgetsByUser(req.user.id);
+    res.json(widgets);
+  });
+
+  app.post("/api/chatbots", isAuthenticated, async (req: any, res) => {
+    try {
+      const { name, websiteUrl, knowledgeBase, primaryColor, greeting, widgetTitle, placeholder } = req.body;
+      if (!name) return res.status(400).json({ message: "Name required" });
+      const apiKey = `afroai_${crypto.randomBytes(24).toString("hex")}`;
+      const widget = await storage.createChatbotWidget({
+        userId: req.user.id, name, websiteUrl, knowledgeBase, apiKey,
+        primaryColor: primaryColor || "#D4A017",
+        greeting: greeting || "Hi! How can I help you today?",
+        widgetTitle: widgetTitle || "AI Assistant",
+        placeholder: placeholder || "Type your question...",
+        isActive: true,
+      });
+      res.json(widget);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/chatbots/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const widget = await storage.getChatbotWidgetById(id);
+      if (!widget || widget.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      const updated = await storage.updateChatbotWidget(id, req.body);
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/chatbots/:id", isAuthenticated, async (req: any, res) => {
+    const id = parseInt(req.params.id);
+    const widget = await storage.getChatbotWidgetById(id);
+    if (!widget || widget.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+    await storage.deleteChatbotWidget(id);
+    res.json({ success: true });
+  });
+
+  app.get("/api/chatbots/:id/conversations", isAuthenticated, async (req: any, res) => {
+    const id = parseInt(req.params.id);
+    const widget = await storage.getChatbotWidgetById(id);
+    if (!widget || widget.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+    const convos = await storage.getWidgetConversations(id);
+    res.json(convos.map(c => ({ ...c, messages: JSON.parse(c.messages) })));
+  });
+
+  // Serve the embeddable widget.js script
+  app.get("/widget.js", async (req, res) => {
+    const { key } = req.query;
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Content-Type", "application/javascript");
+    const apiBase = "https://afroaigroup.com";
+    const script = `
+(function() {
+  var key = "${key || ""}";
+  if (!key) return console.error("Afro AI Widget: missing data-key");
+  var sessionId = sessionStorage.getItem("afroai_sid_" + key);
+  if (!sessionId) { sessionId = "s_" + Math.random().toString(36).slice(2) + Date.now(); sessionStorage.setItem("afroai_sid_" + key, sessionId); }
+  var history = [];
+  var color = document.currentScript && document.currentScript.getAttribute("data-color") || "#D4A017";
+  var title = document.currentScript && document.currentScript.getAttribute("data-title") || "AI Assistant";
+
+  var style = document.createElement("style");
+  style.textContent = ".afroai-btn{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:" + color + ";border:none;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.3);z-index:999999;display:flex;align-items:center;justify-content:center;transition:transform 0.2s}.afroai-btn:hover{transform:scale(1.1)}.afroai-win{position:fixed;bottom:92px;right:24px;width:360px;max-width:calc(100vw - 48px);height:500px;border-radius:16px;background:#1a1a2e;box-shadow:0 8px 40px rgba(0,0,0,0.4);z-index:999999;display:none;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.afroai-win.open{display:flex}.afroai-head{background:" + color + ";padding:14px 16px;display:flex;align-items:center;justify-content:space-between}.afroai-head span{color:#000;font-weight:700;font-size:15px}.afroai-close{background:none;border:none;cursor:pointer;color:#000;font-size:20px;line-height:1}.afroai-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}.afroai-msg{max-width:80%;padding:10px 14px;border-radius:12px;font-size:14px;line-height:1.5}.afroai-msg.user{background:" + color + ";color:#000;align-self:flex-end;border-bottom-right-radius:4px}.afroai-msg.bot{background:#2a2a4a;color:#eee;align-self:flex-start;border-bottom-left-radius:4px}.afroai-foot{padding:12px;border-top:1px solid #333;display:flex;gap:8px}.afroai-input{flex:1;background:#2a2a4a;border:1px solid #444;border-radius:8px;padding:10px 12px;color:#eee;font-size:14px;outline:none}.afroai-input:focus{border-color:" + color + "}.afroai-send{background:" + color + ";border:none;border-radius:8px;padding:10px 14px;cursor:pointer;font-weight:700;color:#000;font-size:14px}.afroai-typing{display:flex;gap:4px;padding:8px 14px}.afroai-dot{width:8px;height:8px;border-radius:50%;background:#888;animation:afroai-bounce 1.2s infinite}.afroai-dot:nth-child(2){animation-delay:.2s}.afroai-dot:nth-child(3){animation-delay:.4s}@keyframes afroai-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-8px)}}";
+  document.head.appendChild(style);
+
+  var btn = document.createElement("button");
+  btn.className = "afroai-btn";
+  btn.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.96 9.96 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a8 8 0 01-4.076-1.11l-.292-.174-3.023.899.899-3.023-.174-.292A8 8 0 1112 20z"/></svg>';
+  document.body.appendChild(btn);
+
+  var win = document.createElement("div");
+  win.className = "afroai-win";
+  win.innerHTML = '<div class="afroai-head"><span>' + title + '</span><button class="afroai-close">✕</button></div><div class="afroai-msgs" id="afroai-msgs"></div><div class="afroai-foot"><input class="afroai-input" id="afroai-input" placeholder="Type your message..." /><button class="afroai-send" id="afroai-send">Send</button></div>';
+  document.body.appendChild(win);
+
+  var msgsEl = document.getElementById("afroai-msgs");
+  var inputEl = document.getElementById("afroai-input");
+  var sendEl = document.getElementById("afroai-send");
+
+  function addMsg(role, text) {
+    var div = document.createElement("div");
+    div.className = "afroai-msg " + role;
+    div.textContent = text;
+    msgsEl.appendChild(div);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+
+  function showTyping() {
+    var div = document.createElement("div");
+    div.className = "afroai-msg bot afroai-typing";
+    div.innerHTML = '<div class="afroai-dot"></div><div class="afroai-dot"></div><div class="afroai-dot"></div>';
+    div.id = "afroai-typing";
+    msgsEl.appendChild(div);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+
+  function hideTyping() { var t = document.getElementById("afroai-typing"); if (t) t.remove(); }
+
+  function sendMsg() {
+    var msg = inputEl.value.trim();
+    if (!msg) return;
+    inputEl.value = "";
+    addMsg("user", msg);
+    showTyping();
+    sendEl.disabled = true;
+    fetch("${apiBase}/api/widget-chat/" + key, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ message: msg, sessionId: sessionId, history: history })
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      hideTyping();
+      history.push({role:"user",content:msg},{role:"assistant",content:d.reply});
+      addMsg("bot", d.reply || "Sorry, something went wrong.");
+    }).catch(function() {
+      hideTyping();
+      addMsg("bot", "Connection error. Please try again.");
+    }).finally(function() { sendEl.disabled = false; });
+  }
+
+  btn.addEventListener("click", function() { win.classList.toggle("open"); if (win.classList.contains("open") && msgsEl.children.length === 0) addMsg("bot", "${widget ? widget.greeting : "Hi! How can I help you today?"}"); });
+  win.querySelector(".afroai-close").addEventListener("click", function() { win.classList.remove("open"); });
+  sendEl.addEventListener("click", sendMsg);
+  inputEl.addEventListener("keydown", function(e) { if (e.key === "Enter") sendMsg(); });
+})();
+`;
+    res.send(script);
+  });
+
   return httpServer;
 }
