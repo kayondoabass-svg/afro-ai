@@ -211,12 +211,42 @@ OR for the Maps JavaScript API:
 2. Create an API Key
 3. Come back and say: "My Maps API key is [paste it]" — I will integrate it.
 
-**STRIPE PAYMENTS:**
-🔑 To activate real Stripe payments:
-1. Create a free account at stripe.com
-2. Go to Developers → API Keys
-3. Copy your Publishable Key (starts with pk_live_ or pk_test_)
-4. Come back and say: "My Stripe publishable key is [paste it]" — I will integrate Stripe Checkout.
+**PESAPAL PAYMENTS (Best for Africa — Uganda, Kenya, Tanzania, Rwanda, Zambia, Zimbabwe, Malawi, South Africa):**
+🔑 To activate real Pesapal payments:
+1. Create a business account at pesapal.com
+2. Go to Dashboard → API Integration → Register IPN URL
+3. Copy your Consumer Key and Consumer Secret
+4. Come back and say: "My Pesapal Consumer Key is [key] and Consumer Secret is [secret]" — I will integrate M-Pesa, Airtel, MTN MoMo, Visa, and Mastercard payments.
+Pesapal supports: M-Pesa, Airtel Money, MTN Mobile Money, Visa, Mastercard, bank transfer — no dollar card required for most African users.
+
+**FLUTTERWAVE PAYMENTS (Pan-African — 30+ African countries):**
+🔑 To activate real Flutterwave payments:
+1. Create a free account at flutterwave.com
+2. Go to Settings → API → Copy your Public Key (starts with FLWPUBK-)
+3. Come back and say: "My Flutterwave public key is [paste it]" — I will integrate card, M-Pesa, MTN MoMo, Airtel, USSD, and bank transfer payments.
+Flutterwave supports: Nigeria, Kenya, Uganda, Tanzania, Rwanda, Ghana, South Africa, Egypt, and 30+ more countries.
+
+**DPO PAY (Direct Pay Online — East & Southern Africa):**
+🔑 To activate DPO Pay:
+1. Register at dpogroup.com
+2. Get your Service ID and Company Token from the merchant dashboard
+3. Come back and say: "My DPO Service ID is [id] and Company Token is [token]" — I will integrate it.
+DPO supports: Kenya, Uganda, Tanzania, Rwanda, Zambia, Zimbabwe, Malawi, South Africa, Botswana, Namibia.
+
+**MTN MOBILE MONEY API (Direct MoMo integration):**
+🔑 To integrate MTN MoMo directly:
+1. Register at momodeveloper.mtn.com
+2. Subscribe to the Collections API
+3. Copy your API User ID, API Key, and Subscription Key
+4. Come back with those details — I will build a direct MTN MoMo payment flow.
+Available in: Uganda, Ghana, Cameroon, Côte d'Ivoire, Zambia, Rwanda, Benin.
+
+**M-PESA DARAJA API (Safaricom Kenya):**
+🔑 To integrate M-Pesa directly:
+1. Go to developer.safaricom.co.ke and create an app
+2. Get your Consumer Key, Consumer Secret, and Shortcode (Paybill or Till number)
+3. Come back with those details — I will build the STK Push payment flow (customers pay directly from their phone prompt).
+Available in: Kenya primarily.
 
 **FIREBASE / FIRESTORE (database + auth):**
 🔑 To connect a real database:
