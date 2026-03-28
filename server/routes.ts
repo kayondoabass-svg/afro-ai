@@ -2097,7 +2097,9 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
 
   // Auth-protected widget management routes
   app.get("/api/chatbots", isAuthenticated, async (req: any, res) => {
-    const widgets = await storage.getChatbotWidgetsByUser(req.user.id);
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    const widgets = await storage.getChatbotWidgetsByUser(userId);
     res.json(widgets);
   });
 
@@ -2107,7 +2109,14 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       if (!userId) return res.status(401).json({ message: "User not authenticated" });
       const { name, websiteUrl, knowledgeBase, primaryColor, greeting, widgetTitle, placeholder } = req.body;
       if (!name) return res.status(400).json({ message: "Name required" });
-      const apiKey = `afroai_${crypto.randomBytes(24).toString("hex")}`;
+      // Generate a collision-safe unique API key (retry up to 5 times)
+      let apiKey = "";
+      for (let i = 0; i < 5; i++) {
+        const candidate = `afroai_${crypto.randomBytes(24).toString("hex")}`;
+        const existing = await storage.getChatbotWidgetByApiKey(candidate);
+        if (!existing) { apiKey = candidate; break; }
+      }
+      if (!apiKey) return res.status(500).json({ message: "Failed to generate unique API key, please try again" });
       const widget = await storage.createChatbotWidget({
         userId, name, websiteUrl: websiteUrl || null, knowledgeBase: knowledgeBase || null, apiKey,
         primaryColor: primaryColor || "#D4A017",
@@ -2176,26 +2185,32 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
 
   app.patch("/api/chatbots/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
       const id = parseInt(req.params.id);
       const widget = await storage.getChatbotWidgetById(id);
-      if (!widget || widget.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!widget || widget.userId !== userId) return res.status(404).json({ message: "Not found" });
       const updated = await storage.updateChatbotWidget(id, req.body);
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.delete("/api/chatbots/:id", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
     const id = parseInt(req.params.id);
     const widget = await storage.getChatbotWidgetById(id);
-    if (!widget || widget.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+    if (!widget || widget.userId !== userId) return res.status(404).json({ message: "Not found" });
     await storage.deleteChatbotWidget(id);
     res.json({ success: true });
   });
 
   app.get("/api/chatbots/:id/conversations", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
     const id = parseInt(req.params.id);
     const widget = await storage.getChatbotWidgetById(id);
-    if (!widget || widget.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+    if (!widget || widget.userId !== userId) return res.status(404).json({ message: "Not found" });
     const convos = await storage.getWidgetConversations(id);
     res.json(convos.map(c => ({ ...c, messages: JSON.parse(c.messages) })));
   });
