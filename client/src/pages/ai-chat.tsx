@@ -55,6 +55,13 @@ import {
   Clock,
   RotateCcw,
   ChevronRight,
+  Lock,
+  LogIn,
+  Mail,
+  UserCheck,
+  KeyRound,
+  ArrowRight,
+  Copy,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -909,6 +916,12 @@ export default function AIChatPage() {
   const [previousCode, setPreviousCode] = useState<string | null>(null);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [previewingVersionId, setPreviewingVersionId] = useState<number | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authStep, setAuthStep] = useState<1 | 2>(1);
+  const [authType, setAuthType] = useState<"google" | "email" | "both">("google");
+  const [authAppTitle, setAuthAppTitle] = useState("");
+  const [firebaseConfig, setFirebaseConfig] = useState({ apiKey: "", authDomain: "", projectId: "" });
+  const [injectingAuth, setInjectingAuth] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -1091,6 +1104,157 @@ export default function AIChatPage() {
       }
     },
   });
+
+  // Load saved Firebase config from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("afroai_firebase_config");
+      if (saved) setFirebaseConfig(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  // Auth code generator — wraps any HTML app with Firebase Authentication
+  const generateAuthWrappedHtml = (
+    originalHtml: string,
+    config: { apiKey: string; authDomain: string; projectId: string },
+    type: "google" | "email" | "both",
+    title: string
+  ): string => {
+    const appName = title || "My App";
+    const hasGoogle = type === "google" || type === "both";
+    const hasEmail = type === "email" || type === "both";
+
+    const googleBtn = hasGoogle ? `
+      <button onclick="signInWithGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px 20px;background:#fff;color:#333;border:1.5px solid #e2e8f0;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;transition:all 0.2s;margin-bottom:12px;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
+        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>` : "";
+
+    const emailForm = hasEmail ? `
+      <div id="email-form" style="width:100%;">
+        <input id="auth-email" type="email" placeholder="Email address" style="width:100%;padding:12px 16px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:15px;background:#fff;color:#1e293b;box-sizing:border-box;margin-bottom:10px;outline:none;" onfocus="this.style.borderColor='#f59e0b'" onblur="this.style.borderColor='#e2e8f0'"/>
+        <input id="auth-password" type="password" placeholder="Password" style="width:100%;padding:12px 16px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:15px;background:#fff;color:#1e293b;box-sizing:border-box;margin-bottom:12px;outline:none;" onfocus="this.style.borderColor='#f59e0b'" onblur="this.style.borderColor='#e2e8f0'"/>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button onclick="signInWithEmail()" style="flex:1;padding:12px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">Sign In</button>
+          <button onclick="registerWithEmail()" style="flex:1;padding:12px;background:transparent;color:#f59e0b;border:1.5px solid #f59e0b;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">Register</button>
+        </div>
+        <button onclick="forgotPassword()" style="width:100%;background:none;border:none;color:#94a3b8;font-size:13px;cursor:pointer;text-decoration:underline;">Forgot password?</button>
+      </div>` : "";
+
+    const divider = hasGoogle && hasEmail ? `<div style="display:flex;align-items:center;gap:12px;margin:4px 0 14px;"><div style="flex:1;height:1px;background:#e2e8f0;"></div><span style="color:#94a3b8;font-size:13px;">or</span><div style="flex:1;height:1px;background:#e2e8f0;"></div></div>` : "";
+
+    const firebaseSDKs = `
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"><\/script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"><\/script>`;
+
+    const authScript = `
+<script>
+  const __fbConfig = ${JSON.stringify(config)};
+  firebase.initializeApp(__fbConfig);
+  const __auth = firebase.auth();
+
+  __auth.onAuthStateChanged(function(user) {
+    var overlay = document.getElementById('__auth_overlay__');
+    var app = document.getElementById('__app_content__');
+    var badge = document.getElementById('__user_badge__');
+    if (user) {
+      if (overlay) overlay.style.display = 'none';
+      if (app) { app.style.display = 'block'; app.style.opacity = '1'; }
+      if (badge) {
+        badge.style.display = 'flex';
+        var img = badge.querySelector('img');
+        var name = badge.querySelector('.uname');
+        if (img && user.photoURL) img.src = user.photoURL;
+        if (name) name.textContent = user.displayName || user.email || 'User';
+      }
+    } else {
+      if (overlay) overlay.style.display = 'flex';
+      if (app) app.style.display = 'none';
+      if (badge) badge.style.display = 'none';
+    }
+  });
+
+  function signInWithGoogle() {
+    var provider = new firebase.auth.GoogleAuthProvider();
+    __auth.signInWithPopup(provider).catch(function(e) { showAuthError(e.message); });
+  }
+  function signInWithEmail() {
+    var email = document.getElementById('auth-email').value;
+    var pass = document.getElementById('auth-password').value;
+    __auth.signInWithEmailAndPassword(email, pass).catch(function(e) { showAuthError(e.message); });
+  }
+  function registerWithEmail() {
+    var email = document.getElementById('auth-email').value;
+    var pass = document.getElementById('auth-password').value;
+    __auth.createUserWithEmailAndPassword(email, pass).catch(function(e) { showAuthError(e.message); });
+  }
+  function forgotPassword() {
+    var email = document.getElementById('auth-email').value;
+    if (!email) { showAuthError('Enter your email first.'); return; }
+    __auth.sendPasswordResetEmail(email).then(function() { showAuthError('Reset link sent! Check your email.'); }).catch(function(e) { showAuthError(e.message); });
+  }
+  function signOut() { __auth.signOut(); }
+  function showAuthError(msg) {
+    var el = document.getElementById('__auth_error__');
+    if (el) { el.textContent = msg; el.style.display = 'block'; setTimeout(function(){ el.style.display='none'; }, 5000); }
+  }
+<\/script>`;
+
+    // Inject Firebase SDKs into <head> and wrap body
+    let result = originalHtml;
+    if (result.includes("</head>")) {
+      result = result.replace("</head>", `${firebaseSDKs}\n</head>`);
+    } else {
+      result = firebaseSDKs + result;
+    }
+
+    const overlay = `
+<div id="__auth_overlay__" style="position:fixed;inset:0;z-index:99999;background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#78350f 100%);display:flex;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:20px;padding:36px 32px;width:100%;max-width:400px;box-shadow:0 25px 60px rgba(0,0,0,0.4);">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="width:56px;height:56px;background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:26px;">🔐</div>
+      <h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0f172a;">${appName}</h2>
+      <p style="margin:0;color:#64748b;font-size:14px;">Sign in to access this app</p>
+    </div>
+    ${googleBtn}
+    ${divider}
+    ${emailForm}
+    <div id="__auth_error__" style="display:none;margin-top:12px;padding:10px 14px;background:#fef2f2;color:#dc2626;border-radius:8px;font-size:13px;text-align:center;"></div>
+    <p style="text-align:center;margin:16px 0 0;color:#94a3b8;font-size:12px;">Secured with Firebase Authentication · Built with Afro AI</p>
+  </div>
+</div>
+
+<div id="__user_badge__" style="position:fixed;bottom:16px;right:16px;z-index:99998;display:none;align-items:center;gap:8px;background:rgba(15,23,42,0.85);backdrop-filter:blur(8px);padding:8px 14px 8px 8px;border-radius:50px;color:#fff;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+  <img style="width:28px;height:28px;border-radius:50%;object-fit:cover;background:#f59e0b;" src="" alt="User"/>
+  <span class="uname" style="font-weight:500;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+  <button onclick="signOut()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:4px 10px;border-radius:20px;font-size:12px;cursor:pointer;margin-left:4px;">Sign out</button>
+</div>`;
+
+    // Wrap body content
+    if (result.includes("<body")) {
+      result = result.replace(/(<body[^>]*>)([\s\S]*)(<\/body>)/i, `$1\n${overlay}\n<div id="__app_content__" style="display:none;">$2</div>\n${authScript}\n$3`);
+    } else {
+      result = `${overlay}\n<div id="__app_content__" style="display:none;">${result}</div>\n${authScript}`;
+    }
+
+    return result;
+  };
+
+  const handleInjectAuth = () => {
+    if (!previewCode) return;
+    localStorage.setItem("afroai_firebase_config", JSON.stringify(firebaseConfig));
+    setInjectingAuth(true);
+    setTimeout(() => {
+      const wrapped = generateAuthWrappedHtml(previewCode, firebaseConfig, authType, authAppTitle);
+      setPreviousCode(previewCode);
+      setPreviewCode(wrapped);
+      setShowPreview(true);
+      setInjectingAuth(false);
+      setShowAuthModal(false);
+      setAuthStep(1);
+      toast({ title: "Login added!", description: "Your app now requires sign-in. Publish it to go live." });
+    }, 600);
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
