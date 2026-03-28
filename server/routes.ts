@@ -279,6 +279,26 @@ export async function registerRoutes(
     }
   });
 
+  // App version history routes
+  app.get("/api/conversations/:id/versions", isAuthenticated, async (req: any, res) => {
+    try {
+      const versions = await storage.getAppVersions(parseInt(req.params.id));
+      res.json(versions);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch versions" });
+    }
+  });
+
+  app.get("/api/versions/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const version = await storage.getAppVersion(parseInt(req.params.id));
+      if (!version) return res.status(404).json({ message: "Version not found" });
+      res.json(version);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch version" });
+    }
+  });
+
   app.patch("/api/user/experience", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;

@@ -2,7 +2,7 @@ import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
 import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription } from "@shared/schema";
 import { users } from "@shared/models/auth";
-import { conversations, messages } from "@shared/models/chat";
+import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -74,6 +74,10 @@ export interface IStorage {
   incrementChatbotRepliesUsed(userId: string): Promise<void>;
   getUser(userId: string): Promise<any | undefined>;
   updateUserExperience(userId: string, level: string): Promise<void>;
+  // App version history
+  saveAppVersion(data: InsertAppVersion): Promise<AppVersion>;
+  getAppVersions(conversationId: number): Promise<AppVersion[]>;
+  getAppVersion(id: number): Promise<AppVersion | undefined>;
   // PAYG credit management
   addPaygBalance(userId: string, cents: number): Promise<void>;
   deductPaygBalance(userId: string, cents: number): Promise<void>;
@@ -369,6 +373,22 @@ class DatabaseStorage implements IStorage {
 
   async updateUserExperience(userId: string, level: string): Promise<void> {
     await db.update(users).set({ experienceLevel: level, updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async saveAppVersion(data: InsertAppVersion): Promise<AppVersion> {
+    const [version] = await db.insert(appVersions).values(data).returning();
+    return version;
+  }
+
+  async getAppVersions(conversationId: number): Promise<AppVersion[]> {
+    return db.select().from(appVersions)
+      .where(eq(appVersions.conversationId, conversationId))
+      .orderBy(desc(appVersions.createdAt));
+  }
+
+  async getAppVersion(id: number): Promise<AppVersion | undefined> {
+    const [version] = await db.select().from(appVersions).where(eq(appVersions.id, id));
+    return version;
   }
 
   async createAffiliateApplication(data: InsertAffiliateApplication): Promise<AffiliateApplication> {

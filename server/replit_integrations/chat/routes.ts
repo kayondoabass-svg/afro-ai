@@ -1479,6 +1479,23 @@ You are now in EDITOR MODE. Your workflow:
 
       await chatStorage.createMessage(conversationId, "assistant", fullResponse);
 
+      // Auto-save version if the response contains a full HTML page
+      try {
+        const htmlMatch = fullResponse.match(/<!DOCTYPE html[\s\S]*<\/html>/i);
+        if (htmlMatch) {
+          const { storage } = await import("../../storage");
+          const existingVersions = await storage.getAppVersions(conversationId);
+          const versionNum = existingVersions.length + 1;
+          await storage.saveAppVersion({
+            conversationId,
+            htmlContent: htmlMatch[0],
+            label: `Version ${versionNum}`,
+          });
+        }
+      } catch (versionErr) {
+        console.error("Error saving app version:", versionErr);
+      }
+
       try {
         const authUser = (req as any).user;
         if (authUser?.claims?.sub) {

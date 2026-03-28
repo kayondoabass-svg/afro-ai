@@ -51,6 +51,10 @@ import {
   FolderOpen,
   CheckCircle2,
   ShieldCheck,
+  History,
+  Clock,
+  RotateCcw,
+  ChevronRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -642,7 +646,7 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify, onShowHistory, historyCount }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -653,6 +657,8 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   canUndo?: boolean;
   onAutoFix?: (errors: string[]) => void;
   onVerify?: () => void;
+  onShowHistory?: () => void;
+  historyCount?: number;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
@@ -739,6 +745,24 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
               <Smartphone className="w-3.5 h-3.5" />
             </Button>
           </div>
+          {onShowHistory && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onShowHistory}
+              className="gap-1 border-border/60 hover:border-primary/40 hover:text-primary relative"
+              title="View version history"
+              data-testid="button-version-history"
+            >
+              <History className="w-3 h-3" />
+              <span className="hidden sm:inline">History</span>
+              {historyCount != null && historyCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                  {historyCount > 9 ? "9+" : historyCount}
+                </span>
+              )}
+            </Button>
+          )}
           {onVerify && (
             <Button
               size="sm"
@@ -883,6 +907,8 @@ export default function AIChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [previewCode, setPreviewCode] = useState<string | null>(null);
   const [previousCode, setPreviousCode] = useState<string | null>(null);
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false);
+  const [previewingVersionId, setPreviewingVersionId] = useState<number | null>(null);
   const [showPreview, setShowPreview] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -987,6 +1013,16 @@ export default function AIChatPage() {
 
   const { data: activeConvo, isLoading: loadingMessages } = useQuery<ConversationWithMessages>({
     queryKey: ["/api/conversations", activeConversation],
+    enabled: !!activeConversation,
+  });
+
+  const { data: appVersionsList, refetch: refetchVersions } = useQuery<{ id: number; conversationId: number; htmlContent: string; label: string | null; createdAt: string }[]>({
+    queryKey: ["/api/conversations", activeConversation, "versions"],
+    queryFn: async () => {
+      if (!activeConversation) return [];
+      const res = await fetch(`/api/conversations/${activeConversation}/versions`, { credentials: "include" });
+      return res.json();
+    },
     enabled: !!activeConversation,
   });
 
@@ -1504,6 +1540,10 @@ export default function AIChatPage() {
               const generatedCode = extractAllCodeBlocks(fullResponse);
               if (generatedCode) {
                 runAutoTestAndPublish(generatedCode);
+                // Refetch version history after a short delay to allow server to finish saving
+                setTimeout(() => {
+                  queryClient.invalidateQueries({ queryKey: ["/api/conversations", activeConversation, "versions"] });
+                }, 1500);
               }
             }
           } catch {}
@@ -2162,7 +2202,114 @@ export default function AIChatPage() {
               }}
               onVerify={handleVerify}
               onAutoFix={handleAutoFix}
+              onShowHistory={() => setShowHistoryPanel(true)}
+              historyCount={appVersionsList?.length ?? 0}
             />
+          </div>
+        )}
+
+        {/* Version History Panel — slides in from the right */}
+        {showHistoryPanel && (
+          <div className="fixed inset-0 z-50 flex justify-end">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowHistoryPanel(false)} />
+            <div className="relative w-full max-w-sm bg-background border-l shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300">
+              {/* Panel header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b bg-card/80">
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-primary" />
+                  <span className="font-semibold text-sm">Version History</span>
+                  {appVersionsList && appVersionsList.length > 0 && (
+                    <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">{appVersionsList.length}</span>
+                  )}
+                </div>
+                <button onClick={() => setShowHistoryPanel(false)} className="p-1.5 rounded-lg hover:bg-muted transition-colors" data-testid="button-close-history">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Info bar */}
+              <div className="px-4 py-2 bg-primary/5 border-b text-xs text-muted-foreground">
+                Every time the AI generates an app, a snapshot is saved automatically. Click any version to preview or restore it.
+              </div>
+
+              {/* Version list */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {!appVersionsList || appVersionsList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-12">
+                    <Clock className="w-10 h-10 text-muted-foreground/30" />
+                    <div>
+                      <div className="font-medium text-muted-foreground text-sm">No versions yet</div>
+                      <div className="text-xs text-muted-foreground/60 mt-1">Versions are saved automatically each time the AI generates a new app.</div>
+                    </div>
+                  </div>
+                ) : (
+                  appVersionsList.map((ver, idx) => {
+                    const isCurrentPreview = previewCode === ver.htmlContent;
+                    const date = new Date(ver.createdAt);
+                    const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                    const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
+                    return (
+                      <div
+                        key={ver.id}
+                        className={`rounded-xl border p-3 space-y-2 transition-all ${isCurrentPreview ? "border-primary/50 bg-primary/5" : "border-border/60 bg-card hover:border-border"}`}
+                        data-testid={`card-version-${ver.id}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${idx === 0 ? "bg-primary" : "bg-muted-foreground/30"}`} />
+                            <span className="font-medium text-sm truncate">{ver.label || `Version ${appVersionsList.length - idx}`}</span>
+                            {idx === 0 && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">Latest</span>}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-xs text-muted-foreground">{timeStr}</span>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">{dateStr}</div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setPreviewingVersionId(ver.id);
+                              setPreviewCode(ver.htmlContent);
+                              setShowPreview(true);
+                              setShowHistoryPanel(false);
+                              toast({ title: `Previewing ${ver.label || "version"}`, description: "Click Restore to make it your current version, or keep browsing." });
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border/60 hover:border-primary/40 hover:text-primary text-xs font-medium transition-all"
+                            data-testid={`button-preview-version-${ver.id}`}
+                          >
+                            <Eye className="w-3 h-3" />
+                            Preview
+                          </button>
+                          {!isCurrentPreview && (
+                            <button
+                              onClick={() => {
+                                setPreviousCode(previewCode);
+                                setPreviewCode(ver.htmlContent);
+                                setPreviewingVersionId(null);
+                                setShowPreview(true);
+                                setShowHistoryPanel(false);
+                                toast({ title: "Version restored", description: `${ver.label || "Version"} is now your active app. The previous version is saved for undo.` });
+                              }}
+                              className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-all"
+                              data-testid={`button-restore-version-${ver.id}`}
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              Restore
+                            </button>
+                          )}
+                          {isCurrentPreview && (
+                            <div className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Active
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>

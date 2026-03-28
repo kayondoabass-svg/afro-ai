@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -17,6 +17,18 @@ export const messages = pgTable("messages", {
   content: text("content").notNull(),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
+
+export const appVersions = pgTable("app_versions", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  htmlContent: text("html_content").notNull(),
+  label: varchar("label", { length: 120 }),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertAppVersionSchema = createInsertSchema(appVersions).omit({ id: true, createdAt: true });
+export type AppVersion = typeof appVersions.$inferSelect;
+export type InsertAppVersion = z.infer<typeof insertAppVersionSchema>;
 
 export const insertConversationSchema = createInsertSchema(conversations).omit({
   id: true,
