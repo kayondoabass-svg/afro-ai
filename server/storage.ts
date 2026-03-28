@@ -1,3 +1,4 @@
+import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
 import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation } from "@shared/schema";
 import { users } from "@shared/models/auth";
@@ -296,6 +297,8 @@ class DatabaseStorage implements IStorage {
   }
 
   async adminSetUserPlan(userId: string, plan: string): Promise<void> {
+    const [u] = await db.select().from(users).where(eq(users.id, userId));
+    if (u?.email && FOUNDER_EMAILS.includes(u.email)) return; // Founder plan is immutable
     await db.update(users).set({ plan }).where(eq(users.id, userId));
   }
 
@@ -352,6 +355,8 @@ class DatabaseStorage implements IStorage {
     };
   }
   async updateUserPlan(userId: string, plan: string): Promise<void> {
+    const [u] = await db.select().from(users).where(eq(users.id, userId));
+    if (u?.email && FOUNDER_EMAILS.includes(u.email)) return; // Founder plan is immutable
     await db.update(users).set({ plan, updatedAt: new Date() }).where(eq(users.id, userId));
   }
 

@@ -2,6 +2,8 @@ import { users, type User, type UpsertUser } from "@shared/models/auth";
 import { db } from "../../db";
 import { eq } from "drizzle-orm";
 
+export const FOUNDER_EMAILS = ["kayondoabass@gmail.com"];
+
 export interface IAuthStorage {
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
@@ -14,6 +16,8 @@ class AuthStorage implements IAuthStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
+    const isFounderEmail = FOUNDER_EMAILS.includes(userData.email || "");
+
     if (userData.email) {
       const [existingByEmail] = await db
         .select()
@@ -21,23 +25,30 @@ class AuthStorage implements IAuthStorage {
         .where(eq(users.email, userData.email));
 
       if (existingByEmail) {
+        const updateData: any = {
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImageUrl: userData.profileImageUrl,
+          updatedAt: new Date(),
+        };
+        // Always keep founder on business plan
+        if (isFounderEmail) updateData.plan = "business";
+
         const [updated] = await db
           .update(users)
-          .set({
-            firstName: userData.firstName,
-            lastName: userData.lastName,
-            profileImageUrl: userData.profileImageUrl,
-            updatedAt: new Date(),
-          })
+          .set(updateData)
           .where(eq(users.email, userData.email))
           .returning();
         return updated;
       }
     }
 
+    const insertData: any = { ...userData };
+    if (isFounderEmail) insertData.plan = "business";
+
     const [user] = await db
       .insert(users)
-      .values(userData)
+      .values(insertData)
       .onConflictDoUpdate({
         target: users.id,
         set: {
@@ -45,6 +56,7 @@ class AuthStorage implements IAuthStorage {
           firstName: userData.firstName,
           lastName: userData.lastName,
           profileImageUrl: userData.profileImageUrl,
+          plan: isFounderEmail ? "business" : undefined,
           updatedAt: new Date(),
         },
       })

@@ -2103,7 +2103,7 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
 
   app.post("/api/chatbots", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.id || req.user?.userId || req.user?.sub;
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
       if (!userId) return res.status(401).json({ message: "User not authenticated" });
       const { name, websiteUrl, knowledgeBase, primaryColor, greeting, widgetTitle, placeholder } = req.body;
       if (!name) return res.status(400).json({ message: "Name required" });
