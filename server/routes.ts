@@ -2103,19 +2103,75 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
 
   app.post("/api/chatbots", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user?.id || req.user?.userId || req.user?.sub;
+      if (!userId) return res.status(401).json({ message: "User not authenticated" });
       const { name, websiteUrl, knowledgeBase, primaryColor, greeting, widgetTitle, placeholder } = req.body;
       if (!name) return res.status(400).json({ message: "Name required" });
       const apiKey = `afroai_${crypto.randomBytes(24).toString("hex")}`;
       const widget = await storage.createChatbotWidget({
-        userId: req.user.id, name, websiteUrl, knowledgeBase, apiKey,
+        userId, name, websiteUrl: websiteUrl || null, knowledgeBase: knowledgeBase || null, apiKey,
         primaryColor: primaryColor || "#D4A017",
         greeting: greeting || "Hi! How can I help you today?",
         widgetTitle: widgetTitle || "AI Assistant",
         placeholder: placeholder || "Type your question...",
         isActive: true,
-      });
+        showBranding: true,
+        whiteLabelName: null,
+      } as any);
       res.json(widget);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Scan a website URL and extract text for knowledge base auto-fill
+  app.post("/api/chatbots/scan-url", isAuthenticated, async (req: any, res) => {
+    try {
+      const { url } = req.body;
+      if (!url) return res.status(400).json({ message: "URL required" });
+      const target = url.startsWith("http") ? url : `https://${url}`;
+      const response = await fetch(target, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; AfroAI/1.0)" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) return res.status(400).json({ message: `Could not fetch website (status ${response.status})` });
+      const html = await response.text();
+
+      // Strip HTML tags and extract meaningful text
+      const cleaned = html
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+        .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+        .replace(/<header[\s\S]*?<\/header>/gi, "")
+        .replace(/<!--[\s\S]*?-->/g, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&quot;/g, '"')
+        .replace(/\s{2,}/g, "\n")
+        .trim();
+
+      // Extract title
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].trim() : "";
+
+      // Extract meta description
+      const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
+                        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+      const description = descMatch ? descMatch[1].trim() : "";
+
+      // Build structured knowledge base
+      const lines = cleaned.split("\n").map(l => l.trim()).filter(l => l.length > 20 && l.length < 500);
+      const unique = [...new Set(lines)].slice(0, 80);
+
+      let knowledge = "";
+      if (title) knowledge += `## About\nWebsite: ${target}\nTitle: ${title}\n`;
+      if (description) knowledge += `Description: ${description}\n`;
+      knowledge += "\n## Website Content\n";
+      knowledge += unique.join("\n");
+      knowledge = knowledge.slice(0, 8000);
+
+      res.json({ knowledge, title, description, url: target });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Failed to scan website" });
+    }
   });
 
   app.patch("/api/chatbots/:id", isAuthenticated, async (req: any, res) => {

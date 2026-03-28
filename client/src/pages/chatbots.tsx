@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Bot, Plus, Trash2, Copy, Check, Code2, MessageSquare, Globe, Settings,
-  Eye, EyeOff, Loader2, ExternalLink, Zap, Key, BookOpen, Palette
+  Eye, EyeOff, Loader2, ExternalLink, Zap, Key, BookOpen, Palette, ScanLine, Sparkles
 } from "lucide-react";
 import type { ChatbotWidget } from "@shared/schema";
 
@@ -32,6 +32,26 @@ export default function ChatbotsPage() {
     greeting: "Hi! How can I help you today?", widgetTitle: "AI Assistant",
     placeholder: "Type your question...",
   });
+  const [scanning, setScanning] = useState(false);
+
+  const scanUrl = async (url: string, onResult: (kb: string) => void) => {
+    if (!url) return;
+    setScanning(true);
+    try {
+      const r = await apiRequest("POST", "/api/chatbots/scan-url", { url });
+      const data = await r.json();
+      if (data.knowledge) {
+        onResult(data.knowledge);
+        toast({ title: "Website scanned!", description: "Knowledge base auto-filled. Review and add any missing details." });
+      } else {
+        toast({ title: "Scan failed", description: data.message || "Could not read website.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Scan failed", description: "Could not reach the website.", variant: "destructive" });
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const { data: widgets = [], isLoading } = useQuery<ChatbotWidget[]>({ queryKey: ["/api/chatbots"] });
 
