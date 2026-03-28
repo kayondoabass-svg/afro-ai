@@ -31,6 +31,8 @@ export const users = pgTable("users", {
   paygSpent: integer("payg_spent").notNull().default(0),
   // Free trial tracking
   freeTrialStarted: timestamp("free_trial_started"),
+  // Experience level — asked once, determines AI behaviour mode
+  experienceLevel: varchar("experience_level"), // 'beginner' | 'intermediate' | 'expert'
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

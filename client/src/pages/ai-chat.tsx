@@ -1024,6 +1024,16 @@ export default function AIChatPage() {
     },
   });
 
+  const saveExperienceMutation = useMutation({
+    mutationFn: async (level: string) => {
+      const res = await apiRequest("PATCH", "/api/user/experience", { level });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    },
+  });
+
   // Auto-send input after welcome screen creates a conversation
   useEffect(() => {
     if (pendingWelcomeSend && activeConversation && input.trim() && !isStreaming) {
@@ -1936,6 +1946,66 @@ export default function AIChatPage() {
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-6 gap-8" data-testid="welcome-screen">
+
+              {/* Experience Level Onboarding — shown once when not yet set */}
+              {user && user.experienceLevel == null && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+                  <div className="w-full max-w-lg rounded-2xl border border-border/60 bg-card shadow-2xl p-8 space-y-6 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="text-center space-y-2">
+                      <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 mb-2">
+                        <Sparkles className="w-7 h-7 text-primary" />
+                      </div>
+                      <h2 className="text-2xl font-semibold text-foreground">Welcome to Afro AI!</h2>
+                      <p className="text-muted-foreground text-sm leading-relaxed">
+                        To give you the best experience, tell us how familiar you are with building digital products.
+                        <br />
+                        <span className="text-xs text-muted-foreground/70">You can change this later in your profile settings.</span>
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3">
+                      {[
+                        {
+                          level: "beginner",
+                          emoji: "🌱",
+                          title: "First timer",
+                          desc: "I've never built a website or app before. I need guidance.",
+                        },
+                        {
+                          level: "intermediate",
+                          emoji: "⚡",
+                          title: "Have tried before",
+                          desc: "I've built something before or have an existing project to improve.",
+                        },
+                        {
+                          level: "expert",
+                          emoji: "🚀",
+                          title: "Developer / Power user",
+                          desc: "I code or build regularly. Just build — I'll take it from there.",
+                        },
+                      ].map(({ level, emoji, title, desc }) => (
+                        <button
+                          key={level}
+                          onClick={() => saveExperienceMutation.mutate(level)}
+                          disabled={saveExperienceMutation.isPending}
+                          className="group w-full flex items-start gap-4 p-4 rounded-xl border border-border/60 bg-background hover:bg-primary/5 hover:border-primary/40 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                          data-testid={`button-experience-${level}`}
+                        >
+                          <span className="text-2xl mt-0.5 shrink-0">{emoji}</span>
+                          <div className="space-y-0.5">
+                            <div className="font-semibold text-foreground group-hover:text-primary transition-colors">{title}</div>
+                            <div className="text-sm text-muted-foreground">{desc}</div>
+                          </div>
+                          {saveExperienceMutation.isPending && (
+                            <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto shrink-0 mt-1" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Greeting */}
               <div className="text-center space-y-2">
                 <h1 className="text-3xl md:text-4xl font-light text-foreground/90 tracking-tight" data-testid="text-chat-welcome">

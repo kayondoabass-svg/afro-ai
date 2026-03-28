@@ -279,6 +279,21 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/user/experience", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const { level } = req.body;
+      if (!["beginner", "intermediate", "expert"].includes(level)) {
+        return res.status(400).json({ message: "Invalid experience level" });
+      }
+      await storage.updateUserExperience(userId, level);
+      res.json({ success: true, level });
+    } catch (error) {
+      console.error("Error updating experience level:", error);
+      res.status(500).json({ message: "Failed to update experience level" });
+    }
+  });
+
   app.post("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

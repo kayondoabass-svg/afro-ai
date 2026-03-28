@@ -73,6 +73,7 @@ export interface IStorage {
   updateChatbotSubscription(userId: string, data: Partial<InsertChatbotSubscription>): Promise<ChatbotSubscription>;
   incrementChatbotRepliesUsed(userId: string): Promise<void>;
   getUser(userId: string): Promise<any | undefined>;
+  updateUserExperience(userId: string, level: string): Promise<void>;
   // PAYG credit management
   addPaygBalance(userId: string, cents: number): Promise<void>;
   deductPaygBalance(userId: string, cents: number): Promise<void>;
@@ -364,6 +365,10 @@ class DatabaseStorage implements IStorage {
     const [u] = await db.select().from(users).where(eq(users.id, userId));
     if (u?.email && FOUNDER_EMAILS.includes(u.email)) return; // Founder plan is immutable
     await db.update(users).set({ plan, updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async updateUserExperience(userId: string, level: string): Promise<void> {
+    await db.update(users).set({ experienceLevel: level, updatedAt: new Date() }).where(eq(users.id, userId));
   }
 
   async createAffiliateApplication(data: InsertAffiliateApplication): Promise<AffiliateApplication> {
