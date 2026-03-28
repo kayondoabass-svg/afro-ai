@@ -17,6 +17,27 @@ import {
 } from "lucide-react";
 import type { ChatbotWidget } from "@shared/schema";
 
+const SENSITIVE_CATEGORIES = [
+  { id: "staff_contacts", label: "Staff personal phone numbers & home addresses" },
+  { id: "hr_records", label: "Employee salaries, HR records & disciplinary matters" },
+  { id: "passwords", label: "System passwords, login credentials & access codes" },
+  { id: "server_details", label: "Database details, server IPs & internal infrastructure" },
+  { id: "legal_cases", label: "Ongoing legal proceedings, investigations & court cases" },
+  { id: "bank_details", label: "Bank account numbers, financial account details" },
+  { id: "citizen_ids", label: "Citizens' personal ID numbers, NINs & private data" },
+  { id: "audit_reports", label: "Internal audit reports & confidential investigations" },
+  { id: "budget_details", label: "Confidential budgets, procurement details & vendor contracts" },
+  { id: "security_protocols", label: "Security procedures, emergency protocols & access routes" },
+  { id: "draft_policies", label: "Unpublished policy drafts & internal memos" },
+  { id: "private_emails", label: "Private staff email addresses & internal communications" },
+];
+
+function buildOmitInstructions(selected: string[]): string {
+  if (selected.length === 0) return "";
+  const labels = SENSITIVE_CATEGORIES.filter(c => selected.includes(c.id)).map(c => c.label);
+  return `\n\n## SENSITIVE — DO NOT DISCUSS\nNever answer questions about or reveal any information related to:\n${labels.map(l => `- ${l}`).join("\n")}\n\nIf asked about any of the above, respond: "I'm sorry, that information is confidential. Please contact us directly for assistance."`;
+}
+
 const EMBED_SNIPPET = (apiKey: string) =>
   `<!-- Afro AI Chat Widget -->\n<script src="https://afroaigroup.com/widget.js" data-key="${apiKey}" async></script>`;
 
@@ -33,6 +54,11 @@ export default function ChatbotsPage() {
     placeholder: "Type your question...",
   });
   const [scanning, setScanning] = useState(false);
+  const [omitCategories, setOmitCategories] = useState<string[]>([]);
+  const [showOmitList, setShowOmitList] = useState(false);
+
+  const toggleOmit = (id: string) =>
+    setOmitCategories(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const scanUrl = async (url: string, onResult: (kb: string) => void) => {
     if (!url) return;
@@ -218,8 +244,49 @@ export default function ChatbotsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Website URL</Label>
-              <Input value={form.websiteUrl} onChange={e => setForm(f => ({ ...f, websiteUrl: e.target.value }))} placeholder="https://example.gov.ug" data-testid="input-chatbot-url" />
+              <div className="flex gap-2">
+                <Input value={form.websiteUrl} onChange={e => setForm(f => ({ ...f, websiteUrl: e.target.value }))} placeholder="https://example.gov.ug" data-testid="input-chatbot-url" className="flex-1" />
+                <Button
+                  type="button" variant="outline" size="sm"
+                  disabled={!form.websiteUrl || scanning}
+                  onClick={() => scanUrl(form.websiteUrl, (kb) => setForm(f => ({ ...f, knowledgeBase: kb + buildOmitInstructions(omitCategories) })))}
+                  className="gap-1.5 whitespace-nowrap text-xs border-primary/50 text-primary hover:bg-primary/10"
+                  data-testid="button-auto-scan"
+                >
+                  {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />}
+                  {scanning ? "Scanning…" : "Auto Scan"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Click Auto Scan to read your website and fill the knowledge base automatically.</p>
             </div>
+
+            {/* Sensitive info omit list */}
+            <div className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-3">
+              <button type="button" className="flex items-center justify-between w-full" onClick={() => setShowOmitList(v => !v)}>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span className="text-red-400">🔒</span> Sensitive Information to Omit
+                  {omitCategories.length > 0 && <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">{omitCategories.length} blocked</Badge>}
+                </div>
+                <span className="text-xs text-muted-foreground">{showOmitList ? "Hide ▲" : "Show ▼"}</span>
+              </button>
+              {showOmitList && (
+                <div className="space-y-2 pt-1 border-t border-border/40">
+                  <p className="text-xs text-muted-foreground">Tick categories the AI should never reveal or discuss, even if asked directly.</p>
+                  {SENSITIVE_CATEGORIES.map(cat => (
+                    <label key={cat.id} className="flex items-start gap-2.5 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={omitCategories.includes(cat.id)}
+                        onChange={() => toggleOmit(cat.id)}
+                        className="mt-0.5 accent-red-500 w-4 h-4 flex-shrink-0"
+                      />
+                      <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors leading-relaxed">{cat.label}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <Label>Widget Title</Label>
               <Input value={form.widgetTitle} onChange={e => setForm(f => ({ ...f, widgetTitle: e.target.value }))} placeholder="AI Assistant" />
@@ -285,7 +352,34 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
   showKey: boolean;
   onToggleKey: () => void;
 }) {
+  const { toast } = useToast();
   const [edit, setEdit] = useState({ ...widget });
+  const [kbScanning, setKbScanning] = useState(false);
+  const [kbOmitCats, setKbOmitCats] = useState<string[]>([]);
+  const [kbShowOmit, setKbShowOmit] = useState(false);
+
+  const toggleKbOmit = (id: string) =>
+    setKbOmitCats(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const scanForKb = async () => {
+    const url = edit.websiteUrl;
+    if (!url) return;
+    setKbScanning(true);
+    try {
+      const r = await apiRequest("POST", "/api/chatbots/scan-url", { url });
+      const data = await r.json();
+      if (data.knowledgeBase) {
+        setEdit(f => ({ ...f, knowledgeBase: data.knowledgeBase + buildOmitInstructions(kbOmitCats) }));
+        toast({ title: "Website scanned", description: `${data.knowledgeBase.length.toLocaleString()} chars extracted. Review and save.` });
+      } else {
+        toast({ title: "Scan failed", description: data.error || "Could not read that URL.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Scan failed", description: "Could not reach that URL.", variant: "destructive" });
+    } finally {
+      setKbScanning(false);
+    }
+  };
 
   const embedCode = EMBED_SNIPPET(widget.apiKey);
   const previewUrl = `https://afroaigroup.com/widget.js?key=${widget.apiKey}`;
@@ -474,13 +568,72 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
           <p className="font-semibold text-amber-400">How the Knowledge Base works</p>
           <p className="text-xs text-muted-foreground">The AI reads ONLY what you write here. Add every service, FAQ, policy, price, and contact detail. The more detail, the smarter it answers.</p>
         </div>
+
+        {/* Auto Scan */}
+        {edit.websiteUrl && (
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold flex items-center gap-1.5"><ScanLine className="w-4 h-4 text-primary" /> Auto Scan Website</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Scan <span className="font-mono text-primary/80 break-all">{edit.websiteUrl}</span> and auto-fill the knowledge base with extracted content.</p>
+              </div>
+              <Button
+                size="sm" variant="outline"
+                disabled={kbScanning}
+                onClick={scanForKb}
+                className="gap-1.5 flex-shrink-0 border-primary/40 text-primary hover:bg-primary/10"
+                data-testid="button-kb-auto-scan"
+              >
+                {kbScanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                {kbScanning ? "Scanning…" : "Scan Now"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Sensitive info omit list */}
+        <div className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-3">
+          <button type="button" className="flex items-center justify-between w-full" onClick={() => setKbShowOmit(v => !v)}>
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <span className="text-red-400">🔒</span> Sensitive Information to Block
+              {kbOmitCats.length > 0 && <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">{kbOmitCats.length} blocked</Badge>}
+            </div>
+            <span className="text-xs text-muted-foreground">{kbShowOmit ? "Hide ▲" : "Configure ▼"}</span>
+          </button>
+          {kbShowOmit && (
+            <div className="space-y-2.5 pt-2 border-t border-border/40">
+              <p className="text-xs text-muted-foreground">Select categories the AI should <strong>never</strong> reveal or discuss — even if asked directly. After selecting, click <strong>Scan Now</strong> or add the instruction block manually.</p>
+              {SENSITIVE_CATEGORIES.map(cat => (
+                <label key={cat.id} className="flex items-start gap-2.5 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={kbOmitCats.includes(cat.id)}
+                    onChange={() => toggleKbOmit(cat.id)}
+                    className="mt-0.5 accent-red-500 w-4 h-4 flex-shrink-0"
+                  />
+                  <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors leading-relaxed">{cat.label}</span>
+                </label>
+              ))}
+              {kbOmitCats.length > 0 && (
+                <Button
+                  size="sm" variant="outline"
+                  className="w-full mt-1 border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
+                  onClick={() => setEdit(f => ({ ...f, knowledgeBase: (f.knowledgeBase || "").replace(/\n\n## SENSITIVE — DO NOT DISCUSS[\s\S]*$/, "") + buildOmitInstructions(kbOmitCats) }))}
+                >
+                  Apply Block List to Knowledge Base
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="space-y-1.5">
           <Label className="text-xs">Organisation Knowledge Base</Label>
           <Textarea
             value={edit.knowledgeBase || ""}
             onChange={e => setEdit(f => ({ ...f, knowledgeBase: e.target.value }))}
             placeholder={`Examples of what to include:\n\n## Services\n- Tax registration (TIN number): Monday–Friday 8am–5pm\n- VAT refund: Apply online at ura.go.ug\n\n## Contact\n- Phone: 0417444444\n- Email: support@ura.go.ug\n- Location: Nakawa, Kampala\n\n## FAQs\nQ: How long does TIN take?\nA: 2–5 working days\n\nQ: Can I pay tax online?\nA: Yes, at efris.ura.go.ug`}
-            className="min-h-[300px] font-mono text-xs"
+            className="min-h-[280px] font-mono text-xs"
             data-testid="textarea-knowledge-base"
           />
           <p className="text-xs text-muted-foreground">{(edit.knowledgeBase || "").length.toLocaleString()} characters</p>
