@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
@@ -50,6 +50,7 @@ import {
   FileArchive,
   FolderOpen,
   CheckCircle2,
+  ShieldCheck,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -589,6 +590,14 @@ function PublishDialog({ code, open, onOpenChange }: {
           </div>
         )}
 
+        {!publishedUrl && !showProgress && (
+          <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-2">
+            <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Before publishing, review all phone numbers, prices, addresses, and contact details — AI may have used example values.
+            </p>
+          </div>
+        )}
         <DialogFooter>
           {publishedUrl ? (
             <Button onClick={() => onOpenChange(false)} data-testid="button-publish-done">
@@ -633,7 +642,7 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -642,10 +651,41 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   onBackToChat?: () => void;
   onUndo?: () => void;
   canUndo?: boolean;
+  onAutoFix?: (errors: string[]) => void;
+  onVerify?: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
+  const [iframeErrors, setIframeErrors] = useState<string[]>([]);
+  const [errorsDismissed, setErrorsDismissed] = useState(false);
+
+  // Reset errors when new code arrives
+  useEffect(() => {
+    setIframeErrors([]);
+    setErrorsDismissed(false);
+  }, [code]);
+
+  // Listen for JS errors from inside the iframe
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data?.type === "afroai-iframe-error") {
+        const msg = String(e.data.message || "Unknown error");
+        setIframeErrors(prev => prev.includes(msg) ? prev : [...prev, msg]);
+        setErrorsDismissed(false);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
+  // Inject error-catcher script so iframe errors bubble up
+  const instrumentedCode = useMemo(() => {
+    const errorScript = `<script>(function(){function s(m){try{window.parent.postMessage({type:'afroai-iframe-error',message:m},'*')}catch(e){}}window.addEventListener('error',function(e){s(e.message||'Script error')});window.addEventListener('unhandledrejection',function(e){s(e.reason&&e.reason.message?e.reason.message:String(e.reason))})})();<\/script>`;
+    if (code.includes('<head>')) return code.replace('<head>', '<head>' + errorScript);
+    if (/<html/i.test(code)) return code.replace(/<html[^>]*>/i, m => m + errorScript);
+    return errorScript + code;
+  }, [code]);
 
   return (
     <div className={`flex flex-col bg-background border-l w-full ${isFullscreen ? "fixed inset-0 z-50" : ""}`}>
@@ -699,6 +739,19 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
               <Smartphone className="w-3.5 h-3.5" />
             </Button>
           </div>
+          {onVerify && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onVerify}
+              className="gap-1 border-primary/30 text-primary hover:bg-primary/10"
+              title="Verify app for broken code, phantom functions, and hallucinated content"
+              data-testid="button-verify-app"
+            >
+              <ShieldCheck className="w-3 h-3" />
+              <span className="hidden sm:inline">Verify</span>
+            </Button>
+          )}
           <Button size="sm" variant="default" onClick={() => setShowPublish(true)} className="gap-1" data-testid="button-publish-app">
             <Rocket className="w-3 h-3" />
             Publish
@@ -719,10 +772,35 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
           </Button>
         </div>
       </div>
+      {iframeErrors.length > 0 && !errorsDismissed && (
+        <div className="mx-3 mt-2 mb-1 p-2 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-2" data-testid="banner-iframe-error">
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-red-400">JavaScript error detected in your app</p>
+            <p className="text-xs text-red-400/70 truncate">{iframeErrors[iframeErrors.length - 1]}</p>
+          </div>
+          <div className="flex gap-1 flex-shrink-0">
+            {onAutoFix && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-xs px-2 border-red-500/40 text-red-400 hover:bg-red-500/10"
+                onClick={() => { onAutoFix(iframeErrors); setErrorsDismissed(true); }}
+                data-testid="button-auto-fix"
+              >
+                Auto-Fix
+              </Button>
+            )}
+            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setErrorsDismissed(true)} data-testid="button-dismiss-error">
+              <X className="w-3 h-3 text-red-400" />
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="flex-1 bg-white flex justify-center overflow-auto">
         <iframe
           ref={iframeRef}
-          srcDoc={code}
+          srcDoc={instrumentedCode}
           className="h-full border-0 transition-all duration-300"
           style={{
             width: deviceSizes[previewDevice].width,
@@ -1322,6 +1400,23 @@ export default function AIChatPage() {
     } finally {
       setImportLoading(false);
     }
+  };
+
+  const handleVerify = () => {
+    setInput("Verify my app thoroughly: check for any undefined functions that are called but never declared, phantom CDN links that may not exist, broken onclick/onsubmit handlers, undefined variables, and any placeholder content (fake phone numbers, example addresses, made-up prices). List every issue you find, then fix them all in one complete corrected HTML file.");
+    setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>("[data-testid='input-chat-message']");
+      if (el) el.focus();
+    }, 50);
+  };
+
+  const handleAutoFix = (errors: string[]) => {
+    const errorList = errors.slice(0, 5).map(e => `- ${e}`).join("\n");
+    setInput(`Fix these JavaScript errors detected in my app:\n${errorList}\n\nFind the root cause of each error and fix it without changing the design or layout. Return the complete corrected HTML file.`);
+    setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>("[data-testid='input-chat-message']");
+      if (el) el.focus();
+    }, 50);
   };
 
   const handleSend = async () => {
@@ -1994,6 +2089,8 @@ export default function AIChatPage() {
                   toast({ title: "Reverted", description: "Restored your previous version." });
                 }
               }}
+              onVerify={handleVerify}
+              onAutoFix={handleAutoFix}
             />
           </div>
         )}
