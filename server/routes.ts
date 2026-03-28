@@ -63,6 +63,15 @@ const upload = multer({
   },
 });
 
+const zipUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = file.mimetype === "application/zip" || file.mimetype === "application/x-zip-compressed" || file.originalname.endsWith(".zip");
+    ok ? cb(null, true) : cb(new Error("Only ZIP files are allowed"));
+  },
+});
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -183,6 +192,55 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error uploading file:", error);
       res.status(500).json({ message: error.message || "Failed to upload file" });
+    }
+  });
+
+  // ============ WEBSITE IMPORT ============
+  app.post("/api/import/url", isAuthenticated, async (req: any, res) => {
+    try {
+      const { url } = req.body;
+      if (!url || !url.startsWith("http")) return res.status(400).json({ message: "Valid URL required (must start with http/https)" });
+      const resp = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; AfroAI/1.0; +https://afroaigroup.com)" },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!resp.ok) throw new Error(`Could not fetch page — server returned ${resp.status}`);
+      let html = await resp.text();
+      // Make relative URLs absolute so assets still load in preview
+      const origin = new URL(url).origin;
+      html = html.replace(/((?:src|href|action)=["'])(\/(?!\/))/gi, `$1${origin}/`);
+      // Strip script tags that would break the sandbox
+      html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+      res.json({ html, sourceUrl: url, title: (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || url });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/import/zip", isAuthenticated, zipUpload.single("file"), async (req: any, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No ZIP file uploaded" });
+      const AdmZip = (await import("adm-zip")).default;
+      const zip = new AdmZip(req.file.buffer);
+      const entries = zip.getEntries().filter(e => !e.isDirectory);
+      // Prefer root index.html, then any index.html, then first .html
+      const htmlEntry =
+        entries.find(e => e.entryName === "index.html") ||
+        entries.find(e => e.entryName.toLowerCase().endsWith("/index.html")) ||
+        entries.find(e => e.entryName.toLowerCase().endsWith(".html"));
+      if (!htmlEntry) return res.status(400).json({ message: "No HTML file found in the ZIP. Make sure your ZIP contains at least one .html file." });
+      let html = htmlEntry.getData().toString("utf8");
+      // Embed CSS files found in the ZIP inline so they work in the preview
+      const cssEntries = entries.filter(e => e.entryName.endsWith(".css"));
+      for (const css of cssEntries) {
+        const cssText = css.getData().toString("utf8");
+        const cssFilename = css.entryName.split("/").pop()!;
+        html = html.replace(new RegExp(`<link[^>]*href=["'][^"']*${cssFilename}["'][^>]*>`, "gi"),
+          `<style>/* ${cssFilename} */\n${cssText}</style>`);
+      }
+      res.json({ html, filename: htmlEntry.entryName, fileCount: entries.length });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
     }
   });
 

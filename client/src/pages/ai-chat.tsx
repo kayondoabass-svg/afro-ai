@@ -45,8 +45,15 @@ import {
   Swords,
   ShieldAlert,
   Key,
+  Upload,
+  Link2,
+  FileArchive,
+  FolderOpen,
+  CheckCircle2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -756,6 +763,12 @@ export default function AIChatPage() {
   const [imageAnalysisResult, setImageAnalysisResult] = useState<string | null>(null);
   const [analysisImagePreview, setAnalysisImagePreview] = useState<string | null>(null);
   const [secretWarningDismissed, setSecretWarningDismissed] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importZipFile, setImportZipFile] = useState<File | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const importZipRef = useRef<HTMLInputElement>(null);
 
   function handleInputChange(val: string) {
     setInput(val);
@@ -1213,6 +1226,45 @@ export default function AIChatPage() {
         variant: "destructive",
       });
       setTimeout(() => setAutoPublishStatus("idle"), 5000);
+    }
+  };
+
+  const handleImportUrl = async () => {
+    if (!importUrl.trim()) return;
+    setImportLoading(true);
+    try {
+      const res = await apiRequest("POST", "/api/import/url", { url: importUrl.trim() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      setPreviewCode(data.html);
+      setShowPreview(true);
+      const label = data.title || importUrl;
+      setImportSuccess(`Loaded "${label}" — ${data.html.length.toLocaleString()} characters`);
+      setInput(`I've imported my website from ${importUrl}. Please help me redesign and improve it.`);
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleImportZip = async () => {
+    if (!importZipFile) return;
+    setImportLoading(true);
+    try {
+      const form = new FormData();
+      form.append("file", importZipFile);
+      const res = await fetch("/api/import/zip", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      setPreviewCode(data.html);
+      setShowPreview(true);
+      setImportSuccess(`Extracted "${data.filename}" from ${data.fileCount} file(s) in the ZIP`);
+      setInput(`I've uploaded my existing website as a ZIP. Please help me redesign and improve it.`);
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    } finally {
+      setImportLoading(false);
     }
   };
 
@@ -1785,13 +1837,24 @@ export default function AIChatPage() {
                     data-testid="input-welcome-message"
                   />
                   <div className="flex items-center justify-between">
-                    <label className="cursor-pointer p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground" title="Attach file">
-                      <input type="file" className="hidden" accept="image/*" onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) { const reader = new FileReader(); reader.onload = (ev) => { const base64 = (ev.target?.result as string)?.split(",")[1]; if (base64) setPendingAttachments([{ type: "image", data: base64, mimeType: file.type, name: file.name }]); }; reader.readAsDataURL(file); }
-                      }} />
-                      <Plus className="w-5 h-5" />
-                    </label>
+                    <div className="flex items-center gap-1">
+                      <label className="cursor-pointer p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground" title="Attach image">
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) { const reader = new FileReader(); reader.onload = (ev) => { const base64 = (ev.target?.result as string)?.split(",")[1]; if (base64) setPendingAttachments([{ type: "image", data: base64, mimeType: file.type, name: file.name }]); }; reader.readAsDataURL(file); }
+                        }} />
+                        <Plus className="w-5 h-5" />
+                      </label>
+                      <button
+                        onClick={() => { setImportSuccess(null); setImportUrl(""); setImportZipFile(null); setShowImportDialog(true); }}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-primary text-xs font-medium"
+                        title="Import existing website"
+                        data-testid="button-import-website"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Import
+                      </button>
+                    </div>
                     <Button
                       size="sm"
                       onClick={() => { if (input.trim()) { setPendingWelcomeSend(true); createConvoMutation.mutate(); } }}
@@ -1940,6 +2003,105 @@ export default function AIChatPage() {
               Done
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== IMPORT WEBSITE DIALOG ===== */}
+      <Dialog open={showImportDialog} onOpenChange={(o) => { setShowImportDialog(o); if (!o) { setImportSuccess(null); setImportZipFile(null); setImportUrl(""); } }}>
+        <DialogContent className="max-w-lg" data-testid="dialog-import-website">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="w-5 h-5 text-primary" />
+              Import Existing Website
+            </DialogTitle>
+            <DialogDescription>
+              Load your existing website into the editor — then ask Afro AI to redesign, update, or improve it.
+            </DialogDescription>
+          </DialogHeader>
+
+          {importSuccess ? (
+            <div className="flex flex-col items-center gap-4 py-6 text-center">
+              <CheckCircle2 className="w-14 h-14 text-green-500" />
+              <div>
+                <p className="text-lg font-semibold">Website imported!</p>
+                <p className="text-sm text-muted-foreground mt-1">{importSuccess}</p>
+              </div>
+              <p className="text-sm text-muted-foreground">Your website is now loaded in the preview. Type a message to start editing it with AI.</p>
+              <Button onClick={() => setShowImportDialog(false)} className="mt-2" data-testid="button-import-done">
+                Start Editing
+              </Button>
+            </div>
+          ) : (
+            <Tabs defaultValue="url" className="mt-2">
+              <TabsList className="w-full">
+                <TabsTrigger value="url" className="flex-1 gap-2" data-testid="tab-import-url">
+                  <Link2 className="w-4 h-4" /> From URL
+                </TabsTrigger>
+                <TabsTrigger value="zip" className="flex-1 gap-2" data-testid="tab-import-zip">
+                  <FileArchive className="w-4 h-4" /> Upload ZIP
+                </TabsTrigger>
+              </TabsList>
+
+              {/* ---- URL TAB ---- */}
+              <TabsContent value="url" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="import-url-input">Website URL</Label>
+                  <Input
+                    id="import-url-input"
+                    value={importUrl}
+                    onChange={(e) => setImportUrl(e.target.value)}
+                    placeholder="https://yourwebsite.com"
+                    data-testid="input-import-url"
+                    onKeyDown={(e) => e.key === "Enter" && importUrl.trim() && handleImportUrl()}
+                  />
+                  <p className="text-xs text-muted-foreground">We'll fetch the page HTML and load it into the editor. Works best on public pages without login walls.</p>
+                </div>
+                <Button
+                  className="w-full"
+                  disabled={!importUrl.trim() || importLoading}
+                  onClick={handleImportUrl}
+                  data-testid="button-import-url-submit"
+                >
+                  {importLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Fetching…</> : <><Globe className="w-4 h-4 mr-2" />Import from URL</>}
+                </Button>
+              </TabsContent>
+
+              {/* ---- ZIP TAB ---- */}
+              <TabsContent value="zip" className="space-y-4 pt-4">
+                <div
+                  className="border-2 border-dashed border-border/60 rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-all"
+                  onClick={() => importZipRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f?.name.endsWith(".zip")) setImportZipFile(f); }}
+                  data-testid="dropzone-import-zip"
+                >
+                  {importZipFile ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <FileArchive className="w-10 h-10 text-primary" />
+                      <p className="font-medium text-sm">{importZipFile.name}</p>
+                      <p className="text-xs text-muted-foreground">{(importZipFile.size / 1024).toFixed(0)} KB — click to change</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <FolderOpen className="w-10 h-10" />
+                      <p className="font-medium text-sm">Drag & drop your ZIP here</p>
+                      <p className="text-xs">or click to browse files</p>
+                    </div>
+                  )}
+                  <input ref={importZipRef} type="file" accept=".zip" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setImportZipFile(f); }} data-testid="input-import-zip" />
+                </div>
+                <p className="text-xs text-muted-foreground text-center">ZIP must contain an <code className="bg-muted px-1 rounded">index.html</code> file. CSS files will be embedded automatically.</p>
+                <Button
+                  className="w-full"
+                  disabled={!importZipFile || importLoading}
+                  onClick={handleImportZip}
+                  data-testid="button-import-zip-submit"
+                >
+                  {importLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Extracting…</> : <><Upload className="w-4 h-4 mr-2" />Import ZIP</>}
+                </Button>
+              </TabsContent>
+            </Tabs>
+          )}
         </DialogContent>
       </Dialog>
     </div>
