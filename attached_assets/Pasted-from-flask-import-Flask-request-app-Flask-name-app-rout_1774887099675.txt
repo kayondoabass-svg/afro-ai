@@ -1,0 +1,58 @@
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route("/ussd", methods=['POST'])
+def ussd_handler():
+    # Data sent by the USSD gateway (e.g., Africa's Talking or Yo! Uganda)
+    session_id = request.values.get("sessionId", None)
+    phone_number = request.values.get("phoneNumber", None)
+    text = request.values.get("text", "")
+
+    # Main Menu (The "Hub")
+    if text == "":
+        response  = "CON Welcome to Afro AI Services\n"
+        response += "1. Trade & Finance (Options AI)\n"
+        response += "2. Education & Lessons (BrightBoard)\n"
+        response += "3. My Account"
+
+    # --- PATH 1: FINANCIAL INCLUSION (B2B TRADE) ---
+    elif text == "1":
+        response = "CON Options AI: B2B Trade\n"
+        response += "1. Find a Supplier\n"
+        response += "2. Apply for Trade Credit\n"
+        response += "3. Check Market Prices"
+
+    elif text == "1*1":
+        response = "CON Enter product (e.g., Cement, Maize):"
+
+    elif text.startswith("1*1*"):
+        product = text.split("*")[-1]
+        # Logic: AI processes the request and finds a match
+        response = f"END Our AI is matching you with {product} suppliers. You will receive an SMS shortly."
+
+    # --- PATH 2: INFORMATION INCLUSION (EDUCATION) ---
+    elif text == "2":
+        response = "CON BrightBoard AI Teacher\n"
+        response += "1. Get 5-Min Lesson Plan\n"
+        response += "2. Today's Quiz\n"
+        response += "3. Change Language"
+
+    elif text == "2*1":
+        response = "CON Select Subject:\n1. Math\n2. Science\n3. English"
+
+    elif text.startswith("2*1*"):
+        # Logic: BrightBoard AI generates a micro-lesson for USSD
+        response = "END Your AI-generated lesson summary has been sent via SMS. Keep learning!"
+
+    # --- PATH 3: ACCOUNT & SETTINGS ---
+    elif text == "3":
+        response = f"END User: {phone_number}\nBalance: UGX 5,000\nPoints: 120"
+
+    else:
+        response = "END Invalid entry. Please try again."
+
+    return response
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
