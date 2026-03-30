@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, userFiles, zipExports, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, ussdSubscriptions, userFiles, zipExports, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type UssdSubscription, type InsertUssdSubscription, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -157,6 +157,10 @@ export interface IStorage {
   getDomainOrder(id: number): Promise<DomainOrder | undefined>;
   createDomainOrder(order: InsertDomainOrder): Promise<DomainOrder>;
   updateDomainOrder(id: number, data: Partial<InsertDomainOrder>): Promise<DomainOrder>;
+  // USSD Subscriptions
+  getUssdSubscription(userId: string): Promise<UssdSubscription | undefined>;
+  createUssdSubscription(data: InsertUssdSubscription): Promise<UssdSubscription>;
+  updateUssdSubscription(userId: string, data: Partial<InsertUssdSubscription>): Promise<UssdSubscription | undefined>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -979,6 +983,21 @@ class DatabaseStorage implements IStorage {
   async createZipExport(data: InsertZipExport): Promise<ZipExport> {
     const [exp] = await db.insert(zipExports).values(data).returning();
     return exp;
+  }
+
+  async getUssdSubscription(userId: string): Promise<UssdSubscription | undefined> {
+    const [sub] = await db.select().from(ussdSubscriptions).where(eq(ussdSubscriptions.userId, userId)).orderBy(desc(ussdSubscriptions.createdAt));
+    return sub;
+  }
+
+  async createUssdSubscription(data: InsertUssdSubscription): Promise<UssdSubscription> {
+    const [sub] = await db.insert(ussdSubscriptions).values(data).returning();
+    return sub;
+  }
+
+  async updateUssdSubscription(userId: string, data: Partial<InsertUssdSubscription>): Promise<UssdSubscription | undefined> {
+    const [sub] = await db.update(ussdSubscriptions).set(data).where(eq(ussdSubscriptions.userId, userId)).returning();
+    return sub;
   }
 }
 

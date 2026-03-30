@@ -49,6 +49,7 @@ import ChatbotCheckoutPage from "@/pages/chatbot-checkout";
 import ArticlesPage from "@/pages/articles";
 import ArticlePage from "@/pages/article";
 import FilesPage from "@/pages/files";
+import UssdBuilderPage from "@/pages/ussd-builder";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -96,6 +97,7 @@ function AuthenticatedLayout() {
               <Route path="/webhooks" component={WebhooksPage} />
               <Route path="/chatbots" component={ChatbotsPage} />
               <Route path="/files" component={FilesPage} />
+              <Route path="/ussd" component={UssdBuilderPage} />
               <Route path="/chatbot-api" component={ChatbotLandingPage} />
               <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
               <Route path="/articles/:slug" component={ArticlePage} />

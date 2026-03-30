@@ -407,6 +407,20 @@ export const insertZipExportSchema = createInsertSchema(zipExports).omit({ id: t
 export type ZipExport = typeof zipExports.$inferSelect;
 export type InsertZipExport = z.infer<typeof insertZipExportSchema>;
 
+// ============ USSD SUBSCRIPTIONS ============
+export const ussdSubscriptions = pgTable("ussd_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  plan: varchar("plan").notNull(),
+  status: varchar("status").notNull().default("active"),
+  activatedAt: timestamp("activated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertUssdSubscriptionSchema = createInsertSchema(ussdSubscriptions).omit({ id: true, createdAt: true });
+export type UssdSubscription = typeof ussdSubscriptions.$inferSelect;
+export type InsertUssdSubscription = z.infer<typeof insertUssdSubscriptionSchema>;
+
 // ============ CHATBOT SUBSCRIPTIONS ============
 export const chatbotSubscriptions = pgTable("chatbot_subscriptions", {
   id: serial("id").primaryKey(),

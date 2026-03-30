@@ -1139,7 +1139,7 @@ export async function registerRoutes(
 
   let cachedIpnId: string | null = null;
 
-  const PLAN_PRICES_USD: Record<string, number> = { pro: 15, business: 29.90, "chatbot-starter": 19, "chatbot-business": 49, "chatbot-agency": 99 };
+  const PLAN_PRICES_USD: Record<string, number> = { pro: 15, business: 29.90, "chatbot-starter": 19, "chatbot-business": 49, "chatbot-agency": 99, "ussd-starter": 29, "ussd-growth": 79, "ussd-enterprise": 199 };
   const CHATBOT_PLAN_CONFIG: Record<string, { repliesLimit: number; botsLimit: number }> = {
     "chatbot-starter":  { repliesLimit: 1000,  botsLimit: 1 },
     "chatbot-business": { repliesLimit: 5000,  botsLimit: 5 },
@@ -1394,6 +1394,20 @@ export async function registerRoutes(
       return true;
     }
 
+    // USSD subscription — activate USSD builder access
+    if (plan.startsWith("ussd-")) {
+      const ussdPlan = plan.replace("ussd-", "");
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const existing = await storage.getUssdSubscription(userId);
+      if (existing) {
+        await storage.updateUssdSubscription(userId, { plan: ussdPlan, status: "active", expiresAt });
+      } else {
+        await storage.createUssdSubscription({ userId, plan: ussdPlan, status: "active", expiresAt });
+      }
+      console.log(`User ${userId} activated USSD plan ${ussdPlan}`);
+      return true;
+    }
+
     await storage.updateUserPlan(userId, plan);
     await storage.reactivateAppsByUser(userId);
     console.log(`User ${userId} upgraded to ${plan} plan — apps reactivated`);
@@ -1466,6 +1480,9 @@ export async function registerRoutes(
         const paidPlan = payment?.plan || "pro";
         if (paidPlan.startsWith("chatbot-")) {
           return res.redirect(`/chatbots?welcome=true&plan=${encodeURIComponent(paidPlan)}`);
+        }
+        if (paidPlan.startsWith("ussd-")) {
+          return res.redirect(`/ussd?payment=success&plan=${encodeURIComponent(paidPlan)}`);
         }
         return res.redirect(`/?payment=success&plan=${encodeURIComponent(paidPlan)}`);
       } else if (isPaymentFailed(status)) {
@@ -2165,6 +2182,60 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
       });
       res.json(JSON.parse(completion.choices[0].message.content || "{}"));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ============ USSD BUILDER ============
+  app.post("/api/ussd/subscribe", apiLimiter, isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { plan, countryCode, firstName, lastName, phoneNumber } = req.body;
+      const validUssdPlans = ["ussd-starter", "ussd-growth", "ussd-enterprise"];
+      if (!plan || !validUssdPlans.includes(plan)) {
+        return res.status(400).json({ message: "Invalid USSD plan" });
+      }
+      const userEmail = req.user.claims.email || req.user.claims.preferred_username;
+      if (!userEmail) return res.status(400).json({ message: "User email not available" });
+
+      const usdAmount = PLAN_PRICES_USD[plan];
+      let currency = "USD";
+      let amount = usdAmount;
+      if (countryCode) {
+        const { getCurrencyForCountry, convertUsdToLocal } = await import("@shared/currencies");
+        const currencyInfo = getCurrencyForCountry(countryCode);
+        if (currencyInfo && PESAPAL_SUPPORTED_CURRENCIES.has(currencyInfo.code)) {
+          currency = currencyInfo.code;
+          amount = Math.round(convertUsdToLocal(usdAmount, countryCode));
+        }
+      }
+      const baseUrl = process.env.BASE_URL || `https://${req.headers.host}`;
+      if (!cachedIpnId) {
+        try { cachedIpnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`); }
+        catch (err) { return res.status(500).json({ message: "Payment service configuration error" }); }
+      }
+      const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
+      const order = await submitOrder({
+        id: merchantReference, currency, amount,
+        description: `Afro AI USSD Builder — ${plan.replace("ussd-", "").charAt(0).toUpperCase() + plan.replace("ussd-", "").slice(1)} Plan`,
+        callback_url: `${baseUrl}/api/pesapal/callback`,
+        notification_id: cachedIpnId,
+        billing_address: { email_address: userEmail, phone_number: phoneNumber || undefined, country_code: countryCode || undefined, first_name: firstName || undefined, last_name: lastName || undefined },
+      });
+      await storage.createPayment({ userId, plan, amount: amount.toString(), currency, pesapalTrackingId: order.order_tracking_id, merchantReference, status: "pending" });
+      res.json({ redirectUrl: order.redirect_url });
+    } catch (error: any) {
+      console.error("USSD subscribe error:", error);
+      res.status(500).json({ message: error.message || "Failed to create USSD subscription" });
+    }
+  });
+
+  app.get("/api/ussd/subscription", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const sub = await storage.getUssdSubscription(userId);
+      res.json(sub || null);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
   });
 
   // ============ CHATBOT WIDGETS ============

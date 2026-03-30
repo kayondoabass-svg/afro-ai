@@ -41,6 +41,7 @@ import {
   Link2,
   Bot,
   HardDrive,
+  PhoneCall,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -71,6 +72,7 @@ export function AppSidebar() {
     { title: "SEO Tools", url: "/seo", icon: Search },
     { title: "Webhooks", url: "/webhooks", icon: Zap },
     { title: "Chatbot API", url: "/chatbots", icon: Bot },
+    { title: "USSD Builder", url: "/ussd", icon: PhoneCall },
     { title: "Files & Storage", url: "/files", icon: HardDrive },
     { title: "Referrals", url: "/referrals", icon: Gift },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
