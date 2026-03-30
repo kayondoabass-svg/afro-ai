@@ -62,7 +62,18 @@ import {
   KeyRound,
   ArrowRight,
   Copy,
+  Github,
+  GitBranch,
+  ChevronDown,
+  BookMarked,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -653,7 +664,7 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth, onGithubExport }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -667,6 +678,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   onShowHistory?: () => void;
   historyCount?: number;
   onAddAuth?: () => void;
+  onGithubExport?: (mode: "gist" | "repo") => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
@@ -805,6 +817,25 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
             <Button size="icon" variant="ghost" onClick={onUndo} title="Undo last change" data-testid="button-undo-preview">
               <Undo2 className="w-4 h-4" />
             </Button>
+          )}
+          {onGithubExport && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" title="GitHub — Export or import via GitHub" data-testid="button-github-dropdown">
+                  <Github className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={() => onGithubExport("gist")} data-testid="menu-github-gist">
+                  <BookMarked className="w-4 h-4 mr-2 text-muted-foreground" />
+                  Export as Gist
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onGithubExport("repo")} data-testid="menu-github-repo">
+                  <GitBranch className="w-4 h-4 mr-2 text-muted-foreground" />
+                  Push to Repository
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           <Button size="icon" variant="ghost" onClick={onDownload} data-testid="button-download-code">
             <Download className="w-4 h-4" />
@@ -956,6 +987,13 @@ export default function AIChatPage() {
   const [importZipFile, setImportZipFile] = useState<File | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const importZipRef = useRef<HTMLInputElement>(null);
+  const [githubToken, setGithubToken] = useState(() => localStorage.getItem("afroai_github_token") || "");
+  const [showGithubModal, setShowGithubModal] = useState(false);
+  const [githubExportMode, setGithubExportMode] = useState<"gist" | "repo">("gist");
+  const [githubRepoName, setGithubRepoName] = useState("");
+  const [githubExporting, setGithubExporting] = useState(false);
+  const [githubResultUrl, setGithubResultUrl] = useState<string | null>(null);
+  const [githubImportUrl, setGithubImportUrl] = useState("");
 
   function handleInputChange(val: string) {
     setInput(val);
@@ -1619,6 +1657,135 @@ export default function AIChatPage() {
       setShowPreview(true);
       setImportSuccess(`Extracted "${data.filename}" from ${data.fileCount} file(s) in the ZIP`);
       setInput(`I've uploaded my existing website as a ZIP. Please help me redesign and improve it.`);
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleGithubExport = (mode: "gist" | "repo") => {
+    setGithubExportMode(mode);
+    setGithubResultUrl(null);
+    setShowGithubModal(true);
+  };
+
+  const handleGistExport = async () => {
+    if (!previewCode) return;
+    setGithubExporting(true);
+    try {
+      const titleMatch = previewCode.match(/<title>([^<]+)<\/title>/i);
+      const title = titleMatch?.[1]?.trim() || "My Afro AI App";
+      const filename = title.replace(/[^a-z0-9]/gi, "-").toLowerCase() + ".html";
+      const res = await fetch("https://api.github.com/gists", {
+        method: "POST",
+        headers: { "Authorization": `token ${githubToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: `${title} — built with Afro AI`,
+          public: true,
+          files: { [filename]: { content: previewCode } },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to create Gist");
+      setGithubResultUrl(data.html_url);
+      localStorage.setItem("afroai_github_token", githubToken);
+    } catch (e: any) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setGithubExporting(false);
+    }
+  };
+
+  const handleRepoExport = async () => {
+    if (!previewCode || !githubRepoName.trim()) return;
+    setGithubExporting(true);
+    try {
+      const userRes = await fetch("https://api.github.com/user", {
+        headers: { "Authorization": `token ${githubToken}` },
+      });
+      const userData = await userRes.json();
+      if (!userRes.ok) throw new Error(userData.message || "Invalid GitHub token");
+      const username = userData.login;
+      const repoName = githubRepoName.trim().replace(/\s+/g, "-").toLowerCase();
+
+      const repoCheck = await fetch(`https://api.github.com/repos/${username}/${repoName}`, {
+        headers: { "Authorization": `token ${githubToken}` },
+      });
+      if (!repoCheck.ok) {
+        const createRes = await fetch("https://api.github.com/user/repos", {
+          method: "POST",
+          headers: { "Authorization": `token ${githubToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ name: repoName, description: "Built with Afro AI", auto_init: false }),
+        });
+        const createData = await createRes.json();
+        if (!createRes.ok) throw new Error(createData.message || "Could not create repository");
+      }
+
+      const fileCheck = await fetch(`https://api.github.com/repos/${username}/${repoName}/contents/index.html`, {
+        headers: { "Authorization": `token ${githubToken}` },
+      });
+      const fileData = fileCheck.ok ? await fileCheck.json() : null;
+      const content = btoa(unescape(encodeURIComponent(previewCode)));
+
+      const pushRes = await fetch(`https://api.github.com/repos/${username}/${repoName}/contents/index.html`, {
+        method: "PUT",
+        headers: { "Authorization": `token ${githubToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "Update app — built with Afro AI",
+          content,
+          ...(fileData?.sha ? { sha: fileData.sha } : {}),
+        }),
+      });
+      const pushData = await pushRes.json();
+      if (!pushRes.ok) throw new Error(pushData.message || "Failed to push file");
+      setGithubResultUrl(`https://github.com/${username}/${repoName}`);
+      localStorage.setItem("afroai_github_token", githubToken);
+    } catch (e: any) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setGithubExporting(false);
+    }
+  };
+
+  const handleGithubImport = async () => {
+    if (!githubImportUrl.trim()) return;
+    setImportLoading(true);
+    try {
+      let rawUrl = githubImportUrl.trim();
+      let filename = "app.html";
+
+      if (/gist\.github\.com\/[^/]+\/[a-f0-9]+/.test(rawUrl)) {
+        const match = rawUrl.match(/gist\.github\.com\/[^/]+\/([a-f0-9]+)/);
+        if (match) {
+          const gistRes = await fetch(`https://api.github.com/gists/${match[1]}`);
+          const gistData = await gistRes.json();
+          if (!gistRes.ok) throw new Error("Could not fetch Gist");
+          const files = Object.values(gistData.files) as any[];
+          const htmlFile = files.find(f => f.filename?.endsWith(".html")) || files[0];
+          filename = htmlFile.filename;
+          const html = htmlFile.content || await fetch(htmlFile.raw_url).then(r => r.text());
+          setPreviewCode(html);
+          setShowPreview(true);
+          setImportSuccess(`Loaded "${filename}" from GitHub Gist`);
+          setInput(`I've imported my app from a GitHub Gist. Please help me continue building it.`);
+          return;
+        }
+      }
+
+      if (rawUrl.includes("github.com") && rawUrl.includes("/blob/")) {
+        rawUrl = rawUrl.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
+      }
+
+      if (!rawUrl.startsWith("http")) throw new Error("Please enter a valid GitHub URL");
+      const res = await fetch(rawUrl);
+      if (!res.ok) throw new Error("Could not fetch file from GitHub");
+      const html = await res.text();
+      filename = rawUrl.split("/").pop()?.split("?")[0] || "app.html";
+      setPreviewCode(html);
+      setShowPreview(true);
+      setImportSuccess(`Loaded "${filename}" from GitHub`);
+      setInput(`I've imported my app from GitHub. Please help me continue building it.`);
     } catch (e: any) {
       toast({ title: "Import failed", description: e.message, variant: "destructive" });
     } finally {
@@ -2383,6 +2550,7 @@ export default function AIChatPage() {
               onShowHistory={() => setShowHistoryPanel(true)}
               historyCount={appVersionsList?.length ?? 0}
               onAddAuth={() => { setAuthStep(1); setShowAuthModal(true); }}
+              onGithubExport={handleGithubExport}
             />
           </div>
         )}
@@ -2726,6 +2894,9 @@ export default function AIChatPage() {
                 <TabsTrigger value="zip" className="flex-1 gap-2" data-testid="tab-import-zip">
                   <FileArchive className="w-4 h-4" /> Upload ZIP
                 </TabsTrigger>
+                <TabsTrigger value="github" className="flex-1 gap-2" data-testid="tab-import-github">
+                  <Github className="w-4 h-4" /> GitHub
+                </TabsTrigger>
               </TabsList>
 
               {/* ---- URL TAB ---- */}
@@ -2786,10 +2957,136 @@ export default function AIChatPage() {
                   {importLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Extracting…</> : <><Upload className="w-4 h-4 mr-2" />Import ZIP</>}
                 </Button>
               </TabsContent>
+
+              {/* ---- GITHUB TAB ---- */}
+              <TabsContent value="github" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="github-import-url">GitHub URL</Label>
+                  <Input
+                    id="github-import-url"
+                    value={githubImportUrl}
+                    onChange={(e) => setGithubImportUrl(e.target.value)}
+                    placeholder="https://gist.github.com/user/abc123 or raw GitHub URL"
+                    data-testid="input-github-import-url"
+                    onKeyDown={(e) => e.key === "Enter" && githubImportUrl.trim() && handleGithubImport()}
+                  />
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p className="font-medium">Supported formats:</p>
+                    <ul className="ml-3 space-y-0.5 list-disc">
+                      <li>GitHub Gist URL — gist.github.com/user/id</li>
+                      <li>GitHub file URL — github.com/user/repo/blob/main/index.html</li>
+                      <li>Raw file URL — raw.githubusercontent.com/...</li>
+                    </ul>
+                  </div>
+                </div>
+                <Button
+                  className="w-full"
+                  disabled={!githubImportUrl.trim() || importLoading}
+                  onClick={handleGithubImport}
+                  data-testid="button-github-import-submit"
+                >
+                  {importLoading
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Fetching from GitHub…</>
+                    : <><Github className="w-4 h-4 mr-2" />Import from GitHub</>}
+                </Button>
+              </TabsContent>
+
             </Tabs>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* GitHub Export Modal */}
+      <Dialog open={showGithubModal} onOpenChange={(o) => { setShowGithubModal(o); if (!o) { setGithubResultUrl(null); setGithubRepoName(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Github className="w-5 h-5" />
+              {githubExportMode === "gist" ? "Export as GitHub Gist" : "Push to GitHub Repository"}
+            </DialogTitle>
+            <DialogDescription>
+              {githubExportMode === "gist"
+                ? "Create a public shareable Gist with your app's code on GitHub."
+                : "Push your app's code to a GitHub repository. Enable GitHub Pages to get a free live URL."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {githubResultUrl ? (
+            <div className="space-y-4 py-2">
+              <div className="flex flex-col items-center gap-3 text-center py-2">
+                <CheckCircle2 className="w-12 h-12 text-green-500" />
+                <div>
+                  <p className="font-semibold">{githubExportMode === "gist" ? "Gist created!" : "Pushed to GitHub!"}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Your app code is now on GitHub.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border text-sm">
+                <span className="flex-1 truncate text-xs font-mono">{githubResultUrl}</span>
+                <Button size="icon" variant="ghost" className="shrink-0 h-7 w-7" onClick={() => { navigator.clipboard.writeText(githubResultUrl); toast({ title: "Copied!" }); }} data-testid="button-copy-github-url">
+                  <Copy className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              {githubExportMode === "repo" && (
+                <div className="rounded-lg border border-amber-400/30 bg-amber-50/5 p-3 text-xs text-muted-foreground space-y-1">
+                  <p className="font-semibold text-amber-500">Get a free live URL with GitHub Pages:</p>
+                  <ol className="ml-3 list-decimal space-y-0.5">
+                    <li>Open your repo on GitHub</li>
+                    <li>Settings → Pages → Deploy from branch → main</li>
+                    <li>App goes live at <span className="font-mono">username.github.io/repo-name</span></li>
+                  </ol>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowGithubModal(false)} data-testid="button-github-close">Done</Button>
+                <Button className="flex-1 gap-2" onClick={() => window.open(githubResultUrl, "_blank")} data-testid="button-github-open">
+                  <ExternalLink className="w-4 h-4" /> View on GitHub
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-sm">GitHub Personal Access Token <span className="text-red-400">*</span></Label>
+                <Input
+                  type="password"
+                  value={githubToken}
+                  onChange={(e) => setGithubToken(e.target.value)}
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  data-testid="input-github-token"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Get one at <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-primary underline">github.com/settings/tokens</a> — needs <strong>gist</strong>{githubExportMode === "repo" ? " and repo" : ""} scope. Saved in your browser only, never sent to Afro AI.
+                </p>
+              </div>
+
+              {githubExportMode === "repo" && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Repository name <span className="text-red-400">*</span></Label>
+                  <Input
+                    value={githubRepoName}
+                    onChange={(e) => setGithubRepoName(e.target.value)}
+                    placeholder="my-afro-ai-app"
+                    data-testid="input-github-repo-name"
+                  />
+                  <p className="text-xs text-muted-foreground">Created automatically if it doesn't exist yet.</p>
+                </div>
+              )}
+
+              <Button
+                className="w-full gap-2"
+                disabled={!githubToken || (githubExportMode === "repo" && !githubRepoName.trim()) || githubExporting}
+                onClick={githubExportMode === "gist" ? handleGistExport : handleRepoExport}
+                data-testid="button-github-export-submit"
+              >
+                {githubExporting
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />{githubExportMode === "gist" ? "Creating Gist…" : "Pushing to GitHub…"}</>
+                  : <><Github className="w-4 h-4" />{githubExportMode === "gist" ? "Create Gist" : "Push to GitHub"}</>}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
