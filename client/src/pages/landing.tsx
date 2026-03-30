@@ -20,6 +20,8 @@ import {
   CreditCard,
   Wifi,
   ScanSearch,
+  Github,
+  GitBranch,
 } from "lucide-react";
 import heroBg from "@assets/hero-bg.png";
 import workspaceImg from "@assets/workspace.png";
@@ -602,6 +604,28 @@ export default function LandingPage() {
               <p className="text-sm text-muted-foreground">
                 {t("footer.tagline")}
               </p>
+              <div className="flex items-center gap-3 pt-1">
+                <a
+                  href="https://github.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  title="GitHub"
+                  data-testid="link-footer-github"
+                >
+                  <Github className="w-5 h-5" />
+                </a>
+                <a
+                  href="https://pages.github.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  title="GitHub Pages — free hosting"
+                  data-testid="link-footer-github-pages"
+                >
+                  <GitBranch className="w-5 h-5" />
+                </a>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -614,6 +638,9 @@ export default function LandingPage() {
                 <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">Marketplace</a>
                 <a href="/domains" className="block hover:text-primary transition-colors" data-testid="link-footer-domains">Domain Store</a>
                 <a href="/chatbot-api" className="block hover:text-primary transition-colors" data-testid="link-footer-chatbot-api">Chatbot API</a>
+                <a href="https://pages.github.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors" data-testid="link-footer-github-pages-product">
+                  <Github className="w-3.5 h-3.5" /> GitHub Pages
+                </a>
               </div>
             </div>
 
