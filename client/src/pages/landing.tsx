@@ -593,8 +593,8 @@ export default function LandingPage() {
 
       <footer className="border-t py-12 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
+            <div className="col-span-2 md:col-span-1 space-y-4">
               <div className="flex items-center gap-2">
                 <img src={afroLogo} alt="Afro AI" className="w-7 h-7 object-contain" />
                 <span className="font-bold">Afro AI</span>
@@ -603,6 +603,7 @@ export default function LandingPage() {
                 {t("footer.tagline")}
               </p>
             </div>
+
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.product")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
@@ -612,24 +613,29 @@ export default function LandingPage() {
                 <a href="/templates" className="block hover:text-primary transition-colors" data-testid="link-footer-templates">Templates</a>
                 <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">Marketplace</a>
                 <a href="/domains" className="block hover:text-primary transition-colors" data-testid="link-footer-domains">Domain Store</a>
+                <a href="/chatbot-api" className="block hover:text-primary transition-colors" data-testid="link-footer-chatbot-api">Chatbot API</a>
               </div>
             </div>
+
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">Earn</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <a href="/affiliate" className="block hover:text-primary transition-colors" data-testid="link-footer-affiliate">Affiliate Program</a>
+                <a href="/referrals" className="block hover:text-primary transition-colors" data-testid="link-footer-referrals">Refer & Earn</a>
               </div>
             </div>
+
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.company")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <a href="/about" className="block hover:text-primary transition-colors" data-testid="link-footer-about">{t("footer.aboutUs")}</a>
                 <a href="/blog" className="block hover:text-primary transition-colors" data-testid="link-footer-blog">{t("footer.blog")}</a>
                 <a href="/contact" className="block hover:text-primary transition-colors" data-testid="link-footer-contact">{t("footer.contact")}</a>
-                <a href="mailto:Support@afroaigroup.com" className="block hover:text-primary transition-colors" data-testid="link-footer-careers">Support</a>
+                <a href="mailto:Support@afroaigroup.com" className="block hover:text-primary transition-colors" data-testid="link-footer-support">Support</a>
                 <a href="/pricing" className="block hover:text-primary transition-colors" data-testid="link-footer-pricing">Pricing</a>
               </div>
             </div>
+
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.legal")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">

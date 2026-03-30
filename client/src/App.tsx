@@ -152,6 +152,11 @@ function AppRouter() {
         <Route path="/terms" component={TermsPage} />
         <Route path="/cookies" component={CookiePolicyPage} />
         <Route path="/refund-policy" component={RefundPolicyPage} />
+        <Route path="/pricing" component={PricingPage} />
+        <Route path="/templates" component={TemplatesPage} />
+        <Route path="/marketplace" component={MarketplacePage} />
+        <Route path="/blog" component={BlogPage} />
+        <Route path="/affiliate" component={AffiliatePage} />
         <Route path="/chatbot-api" component={ChatbotLandingPage} />
         <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
         <Route path="/articles/:slug" component={ArticlePage} />
