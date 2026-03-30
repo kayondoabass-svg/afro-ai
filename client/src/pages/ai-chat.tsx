@@ -66,6 +66,7 @@ import {
   GitBranch,
   ChevronDown,
   BookMarked,
+  MoreHorizontal,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -733,119 +734,140 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
           <span className="text-sm font-medium hidden sm:inline" data-testid="text-preview-label">Live Preview</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="flex items-center border rounded-md mr-2">
-            <Button
-              size="icon"
-              variant={previewDevice === "desktop" ? "default" : "ghost"}
-              className="h-7 w-7 rounded-r-none"
-              onClick={() => setPreviewDevice("desktop")}
-              title="Desktop"
-              data-testid="button-chat-preview-desktop"
-            >
-              <Monitor className="w-3.5 h-3.5" />
+          {/* Desktop toolbar — hidden on mobile */}
+          <div className="hidden sm:flex items-center gap-1">
+            <div className="flex items-center border rounded-md mr-2">
+              <Button size="icon" variant={previewDevice === "desktop" ? "default" : "ghost"} className="h-7 w-7 rounded-r-none" onClick={() => setPreviewDevice("desktop")} title="Desktop" data-testid="button-chat-preview-desktop">
+                <Monitor className="w-3.5 h-3.5" />
+              </Button>
+              <Button size="icon" variant={previewDevice === "tablet" ? "default" : "ghost"} className="h-7 w-7 rounded-none border-x" onClick={() => setPreviewDevice("tablet")} title="Tablet" data-testid="button-chat-preview-tablet">
+                <Tablet className="w-3.5 h-3.5" />
+              </Button>
+              <Button size="icon" variant={previewDevice === "phone" ? "default" : "ghost"} className="h-7 w-7 rounded-l-none" onClick={() => setPreviewDevice("phone")} title="Phone" data-testid="button-chat-preview-phone">
+                <Smartphone className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+            {onAddAuth && (
+              <Button size="sm" variant="outline" onClick={onAddAuth} className="gap-1 border-border/60 hover:border-amber-400/60 hover:text-amber-500" title="Add login" data-testid="button-add-auth">
+                <Lock className="w-3 h-3" /><span className="hidden lg:inline">Add Login</span>
+              </Button>
+            )}
+            {onShowHistory && (
+              <Button size="sm" variant="outline" onClick={onShowHistory} className="gap-1 border-border/60 hover:border-primary/40 hover:text-primary relative" title="Version history" data-testid="button-version-history">
+                <History className="w-3 h-3" /><span className="hidden lg:inline">History</span>
+                {historyCount != null && historyCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {historyCount > 9 ? "9+" : historyCount}
+                  </span>
+                )}
+              </Button>
+            )}
+            {onVerify && (
+              <Button size="sm" variant="outline" onClick={onVerify} className="gap-1 border-primary/30 text-primary hover:bg-primary/10" title="Verify" data-testid="button-verify-app">
+                <ShieldCheck className="w-3 h-3" /><span className="hidden lg:inline">Verify</span>
+              </Button>
+            )}
+            {canUndo && onUndo && (
+              <Button size="icon" variant="ghost" onClick={onUndo} title="Undo" data-testid="button-undo-preview">
+                <Undo2 className="w-4 h-4" />
+              </Button>
+            )}
+            {onGithubExport && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon" variant="ghost" title="GitHub" data-testid="button-github-dropdown">
+                    <Github className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={() => onGithubExport("gist")} data-testid="menu-github-gist">
+                    <BookMarked className="w-4 h-4 mr-2 text-muted-foreground" />Export as Gist
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onGithubExport("repo")} data-testid="menu-github-repo">
+                    <GitBranch className="w-4 h-4 mr-2 text-muted-foreground" />Push to Repository
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <Button size="icon" variant="ghost" onClick={onDownload} title="Download" data-testid="button-download-code">
+              <Download className="w-4 h-4" />
             </Button>
-            <Button
-              size="icon"
-              variant={previewDevice === "tablet" ? "default" : "ghost"}
-              className="h-7 w-7 rounded-none border-x"
-              onClick={() => setPreviewDevice("tablet")}
-              title="Tablet"
-              data-testid="button-chat-preview-tablet"
-            >
-              <Tablet className="w-3.5 h-3.5" />
+            <Button size="icon" variant="ghost" onClick={onToggleFullscreen} title="Fullscreen" data-testid="button-toggle-fullscreen">
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </Button>
-            <Button
-              size="icon"
-              variant={previewDevice === "phone" ? "default" : "ghost"}
-              className="h-7 w-7 rounded-l-none"
-              onClick={() => setPreviewDevice("phone")}
-              title="Phone"
-              data-testid="button-chat-preview-phone"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
+            <Button size="icon" variant="ghost" onClick={onClose} data-testid="button-close-preview">
+              <X className="w-4 h-4" />
             </Button>
           </div>
-          {onAddAuth && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onAddAuth}
-              className="gap-1 border-border/60 hover:border-amber-400/60 hover:text-amber-500"
-              title="Add user login to your app with Firebase Authentication"
-              data-testid="button-add-auth"
-            >
-              <Lock className="w-3 h-3" />
-              <span className="hidden sm:inline">Add Login</span>
-            </Button>
-          )}
-          {onShowHistory && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onShowHistory}
-              className="gap-1 border-border/60 hover:border-primary/40 hover:text-primary relative"
-              title="View version history"
-              data-testid="button-version-history"
-            >
-              <History className="w-3 h-3" />
-              <span className="hidden sm:inline">History</span>
-              {historyCount != null && historyCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                  {historyCount > 9 ? "9+" : historyCount}
-                </span>
-              )}
-            </Button>
-          )}
-          {onVerify && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onVerify}
-              className="gap-1 border-primary/30 text-primary hover:bg-primary/10"
-              title="Verify app for broken code, phantom functions, and hallucinated content"
-              data-testid="button-verify-app"
-            >
-              <ShieldCheck className="w-3 h-3" />
-              <span className="hidden sm:inline">Verify</span>
-            </Button>
-          )}
+
+          {/* Always visible: Publish */}
           <Button size="sm" variant="default" onClick={() => setShowPublish(true)} className="gap-1" data-testid="button-publish-app">
             <Rocket className="w-3 h-3" />
             Publish
           </Button>
-          {canUndo && onUndo && (
-            <Button size="icon" variant="ghost" onClick={onUndo} title="Undo last change" data-testid="button-undo-preview">
-              <Undo2 className="w-4 h-4" />
-            </Button>
-          )}
-          {onGithubExport && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="ghost" title="GitHub — Export or import via GitHub" data-testid="button-github-dropdown">
-                  <Github className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem onClick={() => onGithubExport("gist")} data-testid="menu-github-gist">
-                  <BookMarked className="w-4 h-4 mr-2 text-muted-foreground" />
-                  Export as Gist
+
+          {/* Mobile-only: "More" dropdown with all extra actions */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" className="sm:hidden" data-testid="button-more-actions">
+                <MoreHorizontal className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => setPreviewDevice("desktop")} data-testid="menu-device-desktop">
+                <Monitor className="w-4 h-4 mr-2" />Desktop preview
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPreviewDevice("tablet")} data-testid="menu-device-tablet">
+                <Tablet className="w-4 h-4 mr-2" />Tablet preview
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPreviewDevice("phone")} data-testid="menu-device-phone">
+                <Smartphone className="w-4 h-4 mr-2" />Phone preview
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {onAddAuth && (
+                <DropdownMenuItem onClick={onAddAuth} data-testid="menu-add-auth">
+                  <Lock className="w-4 h-4 mr-2" />Add Login
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onGithubExport("repo")} data-testid="menu-github-repo">
-                  <GitBranch className="w-4 h-4 mr-2 text-muted-foreground" />
-                  Push to Repository
+              )}
+              {onShowHistory && (
+                <DropdownMenuItem onClick={onShowHistory} data-testid="menu-history">
+                  <History className="w-4 h-4 mr-2" />Version History {historyCount ? `(${historyCount})` : ""}
                 </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <Button size="icon" variant="ghost" onClick={onDownload} data-testid="button-download-code">
-            <Download className="w-4 h-4" />
-          </Button>
-          <Button size="icon" variant="ghost" onClick={onToggleFullscreen} data-testid="button-toggle-fullscreen">
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </Button>
-          <Button size="icon" variant="ghost" onClick={onClose} data-testid="button-close-preview">
-            <X className="w-4 h-4" />
-          </Button>
+              )}
+              {onVerify && (
+                <DropdownMenuItem onClick={onVerify} data-testid="menu-verify">
+                  <ShieldCheck className="w-4 h-4 mr-2" />Verify App
+                </DropdownMenuItem>
+              )}
+              {canUndo && onUndo && (
+                <DropdownMenuItem onClick={onUndo} data-testid="menu-undo">
+                  <Undo2 className="w-4 h-4 mr-2" />Undo Last Change
+                </DropdownMenuItem>
+              )}
+              {onGithubExport && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => onGithubExport("gist")} data-testid="menu-github-gist-mobile">
+                    <BookMarked className="w-4 h-4 mr-2" />Export as GitHub Gist
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onGithubExport("repo")} data-testid="menu-github-repo-mobile">
+                    <GitBranch className="w-4 h-4 mr-2" />Push to Repository
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onDownload} data-testid="menu-download">
+                <Download className="w-4 h-4 mr-2" />Download HTML
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onToggleFullscreen} data-testid="menu-fullscreen">
+                {isFullscreen ? <Minimize2 className="w-4 h-4 mr-2" /> : <Maximize2 className="w-4 h-4 mr-2" />}
+                {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onClose} data-testid="menu-close-preview">
+                <X className="w-4 h-4 mr-2" />Close Preview
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       {iframeErrors.length > 0 && !errorsDismissed && (
@@ -2168,33 +2190,20 @@ export default function AIChatPage() {
       </div>
 
       <div className="flex-1 flex">
-        <div className={`flex flex-col ${previewCode && showPreview ? `${mobileView === "preview" ? "hidden" : "flex"} md:flex md:w-1/2 md:min-w-[320px]` : "flex-1"}`}>
+        <div className={`flex flex-col ${previewCode && showPreview ? `${mobileView === "preview" ? "hidden" : "flex"} md:flex md:w-1/2 md:min-w-[320px]` : "flex-1"} ${previewCode ? "pb-14 md:pb-0" : ""}`}>
           {activeConversation ? (
             <>
               {previewCode && (
-                <div className="flex items-center justify-between gap-2 px-4 py-2 border-b bg-card/50">
+                <div className="hidden md:flex items-center justify-between gap-2 px-4 py-2 border-b bg-card/50">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Code2 className="w-4 h-4 text-primary" />
                     <span>Building Mode</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    {mobileView === "chat" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => { setShowPreview(true); setMobileView("preview"); }}
-                        className="gap-1 text-xs md:hidden"
-                        data-testid="button-show-preview"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        Preview
-                      </Button>
-                    )}
                     <Button
                       size="icon"
                       variant="ghost"
                       onClick={() => setShowPreview(!showPreview)}
-                      className="hidden md:flex"
                       data-testid="button-toggle-preview"
                     >
                       {showPreview ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
@@ -2390,7 +2399,8 @@ export default function AIChatPage() {
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-8" data-testid="welcome-screen">
+            <div className="flex-1 overflow-y-auto min-h-0" data-testid="welcome-screen">
+            <div className="flex flex-col items-center justify-center min-h-full p-4 md:p-6 gap-6 md:gap-8">
 
               {/* Greeting */}
               <div className="text-center space-y-2">
@@ -2507,6 +2517,7 @@ export default function AIChatPage() {
                 </div>
               </div>
             </div>
+            </div>
           )}
         </div>
 
@@ -2552,6 +2563,28 @@ export default function AIChatPage() {
               onAddAuth={() => { setAuthStep(1); setShowAuthModal(true); }}
               onGithubExport={handleGithubExport}
             />
+          </div>
+        )}
+
+        {/* Mobile Chat/Preview tab bar — fixed at bottom, only when preview exists */}
+        {previewCode && (
+          <div className="fixed bottom-0 left-0 right-0 z-30 flex md:hidden border-t bg-background/95 backdrop-blur-sm" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <button
+              onClick={() => setMobileView("chat")}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${mobileView === "chat" ? "text-primary border-t-2 border-primary -mt-px" : "text-muted-foreground"}`}
+              data-testid="button-mobile-tab-chat"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Chat
+            </button>
+            <button
+              onClick={() => { setShowPreview(true); setMobileView("preview"); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${mobileView === "preview" ? "text-primary border-t-2 border-primary -mt-px" : "text-muted-foreground"}`}
+              data-testid="button-mobile-tab-preview"
+            >
+              <Eye className="w-4 h-4" />
+              Preview
+            </button>
           </div>
         )}
 
