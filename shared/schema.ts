@@ -379,6 +379,34 @@ export const widgetConversations = pgTable("widget_conversations", {
 });
 export type WidgetConversation = typeof widgetConversations.$inferSelect;
 
+// ============ USER FILES (uploaded images/videos) ============
+export const userFiles = pgTable("user_files", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  mimetype: text("mimetype").notNull(),
+  size: integer("size").notNull().default(0),
+  url: text("url").notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertUserFileSchema = createInsertSchema(userFiles).omit({ id: true, createdAt: true });
+export type UserFile = typeof userFiles.$inferSelect;
+export type InsertUserFile = z.infer<typeof insertUserFileSchema>;
+
+// ============ ZIP EXPORTS (download history) ============
+export const zipExports = pgTable("zip_exports", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectName: text("project_name").notNull(),
+  conversationId: integer("conversation_id"),
+  fileCount: integer("file_count").notNull().default(1),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertZipExportSchema = createInsertSchema(zipExports).omit({ id: true, createdAt: true });
+export type ZipExport = typeof zipExports.$inferSelect;
+export type InsertZipExport = z.infer<typeof insertZipExportSchema>;
+
 // ============ CHATBOT SUBSCRIPTIONS ============
 export const chatbotSubscriptions = pgTable("chatbot_subscriptions", {
   id: serial("id").primaryKey(),

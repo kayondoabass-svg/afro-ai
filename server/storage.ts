@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, userFiles, zipExports, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -74,6 +74,13 @@ export interface IStorage {
   incrementChatbotRepliesUsed(userId: string): Promise<void>;
   getUser(userId: string): Promise<any | undefined>;
   updateUserExperience(userId: string, level: string): Promise<void>;
+  // User files
+  getUserFiles(userId: string): Promise<UserFile[]>;
+  createUserFile(data: InsertUserFile): Promise<UserFile>;
+  deleteUserFile(id: number): Promise<void>;
+  // Zip exports
+  getZipExports(userId: string): Promise<ZipExport[]>;
+  createZipExport(data: InsertZipExport): Promise<ZipExport>;
   // App version history
   saveAppVersion(data: InsertAppVersion): Promise<AppVersion>;
   getAppVersions(conversationId: number): Promise<AppVersion[]>;
@@ -950,6 +957,28 @@ class DatabaseStorage implements IStorage {
     await db.update(chatbotSubscriptions)
       .set({ repliesUsed: sql`${chatbotSubscriptions.repliesUsed} + 1` })
       .where(and(eq(chatbotSubscriptions.userId, userId), eq(chatbotSubscriptions.status, "active")));
+  }
+
+  async getUserFiles(userId: string): Promise<UserFile[]> {
+    return db.select().from(userFiles).where(eq(userFiles.userId, userId)).orderBy(desc(userFiles.createdAt));
+  }
+
+  async createUserFile(data: InsertUserFile): Promise<UserFile> {
+    const [file] = await db.insert(userFiles).values(data).returning();
+    return file;
+  }
+
+  async deleteUserFile(id: number): Promise<void> {
+    await db.delete(userFiles).where(eq(userFiles.id, id));
+  }
+
+  async getZipExports(userId: string): Promise<ZipExport[]> {
+    return db.select().from(zipExports).where(eq(zipExports.userId, userId)).orderBy(desc(zipExports.createdAt));
+  }
+
+  async createZipExport(data: InsertZipExport): Promise<ZipExport> {
+    const [exp] = await db.insert(zipExports).values(data).returning();
+    return exp;
   }
 }
 

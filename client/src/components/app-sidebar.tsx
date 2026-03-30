@@ -40,6 +40,7 @@ import {
   Search,
   Link2,
   Bot,
+  HardDrive,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -70,6 +71,7 @@ export function AppSidebar() {
     { title: "SEO Tools", url: "/seo", icon: Search },
     { title: "Webhooks", url: "/webhooks", icon: Zap },
     { title: "Chatbot API", url: "/chatbots", icon: Bot },
+    { title: "Files & Storage", url: "/files", icon: HardDrive },
     { title: "Referrals", url: "/referrals", icon: Gift },
     { title: t("sidebar.pricing"), url: "/pricing", icon: CreditCard },
     { title: "Billing & Usage", url: "/billing", icon: Receipt },

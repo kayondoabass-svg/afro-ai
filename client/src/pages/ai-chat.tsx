@@ -1481,6 +1481,7 @@ export default function AIChatPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast({ title: "Project Downloaded!", description: `${projectName}.zip — includes HTML, CSS, JS, and README files.` });
+      apiRequest("POST", "/api/zip-exports", { projectName, conversationId: activeConversation, fileCount: files.length }).catch(() => {});
     } else {
       const blob = new Blob([previewCode], { type: "text/html" });
       const url = URL.createObjectURL(blob);
@@ -1492,6 +1493,7 @@ export default function AIChatPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast({ title: "Downloaded!", description: "Your project has been downloaded as an HTML file." });
+      apiRequest("POST", "/api/zip-exports", { projectName, conversationId: activeConversation, fileCount: 1 }).catch(() => {});
     }
   }, [previewCode, toast]);
 

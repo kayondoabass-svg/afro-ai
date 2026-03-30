@@ -164,13 +164,14 @@ export async function registerRoutes(
   registerAuthRoutes(app);
   registerChatRoutes(app);
 
-  app.post("/api/upload", isAuthenticated, upload.array("files", 5), (req: any, res) => {
+  app.post("/api/upload", isAuthenticated, upload.array("files", 5), async (req: any, res) => {
     try {
       const files = req.files as Express.Multer.File[];
       if (!files || files.length === 0) {
         return res.status(400).json({ message: "No files uploaded" });
       }
-      const result = files.map((f) => {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const result = await Promise.all(files.map(async (f) => {
         const entry: any = {
           filename: f.filename,
           originalName: f.originalname,
@@ -186,12 +187,66 @@ export async function registerRoutes(
             console.error("Error encoding image to base64:", e);
           }
         }
+        if (userId) {
+          try {
+            await storage.createUserFile({ userId, filename: f.filename, originalName: f.originalname, mimetype: f.mimetype, size: f.size, url: `/uploads/${f.filename}` });
+          } catch (_) {}
+        }
         return entry;
-      });
+      }));
       res.json(result);
     } catch (error: any) {
       console.error("Error uploading file:", error);
       res.status(500).json({ message: error.message || "Failed to upload file" });
+    }
+  });
+
+  // ============ USER FILES ============
+  app.get("/api/files", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const files = await storage.getUserFiles(userId);
+      res.json(files);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/files/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const fileId = parseInt(req.params.id);
+      const files = await storage.getUserFiles(userId);
+      const file = files.find(f => f.id === fileId);
+      if (!file) return res.status(404).json({ message: "File not found" });
+      const filePath = path.join(process.cwd(), "public", file.url);
+      if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch (_) {} }
+      await storage.deleteUserFile(fileId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ ZIP EXPORTS ============
+  app.get("/api/zip-exports", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const exports = await storage.getZipExports(userId);
+      res.json(exports);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/zip-exports", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { projectName, conversationId, fileCount } = req.body;
+      const exp = await storage.createZipExport({ userId, projectName: projectName || "afro-ai-project", conversationId: conversationId || null, fileCount: fileCount || 1 });
+      res.json(exp);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 
