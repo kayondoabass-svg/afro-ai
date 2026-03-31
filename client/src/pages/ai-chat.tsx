@@ -915,6 +915,90 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   );
 }
 
+// === FIX 3: Parse structured AI output blocks into visual cards ===
+function extractBlock(text: string, tag: string): { content: string; rest: string } {
+  const openTag = `[${tag}]`;
+  const closeTag = `[/${tag}]`;
+  const start = text.indexOf(openTag);
+  const end = text.indexOf(closeTag);
+  if (start === -1 || end === -1) return { content: "", rest: text };
+  const content = text.slice(start + openTag.length, end).trim();
+  const rest = text.slice(0, start) + text.slice(end + closeTag.length);
+  return { content, rest: rest.trim() };
+}
+
+function BuildPlanCard({ content }: { content: string }) {
+  const lines = content.split("\n").map(l => l.trim()).filter(Boolean);
+  const fields: Record<string, string> = {};
+  for (const line of lines) {
+    const colon = line.indexOf(":");
+    if (colon !== -1) {
+      const key = line.slice(0, colon).trim().toLowerCase();
+      const val = line.slice(colon + 1).trim();
+      fields[key] = val;
+    }
+  }
+  return (
+    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2 my-2" data-testid="card-build-plan">
+      <div className="flex items-center gap-2">
+        <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+        <span className="text-xs font-semibold text-primary uppercase tracking-wider">Build Plan</span>
+      </div>
+      {fields.building && (
+        <div className="space-y-0.5">
+          <p className="text-xs text-muted-foreground font-medium">Building</p>
+          <p className="text-sm text-foreground">{fields.building}</p>
+        </div>
+      )}
+      {fields.sections && (
+        <div className="flex flex-wrap gap-1">
+          {fields.sections.split(",").map((s, i) => (
+            <span key={i} className="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5 border border-primary/20">{s.trim()}</span>
+          ))}
+        </div>
+      )}
+      {fields.preserving && (
+        <div className="space-y-0.5">
+          <p className="text-xs text-muted-foreground font-medium">Preserving</p>
+          <p className="text-xs text-muted-foreground">{fields.preserving}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequirementsCheckCard({ content }: { content: string }) {
+  const lines = content.split("\n").map(l => l.trim()).filter(Boolean);
+  const items = lines.filter(l => l.startsWith("•") || l.startsWith("-"));
+  const footer = lines.find(l => l.startsWith("⚡"));
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2 my-2" data-testid="card-requirements-check">
+      <div className="flex items-center gap-2">
+        <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+        <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Requirements Check</span>
+      </div>
+      <p className="text-xs text-muted-foreground">To fully activate this build, you'll need:</p>
+      <ul className="space-y-1.5">
+        {items.map((item, i) => {
+          const clean = item.replace(/^[•\-]\s*/, "");
+          const parts = clean.split(" — ");
+          return (
+            <li key={i} className="flex items-start gap-2 text-xs">
+              <span className="text-amber-400 mt-0.5 flex-shrink-0">→</span>
+              <span className="text-foreground">
+                <strong>{parts[0]}</strong>
+                {parts[1] && <span className="text-muted-foreground"> — {parts[1]}</span>}
+                {parts[2] && <span className="text-primary"> · {parts[2]}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {footer && <p className="text-xs text-amber-400/80 font-medium pt-1 border-t border-amber-500/20">{footer}</p>}
+    </div>
+  );
+}
+
 function MarkdownText({ text }: { text: string }) {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
@@ -1825,13 +1909,69 @@ export default function AIChatPage() {
     }, 50);
   };
 
+  // === FIX 1: Auto-Fix sends directly to AI without requiring user to press Send ===
+  const sendDirectMessage = async (text: string) => {
+    if (!activeConversation || isStreaming) return;
+    setIsStreaming(true);
+    setStreamingContent("");
+
+    const optimisticMsg: Message = {
+      id: Date.now(),
+      conversationId: activeConversation,
+      role: "user",
+      content: text,
+      createdAt: new Date(),
+    };
+    queryClient.setQueryData<ConversationWithMessages>(
+      ["/api/conversations", activeConversation],
+      (old) => old ? { ...old, messages: [...(old.messages || []), optimisticMsg] } : old
+    );
+
+    try {
+      const response = await fetch(`/api/conversations/${activeConversation}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content: text }),
+      });
+      if (!response.ok) throw new Error("Failed");
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No body");
+      const decoder = new TextDecoder();
+      let fullResponse = "";
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.content) { fullResponse += data.content; setStreamingContent(fullResponse); }
+            if (data.done) {
+              setStreamingContent("");
+              setIsStreaming(false);
+              queryClient.invalidateQueries({ queryKey: ["/api/conversations", activeConversation] });
+              queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+              const generatedCode = extractAllCodeBlocks(fullResponse);
+              if (generatedCode) runAutoTestAndPublish(generatedCode);
+            }
+          } catch {}
+        }
+      }
+    } catch {
+      toast({ title: "Error", description: "Auto-fix failed. Please try again.", variant: "destructive" });
+      setIsStreaming(false);
+      setStreamingContent("");
+    }
+  };
+
   const handleAutoFix = (errors: string[]) => {
     const errorList = errors.slice(0, 5).map(e => `- ${e}`).join("\n");
-    setInput(`Fix these JavaScript errors detected in my app:\n${errorList}\n\nFind the root cause of each error and fix it without changing the design or layout. Return the complete corrected HTML file.`);
-    setTimeout(() => {
-      const el = document.querySelector<HTMLTextAreaElement>("[data-testid='input-chat-message']");
-      if (el) el.focus();
-    }, 50);
+    sendDirectMessage(`Fix these JavaScript errors detected in my app:\n${errorList}\n\nFind the root cause of each error and fix it without changing the design or layout. Return the complete corrected HTML file.`);
   };
 
   const handleSend = async () => {
@@ -1984,10 +2124,21 @@ export default function AIChatPage() {
     }
 
     const code = extractAllCodeBlocks(content);
-    const textOnly = removeCodeBlock(content);
+    let textOnly = removeCodeBlock(content);
+
+    // === FIX 3: Extract structured blocks and render as visual cards ===
+    const planResult = extractBlock(textOnly, "BUILD PLAN");
+    const planContent = planResult.content;
+    if (planContent) textOnly = planResult.rest;
+
+    const reqResult = extractBlock(textOnly, "REQUIREMENTS CHECK");
+    const reqContent = reqResult.content;
+    if (reqContent) textOnly = reqResult.rest;
 
     return (
       <div className="space-y-3">
+        {reqContent && <RequirementsCheckCard content={reqContent} />}
+        {planContent && <BuildPlanCard content={planContent} />}
         {textOnly && <MarkdownText text={textOnly} />}
         {code && (
           <>

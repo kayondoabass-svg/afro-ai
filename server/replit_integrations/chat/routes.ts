@@ -39,6 +39,322 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+// === FIX 4: RAG Documentation Snippets ===
+// Curated, accurate API documentation injected into context when keywords detected.
+// This prevents the AI from hallucinating API syntax by grounding it in real docs.
+const API_DOC_SNIPPETS: Array<{ keywords: RegExp; service: string; docs: string }> = [
+  {
+    keywords: /africa'?s?\s*talking|africastalking|AT\s+ussd|AT\s+sms/i,
+    service: "Africa's Talking",
+    docs: `=== AFRICA'S TALKING — ACCURATE API DOCS (Use these exactly) ===
+USSD (server-side callback):
+Africa's Talking sends a POST to your gateway URL with these EXACT form fields:
+  sessionId   — unique session identifier
+  serviceCode — the USSD shortcode (e.g. *384*123#)
+  phoneNumber — caller's number with country code (e.g. +254712345678)
+  text        — accumulated input separated by * (e.g. "" on first call, "1" after first choice, "1*hello" after second)
+
+Your server must respond with plain text starting with:
+  CON <message>  — to continue the session (show menu/prompt)
+  END <message>  — to terminate the session
+
+Example Node.js/Express handler:
+app.post('/ussd', (req, res) => {
+  const { sessionId, serviceCode, phoneNumber, text } = req.body;
+  let response = '';
+  if (text === '') {
+    response = 'CON Welcome\\n1. Check Balance\\n2. Buy Airtime\\n3. Help';
+  } else if (text === '1') {
+    response = 'END Your balance is UGX 5,000';
+  } else if (text === '2') {
+    response = 'CON Enter amount:';
+  } else if (text.startsWith('2*')) {
+    const amount = text.split('*')[1];
+    response = \`END Airtime of UGX \${amount} sent successfully!\`;
+  } else {
+    response = 'END Invalid choice. Please try again.';
+  }
+  res.set('Content-Type', 'text/plain');
+  res.send(response);
+});
+
+SMS (outbound):
+const AfricasTalking = require('africastalking');
+const client = AfricasTalking({ apiKey: 'YOUR_API_KEY', username: 'YOUR_USERNAME' });
+await client.SMS.send({ to: ['+254712345678'], message: 'Hello!', from: 'YOUR_SHORTCODE' });
+
+NPM package: npm install africastalking
+Dashboard: account.africastalking.com`,
+  },
+  {
+    keywords: /m.?pesa|mpesa|daraja|safaricom|stk.?push/i,
+    service: "M-Pesa Daraja (Safaricom Kenya)",
+    docs: `=== M-PESA DARAJA API — ACCURATE DOCS (Use these exactly) ===
+STK Push (Lipa Na M-Pesa Online) — prompts user's phone to enter PIN:
+
+Step 1 — Get OAuth Token:
+GET https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials
+Header: Authorization: Basic base64(ConsumerKey:ConsumerSecret)
+Response: { "access_token": "...", "expires_in": "3599" }
+
+Step 2 — Initiate STK Push:
+POST https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest
+Header: Authorization: Bearer <access_token>
+Body (JSON):
+{
+  "BusinessShortCode": "174379",
+  "Password": base64(ShortCode + PassKey + Timestamp),
+  "Timestamp": "20231201120000",  // YYYYMMDDHHmmss
+  "TransactionType": "CustomerPayBillOnline",
+  "Amount": 1,
+  "PartyA": "254712345678",  // customer phone
+  "PartyB": "174379",        // shortcode
+  "PhoneNumber": "254712345678",
+  "CallBackURL": "https://yourdomain.com/mpesa/callback",
+  "AccountReference": "Order123",
+  "TransactionDesc": "Payment for order"
+}
+
+Callback payload your server receives:
+{ Body: { stkCallback: { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } } }
+ResultCode 0 = success.
+
+Production URL: api.safaricom.co.ke (replace sandbox.safaricom.co.ke)
+Developer portal: developer.safaricom.co.ke`,
+  },
+  {
+    keywords: /flutterwave|flw|rave\s+pay/i,
+    service: "Flutterwave",
+    docs: `=== FLUTTERWAVE — ACCURATE DOCS (Use these exactly) ===
+JavaScript SDK (inline payment):
+<script src="https://checkout.flutterwave.com/v3.js"></script>
+<script>
+function makePayment() {
+  FlutterwaveCheckout({
+    public_key: "FLWPUBK-xxxxxxxxxxxxxxxxxxxx-X",
+    tx_ref: "order-" + Date.now(),
+    amount: 5000,
+    currency: "UGX",  // or KES, NGN, GHS, ZAR, etc.
+    payment_options: "card,mobilemoneyuganda,ussd",
+    customer: { email: "user@example.com", phone_number: "0700000000", name: "John Doe" },
+    customizations: { title: "My Store", description: "Payment for order", logo: "https://yourlogo.png" },
+    callback: function(data) {
+      if (data.status === "successful") {
+        // verify on your server: GET https://api.flutterwave.com/v3/transactions/:id/verify
+        console.log("Payment successful", data.transaction_id);
+      }
+    },
+    onclose: function() { console.log("Payment modal closed"); }
+  });
+}
+</script>
+<button onclick="makePayment()">Pay Now</button>
+
+Supported currencies: NGN, KES, UGX, GHS, TZS, ZAR, RWF, ZMW, EGP, XAF, XOF, MWK
+Payment options: card, mobilemoneyuganda, mobilemoneyrwanda, mobilemoneyghana, mpesa, ussd, banktransfer
+Dashboard & API keys: dashboard.flutterwave.com`,
+  },
+  {
+    keywords: /firebase|firestore|firebase\s+auth|google\s+firebase/i,
+    service: "Firebase",
+    docs: `=== FIREBASE — ACCURATE DOCS (Use these exactly) ===
+CDN import (use in <script> tags in HTML):
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import { getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const app = initializeApp({
+    apiKey: "YOUR_API_KEY",
+    authDomain: "your-project.firebaseapp.com",
+    projectId: "your-project-id",
+    storageBucket: "your-project.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "1:123456789:web:abcdef"
+  });
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Email/password sign in
+  await signInWithEmailAndPassword(auth, email, password);
+  // Register
+  await createUserWithEmailAndPassword(auth, email, password);
+  // Google sign in
+  const provider = new GoogleAuthProvider();
+  await signInWithPopup(auth, provider);
+  // Listen to auth state
+  onAuthStateChanged(auth, (user) => { /* user or null */ });
+
+  // Firestore — add document
+  await addDoc(collection(db, "users"), { name: "John", email: "john@example.com" });
+  // Firestore — get documents
+  const snap = await getDocs(collection(db, "users"));
+  snap.forEach(doc => console.log(doc.id, doc.data()));
+  // Firestore — query
+  const q = query(collection(db, "orders"), where("status", "==", "paid"), orderBy("createdAt", "desc"), limit(10));
+</script>
+Console: console.firebase.google.com`,
+  },
+  {
+    keywords: /mtn\s*momo|mtn\s*mobile\s*money|momodeveloper/i,
+    service: "MTN Mobile Money API",
+    docs: `=== MTN MOMO API — ACCURATE DOCS (Use these exactly) ===
+Base URLs:
+  Sandbox: https://sandbox.momodeveloper.mtn.com
+  Production: Contact MTN for production credentials
+
+Step 1 — Create API User (sandbox only, do once):
+POST https://sandbox.momodeveloper.mtn.com/v1_0/apiuser
+Header: X-Reference-Id: <uuid-v4>, Ocp-Apim-Subscription-Key: <your-subscription-key>
+Body: { "providerCallbackHost": "https://yourdomain.com" }
+
+Step 2 — Get API Key:
+POST https://sandbox.momodeveloper.mtn.com/v1_0/apiuser/<referenceId>/apikey
+Header: Ocp-Apim-Subscription-Key: <subscription-key>
+Response: { "apiKey": "..." }
+
+Step 3 — Get Bearer Token:
+POST https://sandbox.momodeveloper.mtn.com/collection/token/
+Header: Authorization: Basic base64(referenceId:apiKey), Ocp-Apim-Subscription-Key: <subscription-key>
+Response: { "access_token": "...", "token_type": "access_token", "expires_in": 3600 }
+
+Step 4 — Request to Pay (collect money from customer):
+POST https://sandbox.momodeveloper.mtn.com/collection/v1_0/requesttopay
+Header: Authorization: Bearer <token>, X-Reference-Id: <uuid>, X-Target-Environment: sandbox, Ocp-Apim-Subscription-Key: <subscription-key>
+Body: {
+  "amount": "1000", "currency": "UGX",
+  "externalId": "order123",
+  "payer": { "partyIdType": "MSISDN", "partyId": "256700000000" },
+  "payerMessage": "Payment for order", "payeeNote": "Order payment"
+}
+Response: 202 Accepted (check status with GET /requesttopay/<referenceId>)
+
+Available in: Uganda (UGX), Ghana (GHS), Cameroon (XAF), Côte d'Ivoire (XOF), Zambia (ZMW), Rwanda (RWF)`,
+  },
+  {
+    keywords: /paystack/i,
+    service: "Paystack",
+    docs: `=== PAYSTACK — ACCURATE DOCS (Use these exactly) ===
+JavaScript inline (Popup):
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<script>
+function payWithPaystack() {
+  var handler = PaystackPop.setup({
+    key: 'pk_test_xxxxxxxxxxxxxxxxxxxx',  // public key from dashboard
+    email: 'customer@email.com',
+    amount: 500000,  // in KOBO (multiply naira by 100) or pesewas for GHS
+    currency: 'NGN',  // or GHS, ZAR, KES, USD
+    ref: 'order_' + Math.floor(Math.random() * 1000000000 + 1),
+    callback: function(response) {
+      // Verify on server: GET https://api.paystack.co/transaction/verify/:reference
+      console.log('Payment successful. Reference: ' + response.reference);
+    },
+    onClose: function() { console.log('Payment window closed'); }
+  });
+  handler.openIframe();
+}
+</script>
+<button onclick="payWithPaystack()">Pay Now</button>
+
+Supported: Nigeria (NGN), Ghana (GHS), South Africa (ZAR), Kenya (KES), Côte d'Ivoire (XOF), Egypt (EGP)
+Dashboard: dashboard.paystack.com`,
+  },
+  {
+    keywords: /twilio|sms\s+api|send.*sms/i,
+    service: "Twilio SMS",
+    docs: `=== TWILIO SMS — ACCURATE DOCS (Use these exactly) ===
+Node.js (server-side):
+const twilio = require('twilio');
+const client = twilio('ACCOUNT_SID', 'AUTH_TOKEN');
+await client.messages.create({
+  body: 'Your OTP is 123456',
+  from: '+1234567890',   // your Twilio number
+  to: '+256700000000'    // recipient's number with country code
+});
+
+REST API (any language):
+POST https://api.twilio.com/2010-04-01/Accounts/{AccountSid}/Messages.json
+Auth: Basic AccountSid:AuthToken
+Body (form-encoded): To=+256700000000&From=+1234567890&Body=Hello
+
+Get credentials: console.twilio.com → Account Info
+NPM: npm install twilio`,
+  },
+  {
+    keywords: /stripe/i,
+    service: "Stripe",
+    docs: `=== STRIPE — ACCURATE DOCS (Use these exactly) ===
+JavaScript (Stripe.js + Elements):
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+const stripe = Stripe('pk_test_xxxxxxxxxxxxxxxxxxxx');  // publishable key
+const elements = stripe.elements();
+const card = elements.create('card');
+card.mount('#card-element');
+
+document.getElementById('payment-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const { paymentMethod, error } = await stripe.createPaymentMethod({ type: 'card', card: card });
+  if (error) {
+    document.getElementById('card-errors').textContent = error.message;
+  } else {
+    // Send paymentMethod.id to your server
+    // Server creates PaymentIntent: stripe.paymentIntents.create({ amount, currency, payment_method })
+  }
+});
+</script>
+<form id="payment-form"><div id="card-element"></div><div id="card-errors"></div><button>Pay</button></form>
+
+Checkout (simpler — redirect):
+// Server-side: create a Checkout Session, redirect to session.url
+// stripe.checkout.sessions.create({ line_items, mode: 'payment', success_url, cancel_url })
+Dashboard: dashboard.stripe.com`,
+  },
+  {
+    keywords: /google\s+maps|maps\s+api|geolocation.*map|map.*embed/i,
+    service: "Google Maps",
+    docs: `=== GOOGLE MAPS — ACCURATE DOCS (Use these exactly) ===
+Embed API (simplest — no API key needed):
+<iframe
+  src="https://www.google.com/maps/embed/v1/place?key=YOUR_API_KEY&q=Kampala,Uganda&zoom=13"
+  width="600" height="450" style="border:0;" allowfullscreen loading="lazy">
+</iframe>
+
+OR get embed code directly from maps.google.com → Share → Embed a map → copy iframe
+
+Maps JavaScript API (interactive):
+<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap" async defer></script>
+<div id="map" style="height:400px;width:100%;"></div>
+<script>
+function initMap() {
+  const map = new google.maps.Map(document.getElementById("map"), {
+    center: { lat: 0.3476, lng: 32.5825 },  // Kampala, Uganda
+    zoom: 12
+  });
+  new google.maps.Marker({ position: { lat: 0.3476, lng: 32.5825 }, map, title: "My Location" });
+}
+</script>
+Get API key: console.cloud.google.com → APIs & Services → Enable "Maps JavaScript API" → Create Credentials`,
+  },
+];
+
+function getDocumentationContext(userMessage: string): string {
+  const matched: string[] = [];
+  for (const snippet of API_DOC_SNIPPETS) {
+    if (snippet.keywords.test(userMessage)) {
+      matched.push(snippet.docs);
+    }
+  }
+  if (matched.length === 0) return "";
+  return `\n\n=== REAL-TIME API DOCUMENTATION (Ground Truth — Use This Exactly) ===
+The user's request involves external APIs. Below is accurate, verified documentation for each detected service.
+USE THESE CODE EXAMPLES EXACTLY — do not invent or modify API endpoints, parameter names, or response formats.
+
+${matched.join("\n\n")}
+
+END OF API DOCUMENTATION — Your generated code must match these exact specifications.`;
+}
+
 function buildProjectMap(html: string): string {
   const lines: string[] = [];
 
@@ -146,6 +462,33 @@ STRICT RULES:
 - NEVER touch something you did not mention in your plan.
 - If unsure of a name or color: make a smart assumption and state it in the plan.
 - One message = one complete plan + one complete HTML file. Always.
+
+=== FIX 2: CAPABILITY AUDIT — PRE-FLIGHT CHECK ===
+When a user's NEW BUILD request requires external credentials, API keys, or third-party service setup, output a [REQUIREMENTS CHECK] block BEFORE or ALONGSIDE your plan. This is mandatory for: payment systems, auth providers, SMS/USSD APIs, maps with API keys, database connections, email services, OAuth, AI APIs.
+
+Format it EXACTLY like this:
+[REQUIREMENTS CHECK]
+To fully activate this build, you'll need:
+• [Service Name] — [what it does in the app] — Get it at: [exact URL]
+• [Service Name] — [what it does in the app] — Get it at: [exact URL]
+⚡ Building a working demo now. Paste your keys when ready and I'll activate them in seconds.
+[/REQUIREMENTS CHECK]
+
+RULES:
+- ONLY show this for integrations that need real credentials (not for static sites, games, or CSS-only tools)
+- ALWAYS proceed to build the working demo immediately after — never just show the requirements without code
+- Skip this block entirely if the user already provided credentials in their message
+- Keep it short: max 4 bullet points
+
+=== FIX 3: BUILD PLAN FORMAT — STRUCTURED OUTPUT ===
+Wrap your PLAN step in [BUILD PLAN] tags so the interface can render it as a visual checklist:
+[BUILD PLAN]
+Building: {one-line description of what's being created or changed}
+Sections: {comma-separated list of sections being added/modified}
+Preserving: {what stays completely untouched}
+[/BUILD PLAN]
+
+This replaces the plain-text plan format. Always use these exact tags. Keep each line short (under 100 chars).
 
 === CDN SAFETY — MANDATORY ===
 When using external JavaScript or CSS libraries, ONLY use these verified, always-available CDN sources:
@@ -1394,6 +1737,12 @@ export function registerChatRoutes(app: Express): void {
       }
 
       let contextPrompt = BUILDER_SYSTEM_PROMPT;
+
+      // === FIX 4: Inject RAG documentation for detected APIs ===
+      const ragContext = getDocumentationContext(userContent);
+      if (ragContext) {
+        contextPrompt += ragContext;
+      }
 
       if (userProfile.name || userProfile.email) {
         const today = new Date();
