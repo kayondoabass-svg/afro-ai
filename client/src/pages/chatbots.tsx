@@ -522,11 +522,11 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
     try {
       const r = await apiRequest("POST", "/api/chatbots/scan-url", { url });
       const data = await r.json();
-      if (data.knowledgeBase) {
-        setEdit(f => ({ ...f, knowledgeBase: data.knowledgeBase + buildOmitInstructions(kbOmitCats) }));
-        toast({ title: "Website scanned", description: `${data.knowledgeBase.length.toLocaleString()} chars extracted. Review and save.` });
+      if (data.knowledge) {
+        setEdit(f => ({ ...f, knowledgeBase: data.knowledge + buildOmitInstructions(kbOmitCats) }));
+        toast({ title: "Website scanned", description: `${data.knowledge.length.toLocaleString()} chars extracted. Review and save.` });
       } else {
-        toast({ title: "Scan failed", description: data.error || "Could not read that URL.", variant: "destructive" });
+        toast({ title: "Scan failed", description: data.message || "Could not read that URL.", variant: "destructive" });
       }
     } catch {
       toast({ title: "Scan failed", description: "Could not reach that URL.", variant: "destructive" });

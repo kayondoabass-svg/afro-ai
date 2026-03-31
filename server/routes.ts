@@ -2681,12 +2681,43 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       const { url } = req.body;
       if (!url) return res.status(400).json({ message: "URL required" });
       const target = url.startsWith("http") ? url : `https://${url}`;
-      const response = await fetch(target, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; AfroAI/1.0)" },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!response.ok) return res.status(400).json({ message: `Could not fetch website (status ${response.status})` });
-      const html = await response.text();
+
+      let html = "";
+      let fetchOk = false;
+      const attemptUrls = [target];
+      if (target.startsWith("https://")) attemptUrls.push(target.replace("https://", "http://"));
+
+      for (const attemptUrl of attemptUrls) {
+        try {
+          const response = await fetch(attemptUrl, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Accept-Encoding": "identity",
+              "Cache-Control": "no-cache",
+              "Pragma": "no-cache",
+            },
+            redirect: "follow",
+            signal: AbortSignal.timeout(15000),
+          });
+          if (response.ok) {
+            html = await response.text();
+            fetchOk = true;
+            break;
+          }
+          // Try following even on non-2xx
+          if (response.status >= 300 && response.status < 400) {
+            const loc = response.headers.get("location");
+            if (loc) {
+              const redirectRes = await fetch(loc, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" }, signal: AbortSignal.timeout(10000) });
+              if (redirectRes.ok) { html = await redirectRes.text(); fetchOk = true; break; }
+            }
+          }
+        } catch { continue; }
+      }
+
+      if (!fetchOk || !html) return res.status(400).json({ message: "Could not reach that URL. The website may block automated access or be offline." });
 
       // Strip HTML tags and extract meaningful text
       const cleaned = html
