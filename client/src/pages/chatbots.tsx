@@ -40,7 +40,7 @@ function buildOmitInstructions(selected: string[]): string {
 }
 
 const EMBED_SNIPPET = (apiKey: string) =>
-  `<!-- Afro AI Chat Widget -->\n<script src="https://afroaigroup.com/widget.js?key=${apiKey}" async></script>`;
+  `<!-- Afro AI Chat Widget -->\n<script src="https://afroaigroup.com/widget.js?key=${apiKey}" defer></script>`;
 
 export default function ChatbotsPage() {
   const { toast } = useToast();
