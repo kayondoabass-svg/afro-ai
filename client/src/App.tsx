@@ -70,7 +70,7 @@ function AuthenticatedLayout() {
               <ThemeToggle />
             </div>
           </header>
-          <main className="flex-1 flex flex-col overflow-hidden">
+          <main className="flex-1 flex flex-col overflow-y-auto min-h-0">
             <Switch>
               <Route path="/dashboard" component={DashboardPage} />
               <Route path="/chat" component={AIChatPage} />
