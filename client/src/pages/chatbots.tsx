@@ -40,7 +40,7 @@ function buildOmitInstructions(selected: string[]): string {
 }
 
 const EMBED_SNIPPET = (apiKey: string) =>
-  `<!-- Afro AI Chat Widget -->\n<script src="https://afroaigroup.com/widget.js" data-key="${apiKey}" async></script>`;
+  `<!-- Afro AI Chat Widget -->\n<script src="https://afroaigroup.com/widget.js?key=${apiKey}" async></script>`;
 
 export default function ChatbotsPage() {
   const { toast } = useToast();
@@ -341,7 +341,7 @@ export default function ChatbotsPage() {
                   <p className="text-muted-foreground">Open the website's HTML file (or CMS editor) and paste the code just before the <code className="bg-muted px-1 rounded">&lt;/body&gt;</code> closing tag.</p>
                   <div className="bg-muted/60 rounded-lg p-3 font-mono text-xs border border-border/40 space-y-0.5">
                     <div className="text-muted-foreground">  &lt;p&gt;Your page content&lt;/p&gt;</div>
-                    <div className="text-green-400 font-semibold">  &lt;script src="afroaigroup.com/widget.js" data-key="..."&gt;&lt;/script&gt;  ← paste here</div>
+                    <div className="text-green-400 font-semibold">  &lt;script src="afroaigroup.com/widget.js?key=YOUR_KEY" async&gt;&lt;/script&gt;  ← paste here</div>
                     <div className="text-muted-foreground">&lt;/body&gt;</div>
                   </div>
                 </div>
