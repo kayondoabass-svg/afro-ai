@@ -5,7 +5,9 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder, FOUNDER_EMAI
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { storage } from "./storage";
-import { insertProjectSchema } from "@shared/schema";
+import { insertProjectSchema, appViews } from "@shared/schema";
+import { db } from "./db";
+import { eq as dbEq, sql as dbSql } from "drizzle-orm";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
 import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./pesapal";
 import { analyzeImage } from "./gemini";
@@ -253,6 +255,103 @@ export async function registerRoutes(
       const { projectName, conversationId, fileCount } = req.body;
       const exp = await storage.createZipExport({ userId, projectName: projectName || "afro-ai-project", conversationId: conversationId || null, fileCount: fileCount || 1 });
       res.json(exp);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ APP SECRETS ============
+  app.get("/api/secrets", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const appId = req.query.appId ? (req.query.appId === "global" ? null : parseInt(req.query.appId as string)) : undefined;
+      const secrets = await storage.getAppSecrets(userId, appId);
+      res.json(secrets);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/secrets", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { key, value, appId } = req.body;
+      if (!key || !value) return res.status(400).json({ message: "Key and value are required" });
+      const secret = await storage.createAppSecret({ userId, key, value, appId: appId || null });
+      await storage.createActivityLog({ userId, eventType: "secret.created", title: `Secret added: ${key}`, description: appId ? `Added to app #${appId}` : "Global secret", appId: appId || null });
+      res.json(secret);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/secrets/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const { value } = req.body;
+      const secret = await storage.updateAppSecret(parseInt(req.params.id), value);
+      res.json(secret);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/secrets/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteAppSecret(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ ACTIVITY LOGS ============
+  app.get("/api/logs", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const logs = await storage.getActivityLogs(userId, limit);
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/logs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteActivityLog(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ OVERVIEW STATS ============
+  app.get("/api/overview", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const [apps, projects, files, logs, forms] = await Promise.all([
+        storage.getPublishedAppsByUser(userId),
+        storage.getProjectsByUser(userId),
+        storage.getUserFiles(userId),
+        storage.getActivityLogs(userId, 10),
+        storage.getFormsByUser(userId),
+      ]);
+      const totalViews = await Promise.all(apps.map(async (a) => {
+        const views = await db.select({ total: dbSql<number>`coalesce(sum(${appViews.viewCount}), 0)` }).from(appViews).where(dbEq(appViews.publishedAppId, a.id));
+        return Number(views[0]?.total || 0);
+      }));
+      const formSubmissionCounts = await Promise.all(forms.map(f => storage.getFormSubmissionCount(f.id)));
+      res.json({
+        totalApps: apps.length,
+        activeApps: apps.filter(a => a.appStatus === "active").length,
+        totalProjects: projects.length,
+        totalViews: totalViews.reduce((a, b) => a + b, 0),
+        totalFiles: files.length,
+        totalForms: forms.length,
+        totalSubmissions: formSubmissionCounts.reduce((a, b) => a + b, 0),
+        recentLogs: logs,
+        recentApps: apps.slice(0, 5),
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -529,6 +628,17 @@ export async function registerRoutes(
         });
       }
       sendStep("deploy", "done", "App saved to database");
+
+      // Log the publish event
+      try {
+        await storage.createActivityLog({
+          userId,
+          eventType: existing ? "app.updated" : "app.published",
+          title: existing ? `App updated: ${title}` : `App published: ${title}`,
+          description: `Live at ${getPublishedUrl(subdomainLower)}`,
+          appId: result.id,
+        });
+      } catch (_) {}
 
       sendStep("live", "active");
       const url = getPublishedUrl(subdomainLower);

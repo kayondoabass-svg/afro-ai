@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, ussdSubscriptions, userFiles, zipExports, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type UssdSubscription, type InsertUssdSubscription, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, ussdSubscriptions, userFiles, zipExports, appSecrets, activityLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type UssdSubscription, type InsertUssdSubscription, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -81,6 +81,15 @@ export interface IStorage {
   // Zip exports
   getZipExports(userId: string): Promise<ZipExport[]>;
   createZipExport(data: InsertZipExport): Promise<ZipExport>;
+  // App Secrets
+  getAppSecrets(userId: string, appId?: number | null): Promise<AppSecret[]>;
+  createAppSecret(data: InsertAppSecret): Promise<AppSecret>;
+  updateAppSecret(id: number, value: string): Promise<AppSecret>;
+  deleteAppSecret(id: number): Promise<void>;
+  // Activity Logs
+  getActivityLogs(userId: string, limit?: number): Promise<ActivityLog[]>;
+  createActivityLog(data: InsertActivityLog): Promise<ActivityLog>;
+  deleteActivityLog(id: number): Promise<void>;
   // App version history
   saveAppVersion(data: InsertAppVersion): Promise<AppVersion>;
   getAppVersions(conversationId: number): Promise<AppVersion[]>;
@@ -1066,6 +1075,43 @@ class DatabaseStorage implements IStorage {
   async updateUssdSubscription(userId: string, data: Partial<InsertUssdSubscription>): Promise<UssdSubscription | undefined> {
     const [sub] = await db.update(ussdSubscriptions).set(data).where(eq(ussdSubscriptions.userId, userId)).returning();
     return sub;
+  }
+
+  async getAppSecrets(userId: string, appId?: number | null): Promise<AppSecret[]> {
+    if (appId !== undefined) {
+      const condition = appId === null
+        ? and(eq(appSecrets.userId, userId), sql`${appSecrets.appId} IS NULL`)
+        : and(eq(appSecrets.userId, userId), eq(appSecrets.appId, appId));
+      return db.select().from(appSecrets).where(condition).orderBy(desc(appSecrets.createdAt));
+    }
+    return db.select().from(appSecrets).where(eq(appSecrets.userId, userId)).orderBy(desc(appSecrets.createdAt));
+  }
+
+  async createAppSecret(data: InsertAppSecret): Promise<AppSecret> {
+    const [secret] = await db.insert(appSecrets).values(data).returning();
+    return secret;
+  }
+
+  async updateAppSecret(id: number, value: string): Promise<AppSecret> {
+    const [secret] = await db.update(appSecrets).set({ value }).where(eq(appSecrets.id, id)).returning();
+    return secret;
+  }
+
+  async deleteAppSecret(id: number): Promise<void> {
+    await db.delete(appSecrets).where(eq(appSecrets.id, id));
+  }
+
+  async getActivityLogs(userId: string, limit = 100): Promise<ActivityLog[]> {
+    return db.select().from(activityLogs).where(eq(activityLogs.userId, userId)).orderBy(desc(activityLogs.createdAt)).limit(limit);
+  }
+
+  async createActivityLog(data: InsertActivityLog): Promise<ActivityLog> {
+    const [log] = await db.insert(activityLogs).values(data).returning();
+    return log;
+  }
+
+  async deleteActivityLog(id: number): Promise<void> {
+    await db.delete(activityLogs).where(eq(activityLogs.id, id));
   }
 }
 

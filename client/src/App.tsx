@@ -50,6 +50,10 @@ import ArticlesPage from "@/pages/articles";
 import ArticlePage from "@/pages/article";
 import FilesPage from "@/pages/files";
 import UssdBuilderPage from "@/pages/ussd-builder";
+import OverviewPage from "@/pages/overview";
+import AppSecretsPage from "@/pages/app-secrets";
+import ActivityLogsPage from "@/pages/activity-logs";
+import ConsolePage from "@/pages/console";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -98,6 +102,10 @@ function AuthenticatedLayout() {
               <Route path="/chatbots" component={ChatbotsPage} />
               <Route path="/files" component={FilesPage} />
               <Route path="/ussd" component={UssdBuilderPage} />
+              <Route path="/overview" component={OverviewPage} />
+              <Route path="/secrets" component={AppSecretsPage} />
+              <Route path="/logs" component={ActivityLogsPage} />
+              <Route path="/console" component={ConsolePage} />
               <Route path="/chatbot-api" component={ChatbotLandingPage} />
               <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
               <Route path="/articles/:slug" component={ArticlePage} />

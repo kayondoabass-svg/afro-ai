@@ -421,6 +421,34 @@ export const insertUssdSubscriptionSchema = createInsertSchema(ussdSubscriptions
 export type UssdSubscription = typeof ussdSubscriptions.$inferSelect;
 export type InsertUssdSubscription = z.infer<typeof insertUssdSubscriptionSchema>;
 
+// ============ APP SECRETS ============
+export const appSecrets = pgTable("app_secrets", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  appId: integer("app_id").references(() => publishedApps.id, { onDelete: "cascade" }),
+  key: text("key").notNull(),
+  value: text("value").notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertAppSecretSchema = createInsertSchema(appSecrets).omit({ id: true, createdAt: true });
+export type AppSecret = typeof appSecrets.$inferSelect;
+export type InsertAppSecret = z.infer<typeof insertAppSecretSchema>;
+
+// ============ ACTIVITY LOGS ============
+export const activityLogs = pgTable("activity_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  eventType: varchar("event_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  appId: integer("app_id"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ id: true, createdAt: true });
+export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+
 // ============ CHATBOT SUBSCRIPTIONS ============
 export const chatbotSubscriptions = pgTable("chatbot_subscriptions", {
   id: serial("id").primaryKey(),
