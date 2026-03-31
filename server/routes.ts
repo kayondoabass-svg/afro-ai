@@ -174,7 +174,14 @@ export async function registerRoutes(
         let fileUrl: string;
 
         if (useGcs) {
-          fileUrl = await uploadToGcs(f.buffer, filename, f.mimetype);
+          try {
+            fileUrl = await uploadToGcs(f.buffer, filename, f.mimetype);
+          } catch (gcsErr: any) {
+            console.warn("GCS upload failed, falling back to local disk:", gcsErr?.message || gcsErr);
+            const filePath = path.join(uploadDir, filename);
+            fs.writeFileSync(filePath, f.buffer);
+            fileUrl = `/uploads/${filename}`;
+          }
         } else {
           const filePath = path.join(uploadDir, filename);
           fs.writeFileSync(filePath, f.buffer);

@@ -708,7 +708,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
 
   // Inject error-catcher script so iframe errors bubble up
   const instrumentedCode = useMemo(() => {
-    const errorScript = `<script>(function(){function s(m){try{window.parent.postMessage({type:'afroai-iframe-error',message:m},'*')}catch(e){}}window.addEventListener('error',function(e){s(e.message||'Script error')});window.addEventListener('unhandledrejection',function(e){s(e.reason&&e.reason.message?e.reason.message:String(e.reason))})})();<\/script>`;
+    const errorScript = `<script>(function(){function s(m){try{window.parent.postMessage({type:'afroai-iframe-error',message:m},'*')}catch(e){}}window.addEventListener('error',function(e){var msg=e.message||'';if(!msg||msg==='Script error'||msg==='Script error.')return;if(!e.filename||e.filename.indexOf(location.origin)===-1&&e.filename!=='')return;s(msg)});window.addEventListener('unhandledrejection',function(e){var r=e.reason;if(!r)return;var m=r.message?r.message:String(r);if(m==='Script error'||m==='Script error.')return;s(m)})})();<\/script>`;
     if (code.includes('<head>')) return code.replace('<head>', '<head>' + errorScript);
     if (/<html/i.test(code)) return code.replace(/<html[^>]*>/i, m => m + errorScript);
     return errorScript + code;
