@@ -55,6 +55,7 @@ import OverviewPage from "@/pages/overview";
 import AppSecretsPage from "@/pages/app-secrets";
 import ActivityLogsPage from "@/pages/activity-logs";
 import ConsolePage from "@/pages/console";
+import EmailApiPage from "@/pages/email-api";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -108,6 +109,7 @@ function AuthenticatedLayout() {
               <Route path="/secrets" component={AppSecretsPage} />
               <Route path="/logs" component={ActivityLogsPage} />
               <Route path="/console" component={ConsolePage} />
+              <Route path="/email-api" component={EmailApiPage} />
               <Route path="/chatbot-api" component={ChatbotLandingPage} />
               <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
               <Route path="/articles/:slug" component={ArticlePage} />

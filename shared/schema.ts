@@ -481,3 +481,54 @@ export const chatbotSubscriptions = pgTable("chatbot_subscriptions", {
 export const insertChatbotSubscriptionSchema = createInsertSchema(chatbotSubscriptions).omit({ id: true, createdAt: true });
 export type ChatbotSubscription = typeof chatbotSubscriptions.$inferSelect;
 export type InsertChatbotSubscription = z.infer<typeof insertChatbotSubscriptionSchema>;
+
+// ===================== AFRO AI EMAIL API =====================
+
+export const emailApiKeys = pgTable("email_api_keys", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  publicKey: text("public_key").notNull().unique(), // afro_live_...
+  secretKeyHash: text("secret_key_hash").notNull(), // bcrypt hash of sk_live_...
+  secretKeyPreview: text("secret_key_preview").notNull(), // last 4 chars for display
+  plan: varchar("plan").notNull().default("starter"), // starter | pro | enterprise
+  emailsSentMonth: integer("emails_sent_month").notNull().default(0),
+  monthlyLimit: integer("monthly_limit").notNull().default(3000),
+  isActive: boolean("is_active").notNull().default(true),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertEmailApiKeySchema = createInsertSchema(emailApiKeys).omit({ id: true, createdAt: true, emailsSentMonth: true, lastUsedAt: true });
+export type EmailApiKey = typeof emailApiKeys.$inferSelect;
+export type InsertEmailApiKey = z.infer<typeof insertEmailApiKeySchema>;
+
+export const emailApiDomains = pgTable("email_api_domains", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  domain: text("domain").notNull(),
+  status: varchar("status").notNull().default("pending"), // pending | verified | failed
+  dkimToken: text("dkim_token"),
+  spfRecord: text("spf_record"),
+  dmarcRecord: text("dmarc_record"),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertEmailApiDomainSchema = createInsertSchema(emailApiDomains).omit({ id: true, createdAt: true, verifiedAt: true, dkimToken: true, spfRecord: true, dmarcRecord: true });
+export type EmailApiDomain = typeof emailApiDomains.$inferSelect;
+export type InsertEmailApiDomain = z.infer<typeof insertEmailApiDomainSchema>;
+
+export const emailApiLogs = pgTable("email_api_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  apiKeyId: integer("api_key_id").references(() => emailApiKeys.id),
+  fromAddress: text("from_address").notNull(),
+  toAddress: text("to_address").notNull(),
+  subject: text("subject").notNull(),
+  status: varchar("status").notNull().default("sent"), // sent | failed | bounced
+  messageId: text("message_id"),
+  error: text("error"),
+  sentAt: timestamp("sent_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertEmailApiLogSchema = createInsertSchema(emailApiLogs).omit({ id: true, sentAt: true });
+export type EmailApiLog = typeof emailApiLogs.$inferSelect;
+export type InsertEmailApiLog = z.infer<typeof insertEmailApiLogSchema>;

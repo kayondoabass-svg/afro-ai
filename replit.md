@@ -1,7 +1,7 @@
 # Afro AI
 
 ## Overview
-Afro AI, a product of KEYO TECHNOLOGIES, is a global AI-powered platform designed to help creators build digital products such as websites, web apps, games, tools, and dashboards. Born in Africa, it serves a global market. Key capabilities include an AI co-creation assistant, multi-page app generation, project management, and ZIP project export. The platform aims to democratize digital creation and foster innovation worldwide.
+Afro AI, a product of KEYO TECHNOLOGIES, is a global AI-powered platform enabling creators to build digital products like websites, web apps, games, tools, and dashboards. Originating from Africa, it caters to a worldwide market. Its core features include an AI co-creation assistant, multi-page application generation, comprehensive project management, and ZIP project export functionality. The platform's vision is to democratize digital creation and foster innovation globally.
 
 ## User Preferences
 - Dark mode as default
@@ -9,48 +9,52 @@ Afro AI, a product of KEYO TECHNOLOGIES, is a global AI-powered platform designe
 - Pesapal for payments across Africa (Mobile Money, Visa, Mastercard, bank transfers)
 
 ## System Architecture
-The platform is built with a modern web stack: React, TypeScript, Vite, Tailwind CSS, and shadcn/ui for the frontend; Express.js and Node.js for the backend; and PostgreSQL with Drizzle ORM for the database. Authentication is handled via Google OAuth 2.0. AI capabilities are powered by OpenAI, with tiered models based on user plans.
+The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind CSS, and shadcn/ui for the frontend; Express.js and Node.js for the backend; and PostgreSQL with Drizzle ORM for the database. Google OAuth 2.0 handles authentication. AI capabilities are powered by OpenAI, with tiered models aligning with user subscription plans.
 
 **Key Architectural Decisions & Features:**
--   **AI Co-creation:** An AI-powered code generator with a live preview, enabling iterative development. It supports context-aware generation by feeding the last generated HTML back into the prompt, allowing surgical modifications.
--   **Performance Optimization:** Code generation prioritizes lazy loading and small page sizes (<500KB) for optimal performance on slower networks common in Africa.
--   **App Publishing:** Users can publish AI-generated apps to unique subdomains (e.g., `{name}.afroaigroup.com`) managed via Cloudflare DNS. Custom domain support allows users to connect their own domains.
--   **Templating System:** Offers 21 pre-built African business templates across various categories for quick project initiation.
--   **Project Management:** A dashboard allows users to create, view, and delete projects, and provides quick-start ideas. Conversations are linked to projects for continuity.
--   **Form Builder:** Provides a robust form creation tool with various field types, submission tracking, and embeddable code snippets.
--   **Block Builder:** A visual block-based page composer with 27 pre-built section blocks across 9 categories. Users select and reorder blocks, configure app name/style/color theme, then click "Generate with AI" to produce a complete page. Passes the blueprint as a structured prompt to the AI chat via sessionStorage.
--   **Blog & CMS:** Full blog management system with create/edit/delete posts, draft/published status, cover image, excerpt, and content editor. Posts stored in the `blog_posts` DB table.
--   **Email Marketing:** Subscriber management (add, import CSV, export CSV, toggle status, delete) and campaign builder (create, edit, preview HTML, copy HTML, download). Campaigns can be generated via AI. Subscribers in `email_subscribers` table; campaigns in `email_campaigns` table.
--   **Tiered AI Models:** Different AI models (gpt-4.1-nano, gpt-4.1-mini, gpt-4.1) are offered based on user subscription plans.
--   **Context-Aware Editing:** Editor mode uses 80K character code window, auto-generated Project Map (sections, CSS vars, JS functions, nav links), Plan-Before-Action protocol, and a mandatory Reflect self-check step before output.
--   **Security:** Implements global security headers, content security policies for published apps, HTML content scanning to detect malicious patterns, and API rate limiting.
--   **Referral System:** Includes a referral program with unique codes and commission tracking for plan upgrades.
--   **Affiliate Program:** Public sign-up at `/affiliate`. Applicants fill in name, email, phone, country, social media, and promotion method. A unique `AFFxxxxxx` code is generated instantly. Admins review applications (approve/reject) in the Founder Dashboard. `affiliate_applications` table. API: `POST /api/affiliate/apply` (public), `GET /api/affiliate/applications` (founder), `PATCH /api/affiliate/applications/:id/status` (founder). 10% commission model, footer link, referral link format: `afroaigroup.com?ref=CODE`.
--   **Billing & Pricing:** Pesapal (production) for payments. Plans: Free (1 app, 30-day live then auto-suspended, gpt-4.1-nano), Pro ($15/mo, gpt-4.1-mini, 32k, unlimited apps), Business ($29.90/mo, gpt-4.1, 32k, full features). PAYG: buy credit packs ($5/$10/$20/$50 = 250/500/1000/2500 gens), $0.02/gen, user-settable spending limit. PAYG fields in DB: `payg_balance`, `payg_limit`, `payg_spent` (all cents). Auto-suspend cron runs at startup + every 6h via `storage.suspendExpiredFreeApps()`. Suspended-app page detects 30-day reason and shows upgrade CTA.
--   **Admin/Founder System:** A dedicated interface for founders/administrators to manage users, projects, published apps, and access analytics, including an AI chat for administrative commands.
--   **Analytics:** Server-side view tracking on `/site/:subdomain` — daily counts stored in `app_views` table. Dashboard at `/analytics` shows bar charts (last 14 days) per published app, total views, and top performers.
--   **Marketplace:** Community template marketplace at `/marketplace`. Users can publish their published apps as listings (title, category, tags, description). Others can browse by category/search and clone listings — which opens the HTML in AI chat for customization. Tracks download counts. `marketplace_listings` table.
--   **PWA Builder:** At `/pwa`, users select a published app and generate PWA files: `manifest.json`, `sw.js` (service worker), and an HTML head snippet. Files can be copied or downloaded. Step-by-step install guide included.
--   **Collaboration:** Project team management at `/collaborate`. Project owners can invite collaborators by email with viewer/editor roles. Invitees see shared projects under "Shared with Me" tab. `project_collaborators` table tracks invite email, role, and status.
--   **Domain Store:** Domain registration via name.com reseller API at `/domains`. Users search for domains (checks .com, .net, .org, .io, .co, .africa, .shop, .tech, .app, .store, + African TLDs). Pricing shown with 35% markup over reseller cost. Registration triggers Pesapal payment; on completion, domain is registered via name.com API. Nameserver management included. `domain_orders` table. Credentials: `NAMEDOTCOM_API_TOKEN` + `NAMEDOTCOM_API_USER`.
--   **API Integrations:** At `/integrations`. Users configure REST API connections (name, URL, method, headers, auth type: none/apikey/bearer/basic/oauth2/awssigv4/digest/hmac/customtoken). Live test button sends request and shows response + latency. Code snippet generator outputs ready-to-paste JS fetch code. `api_integrations` table has `auth_config` JSON column for extended auth data (OAuth2 tokenUrl/clientId/clientSecret, AWS accessKey/secretKey/region/service, HMAC secret/algorithm/prefix). Routes: `GET/POST /api/integrations`, `PATCH/DELETE /api/integrations/:id`, `POST /api/integrations/:id/test`, `GET /api/integrations/:id/snippet`.
--   **SEO Tools:** At `/seo`. Select any published app and configure: SEO title, meta description, keywords, robots directive, OG title, OG image. Live Google search preview updates in real time. SEO score ring (0-100) calculates from filled fields. AI analysis button (gpt-4.1-mini) gives score + issues + suggestions; "Apply AI Suggestions" auto-fills form. Settings saved to `app_seo` table; injected into `<head>` when the app is served at `/site/:subdomain`. Routes: `GET/PUT /api/seo/:publishedAppId`, `POST /api/seo/:publishedAppId/analyze`.
--   **Webhooks:** At `/webhooks`. Users register HTTP endpoints to receive real-time event payloads. Supported events: `form.submitted`, `app.viewed`, `marketplace.cloned`. Per-webhook optional HMAC-SHA256 signing (secret → `X-Afroai-Signature` header). Test delivery button. Toggle active/inactive. `webhooks` table. `fireWebhooks()` internal helper dispatches POST to all matching active hooks after events fire. `form.submitted` is triggered automatically on every form submission. Routes: `GET/POST /api/webhooks`, `PATCH/DELETE /api/webhooks/:id`, `POST /api/webhooks/:id/test`.
--   **Auth Builder:** A "Add Login" button in the preview toolbar opens a 2-step modal. Step 1: name the app, choose auth type (Google, Email/Password, or Both). Step 2: enter Firebase config (API key, auth domain, project ID) with a step-by-step setup guide. On inject, wraps the current app HTML with a full Firebase Auth overlay (beautiful branded login screen, sign-out badge, error handling, forgot password). Firebase config saved to localStorage for reuse. No backend required — config is embedded in the generated HTML. Supports Google popup sign-in and email/password register/sign-in/reset.
--   **Version History:** Every time the AI generates a full HTML page, a snapshot is auto-saved to `app_versions` table (conversation_id, html_content, label, created_at). A "History" button appears in the preview toolbar showing a count badge. Clicking opens a slide-in panel listing all saved versions (newest first) with timestamps. Each version supports Preview (load into preview without committing) and Restore (set as active + old becomes undoable). Active version is highlighted with a green "Active" badge. Routes: `GET /api/conversations/:id/versions`, `GET /api/versions/:id`.
--   **Experience Level System:** Asked once on first visit to the AI chat. Users pick Beginner / Intermediate / Expert. Choice stored in `users.experience_level` DB column. The AI adapts its entire communication style based on this: Beginner = guided, asks before building, explains everything simply; Intermediate = diagnoses first, confirms before major changes; Expert = builds immediately, minimal explanation. Injected into the system prompt via user context. Settable via `PATCH /api/user/experience`. Card shown as overlay on welcome screen when `experienceLevel` is null.
--   **USSD Builder:** Public landing page at `/ussd`. Standalone revenue stream targeting the African USSD/mobile money market. Features: hero section with market stats ($9.91B market, 70% USSD dominance), regional pricing for East/West/North/South/Central Africa with live currency detection (UGX/KES/NGN/ZAR/EGP/XAF), interactive session savings calculator, use case showcase (trade, education, government, health, banking), AI-on-USSD architecture explainer, FAQ. Three plans: Starter ($29/mo), Growth ($79/mo), Enterprise ($199/mo). Payments via Pesapal — users redirected to `/ussd?payment=success` on completion. `ussd_subscriptions` table tracks active subscriptions (plan, status, expiresAt). Routes: `POST /api/ussd/subscribe`, `GET /api/ussd/subscription`. Added to landing page footer, sidebar, and App.tsx routing.
--   **Files & Storage:** At `/files`. Three-tab interface: (1) **Files** — grid view of all images/videos uploaded via AI chat, with copy-link, open, and delete actions; (2) **Downloads** — history of every ZIP exported from the AI builder, auto-logged with project name, file count, and timestamp; (3) **Libraries** — CDN browser with 40+ libraries across 9 categories (CSS Frameworks, Icons, JavaScript, Animations, Charts, 3D/Graphics, UI Components, Maps, Utilities). Each library shows its CDN tag with a copy button and "Add to App" shortcut. `user_files` and `zip_exports` DB tables. Routes: `GET/DELETE /api/files`, `GET/POST /api/zip-exports`.
--   **Overview:** At `/overview`. Personal dashboard showing total apps, views, projects, files, forms, and submissions at a glance. Recent app list with live status badges. Recent activity feed. Quick-action cards linking to Builder, Analytics, Secrets, and Logs.
--   **Secrets Manager:** At `/secrets`. Store environment variables and API keys per published app or globally. Scoped by app selector. Keys shown masked by default with reveal/copy/delete per entry. Values stored in `app_secrets` DB table. Activity log entry auto-created on add. Routes: `GET/POST /api/secrets`, `PATCH/DELETE /api/secrets/:id`.
--   **Activity Logs:** At `/logs`. Full event stream for user actions: app.published, app.updated, secret.created, form.submitted, error, info. Filterable by event type and full-text search. Timestamps shown as relative time. Auto-logged when apps are published/updated. `activity_logs` DB table. Routes: `GET /api/logs`, `DELETE /api/logs/:id`.
--   **Console:** At `/console`. Terminal-style dark interface showing the activity log stream. Per-app filtering. Color-coded event types (green=success, red=error, amber=warning, purple=form). Auto-scrolls to bottom. Refreshes every 30 seconds.
--   **Sidebar Search:** Search input at the top of the sidebar filters all nav items in real time. Founder section hidden when searching. Results count shown in group label.
--   **Chatbot API:** At `/chatbots`. Users create embeddable AI chatbots for external websites (government portals, agencies, businesses). Each chatbot has a unique API key, a knowledge base (org info/FAQs the AI uses exclusively), and brand customization (color, title, greeting). Clients embed via one `<script>` tag (`/widget.js?key=API_KEY`). The public endpoint `POST /api/widget-chat/:apiKey` (CORS-enabled, no auth required) receives visitor messages, uses gpt-4.1-mini with the knowledge base as context, and returns AI replies. Conversations stored in `widget_conversations` table. `chatbot_widgets` table tracks API keys, knowledge bases, conversation counts, and widget settings. Routes: `GET/POST /api/chatbots`, `PATCH/DELETE /api/chatbots/:id`, `GET /api/chatbots/:id/conversations`, public: `POST /api/widget-chat/:apiKey`, `GET /widget.js`.
+-   **AI Co-creation:** An AI-powered code generator provides a live preview and supports iterative development through context-aware generation.
+-   **Performance Optimization:** Prioritizes lazy loading and small page sizes (<500KB) for optimal performance.
+-   **App Publishing:** Users can publish apps to unique subdomains managed via Cloudflare DNS, with custom domain support.
+-   **Templating System:** Offers 21 pre-built African business templates for quick project initiation.
+-   **Project Management:** A dashboard facilitates project creation, viewing, deletion, and quick-start ideas, linking conversations to projects.
+-   **Form Builder:** A robust tool for creating forms with various field types, submission tracking, and embeddable code.
+-   **Block Builder:** A visual, block-based page composer with 27 pre-built sections, allowing users to configure and generate pages with AI.
+-   **Blog & CMS:** Full blog management system for creating, editing, and publishing posts.
+-   **Email Marketing:** Manages subscribers and provides an AI-powered campaign builder.
+-   **Tiered AI Models:** Utilizes different OpenAI models (gpt-4.1-nano, gpt-4.1-mini, gpt-4.1) based on user subscription tiers.
+-   **Context-Aware Editing:** Features an 80K character code window, auto-generated Project Map, Plan-Before-Action protocol, and Reflect self-check for precise AI modifications.
+-   **Security:** Implements global security headers, content security policies, HTML content scanning, and API rate limiting.
+-   **Referral System:** Includes a referral program with unique codes and commission tracking.
+-   **Affiliate Program:** A public sign-up and management system for affiliates with a 10% commission model.
+-   **Billing & Pricing:** Integrates Pesapal for payments, offering Free, Pro, Business plans, and Pay-As-You-Go credit packs. Includes cron jobs for managing free app suspensions.
+-   **Admin/Founder System:** A dedicated interface for managing users, projects, published apps, analytics, and administrative AI commands.
+-   **Analytics:** Tracks server-side app views and displays performance metrics on a dedicated dashboard.
+-   **Marketplace:** A community template marketplace where users can publish and clone apps.
+-   **PWA Builder:** Allows users to generate PWA files (manifest.json, sw.js) and an HTML head snippet for published apps.
+-   **Collaboration:** Project owners can invite collaborators with viewer/editor roles.
+-   **Domain Store:** Facilitates domain registration via name.com reseller API, including search, pricing, and nameserver management.
+-   **API Integrations:** Users can configure and test REST API connections, generating ready-to-paste JS fetch code snippets.
+-   **SEO Tools:** Configures SEO settings (title, description, keywords, OG tags) for published apps, including a live Google search preview and AI analysis.
+-   **Webhooks:** Users can register HTTP endpoints to receive real-time event payloads for various platform events.
+-   **Auth Builder:** Integrates Firebase Auth into apps, providing branded login screens and handling user authentication.
+-   **Version History:** Automatically saves snapshots of generated HTML pages, allowing users to preview and restore previous versions.
+-   **Experience Level System:** Adapts AI communication style (Beginner, Intermediate, Expert) based on user preference.
+-   **USSD Builder:** A standalone revenue stream providing a platform for building USSD applications with regional pricing and use case showcases.
+-   **Files & Storage:** Manages uploaded files, tracks ZIP exports, and provides a CDN browser for external libraries.
+-   **Overview:** A personal dashboard displaying key metrics, recent activity, and quick actions.
+-   **Secrets Manager:** Securely stores environment variables and API keys per published app or globally.
+-   **Activity Logs:** Provides a full event stream of user actions, filterable by type and searchable.
+-   **Console:** A terminal-style interface for real-time activity log streaming.
+-   **Sidebar Search:** Filters navigation items in real time.
+-   **Email API:** A transactional email sending service powered by AWS SES, offering API keys, domain verification, and sending logs.
+-   **Chatbot API:** Enables users to create embeddable AI chatbots for external websites with a knowledge base and brand customization.
 
 ## External Dependencies
--   **AI Services:** OpenAI (via Replit AI Integrations), Google Gemini (for image analysis).
--   **Payment Gateway:** Pesapal (API 3.0) for mobile money, Visa, Mastercard, and bank transfers.
--   **Authentication:** Google OAuth 2.0 (passport-google-oauth20).
+-   **AI Services:** OpenAI, Google Gemini.
+-   **Payment Gateway:** Pesapal (API 3.0).
+-   **Authentication:** Google OAuth 2.0.
 -   **Database:** PostgreSQL.
 -   **DNS Management:** Cloudflare DNS API.
+-   **Domain Registration:** name.com reseller API.
+-   **Email Sending:** AWS SES.
+-   **Authentication (External Apps):** Firebase Auth.

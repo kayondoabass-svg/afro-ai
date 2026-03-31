@@ -5,9 +5,9 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder, FOUNDER_EMAI
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { storage } from "./storage";
-import { insertProjectSchema, appViews } from "@shared/schema";
+import { insertProjectSchema, appViews, emailApiKeys, emailApiDomains, emailApiLogs } from "@shared/schema";
 import { db } from "./db";
-import { eq as dbEq, sql as dbSql } from "drizzle-orm";
+import { eq as dbEq, sql as dbSql, and as dbAnd, desc as dbDesc } from "drizzle-orm";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
 import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./pesapal";
 import { analyzeImage } from "./gemini";
@@ -19,7 +19,8 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import express from "express";
-import crypto from "crypto";
+import { SESClient, SendEmailCommand, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIdentityVerificationAttributesCommand, SetIdentityMailFromDomainCommand } from "@aws-sdk/client-ses";
+import bcrypt from "bcryptjs";
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -2911,6 +2912,238 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
 })();
 `;
     res.send(script);
+  });
+
+  // ===================== AFRO AI EMAIL API =====================
+
+  const sesClient = new SESClient({
+    region: process.env.AWS_REGION || "us-east-1",
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    },
+  });
+
+  function generatePublicKey(): string {
+    return "afro_live_" + crypto.randomBytes(20).toString("hex");
+  }
+
+  function generateSecretKey(): string {
+    return "sk_live_" + crypto.randomBytes(32).toString("hex");
+  }
+
+  // List API keys
+  app.get("/api/email-api/keys", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const keys = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.userId, userId)).orderBy(dbDesc(emailApiKeys.createdAt));
+    // Never return the hash
+    res.json(keys.map(k => ({ ...k, secretKeyHash: undefined })));
+  });
+
+  // Create a new API key
+  app.post("/api/email-api/keys", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: "Name required" });
+
+    const publicKey = generatePublicKey();
+    const secretKey = generateSecretKey();
+    const secretKeyHash = await bcrypt.hash(secretKey, 12);
+    const secretKeyPreview = secretKey.slice(-4);
+
+    const [key] = await db.insert(emailApiKeys).values({
+      userId,
+      name,
+      publicKey,
+      secretKeyHash,
+      secretKeyPreview,
+      plan: "starter",
+      monthlyLimit: 3000,
+      isActive: true,
+    }).returning();
+
+    // Return secret key ONCE — never again
+    res.json({ ...key, secretKeyHash: undefined, secretKey });
+  });
+
+  // Delete an API key
+  app.delete("/api/email-api/keys/:id", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    await db.delete(emailApiKeys).where(dbAnd(dbEq(emailApiKeys.id, parseInt(req.params.id)), dbEq(emailApiKeys.userId, userId)));
+    res.json({ success: true });
+  });
+
+  // Toggle API key active status
+  app.patch("/api/email-api/keys/:id/toggle", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const [key] = await db.select().from(emailApiKeys).where(dbAnd(dbEq(emailApiKeys.id, parseInt(req.params.id)), dbEq(emailApiKeys.userId, userId)));
+    if (!key) return res.status(404).json({ error: "Key not found" });
+    const [updated] = await db.update(emailApiKeys).set({ isActive: !key.isActive }).where(dbEq(emailApiKeys.id, key.id)).returning();
+    res.json({ ...updated, secretKeyHash: undefined });
+  });
+
+  // List verified domains
+  app.get("/api/email-api/domains", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const domains = await db.select().from(emailApiDomains).where(dbEq(emailApiDomains.userId, userId)).orderBy(dbDesc(emailApiDomains.createdAt));
+    res.json(domains);
+  });
+
+  // Add a domain for verification
+  app.post("/api/email-api/domains", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const { domain } = req.body;
+    if (!domain) return res.status(400).json({ error: "Domain required" });
+
+    // Generate DKIM tokens via AWS SES
+    let dkimToken = "";
+    let spfRecord = `v=spf1 include:amazonses.com ~all`;
+    let dmarcRecord = `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}`;
+
+    try {
+      const dkimRes = await sesClient.send(new VerifyDomainDkimCommand({ Domain: domain }));
+      dkimToken = (dkimRes.DkimTokens || []).map(t => `${t}._domainkey.${domain} → ${t}.dkim.amazonses.com`).join("\n");
+    } catch (e: any) {
+      console.error("[EmailAPI] DKIM error:", e.message);
+    }
+
+    const [created] = await db.insert(emailApiDomains).values({
+      userId,
+      domain,
+      status: "pending",
+      dkimToken,
+      spfRecord,
+      dmarcRecord,
+    }).returning();
+
+    res.json(created);
+  });
+
+  // Check domain verification status
+  app.post("/api/email-api/domains/:id/verify", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const [domainRecord] = await db.select().from(emailApiDomains).where(dbAnd(dbEq(emailApiDomains.id, parseInt(req.params.id)), dbEq(emailApiDomains.userId, userId)));
+    if (!domainRecord) return res.status(404).json({ error: "Domain not found" });
+
+    try {
+      const verifyRes = await sesClient.send(new GetIdentityVerificationAttributesCommand({ Identities: [domainRecord.domain] }));
+      const attr = verifyRes.VerificationAttributes?.[domainRecord.domain];
+      const isVerified = attr?.VerificationStatus === "Success";
+
+      await db.update(emailApiDomains).set({
+        status: isVerified ? "verified" : "pending",
+        verifiedAt: isVerified ? new Date() : null,
+      }).where(dbEq(emailApiDomains.id, domainRecord.id));
+
+      res.json({ status: isVerified ? "verified" : "pending" });
+    } catch (e: any) {
+      res.json({ status: "pending", error: e.message });
+    }
+  });
+
+  // Delete a domain
+  app.delete("/api/email-api/domains/:id", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    await db.delete(emailApiDomains).where(dbAnd(dbEq(emailApiDomains.id, parseInt(req.params.id)), dbEq(emailApiDomains.userId, userId)));
+    res.json({ success: true });
+  });
+
+  // Send email (public endpoint — authenticated via API key)
+  app.post("/api/email-api/send", async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.replace("Bearer ", "").replace("Basic ", "");
+
+    if (!token) return res.status(401).json({ error: "No API key provided" });
+
+    // Find key by public key prefix match, then verify secret
+    let apiKey;
+    if (token.startsWith("afro_live_")) {
+      // Public key only (limited use) — find by public key
+      const [found] = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.publicKey, token));
+      apiKey = found;
+    } else if (token.startsWith("sk_live_")) {
+      // Secret key — need to find and bcrypt compare
+      const allKeys = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.isActive, true));
+      for (const k of allKeys) {
+        const match = await bcrypt.compare(token, k.secretKeyHash);
+        if (match) { apiKey = k; break; }
+      }
+    }
+
+    if (!apiKey || !apiKey.isActive) return res.status(401).json({ error: "Invalid or inactive API key" });
+    if (apiKey.emailsSentMonth >= apiKey.monthlyLimit) return res.status(429).json({ error: "Monthly email limit reached" });
+
+    const { from, to, subject, html, text } = req.body;
+    if (!from || !to || !subject || (!html && !text)) {
+      return res.status(400).json({ error: "from, to, subject, and html or text are required" });
+    }
+
+    try {
+      const cmd = new SendEmailCommand({
+        Source: from,
+        Destination: { ToAddresses: Array.isArray(to) ? to : [to] },
+        Message: {
+          Subject: { Data: subject, Charset: "UTF-8" },
+          Body: html
+            ? { Html: { Data: html, Charset: "UTF-8" }, ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}) }
+            : { Text: { Data: text, Charset: "UTF-8" } },
+        },
+      });
+
+      const result = await sesClient.send(cmd);
+      const messageId = result.MessageId;
+
+      // Log & increment counter
+      await db.insert(emailApiLogs).values({
+        userId: apiKey.userId,
+        apiKeyId: apiKey.id,
+        fromAddress: from,
+        toAddress: Array.isArray(to) ? to.join(", ") : to,
+        subject,
+        status: "sent",
+        messageId,
+      });
+
+      await db.update(emailApiKeys).set({
+        emailsSentMonth: apiKey.emailsSentMonth + 1,
+        lastUsedAt: new Date(),
+      }).where(dbEq(emailApiKeys.id, apiKey.id));
+
+      res.json({ success: true, messageId });
+    } catch (e: any) {
+      await db.insert(emailApiLogs).values({
+        userId: apiKey.userId,
+        apiKeyId: apiKey.id,
+        fromAddress: from,
+        toAddress: Array.isArray(to) ? to.join(", ") : to,
+        subject,
+        status: "failed",
+        error: e.message,
+      });
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Get email send logs
+  app.get("/api/email-api/logs", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const logs = await db.select().from(emailApiLogs).where(dbEq(emailApiLogs.userId, userId)).orderBy(dbDesc(emailApiLogs.sentAt)).limit(100);
+    res.json(logs);
+  });
+
+  // Get dashboard stats
+  app.get("/api/email-api/stats", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const keys = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.userId, userId));
+    const domains = await db.select().from(emailApiDomains).where(dbEq(emailApiDomains.userId, userId));
+    const logs = await db.select().from(emailApiLogs).where(dbEq(emailApiLogs.userId, userId));
+
+    const totalSent = logs.filter(l => l.status === "sent").length;
+    const totalFailed = logs.filter(l => l.status === "failed").length;
+    const totalKeys = keys.length;
+    const verifiedDomains = domains.filter(d => d.status === "verified").length;
+
+    res.json({ totalSent, totalFailed, totalKeys, verifiedDomains, emailsSentThisMonth: keys.reduce((s, k) => s + k.emailsSentMonth, 0) });
   });
 
   return httpServer;
