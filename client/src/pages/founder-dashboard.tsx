@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
@@ -98,18 +98,29 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
   icon: any; label: string; value: string | number; sub?: string; color: string;
 }) {
   return (
-    <Card data-testid={`stat-card-${label.toLowerCase().replace(/\s/g, "-")}`}>
-      <CardContent className="p-5 flex items-center gap-4">
-        <div className={`w-11 h-11 rounded-lg ${color} flex items-center justify-center flex-shrink-0`}>
-          <Icon className="w-5 h-5" />
-        </div>
-        <div>
-          <p className="text-2xl font-bold leading-tight">{value}</p>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          {sub && <p className="text-xs text-primary mt-0.5">{sub}</p>}
+    <Card data-testid={`stat-card-${label.toLowerCase().replace(/\s/g, "-")}`} className="hover:shadow-md transition-shadow">
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <div className={`w-9 h-9 rounded-lg ${color} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+            <Icon className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xl font-bold leading-tight">{value}</p>
+            <p className="text-xs text-muted-foreground leading-snug mt-0.5">{label}</p>
+            {sub && <p className="text-xs text-primary mt-1 font-medium">{sub}</p>}
+          </div>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{children}</p>
+      <div className="flex-1 h-px bg-border/60" />
+    </div>
   );
 }
 
@@ -249,28 +260,48 @@ export default function FounderDashboardPage() {
           </div>
         </div>
 
-        {/* Top stats row — Core */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          <StatCard icon={Users} label="Total Users" value={stats?.totalUsers ?? 0} color="bg-blue-500/10 text-blue-500" />
-          <StatCard icon={Folder} label="Projects" value={stats?.totalProjects ?? 0} color="bg-primary/10 text-primary" />
-          <StatCard icon={Globe} label="Published" value={stats?.totalPublishedApps ?? 0} color="bg-green-500/10 text-green-500" />
-          <StatCard icon={AlertTriangle} label="Suspended" value={stats?.suspendedApps ?? 0} color="bg-red-500/10 text-red-500" />
-          <StatCard icon={MessagesSquare} label="Conversations" value={stats?.totalConversations ?? 0} color="bg-purple-500/10 text-purple-500" />
-          <StatCard icon={MessageSquare} label="AI Messages" value={stats?.totalMessages ?? 0} color="bg-orange-500/10 text-orange-500" />
-          <StatCard icon={DollarSign} label="Est. MRR" value={mrrDisplay} color="bg-green-500/10 text-green-500" />
-          <StatCard icon={ShoppingBag} label="Domain Orders" value={stats?.totalDomainOrders ?? 0} color="bg-indigo-500/10 text-indigo-500" />
+        {/* Core Platform Stats */}
+        <div className="space-y-3">
+          <SectionLabel>Core Platform</SectionLabel>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard icon={Users} label="Total Users" value={stats?.totalUsers ?? 0} color="bg-blue-500/10 text-blue-500" />
+            <StatCard icon={Folder} label="Projects" value={stats?.totalProjects ?? 0} color="bg-primary/10 text-primary" />
+            <StatCard icon={Globe} label="Published Apps" value={stats?.totalPublishedApps ?? 0} color="bg-green-500/10 text-green-500" />
+            <StatCard icon={AlertTriangle} label="Suspended Apps" value={stats?.suspendedApps ?? 0} color="bg-red-500/10 text-red-500" />
+          </div>
         </div>
 
-        {/* Second stats row — New Features */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          <StatCard icon={PhoneCall} label="USSD Subs" value={stats?.activeUssdSubscriptions ?? 0} sub={`${stats?.totalUssdSubscriptions ?? 0} total`} color="bg-amber-500/10 text-amber-500" />
-          <StatCard icon={Bot} label="Chatbots" value={stats?.activeChatbots ?? 0} sub={`${stats?.totalChatbotConversations ?? 0} convos`} color="bg-cyan-500/10 text-cyan-500" />
-          <StatCard icon={Store} label="Marketplace" value={stats?.totalMarketplaceListings ?? 0} sub={`${stats?.totalMarketplaceDownloads ?? 0} clones`} color="bg-violet-500/10 text-violet-500" />
-          <StatCard icon={FileText} label="Blog Posts" value={stats?.publishedBlogPosts ?? 0} sub={`${stats?.totalBlogPosts ?? 0} total`} color="bg-rose-500/10 text-rose-500" />
-          <StatCard icon={Mail} label="Email Subs" value={stats?.activeEmailSubscribers ?? 0} sub={`${stats?.totalEmailCampaigns ?? 0} campaigns`} color="bg-sky-500/10 text-sky-500" />
-          <StatCard icon={HardDrive} label="Files" value={stats?.totalUserFiles ?? 0} sub={`${stats?.totalZipExports ?? 0} exports`} color="bg-teal-500/10 text-teal-500" />
-          <StatCard icon={ClipboardList} label="Forms" value={stats?.totalForms ?? 0} sub={`${stats?.totalFormSubmissions ?? 0} submissions`} color="bg-lime-500/10 text-lime-500" />
-          <StatCard icon={Zap} label="Webhooks" value={stats?.activeWebhooks ?? 0} sub={`${stats?.totalWebhooks ?? 0} total`} color="bg-yellow-500/10 text-yellow-500" />
+        {/* AI & Revenue Stats */}
+        <div className="space-y-3">
+          <SectionLabel>AI Activity & Revenue</SectionLabel>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard icon={MessagesSquare} label="Conversations" value={stats?.totalConversations ?? 0} color="bg-purple-500/10 text-purple-500" />
+            <StatCard icon={MessageSquare} label="AI Messages" value={stats?.totalMessages ?? 0} color="bg-orange-500/10 text-orange-500" />
+            <StatCard icon={DollarSign} label="Est. Monthly Revenue" value={mrrDisplay} color="bg-green-500/10 text-green-500" />
+            <StatCard icon={ShoppingBag} label="Domain Orders" value={stats?.totalDomainOrders ?? 0} color="bg-indigo-500/10 text-indigo-500" />
+          </div>
+        </div>
+
+        {/* Features Stats */}
+        <div className="space-y-3">
+          <SectionLabel>Platform Features</SectionLabel>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard icon={PhoneCall} label="USSD Subscriptions" value={stats?.activeUssdSubscriptions ?? 0} sub={`${stats?.totalUssdSubscriptions ?? 0} total`} color="bg-amber-500/10 text-amber-500" />
+            <StatCard icon={Bot} label="AI Chatbots" value={stats?.activeChatbots ?? 0} sub={`${stats?.totalChatbotConversations ?? 0} conversations`} color="bg-cyan-500/10 text-cyan-500" />
+            <StatCard icon={Store} label="Marketplace Listings" value={stats?.totalMarketplaceListings ?? 0} sub={`${stats?.totalMarketplaceDownloads ?? 0} clones`} color="bg-violet-500/10 text-violet-500" />
+            <StatCard icon={FileText} label="Blog Posts" value={stats?.publishedBlogPosts ?? 0} sub={`${stats?.totalBlogPosts ?? 0} total`} color="bg-rose-500/10 text-rose-500" />
+          </div>
+        </div>
+
+        {/* Communication & Data */}
+        <div className="space-y-3">
+          <SectionLabel>Communication & Data</SectionLabel>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard icon={Mail} label="Email Subscribers" value={stats?.activeEmailSubscribers ?? 0} sub={`${stats?.totalEmailCampaigns ?? 0} campaigns`} color="bg-sky-500/10 text-sky-500" />
+            <StatCard icon={HardDrive} label="Uploaded Files" value={stats?.totalUserFiles ?? 0} sub={`${stats?.totalZipExports ?? 0} ZIP exports`} color="bg-teal-500/10 text-teal-500" />
+            <StatCard icon={ClipboardList} label="Forms" value={stats?.totalForms ?? 0} sub={`${stats?.totalFormSubmissions ?? 0} submissions`} color="bg-lime-500/10 text-lime-500" />
+            <StatCard icon={Zap} label="Webhooks" value={stats?.activeWebhooks ?? 0} sub={`${stats?.totalWebhooks ?? 0} total`} color="bg-yellow-500/10 text-yellow-500" />
+          </div>
         </div>
 
         {/* Plan breakdown + PAYG */}
