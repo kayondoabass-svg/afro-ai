@@ -2958,7 +2958,7 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       secretKeyHash,
       secretKeyPreview,
       plan: "starter",
-      monthlyLimit: 3000,
+      monthlyLimit: 1,
       isActive: true,
     }).returning();
 

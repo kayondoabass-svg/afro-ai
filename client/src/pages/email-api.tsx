@@ -466,9 +466,9 @@ console.log(data.messageId); // → "01000196..."
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                 {[
-                  { plan: "Starter", price: "Free", emails: "3,000 / month", ip: "Shared IP", color: "border-primary/30" },
-                  { plan: "Pro", price: "$25 / mo", emails: "50,000 / month", ip: "Custom Domains", color: "border-blue-500/30" },
-                  { plan: "Enterprise", price: "Custom", emails: "Unlimited", ip: "Dedicated IP + 24/7 support", color: "border-purple-500/30" },
+                  { plan: "Starter", price: "Free", emails: "1 email (trial)", ip: "Test your integration", color: "border-primary/30" },
+                  { plan: "Pro", price: "$15 / mo", emails: "10,000 / month", ip: "Custom Domains", color: "border-blue-500/30" },
+                  { plan: "Business", price: "$25 / mo", emails: "50,000 / month", ip: "Dedicated IP + Priority support", color: "border-purple-500/30" },
                 ].map(({ plan, price, emails, ip, color }) => (
                   <div key={plan} className={`rounded-lg border-2 ${color} p-4 space-y-1`}>
                     <div className="font-bold">{plan}</div>

@@ -638,6 +638,7 @@ export default function LandingPage() {
                 <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">Marketplace</a>
                 <a href="/domains" className="block hover:text-primary transition-colors" data-testid="link-footer-domains">Domain Store</a>
                 <a href="/chatbot-api" className="block hover:text-primary transition-colors" data-testid="link-footer-chatbot-api">Chatbot API</a>
+                <a href="/email-api" className="block hover:text-primary transition-colors" data-testid="link-footer-email-api">Email API</a>
                 <a href="/ussd" className="block hover:text-primary transition-colors" data-testid="link-footer-ussd-builder">USSD Builder</a>
                 <a href="https://pages.github.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors" data-testid="link-footer-github-pages-product">
                   <Github className="w-3.5 h-3.5" /> GitHub Pages
