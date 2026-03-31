@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Bot, Plus, Trash2, Copy, Check, Code2, MessageSquare, Globe, Settings2 as Settings,
-  Eye, EyeOff, Loader2, ExternalLink, Zap, Key, BookOpen, Palette, ScanLine, Sparkles
+  Eye, EyeOff, Loader2, ExternalLink, Zap, Key, BookOpen, Palette, ScanLine, Sparkles, AlertTriangle
 } from "lucide-react";
 import type { ChatbotWidget } from "@shared/schema";
 
@@ -51,6 +51,7 @@ export default function ChatbotsPage() {
   const [showKey, setShowKey] = useState<Record<number, boolean>>({});
   const [copied, setCopied] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<ChatbotWidget | null>(null);
+  const [deleteInput, setDeleteInput] = useState("");
   const [form, setForm] = useState({
     name: "", websiteUrl: "", knowledgeBase: "", primaryColor: "#D4A017",
     greeting: "Hi! How can I help you today?", widgetTitle: "AI Assistant",
@@ -146,6 +147,7 @@ export default function ChatbotsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chatbots"] });
       setDeleteConfirm(null);
+      setDeleteInput("");
       if (selected?.id === deleteConfirm?.id) setSelected(null);
       toast({ title: "Deleted", description: "Chatbot removed." });
     },
@@ -454,16 +456,36 @@ export default function ChatbotsPage() {
       </Dialog>
 
       {/* Delete confirm */}
-      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+      <Dialog open={!!deleteConfirm} onOpenChange={() => { setDeleteConfirm(null); setDeleteInput(""); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete "{deleteConfirm?.name}"?</DialogTitle>
-            <DialogDescription>This will permanently delete the chatbot and its API key. Any websites using this key will stop working.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-red-500">
+              <AlertTriangle className="w-5 h-5" /> Delete Chatbot
+            </DialogTitle>
+            <DialogDescription className="space-y-3 pt-2">
+              <p>This will <strong>permanently delete</strong> <span className="text-white font-semibold">"{deleteConfirm?.name}"</span> and its API key. Any website currently using this chatbot will immediately stop working.</p>
+              <p className="text-yellow-400 text-xs font-medium">⚠ This action cannot be undone.</p>
+              <div className="pt-1">
+                <p className="text-xs text-muted-foreground mb-1.5">Type <span className="font-mono text-white bg-zinc-800 px-1.5 py-0.5 rounded">{deleteConfirm?.name}</span> to confirm:</p>
+                <input
+                  data-testid="input-delete-confirm"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-red-500"
+                  placeholder="Type chatbot name here..."
+                  value={deleteInput}
+                  onChange={e => setDeleteInput(e.target.value)}
+                />
+              </div>
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => deleteConfirm && deleteMutation.mutate(deleteConfirm.id)} disabled={deleteMutation.isPending}>
-              {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
+            <Button variant="outline" onClick={() => { setDeleteConfirm(null); setDeleteInput(""); }}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteConfirm && deleteMutation.mutate(deleteConfirm.id)}
+              disabled={deleteMutation.isPending || deleteInput !== deleteConfirm?.name}
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Permanently Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
