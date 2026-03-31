@@ -11,6 +11,7 @@ import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, i
 import { analyzeImage } from "./gemini";
 import { checkDomainAvailability, checkSingleDomain, registerDomain, listDomains, getDomainInfo, renewDomain, setNameservers, getCostPrice } from "./namedotcom";
 import { scanHtmlContent, publishedAppHeaders } from "./security";
+import { uploadToGcs, deleteFromGcs, isGcsConfigured } from "./gcs";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import path from "path";
@@ -39,17 +40,8 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const fileStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, uniqueSuffix + ext);
-  },
-});
-
 const upload = multer({
-  storage: fileStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const blocked = /svg/i;
@@ -172,25 +164,36 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No files uploaded" });
       }
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const useGcs = isGcsConfigured();
       const result = await Promise.all(files.map(async (f) => {
+        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        const ext = path.extname(f.originalname);
+        const filename = uniqueSuffix + ext;
+        let fileUrl: string;
+
+        if (useGcs) {
+          fileUrl = await uploadToGcs(f.buffer, filename, f.mimetype);
+        } else {
+          const filePath = path.join(uploadDir, filename);
+          fs.writeFileSync(filePath, f.buffer);
+          fileUrl = `/uploads/${filename}`;
+        }
+
         const entry: any = {
-          filename: f.filename,
+          filename,
           originalName: f.originalname,
           mimetype: f.mimetype,
           size: f.size,
-          url: `/uploads/${f.filename}`,
+          url: fileUrl,
         };
+
         if (f.mimetype.startsWith("image/")) {
-          try {
-            const imageBuffer = fs.readFileSync(f.path);
-            entry.dataUrl = `data:${f.mimetype};base64,${imageBuffer.toString("base64")}`;
-          } catch (e) {
-            console.error("Error encoding image to base64:", e);
-          }
+          entry.dataUrl = `data:${f.mimetype};base64,${f.buffer.toString("base64")}`;
         }
+
         if (userId) {
           try {
-            await storage.createUserFile({ userId, filename: f.filename, originalName: f.originalname, mimetype: f.mimetype, size: f.size, url: `/uploads/${f.filename}` });
+            await storage.createUserFile({ userId, filename, originalName: f.originalname, mimetype: f.mimetype, size: f.size, url: fileUrl });
           } catch (_) {}
         }
         return entry;
@@ -220,8 +223,12 @@ export async function registerRoutes(
       const files = await storage.getUserFiles(userId);
       const file = files.find(f => f.id === fileId);
       if (!file) return res.status(404).json({ message: "File not found" });
-      const filePath = path.join(process.cwd(), "public", file.url);
-      if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch (_) {} }
+      if (file.url.startsWith("http")) {
+        await deleteFromGcs(file.url);
+      } else {
+        const filePath = path.join(process.cwd(), "public", file.url);
+        if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch (_) {} }
+      }
       await storage.deleteUserFile(fileId);
       res.json({ success: true });
     } catch (error: any) {
