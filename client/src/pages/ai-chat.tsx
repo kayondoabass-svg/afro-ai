@@ -2343,11 +2343,11 @@ export default function AIChatPage() {
       </div>
 
       <div className="flex-1 flex">
-        <div className={`flex flex-col ${previewCode && showPreview ? `${mobileView === "preview" ? "hidden" : "flex"} md:flex md:w-1/2 md:min-w-[320px]` : "flex-1"} ${previewCode ? "pb-14 md:pb-0" : ""}`}>
+        <div className={`flex flex-col ${previewCode && showPreview ? `${mobileView === "preview" ? "hidden" : "flex"} lg:flex lg:w-1/2 lg:min-w-[320px]` : "flex-1"} ${previewCode ? "pb-14 lg:pb-0" : ""}`}>
           {activeConversation ? (
             <>
               {previewCode && (
-                <div className="hidden md:flex items-center justify-between gap-2 px-4 py-2 border-b bg-card/50">
+                <div className="hidden lg:flex items-center justify-between gap-2 px-4 py-2 border-b bg-card/50">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Code2 className="w-4 h-4 text-primary" />
                     <span>Building Mode</span>
@@ -2693,7 +2693,7 @@ export default function AIChatPage() {
         )}
 
         {previewCode && showPreview && (
-          <div className={`${isFullscreen ? "" : "w-full md:w-1/2"} ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
+          <div className={`${isFullscreen ? "" : "w-full lg:w-1/2"} ${mobileView === "chat" ? "hidden lg:flex" : "flex"}`}>
             <LivePreview
               code={previewCode}
               isFullscreen={isFullscreen}
@@ -2721,7 +2721,7 @@ export default function AIChatPage() {
 
         {/* Mobile Chat/Preview tab bar — fixed at bottom, only when preview exists */}
         {previewCode && (
-          <div className="fixed bottom-0 left-0 right-0 z-30 flex md:hidden border-t bg-background/95 backdrop-blur-sm" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="fixed bottom-0 left-0 right-0 z-30 flex lg:hidden border-t bg-background/95 backdrop-blur-sm" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
             <button
               onClick={() => setMobileView("chat")}
               className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${mobileView === "chat" ? "text-primary border-t-2 border-primary -mt-px" : "text-muted-foreground"}`}

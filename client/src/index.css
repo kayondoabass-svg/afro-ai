@@ -387,3 +387,10 @@ html {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* Tablet responsive: slim sidebar at 769px–1024px */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root {
+    --sidebar-width: 12rem;
+  }
+}

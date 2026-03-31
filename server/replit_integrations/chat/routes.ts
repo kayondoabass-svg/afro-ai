@@ -1041,23 +1041,58 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body { overflow-x: hidden; min-height: 100vh; }
 img, video, canvas, svg { max-width: 100%; height: auto; display: block; }
 
+MANDATORY utility classes — always include these in every generated page:
+/* Responsive visibility helpers */
+.hide-on-mobile { display: block; }
+.hide-on-tablet { display: block; }
+.show-on-mobile { display: none; }
+@media (max-width: 1024px) {
+  .hide-on-tablet { display: none !important; }
+}
+@media (max-width: 768px) {
+  .hide-on-mobile { display: none !important; }
+  .show-on-mobile { display: block !important; }
+}
+
 MANDATORY container pattern — never use fixed pixel widths for page containers:
 .container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 16px; }
 @media (min-width: 640px) { .container { padding: 0 24px; } }
 @media (min-width: 1024px) { .container { padding: 0 48px; } }
 
+MANDATORY three-state layout system — every layout must handle Desktop → Tablet → Mobile:
+Desktop (default, >1024px): Full layout — sidebars visible, multi-column grids, large padding
+Tablet (769px–1024px): Intermediate — sidebar narrows (not hidden), grids go 2-column, reduce padding
+Mobile (≤768px): Stacked — sidebar hidden behind hamburger, single column, minimal padding
+
+THREE-STATE SIDEBAR PATTERN (for any sidebar+content layout):
+.layout { display: flex; gap: 0; }
+.sidebar { width: 280px; flex-shrink: 0; transition: width 0.3s; }
+.content { flex: 1; min-width: 0; }
+@media (max-width: 1024px) { /* TABLET: slimmer sidebar */
+  .sidebar { width: 200px; }
+}
+@media (max-width: 768px) { /* MOBILE: sidebar hides */
+  .layout { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; }
+}
+
 MANDATORY grid pattern — always use auto-fit so grids collapse automatically:
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
 On mobile: 1 column. Tablet: 2 columns. Desktop: 3-4 columns. This happens automatically with auto-fit.
+For explicit tablet control: @media (max-width: 1024px) { .grid { grid-template-columns: repeat(2, 1fr); } }
 
 MANDATORY navigation — always include a working hamburger menu for mobile:
 - Show full nav links on desktop (display: flex)
-- Hide nav links on mobile, show hamburger button (display: none / display: block)
+- On tablet: nav links still visible but with less gap, smaller font
+- On mobile: hide nav links, show hamburger button
 - Toggle a .nav-open class on the nav with JavaScript onclick
 - Mobile nav links stack vertically, full width, min 56px tap height
 - Use this pattern:
 <button class="hamburger" onclick="document.querySelector('nav').classList.toggle('open')" aria-label="Menu">☰</button>
 .nav-links { display: flex; gap: 24px; }
+@media (max-width: 1024px) {
+  .nav-links { gap: 12px; font-size: 0.9em; }
+}
 @media (max-width: 768px) {
   .hamburger { display: block; }
   .nav-links { display: none; flex-direction: column; position: absolute; top: 100%; left: 0; width: 100%; background: var(--nav-bg); padding: 16px; gap: 0; }
@@ -1229,16 +1264,20 @@ MANDATORY <head> section — every generated page MUST include all of these:
 <meta name="theme-color" content="[primary color]">
 <title>[Page Title]</title>
 
-MANDATORY responsive self-check — before outputting code, verify:
+MANDATORY responsive self-check — before outputting code, verify ALL of these:
 ✓ Does the page have the viewport meta tag? (If no → add it)
 ✓ Does the CSS have box-sizing: border-box on *? (If no → add it)
 ✓ Does body have overflow-x: hidden? (If no → add it)
 ✓ Are all headings using clamp() for font sizes? (If no → convert them)
-✓ Does navigation have a hamburger menu for mobile? (If no → add it)
+✓ Does navigation have a hamburger menu for mobile (≤768px)? (If no → add it)
 ✓ Are all grid containers using auto-fit or explicit media queries? (If no → fix them)
 ✓ Do all images have max-width: 100% and height: auto? (If no → add it)
-✓ Are there any fixed pixel widths on containers wider than 100%? (If yes → replace with max-width)
-This checklist is NON-NEGOTIABLE. A broken mobile experience is a failed deliverable.
+✓ Are there any fixed pixel widths on containers (e.g. width: 800px)? (If yes → replace with max-width)
+✓ Does the layout handle TABLET (769px–1024px) specifically? (If no → add @media (max-width: 1024px) rules)
+✓ Are .hide-on-mobile and .hide-on-tablet utility classes present in the CSS? (If no → add them)
+✓ Do sidebar/panel layouts have a slimmer width on tablet (not full collapse, not full desktop width)? (If not → fix)
+✓ Are all flex rows set to flex-wrap: wrap so they reflow on tablet? (If no → add it)
+This checklist is NON-NEGOTIABLE. A broken tablet OR mobile experience is a failed deliverable.
 
 === BROWSER APIs & ADVANCED FEATURES ===
 When the user requests features that use browser APIs (camera, geolocation, audio, etc.), you MUST implement them correctly:
