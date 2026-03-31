@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
-import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder, FOUNDER_EMAIL } from "./replit_integrations/auth";
+import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { storage } from "./storage";
 import { insertProjectSchema } from "@shared/schema";
@@ -2196,6 +2197,19 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
       const userEmail = req.user.claims.email || req.user.claims.preferred_username;
       if (!userEmail) return res.status(400).json({ message: "User email not available" });
 
+      // Founders get instant free activation — no payment needed
+      if (FOUNDER_EMAILS.includes(userEmail)) {
+        const ussdPlan = plan.replace("ussd-", "");
+        const expiresAt = new Date("2099-12-31");
+        const existing = await storage.getUssdSubscription(userId);
+        if (existing) {
+          await storage.updateUssdSubscription(userId, { plan: ussdPlan, status: "active", expiresAt });
+        } else {
+          await storage.createUssdSubscription({ userId, plan: ussdPlan, status: "active", expiresAt });
+        }
+        return res.json({ activated: true, plan: ussdPlan });
+      }
+
       const usdAmount = PLAN_PRICES_USD[plan];
       let currency = "USD";
       let amount = usdAmount;
@@ -2231,6 +2245,19 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
   app.get("/api/ussd/subscription", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const user = await storage.getUser(userId);
+      // Founders always have permanent free Enterprise access
+      if (user?.email && FOUNDER_EMAILS.includes(user.email)) {
+        return res.json({
+          id: 0,
+          userId,
+          plan: "enterprise",
+          status: "active",
+          activatedAt: new Date("2024-01-01"),
+          expiresAt: new Date("2099-12-31"),
+          createdAt: new Date("2024-01-01"),
+        });
+      }
       const sub = await storage.getUssdSubscription(userId);
       res.json(sub || null);
     } catch (error: any) {
@@ -2292,6 +2319,11 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
   app.get("/api/chatbot-subscription", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    const user = await storage.getUser(userId);
+    // Founders always have unlimited chatbot access
+    if (user?.email && FOUNDER_EMAILS.includes(user.email)) {
+      return res.json({ plan: "agency", botsLimit: -1, messagesLimit: -1, status: "active" });
+    }
     const sub = await storage.getChatbotSubscription(userId);
     res.json(sub || null);
   });
@@ -2309,16 +2341,19 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       if (!userId) return res.status(401).json({ message: "User not authenticated" });
       const { name, websiteUrl, knowledgeBase, primaryColor, greeting, widgetTitle, placeholder } = req.body;
       if (!name) return res.status(400).json({ message: "Name required" });
-      // Enforce chatbot subscription limits
-      const sub = await storage.getChatbotSubscription(userId);
-      const existingWidgets = await storage.getChatbotWidgetsByUser(userId);
-      if (!sub) {
-        // Allow 1 chatbot without subscription (for trial/testing)
-        if (existingWidgets.length >= 1) {
-          return res.status(403).json({ message: "SUBSCRIPTION_REQUIRED", limit: 1 });
+      // Enforce chatbot subscription limits (founders are exempt)
+      const user = await storage.getUser(userId);
+      const isFounderUser = user?.email && FOUNDER_EMAILS.includes(user.email);
+      if (!isFounderUser) {
+        const sub = await storage.getChatbotSubscription(userId);
+        const existingWidgets = await storage.getChatbotWidgetsByUser(userId);
+        if (!sub) {
+          if (existingWidgets.length >= 1) {
+            return res.status(403).json({ message: "SUBSCRIPTION_REQUIRED", limit: 1 });
+          }
+        } else if (sub.botsLimit !== -1 && existingWidgets.length >= sub.botsLimit) {
+          return res.status(403).json({ message: "BOT_LIMIT_REACHED", limit: sub.botsLimit, plan: sub.plan });
         }
-      } else if (sub.botsLimit !== -1 && existingWidgets.length >= sub.botsLimit) {
-        return res.status(403).json({ message: "BOT_LIMIT_REACHED", limit: sub.botsLimit, plan: sub.plan });
       }
       // Generate a collision-safe unique API key (retry up to 5 times)
       let apiKey = "";
