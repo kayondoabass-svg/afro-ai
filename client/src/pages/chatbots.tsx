@@ -83,7 +83,12 @@ export default function ChatbotsPage() {
       const data = await r.json();
       if (data.knowledge) {
         onResult(data.knowledge);
-        toast({ title: "Website scanned!", description: "Knowledge base auto-filled. Review and add any missing details." });
+        toast({
+          title: data.isSpa ? "Partial scan — template added" : "Website scanned!",
+          description: data.isSpa
+            ? "Site uses JavaScript rendering — basic info extracted. Fill in the [brackets] to complete your knowledge base."
+            : "Knowledge base auto-filled. Review and add any missing details."
+        });
       } else {
         toast({ title: "Scan failed", description: data.message || "Could not read website.", variant: "destructive" });
       }
@@ -524,7 +529,12 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
       const data = await r.json();
       if (data.knowledge) {
         setEdit(f => ({ ...f, knowledgeBase: data.knowledge + buildOmitInstructions(kbOmitCats) }));
-        toast({ title: "Website scanned", description: `${data.knowledge.length.toLocaleString()} chars extracted. Review and save.` });
+        toast({
+          title: data.isSpa ? "Partial scan — template added" : "Website scanned",
+          description: data.isSpa
+            ? "This site loads content via JavaScript so only basic info was extracted. Fill in the [brackets] with your details."
+            : `${data.knowledge.length.toLocaleString()} chars extracted. Review and save.`
+        });
       } else {
         toast({ title: "Scan failed", description: data.message || "Could not read that URL.", variant: "destructive" });
       }

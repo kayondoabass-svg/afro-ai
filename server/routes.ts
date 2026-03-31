@@ -2719,7 +2719,38 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
 
       if (!fetchOk || !html) return res.status(400).json({ message: "Could not reach that URL. The website may block automated access or be offline." });
 
-      // Strip HTML tags and extract meaningful text
+      // Extract title
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].trim() : "";
+
+      // Extract meta tags
+      const getMeta = (name: string) => {
+        const m = html.match(new RegExp(`<meta[^>]+(?:name|property)=["']${name}["'][^>]+content=["']([^"']+)["']`, "i")) ||
+                  html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']${name}["']`, "i"));
+        return m ? m[1].trim() : "";
+      };
+      const description = getMeta("description") || getMeta("og:description") || getMeta("twitter:description");
+      const ogTitle = getMeta("og:title") || getMeta("twitter:title");
+      const keywords = getMeta("keywords");
+      const siteName = getMeta("og:site_name");
+
+      // Extract JSON-LD structured data
+      const jsonLdMatches = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+      const structuredData: string[] = [];
+      for (const m of jsonLdMatches) {
+        try {
+          const obj = JSON.parse(m[1]);
+          if (obj.name) structuredData.push(`Name: ${obj.name}`);
+          if (obj.description) structuredData.push(`Description: ${obj.description}`);
+          if (obj.telephone) structuredData.push(`Phone: ${obj.telephone}`);
+          if (obj.email) structuredData.push(`Email: ${obj.email}`);
+          if (obj.address) structuredData.push(`Address: ${JSON.stringify(obj.address)}`);
+          if (obj.priceRange) structuredData.push(`Price Range: ${obj.priceRange}`);
+          if (obj.openingHours) structuredData.push(`Hours: ${obj.openingHours}`);
+        } catch { /* skip invalid JSON */ }
+      }
+
+      // Strip HTML and extract visible text
       const cleaned = html
         .replace(/<script[\s\S]*?<\/script>/gi, "")
         .replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -2732,27 +2763,36 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
         .replace(/\s{2,}/g, "\n")
         .trim();
 
-      // Extract title
-      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-      const title = titleMatch ? titleMatch[1].trim() : "";
-
-      // Extract meta description
-      const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
-                        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
-      const description = descMatch ? descMatch[1].trim() : "";
-
-      // Build structured knowledge base
-      const lines = cleaned.split("\n").map(l => l.trim()).filter(l => l.length > 20 && l.length < 500);
+      const lines = cleaned.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 15 && l.length < 600);
       const unique = [...new Set(lines)].slice(0, 80);
 
-      let knowledge = "";
-      if (title) knowledge += `## About\nWebsite: ${target}\nTitle: ${title}\n`;
-      if (description) knowledge += `Description: ${description}\n`;
-      knowledge += "\n## Website Content\n";
-      knowledge += unique.join("\n");
-      knowledge = knowledge.slice(0, 8000);
+      // Build structured knowledge base — always produce something useful
+      const effectiveTitle = ogTitle || title;
+      const effectiveSite = siteName || (target.replace(/https?:\/\/(www\.)?/, "").split("/")[0]);
 
-      res.json({ knowledge, title, description, url: target });
+      let knowledge = `## About\nWebsite: ${target}\n`;
+      if (effectiveTitle) knowledge += `Title: ${effectiveTitle}\n`;
+      if (effectiveSite) knowledge += `Brand/Site: ${effectiveSite}\n`;
+      if (description) knowledge += `Description: ${description}\n`;
+      if (keywords) knowledge += `Keywords: ${keywords}\n`;
+
+      if (structuredData.length > 0) {
+        knowledge += `\n## Business Details\n${structuredData.join("\n")}\n`;
+      }
+
+      if (unique.length > 0) {
+        knowledge += `\n## Website Content\n${unique.join("\n")}\n`;
+      } else {
+        // SPA or JS-rendered site — add a helpful template
+        knowledge += `\n## Services & Features\n[This website uses JavaScript rendering. Please fill in your services, products, pricing, and FAQs below]\n`;
+        knowledge += `\n## Contact\n[Add your contact email, phone, and address here]\n`;
+        knowledge += `\n## FAQ\n[Add common questions and answers here]\n`;
+      }
+
+      knowledge = knowledge.slice(0, 8000);
+      const isSpa = unique.length < 3;
+
+      res.json({ knowledge, title: effectiveTitle, description, url: target, isSpa });
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Failed to scan website" });
     }
