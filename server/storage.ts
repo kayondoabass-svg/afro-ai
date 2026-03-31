@@ -276,6 +276,41 @@ class DatabaseStorage implements IStorage {
     const [suspendedCount] = await db.select({ value: count() }).from(publishedApps).where(eq(publishedApps.appStatus, "suspended"));
     const [domainOrderCount] = await db.select({ value: count() }).from(domainOrders);
 
+    // New feature stats
+    const [ussdTotalCount] = await db.select({ value: count() }).from(ussdSubscriptions);
+    const [ussdActiveCount] = await db.select({ value: count() }).from(ussdSubscriptions).where(eq(ussdSubscriptions.status, "active"));
+    const allUssdSubs = await db.select({ plan: ussdSubscriptions.plan }).from(ussdSubscriptions).where(eq(ussdSubscriptions.status, "active"));
+    const ussdPlanBreakdown = { starter: 0, growth: 0, enterprise: 0 };
+    for (const s of allUssdSubs) {
+      const p = s.plan?.toLowerCase() || "";
+      if (p === "starter") ussdPlanBreakdown.starter++;
+      else if (p === "growth") ussdPlanBreakdown.growth++;
+      else if (p === "enterprise") ussdPlanBreakdown.enterprise++;
+    }
+
+    const [chatbotCount] = await db.select({ value: count() }).from(chatbotWidgets);
+    const [activeChatbotCount] = await db.select({ value: count() }).from(chatbotWidgets).where(eq(chatbotWidgets.isActive, true));
+    const [chatbotConvoCount] = await db.select({ value: count() }).from(widgetConversations);
+
+    const [marketplaceCount] = await db.select({ value: count() }).from(marketplaceListings);
+    const [marketplaceDownloads] = await db.select({ value: sql<number>`coalesce(sum(downloads), 0)` }).from(marketplaceListings);
+
+    const [blogTotalCount] = await db.select({ value: count() }).from(blogPosts);
+    const [blogPublishedCount] = await db.select({ value: count() }).from(blogPosts).where(eq(blogPosts.status, "published"));
+
+    const [emailSubCount] = await db.select({ value: count() }).from(emailSubscribers);
+    const [emailSubActiveCount] = await db.select({ value: count() }).from(emailSubscribers).where(eq(emailSubscribers.isActive, true));
+    const [emailCampaignCount] = await db.select({ value: count() }).from(emailCampaigns);
+
+    const [fileCount] = await db.select({ value: count() }).from(userFiles);
+    const [zipExportCount] = await db.select({ value: count() }).from(zipExports);
+
+    const [webhookCount] = await db.select({ value: count() }).from(webhooks);
+    const [activeWebhookCount] = await db.select({ value: count() }).from(webhooks).where(eq(webhooks.isActive, true));
+
+    const [formCount] = await db.select({ value: count() }).from(forms);
+    const [formSubCount] = await db.select({ value: count() }).from(formSubmissions);
+
     // Plan breakdown
     const allUsers = await db.select({ plan: users.plan, paygBalance: users.paygBalance, paygSpent: users.paygSpent }).from(users);
     const planBreakdown = { starter: 0, pro: 0, business: 0, payg: 0, other: 0 };
@@ -292,12 +327,15 @@ class DatabaseStorage implements IStorage {
     }
 
     // Estimated MRR (monthly recurring revenue in USD)
-    const estimatedMRR = (planBreakdown.pro * 1500 + planBreakdown.business * 2990) / 100;
+    const ussdMRR = ussdPlanBreakdown.starter * 29 + ussdPlanBreakdown.growth * 79 + ussdPlanBreakdown.enterprise * 199;
+    const estimatedMRR = (planBreakdown.pro * 1500 + planBreakdown.business * 2990) / 100 + ussdMRR;
 
     const recentUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(15);
     const recentProjects = await db.select().from(projects).orderBy(desc(projects.createdAt)).limit(10);
     const recentPublishedApps = await db.select().from(publishedApps).orderBy(desc(publishedApps.createdAt)).limit(15);
     const recentDomainOrders = await db.select().from(domainOrders).orderBy(desc(domainOrders.createdAt)).limit(10);
+    const recentUssdSubs = await db.select().from(ussdSubscriptions).orderBy(desc(ussdSubscriptions.createdAt)).limit(10);
+    const recentChatbots = await db.select().from(chatbotWidgets).orderBy(desc(chatbotWidgets.createdAt)).limit(10);
 
     return {
       totalUsers: userCount.value,
@@ -311,10 +349,40 @@ class DatabaseStorage implements IStorage {
       estimatedMRR,
       totalPaygBalanceCents,
       totalPaygSpentCents,
+      // USSD
+      totalUssdSubscriptions: ussdTotalCount.value,
+      activeUssdSubscriptions: ussdActiveCount.value,
+      ussdPlanBreakdown,
+      // Chatbot API
+      totalChatbots: chatbotCount.value,
+      activeChatbots: activeChatbotCount.value,
+      totalChatbotConversations: chatbotConvoCount.value,
+      // Marketplace
+      totalMarketplaceListings: marketplaceCount.value,
+      totalMarketplaceDownloads: Number(marketplaceDownloads.value) || 0,
+      // Blog
+      totalBlogPosts: blogTotalCount.value,
+      publishedBlogPosts: blogPublishedCount.value,
+      // Email
+      totalEmailSubscribers: emailSubCount.value,
+      activeEmailSubscribers: emailSubActiveCount.value,
+      totalEmailCampaigns: emailCampaignCount.value,
+      // Files
+      totalUserFiles: fileCount.value,
+      totalZipExports: zipExportCount.value,
+      // Webhooks
+      totalWebhooks: webhookCount.value,
+      activeWebhooks: activeWebhookCount.value,
+      // Forms
+      totalForms: formCount.value,
+      totalFormSubmissions: formSubCount.value,
+      // Recent lists
       recentUsers,
       recentProjects,
       recentPublishedApps,
       recentDomainOrders,
+      recentUssdSubs,
+      recentChatbots,
     };
   }
 

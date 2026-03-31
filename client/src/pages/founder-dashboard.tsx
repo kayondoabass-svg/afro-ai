@@ -35,6 +35,15 @@ import {
   CircleCheck,
   CircleX,
   Clock,
+  PhoneCall,
+  Bot,
+  Store,
+  FileText,
+  Mail,
+  HardDrive,
+  Zap,
+  ClipboardList,
+  UserCheck,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -49,10 +58,40 @@ interface PlatformStats {
   estimatedMRR: number;
   totalPaygBalanceCents: number;
   totalPaygSpentCents: number;
+  // USSD
+  totalUssdSubscriptions: number;
+  activeUssdSubscriptions: number;
+  ussdPlanBreakdown: { starter: number; growth: number; enterprise: number };
+  // Chatbot
+  totalChatbots: number;
+  activeChatbots: number;
+  totalChatbotConversations: number;
+  // Marketplace
+  totalMarketplaceListings: number;
+  totalMarketplaceDownloads: number;
+  // Blog
+  totalBlogPosts: number;
+  publishedBlogPosts: number;
+  // Email
+  totalEmailSubscribers: number;
+  activeEmailSubscribers: number;
+  totalEmailCampaigns: number;
+  // Files
+  totalUserFiles: number;
+  totalZipExports: number;
+  // Webhooks
+  totalWebhooks: number;
+  activeWebhooks: number;
+  // Forms
+  totalForms: number;
+  totalFormSubmissions: number;
+  // Recent lists
   recentUsers: any[];
   recentProjects: any[];
   recentPublishedApps: any[];
   recentDomainOrders: any[];
+  recentUssdSubs: any[];
+  recentChatbots: any[];
 }
 
 function StatCard({ icon: Icon, label, value, sub, color }: {
@@ -210,7 +249,7 @@ export default function FounderDashboardPage() {
           </div>
         </div>
 
-        {/* Top stats row */}
+        {/* Top stats row — Core */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           <StatCard icon={Users} label="Total Users" value={stats?.totalUsers ?? 0} color="bg-blue-500/10 text-blue-500" />
           <StatCard icon={Folder} label="Projects" value={stats?.totalProjects ?? 0} color="bg-primary/10 text-primary" />
@@ -220,6 +259,18 @@ export default function FounderDashboardPage() {
           <StatCard icon={MessageSquare} label="AI Messages" value={stats?.totalMessages ?? 0} color="bg-orange-500/10 text-orange-500" />
           <StatCard icon={DollarSign} label="Est. MRR" value={mrrDisplay} color="bg-green-500/10 text-green-500" />
           <StatCard icon={ShoppingBag} label="Domain Orders" value={stats?.totalDomainOrders ?? 0} color="bg-indigo-500/10 text-indigo-500" />
+        </div>
+
+        {/* Second stats row — New Features */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <StatCard icon={PhoneCall} label="USSD Subs" value={stats?.activeUssdSubscriptions ?? 0} sub={`${stats?.totalUssdSubscriptions ?? 0} total`} color="bg-amber-500/10 text-amber-500" />
+          <StatCard icon={Bot} label="Chatbots" value={stats?.activeChatbots ?? 0} sub={`${stats?.totalChatbotConversations ?? 0} convos`} color="bg-cyan-500/10 text-cyan-500" />
+          <StatCard icon={Store} label="Marketplace" value={stats?.totalMarketplaceListings ?? 0} sub={`${stats?.totalMarketplaceDownloads ?? 0} clones`} color="bg-violet-500/10 text-violet-500" />
+          <StatCard icon={FileText} label="Blog Posts" value={stats?.publishedBlogPosts ?? 0} sub={`${stats?.totalBlogPosts ?? 0} total`} color="bg-rose-500/10 text-rose-500" />
+          <StatCard icon={Mail} label="Email Subs" value={stats?.activeEmailSubscribers ?? 0} sub={`${stats?.totalEmailCampaigns ?? 0} campaigns`} color="bg-sky-500/10 text-sky-500" />
+          <StatCard icon={HardDrive} label="Files" value={stats?.totalUserFiles ?? 0} sub={`${stats?.totalZipExports ?? 0} exports`} color="bg-teal-500/10 text-teal-500" />
+          <StatCard icon={ClipboardList} label="Forms" value={stats?.totalForms ?? 0} sub={`${stats?.totalFormSubmissions ?? 0} submissions`} color="bg-lime-500/10 text-lime-500" />
+          <StatCard icon={Zap} label="Webhooks" value={stats?.activeWebhooks ?? 0} sub={`${stats?.totalWebhooks ?? 0} total`} color="bg-yellow-500/10 text-yellow-500" />
         </div>
 
         {/* Plan breakdown + PAYG */}
@@ -276,6 +327,133 @@ export default function FounderDashboardPage() {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* USSD + Chatbot + Feature Breakdown */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* USSD Subscriptions */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="flex items-center gap-2 p-4 border-b">
+                <PhoneCall className="w-4 h-4 text-amber-500" />
+                <h3 className="font-semibold text-sm">USSD Subscriptions</h3>
+                <Badge variant="secondary" className="ml-auto text-xs">{stats?.activeUssdSubscriptions ?? 0} active</Badge>
+              </div>
+              <div className="grid grid-cols-3 divide-x divide-border/50 border-b">
+                {[
+                  { label: "Starter", value: stats?.ussdPlanBreakdown?.starter ?? 0, color: "text-muted-foreground", price: "$29" },
+                  { label: "Growth", value: stats?.ussdPlanBreakdown?.growth ?? 0, color: "text-blue-400", price: "$79" },
+                  { label: "Enterprise", value: stats?.ussdPlanBreakdown?.enterprise ?? 0, color: "text-amber-400", price: "$199" },
+                ].map(p => (
+                  <div key={p.label} className="p-3 text-center">
+                    <p className={`text-xl font-bold ${p.color}`}>{p.value}</p>
+                    <p className="text-[10px] text-muted-foreground">{p.label}</p>
+                    <p className="text-[10px] text-muted-foreground">{p.price}/mo</p>
+                  </div>
+                ))}
+              </div>
+              <ScrollArea className="h-[280px]">
+                <div className="p-2 space-y-1">
+                  {stats?.recentUssdSubs && stats.recentUssdSubs.length > 0 ? (
+                    stats.recentUssdSubs.map((s: any) => (
+                      <div key={s.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`ussd-sub-${s.id}`}>
+                        <div className="w-7 h-7 rounded-md bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                          <PhoneCall className="w-3.5 h-3.5 text-amber-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium capitalize">{s.plan} Plan</p>
+                          <p className="text-[10px] text-muted-foreground">{s.userId?.slice(0, 12)}... · {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "—"}</p>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] px-1.5 flex-shrink-0 ${s.status === "active" ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"}`}>
+                          {s.status}
+                        </Badge>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-8">No USSD subscriptions yet</p>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+
+          {/* Chatbot API */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="flex items-center gap-2 p-4 border-b">
+                <Bot className="w-4 h-4 text-cyan-500" />
+                <h3 className="font-semibold text-sm">Chatbot API</h3>
+                <Badge variant="secondary" className="ml-auto text-xs">{stats?.activeChatbots ?? 0} active</Badge>
+              </div>
+              <div className="grid grid-cols-3 divide-x divide-border/50 border-b">
+                {[
+                  { label: "Total Bots", value: stats?.totalChatbots ?? 0, color: "text-cyan-400" },
+                  { label: "Active Bots", value: stats?.activeChatbots ?? 0, color: "text-green-400" },
+                  { label: "Conversations", value: stats?.totalChatbotConversations ?? 0, color: "text-purple-400" },
+                ].map(p => (
+                  <div key={p.label} className="p-3 text-center">
+                    <p className={`text-xl font-bold ${p.color}`}>{p.value}</p>
+                    <p className="text-[10px] text-muted-foreground">{p.label}</p>
+                  </div>
+                ))}
+              </div>
+              <ScrollArea className="h-[280px]">
+                <div className="p-2 space-y-1">
+                  {stats?.recentChatbots && stats.recentChatbots.length > 0 ? (
+                    stats.recentChatbots.map((c: any) => (
+                      <div key={c.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`chatbot-row-${c.id}`}>
+                        <div className="w-7 h-7 rounded-md bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
+                          <Bot className="w-3.5 h-3.5 text-cyan-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{c.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{c.websiteUrl || "No website"}</p>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] px-1.5 flex-shrink-0 ${c.isActive ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"}`}>
+                          {c.isActive ? "active" : "off"}
+                        </Badge>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-8">No chatbots created yet</p>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+
+          {/* Feature Usage Grid */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="flex items-center gap-2 p-4 border-b">
+                <Activity className="w-4 h-4 text-primary" />
+                <h3 className="font-semibold text-sm">Feature Usage</h3>
+              </div>
+              <div className="p-4 grid grid-cols-2 gap-3">
+                {[
+                  { icon: Store, label: "Marketplace", value: stats?.totalMarketplaceListings ?? 0, sub: `${stats?.totalMarketplaceDownloads ?? 0} clones`, color: "text-violet-400 bg-violet-500/10" },
+                  { icon: FileText, label: "Blog Posts", value: stats?.publishedBlogPosts ?? 0, sub: `${stats?.totalBlogPosts ?? 0} total`, color: "text-rose-400 bg-rose-500/10" },
+                  { icon: Mail, label: "Email Subs", value: stats?.activeEmailSubscribers ?? 0, sub: `${stats?.totalEmailCampaigns ?? 0} campaigns`, color: "text-sky-400 bg-sky-500/10" },
+                  { icon: HardDrive, label: "Files", value: stats?.totalUserFiles ?? 0, sub: `${stats?.totalZipExports ?? 0} ZIP exports`, color: "text-teal-400 bg-teal-500/10" },
+                  { icon: ClipboardList, label: "Forms", value: stats?.totalForms ?? 0, sub: `${stats?.totalFormSubmissions ?? 0} submissions`, color: "text-lime-400 bg-lime-500/10" },
+                  { icon: Zap, label: "Webhooks", value: stats?.activeWebhooks ?? 0, sub: `${stats?.totalWebhooks ?? 0} registered`, color: "text-yellow-400 bg-yellow-500/10" },
+                  { icon: ShoppingBag, label: "Domains", value: stats?.totalDomainOrders ?? 0, sub: "registered", color: "text-indigo-400 bg-indigo-500/10" },
+                  { icon: UserCheck, label: "Affiliates", value: affiliateApps?.filter((a: any) => a.status === "approved").length ?? 0, sub: `${affiliateApps?.length ?? 0} applied`, color: "text-primary bg-primary/10" },
+                ].map(item => (
+                  <div key={item.label} className={`rounded-lg p-3 ${item.color.split(" ")[1]}`}>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <item.icon className={`w-3.5 h-3.5 ${item.color.split(" ")[0]}`} />
+                      <span className="text-[10px] text-muted-foreground">{item.label}</span>
+                    </div>
+                    <p className={`text-xl font-bold ${item.color.split(" ")[0]}`}>{item.value}</p>
+                    <p className="text-[10px] text-muted-foreground">{item.sub}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
         </div>
 
         {/* Users + Apps + Domains */}
