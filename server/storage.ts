@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, ussdSubscriptions, userFiles, zipExports, appSecrets, activityLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type UssdSubscription, type InsertUssdSubscription, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -171,6 +171,13 @@ export interface IStorage {
   getUssdSubscription(userId: string): Promise<UssdSubscription | undefined>;
   createUssdSubscription(data: InsertUssdSubscription): Promise<UssdSubscription>;
   updateUssdSubscription(userId: string, data: Partial<InsertUssdSubscription>): Promise<UssdSubscription | undefined>;
+  // USSD Apps
+  getUssdAppsByUser(userId: string): Promise<UssdApp[]>;
+  getUssdAppByKey(apiKey: string): Promise<UssdApp | undefined>;
+  getUssdApp(id: number): Promise<UssdApp | undefined>;
+  createUssdApp(data: InsertUssdApp): Promise<UssdApp>;
+  updateUssdApp(id: number, data: Partial<InsertUssdApp & { sessionsUsed?: number }>): Promise<UssdApp>;
+  deleteUssdApp(id: number): Promise<void>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -1080,6 +1087,29 @@ class DatabaseStorage implements IStorage {
   async updateUssdSubscription(userId: string, data: Partial<InsertUssdSubscription>): Promise<UssdSubscription | undefined> {
     const [sub] = await db.update(ussdSubscriptions).set(data).where(eq(ussdSubscriptions.userId, userId)).returning();
     return sub;
+  }
+
+  async getUssdAppsByUser(userId: string): Promise<UssdApp[]> {
+    return db.select().from(ussdApps).where(eq(ussdApps.userId, userId)).orderBy(desc(ussdApps.createdAt));
+  }
+  async getUssdAppByKey(apiKey: string): Promise<UssdApp | undefined> {
+    const [app] = await db.select().from(ussdApps).where(eq(ussdApps.apiKey, apiKey));
+    return app;
+  }
+  async getUssdApp(id: number): Promise<UssdApp | undefined> {
+    const [app] = await db.select().from(ussdApps).where(eq(ussdApps.id, id));
+    return app;
+  }
+  async createUssdApp(data: InsertUssdApp): Promise<UssdApp> {
+    const [app] = await db.insert(ussdApps).values(data).returning();
+    return app;
+  }
+  async updateUssdApp(id: number, data: Partial<InsertUssdApp & { sessionsUsed?: number }>): Promise<UssdApp> {
+    const [app] = await db.update(ussdApps).set(data as any).where(eq(ussdApps.id, id)).returning();
+    return app;
+  }
+  async deleteUssdApp(id: number): Promise<void> {
+    await db.delete(ussdApps).where(eq(ussdApps.id, id));
   }
 
   async getAppSecrets(userId: string, appId?: number | null): Promise<AppSecret[]> {

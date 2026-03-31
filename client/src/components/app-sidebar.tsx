@@ -71,6 +71,7 @@ const ALL_MENU_ITEMS = [
   { title: "Webhooks", url: "/webhooks", icon: Zap },
   { title: "Chatbot API", url: "/chatbots", icon: Bot },
   { title: "USSD Builder", url: "/ussd", icon: PhoneCall },
+  { title: "My USSD Apps", url: "/ussd/apps", icon: Smartphone },
   { title: "Files & Storage", url: "/files", icon: HardDrive },
   { title: "Secrets", url: "/secrets", icon: KeyRound },
   { title: "Activity Logs", url: "/logs", icon: Activity },

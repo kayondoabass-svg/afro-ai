@@ -2428,6 +2428,140 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
     }
   });
 
+  // ============ USSD APPS (Gateway + Management) ============
+
+  // Public USSD Gateway — Africa's Talking / Pegasus calls this
+  app.options("/api/ussd/gateway/:appKey", (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.sendStatus(200);
+  });
+
+  app.post("/api/ussd/gateway/:appKey", async (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.set("Content-Type", "text/plain");
+    try {
+      const { appKey } = req.params;
+      const { sessionId, serviceCode, phoneNumber, text = "" } = req.body;
+      const app = await storage.getUssdAppByKey(appKey);
+      if (!app || !app.isActive) {
+        return res.send("END This service is currently unavailable. Please try again later.");
+      }
+      // Increment session count
+      await storage.updateUssdApp(app.id, { sessionsUsed: app.sessionsUsed + 1 });
+
+      // USSD menu flow
+      if (text === "") {
+        return res.send(`CON Welcome to ${app.name}\n1. Ask AI a Question\n2. About this Service\n3. Contact Support`);
+      }
+
+      const parts = text.split("*");
+      const level1 = parts[0];
+
+      if (level1 === "1" && parts.length === 1) {
+        return res.send(`CON Ask ${app.name} anything:\nType your question below:`);
+      }
+
+      if (level1 === "1" && parts.length >= 2) {
+        const userQuestion = parts.slice(1).join(" ").trim();
+        if (!userQuestion) return res.send("END Please type a valid question.");
+        // Call OpenAI
+        try {
+          const OpenAI = (await import("openai")).default;
+          const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
+          const systemPrompt = `You are a helpful USSD assistant for "${app.name}". ${app.description || ""}
+Answer questions using ONLY the knowledge base below. Be very brief and clear — USSD has a 182-character limit per screen.
+If you don't know, say: "I don't have that info. Call us directly."
+Do NOT use markdown, bullet points or symbols.
+
+KNOWLEDGE BASE:
+${app.knowledgeBase || "Provide helpful, concise answers to general questions."}`;
+          const completion = await client.chat.completions.create({
+            model: "gpt-4.1-mini",
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userQuestion }],
+            max_tokens: 120,
+          });
+          const reply = (completion.choices[0].message.content || "Unable to process your request.").slice(0, 160);
+          return res.send(`END ${reply}`);
+        } catch {
+          return res.send("END AI service is temporarily unavailable. Please try again.");
+        }
+      }
+
+      if (level1 === "2") {
+        const about = (app.description || `${app.name} is powered by Afro AI.`).slice(0, 155);
+        return res.send(`END ${about}`);
+      }
+
+      if (level1 === "3") {
+        return res.send("END For support, visit afroaigroup.com or email support@afroaigroup.com");
+      }
+
+      return res.send("END Invalid option. Please dial again.");
+    } catch (e: any) {
+      console.error("[USSD gateway] error:", e.message);
+      res.send("END Service error. Please try again later.");
+    }
+  });
+
+  // USSD Apps management (auth-protected)
+  app.get("/api/ussd/apps", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      res.json(await storage.getUssdAppsByUser(userId));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/ussd/apps", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      // Check subscription
+      const user = await storage.getUser(userId);
+      const isFounder = user?.email && FOUNDER_EMAILS.includes(user.email);
+      if (!isFounder) {
+        const sub = await storage.getUssdSubscription(userId);
+        if (!sub || sub.status !== "active") {
+          return res.status(403).json({ message: "SUBSCRIPTION_REQUIRED" });
+        }
+        const existing = await storage.getUssdAppsByUser(userId);
+        const limits: Record<string, number> = { starter: 1, growth: 5, enterprise: -1 };
+        const limit = limits[sub.plan] ?? 1;
+        if (limit !== -1 && existing.length >= limit) {
+          return res.status(403).json({ message: "APP_LIMIT_REACHED", limit, plan: sub.plan });
+        }
+      }
+      const { name, description, knowledgeBase } = req.body;
+      if (!name) return res.status(400).json({ message: "App name is required" });
+      const apiKey = `ussd_${crypto.randomBytes(20).toString("hex")}`;
+      const app = await storage.createUssdApp({ userId, name, description: description || null, knowledgeBase: knowledgeBase || null, apiKey, isActive: true });
+      res.json(app);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/ussd/apps/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const id = parseInt(req.params.id);
+      const existing = await storage.getUssdApp(id);
+      if (!existing || existing.userId !== userId) return res.status(404).json({ message: "Not found" });
+      const { name, description, knowledgeBase, isActive } = req.body;
+      const updated = await storage.updateUssdApp(id, { ...(name && { name }), description: description ?? existing.description, knowledgeBase: knowledgeBase ?? existing.knowledgeBase, ...(isActive !== undefined && { isActive }) });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/ussd/apps/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const id = parseInt(req.params.id);
+      const existing = await storage.getUssdApp(id);
+      if (!existing || existing.userId !== userId) return res.status(404).json({ message: "Not found" });
+      await storage.deleteUssdApp(id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   // ============ CHATBOT WIDGETS ============
   // Public CORS-enabled chat endpoint (used by embedded widgets on external sites)
   app.options("/api/widget-chat/:apiKey", (req, res) => {

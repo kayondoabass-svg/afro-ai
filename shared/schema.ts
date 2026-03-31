@@ -421,6 +421,22 @@ export const insertUssdSubscriptionSchema = createInsertSchema(ussdSubscriptions
 export type UssdSubscription = typeof ussdSubscriptions.$inferSelect;
 export type InsertUssdSubscription = z.infer<typeof insertUssdSubscriptionSchema>;
 
+// ============ USSD APPS (actual gateway apps per subscriber) ============
+export const ussdApps = pgTable("ussd_apps", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  knowledgeBase: text("knowledge_base"),
+  apiKey: varchar("api_key").notNull().unique(),
+  isActive: boolean("is_active").notNull().default(true),
+  sessionsUsed: integer("sessions_used").notNull().default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertUssdAppSchema = createInsertSchema(ussdApps).omit({ id: true, createdAt: true, sessionsUsed: true });
+export type UssdApp = typeof ussdApps.$inferSelect;
+export type InsertUssdApp = z.infer<typeof insertUssdAppSchema>;
+
 // ============ APP SECRETS ============
 export const appSecrets = pgTable("app_secrets", {
   id: serial("id").primaryKey(),
