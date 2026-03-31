@@ -110,6 +110,7 @@ export interface IStorage {
   getAllPayments(limit?: number): Promise<Payment[]>;
   getPaymentById(id: number): Promise<Payment | undefined>;
   getPaymentByMerchantRef(merchantRef: string): Promise<Payment | undefined>;
+  deletePayment(id: number): Promise<void>;
   createUsageLog(log: InsertUsageLog): Promise<UsageLog>;
   getUsageByUser(userId: string): Promise<UsageLog[]>;
   getUsageStatsByUser(userId: string): Promise<{ totalGenerations: number; totalTokens: number; dailyUsage: { date: string; generations: number; tokens: number }[] }>;
@@ -591,6 +592,10 @@ class DatabaseStorage implements IStorage {
   async getPaymentByMerchantRef(merchantRef: string): Promise<Payment | undefined> {
     const [payment] = await db.select().from(payments).where(eq(payments.merchantReference, merchantRef));
     return payment;
+  }
+
+  async deletePayment(id: number): Promise<void> {
+    await db.delete(payments).where(eq(payments.id, id));
   }
 
   async createUsageLog(log: InsertUsageLog): Promise<UsageLog> {

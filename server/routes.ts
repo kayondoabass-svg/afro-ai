@@ -1084,6 +1084,45 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // Reconcile pending payments by re-checking their status with Pesapal
+  app.post("/api/admin/payments/reconcile", isFounder, async (_req, res) => {
+    try {
+      const allPayments = await storage.getAllPayments(500);
+      const pending = allPayments.filter((p: any) => p.status === "pending" && p.pesapalTrackingId);
+      let activated = 0;
+      let failed = 0;
+      const results: any[] = [];
+      for (const payment of pending) {
+        try {
+          const status = await getTransactionStatus(payment.pesapalTrackingId);
+          if (isPaymentComplete(status)) {
+            await processCompletedPayment(payment.merchantReference, status);
+            activated++;
+            results.push({ ref: payment.merchantReference, result: "activated", plan: payment.plan });
+          } else if (isPaymentFailed(status)) {
+            await storage.updatePaymentByMerchantRef(payment.merchantReference, { status: "failed" });
+            failed++;
+            results.push({ ref: payment.merchantReference, result: "failed" });
+          } else {
+            results.push({ ref: payment.merchantReference, result: "still_pending", pesapalStatus: status.payment_status_description });
+          }
+        } catch (err: any) {
+          results.push({ ref: payment.merchantReference, result: "error", error: err.message });
+        }
+      }
+      res.json({ checked: pending.length, activated, failed, results });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/admin/payments/:id", isFounder, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid payment ID" });
+      await storage.deletePayment(id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   app.get("/api/admin/stats", isFounder, async (req, res) => {
     try {
       const stats = await storage.getPlatformStats();

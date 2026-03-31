@@ -44,6 +44,8 @@ import {
   Zap,
   ClipboardList,
   UserCheck,
+  Trash2,
+  RefreshCw,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -154,6 +156,37 @@ export default function FounderDashboardPage() {
     queryKey: ["/api/admin/payments"],
     enabled: isFounder,
     refetchInterval: 30000,
+  });
+
+  const reconcileMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/payments/reconcile");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({
+        title: `Reconciliation complete`,
+        description: `Checked ${data.checked} pending payment(s) — ${data.activated} activated, ${data.failed} failed.`,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Reconciliation failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/admin/payments/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/payments"] });
+      toast({ title: "Payment record deleted" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
   });
 
   const updateAffiliateMutation = useMutation({
@@ -722,7 +755,18 @@ export default function FounderDashboardPage() {
               <Receipt className="w-4 h-4 text-green-400" />
               <h3 className="font-semibold text-sm">Payment Activity Log</h3>
               <Badge variant="secondary" className="ml-auto text-xs">{allPayments.length} records</Badge>
-              <span className="text-xs text-muted-foreground">Auto-refreshes every 30s</span>
+              <span className="text-xs text-muted-foreground hidden sm:block">Auto-refreshes every 30s</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1"
+                onClick={() => reconcileMutation.mutate()}
+                disabled={reconcileMutation.isPending}
+                data-testid="button-recheck-payments"
+              >
+                <RefreshCw className={`w-3 h-3 ${reconcileMutation.isPending ? "animate-spin" : ""}`} />
+                {reconcileMutation.isPending ? "Checking…" : "Recheck"}
+              </Button>
             </div>
 
             {/* Summary row */}
@@ -803,6 +847,16 @@ export default function FounderDashboardPage() {
                             {p.createdAt ? new Date(p.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""}
                           </p>
                         </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 flex-shrink-0 hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => { if (confirm("Delete this payment record?")) deletePaymentMutation.mutate(p.id); }}
+                          disabled={deletePaymentMutation.isPending}
+                          data-testid={`button-delete-payment-${p.id}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
                     );
                   })}
