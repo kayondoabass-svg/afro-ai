@@ -1,17 +1,80 @@
+import { useState } from "react";
 import { useLanguage } from "@/hooks/use-language";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SiGoogle, SiGithub, SiTiktok } from "react-icons/si";
+import { useToast } from "@/hooks/use-toast";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function LoginPage() {
   const { t } = useLanguage();
+  const { toast } = useToast();
   const params = new URLSearchParams(window.location.search);
   const refCode = params.get("ref");
+  const [isLoading, setIsLoading] = useState(false);
 
   const authUrl = (base: string) => refCode ? `${base}?ref=${encodeURIComponent(refCode)}` : base;
+
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerFirstName, setRegisterFirstName] = useState("");
+  const [registerLastName, setRegisterLastName] = useState("");
+
+  async function handleEmailLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/auth/login/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "Login failed", description: data.message, variant: "destructive" });
+      } else {
+        window.location.href = "/";
+      }
+    } catch {
+      toast({ title: "Login failed", description: "An error occurred. Please try again.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: registerEmail,
+          password: registerPassword,
+          firstName: registerFirstName,
+          lastName: registerLastName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "Registration failed", description: data.message, variant: "destructive" });
+      } else {
+        window.location.href = "/";
+      }
+    } catch {
+      toast({ title: "Registration failed", description: "An error occurred. Please try again.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -21,10 +84,10 @@ export default function LoginPage() {
       </div>
 
       <div className="flex-1 flex items-center justify-center p-4">
-        <Card className="w-full max-w-sm p-8 space-y-8 border-primary/20">
-          <div className="text-center space-y-4">
+        <Card className="w-full max-w-sm p-8 space-y-6 border-primary/20">
+          <div className="text-center space-y-3">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto">
-              <img src={afroLogo} alt="Afro AI" className="w-12 h-12 object-contain" />
+              <img src={afroLogo} alt="Afro AI" className="w-12 h-12 object-contain" loading="lazy" />
             </div>
             <div>
               <h1 className="text-2xl font-bold font-serif tracking-tight" data-testid="text-login-title">
@@ -36,40 +99,182 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="space-y-3">
-            <Button
-              variant="outline"
-              size="lg"
-              className="w-full gap-3"
-              onClick={() => { window.location.href = authUrl("/api/login"); }}
-              data-testid="button-google-login"
-            >
-              <SiGoogle className="w-5 h-5" />
-              Continue with Google
-            </Button>
+          <Tabs defaultValue="signup" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="signup" data-testid="tab-signup">Sign Up</TabsTrigger>
+              <TabsTrigger value="login" data-testid="tab-login">Log In</TabsTrigger>
+            </TabsList>
 
-            <Button
-              variant="outline"
-              size="lg"
-              className="w-full gap-3"
-              onClick={() => { window.location.href = authUrl("/api/auth/github"); }}
-              data-testid="button-github-login"
-            >
-              <SiGithub className="w-5 h-5" />
-              Continue with GitHub
-            </Button>
+            <TabsContent value="signup" className="space-y-4 mt-4">
+              <form onSubmit={handleRegister} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="reg-first-name">First Name</Label>
+                    <Input
+                      id="reg-first-name"
+                      placeholder="Ada"
+                      value={registerFirstName}
+                      onChange={(e) => setRegisterFirstName(e.target.value)}
+                      data-testid="input-register-firstname"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="reg-last-name">Last Name</Label>
+                    <Input
+                      id="reg-last-name"
+                      placeholder="Okonkwo"
+                      value={registerLastName}
+                      onChange={(e) => setRegisterLastName(e.target.value)}
+                      data-testid="input-register-lastname"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reg-email">Email</Label>
+                  <Input
+                    id="reg-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    required
+                    value={registerEmail}
+                    onChange={(e) => setRegisterEmail(e.target.value)}
+                    data-testid="input-register-email"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reg-password">Password</Label>
+                  <Input
+                    id="reg-password"
+                    type="password"
+                    placeholder="At least 6 characters"
+                    required
+                    value={registerPassword}
+                    onChange={(e) => setRegisterPassword(e.target.value)}
+                    data-testid="input-register-password"
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-register-submit">
+                  {isLoading ? "Creating account..." : "Create Account"}
+                </Button>
+              </form>
 
-            <Button
-              variant="outline"
-              size="lg"
-              className="w-full gap-3"
-              onClick={() => { window.location.href = authUrl("/api/auth/tiktok"); }}
-              data-testid="button-tiktok-login"
-            >
-              <SiTiktok className="w-5 h-5" />
-              Continue with TikTok
-            </Button>
-          </div>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => { window.location.href = authUrl("/api/login"); }}
+                  data-testid="button-google-signup"
+                >
+                  <SiGoogle className="w-4 h-4" />
+                  Google
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => { window.location.href = authUrl("/api/auth/github"); }}
+                  data-testid="button-github-signup"
+                >
+                  <SiGithub className="w-4 h-4" />
+                  GitHub
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => { window.location.href = authUrl("/api/auth/tiktok"); }}
+                  data-testid="button-tiktok-signup"
+                >
+                  <SiTiktok className="w-4 h-4" />
+                  TikTok
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="login" className="space-y-4 mt-4">
+              <form onSubmit={handleEmailLogin} className="space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="login-email">Email</Label>
+                  <Input
+                    id="login-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    required
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    data-testid="input-login-email"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="login-password">Password</Label>
+                  <Input
+                    id="login-password"
+                    type="password"
+                    placeholder="Your password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    data-testid="input-login-password"
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-login-submit">
+                  {isLoading ? "Signing in..." : "Sign In"}
+                </Button>
+              </form>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => { window.location.href = authUrl("/api/login"); }}
+                  data-testid="button-google-login"
+                >
+                  <SiGoogle className="w-4 h-4" />
+                  Google
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => { window.location.href = authUrl("/api/auth/github"); }}
+                  data-testid="button-github-login"
+                >
+                  <SiGithub className="w-4 h-4" />
+                  GitHub
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => { window.location.href = authUrl("/api/auth/tiktok"); }}
+                  data-testid="button-tiktok-login"
+                >
+                  <SiTiktok className="w-4 h-4" />
+                  TikTok
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
 
           <p className="text-center text-xs text-muted-foreground">
             By continuing, you agree to our Terms of Service and Privacy Policy

@@ -143,6 +143,8 @@ export default function LandingPage() {
             src={heroBg}
             alt=""
             className="w-full h-full object-cover"
+            fetchPriority="high"
+            decoding="async"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/70 to-background" />
         </div>
@@ -201,6 +203,8 @@ export default function LandingPage() {
                   src={workspaceImg}
                   alt="Afro AI workspace"
                   className="relative rounded-2xl ring-1 ring-white/10"
+                  loading="lazy"
+                  decoding="async"
                 />
               </div>
             </div>
@@ -344,6 +348,8 @@ export default function LandingPage() {
                 src={africaTechImg}
                 alt="Africa connected through technology"
                 className="rounded-2xl ring-1 ring-border max-w-sm mx-auto lg:mx-0"
+                loading="lazy"
+                decoding="async"
               />
             </div>
             <div className="space-y-6">

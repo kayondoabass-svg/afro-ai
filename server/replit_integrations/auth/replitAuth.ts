@@ -7,6 +7,7 @@ import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 import { storage } from "../../storage";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
@@ -283,6 +284,66 @@ export async function setupAuth(app: Express) {
     } catch (err) {
       console.error("[Auth] TikTok callback error:", err);
       res.redirect("/?error=auth_failed&reason=tiktok_error");
+    }
+  });
+
+  // ── Email/Password Registration ──────────────────────────────
+  app.post("/api/auth/register", authLimiter, async (req, res) => {
+    try {
+      const { email, password, firstName, lastName } = req.body;
+      if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
+      if (password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
+
+      const { db } = await import("../../db");
+      const { users } = await import("@shared/models/auth");
+      const { eq } = await import("drizzle-orm");
+
+      const [existing] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim()));
+      if (existing) return res.status(409).json({ message: "An account with this email already exists" });
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const [newUser] = await db.insert(users).values({
+        email: email.toLowerCase().trim(),
+        passwordHash,
+        firstName: firstName || "",
+        lastName: lastName || "",
+      }).returning();
+
+      const userClaims = buildUserClaims(newUser, { email: newUser.email || "", firstName: newUser.firstName || "", lastName: newUser.lastName || "" });
+      req.logIn(userClaims, (err) => {
+        if (err) return res.status(500).json({ message: "Login failed after registration" });
+        res.json({ success: true });
+      });
+    } catch (err) {
+      console.error("[Auth] Register error:", err);
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
+  // ── Email/Password Login ─────────────────────────────────────
+  app.post("/api/auth/login/email", authLimiter, async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
+
+      const { db } = await import("../../db");
+      const { users } = await import("@shared/models/auth");
+      const { eq } = await import("drizzle-orm");
+
+      const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim()));
+      if (!user || !user.passwordHash) return res.status(401).json({ message: "Invalid email or password" });
+
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) return res.status(401).json({ message: "Invalid email or password" });
+
+      const userClaims = buildUserClaims(user, { email: user.email || "", firstName: user.firstName || "", lastName: user.lastName || "" });
+      req.logIn(userClaims, (err) => {
+        if (err) return res.status(500).json({ message: "Login failed" });
+        res.json({ success: true });
+      });
+    } catch (err) {
+      console.error("[Auth] Email login error:", err);
+      res.status(500).json({ message: "Login failed" });
     }
   });
 
