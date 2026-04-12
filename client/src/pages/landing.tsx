@@ -36,7 +36,7 @@ export default function LandingPage() {
   const authReason = params.get("reason");
   const refCode = params.get("ref");
   const [showError, setShowError] = useState(!!initialError);
-  const loginUrl = refCode ? `/api/login?ref=${encodeURIComponent(refCode)}` : "/api/login";
+  const loginUrl = refCode ? `/login?ref=${encodeURIComponent(refCode)}` : "/login";
 
   useEffect(() => {
     const style = document.createElement("style");

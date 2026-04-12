@@ -8,6 +8,10 @@ import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function LoginPage() {
   const { t } = useLanguage();
+  const params = new URLSearchParams(window.location.search);
+  const refCode = params.get("ref");
+
+  const authUrl = (base: string) => refCode ? `${base}?ref=${encodeURIComponent(refCode)}` : base;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -37,7 +41,7 @@ export default function LoginPage() {
               variant="outline"
               size="lg"
               className="w-full gap-3"
-              onClick={() => { window.location.href = "/api/login"; }}
+              onClick={() => { window.location.href = authUrl("/api/login"); }}
               data-testid="button-google-login"
             >
               <SiGoogle className="w-5 h-5" />
@@ -48,7 +52,7 @@ export default function LoginPage() {
               variant="outline"
               size="lg"
               className="w-full gap-3"
-              onClick={() => { window.location.href = "/api/auth/github"; }}
+              onClick={() => { window.location.href = authUrl("/api/auth/github"); }}
               data-testid="button-github-login"
             >
               <SiGithub className="w-5 h-5" />
@@ -59,7 +63,7 @@ export default function LoginPage() {
               variant="outline"
               size="lg"
               className="w-full gap-3"
-              onClick={() => { window.location.href = "/api/auth/tiktok"; }}
+              onClick={() => { window.location.href = authUrl("/api/auth/tiktok"); }}
               data-testid="button-tiktok-login"
             >
               <SiTiktok className="w-5 h-5" />

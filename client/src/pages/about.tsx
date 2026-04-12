@@ -127,7 +127,7 @@ export default function AboutPage() {
             </section>
 
             <div className="text-center pt-8">
-              <a href="/api/login">
+              <a href="/login">
                 <Button size="lg" data-testid="button-cta-start">
                   Start Building Today
                 </Button>
