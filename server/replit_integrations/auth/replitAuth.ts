@@ -150,10 +150,19 @@ export async function setupAuth(app: Express) {
 
   app.get("/api/auth/google/callback", (req, res, next) => {
     passport.authenticate("google", (err: any, user: any, info: any) => {
-      if (err) return res.redirect("/?error=auth_failed&reason=" + encodeURIComponent(err.message || "unknown"));
-      if (!user) return res.redirect("/?error=auth_failed&reason=no_user");
+      if (err) {
+        console.error("[Auth] Google callback error:", err.message, err.code, err.status, JSON.stringify(err));
+        return res.redirect("/?error=auth_failed&reason=" + encodeURIComponent(err.message || "unknown"));
+      }
+      if (!user) {
+        console.error("[Auth] Google no user returned, info:", JSON.stringify(info));
+        return res.redirect("/?error=auth_failed&reason=no_user");
+      }
       req.logIn(user, async (loginErr) => {
-        if (loginErr) return res.redirect("/?error=auth_failed&reason=login_error");
+        if (loginErr) {
+          console.error("[Auth] Google logIn error:", loginErr);
+          return res.redirect("/?error=auth_failed&reason=login_error");
+        }
         await handleReferral(req, user);
         return res.redirect("/");
       });
