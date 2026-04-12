@@ -287,10 +287,31 @@ export async function setupAuth(app: Express) {
     }
   });
 
+  // ── reCAPTCHA verification helper ────────────────────────────
+  async function verifyRecaptcha(token: string): Promise<boolean> {
+    const secret = process.env.RECAPTCHA_SECRET_KEY;
+    if (!secret) return true; // skip if not configured
+    try {
+      const r = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ secret, response: token }),
+      });
+      const data = await r.json() as any;
+      return data.success === true;
+    } catch {
+      return false;
+    }
+  }
+
   // ── Email/Password Registration ──────────────────────────────
   app.post("/api/auth/register", authLimiter, async (req, res) => {
     try {
-      const { email, password, firstName, lastName } = req.body;
+      const { email, password, firstName, lastName, recaptchaToken } = req.body;
+      if (recaptchaToken) {
+        const valid = await verifyRecaptcha(recaptchaToken);
+        if (!valid) return res.status(400).json({ message: "reCAPTCHA verification failed. Please try again." });
+      }
       if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
       if (password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
 
@@ -323,7 +344,11 @@ export async function setupAuth(app: Express) {
   // ── Email/Password Login ─────────────────────────────────────
   app.post("/api/auth/login/email", authLimiter, async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { email, password, recaptchaToken } = req.body;
+      if (recaptchaToken) {
+        const valid = await verifyRecaptcha(recaptchaToken);
+        if (!valid) return res.status(400).json({ message: "reCAPTCHA verification failed. Please try again." });
+      }
       if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
 
       const { db } = await import("../../db");

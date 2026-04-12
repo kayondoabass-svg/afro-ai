@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/hooks/use-language";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
@@ -11,12 +11,60 @@ import { SiGoogle, SiGithub, SiTiktok } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || "";
+
+function useRecaptcha(siteKey: string) {
+  const [token, setToken] = useState<string | null>(null);
+  const widgetRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!siteKey) return;
+    const scriptId = "recaptcha-script";
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://www.google.com/recaptcha/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    const tryRender = () => {
+      const grecaptcha = (window as any).grecaptcha;
+      if (!grecaptcha || !containerRef.current) {
+        setTimeout(tryRender, 300);
+        return;
+      }
+      if (widgetRef.current !== null) return;
+      widgetRef.current = grecaptcha.render(containerRef.current, {
+        sitekey: siteKey,
+        callback: (t: string) => setToken(t),
+        "expired-callback": () => setToken(null),
+      });
+    };
+    tryRender();
+  }, [siteKey]);
+
+  const reset = () => {
+    const grecaptcha = (window as any).grecaptcha;
+    if (grecaptcha && widgetRef.current !== null) {
+      grecaptcha.reset(widgetRef.current);
+      setToken(null);
+    }
+  };
+
+  return { containerRef, token, reset };
+}
+
 export default function LoginPage() {
   const { t } = useLanguage();
   const { toast } = useToast();
   const params = new URLSearchParams(window.location.search);
   const refCode = params.get("ref");
   const [isLoading, setIsLoading] = useState(false);
+  const loginRecaptcha = useRecaptcha(RECAPTCHA_SITE_KEY);
+  const registerRecaptcha = useRecaptcha(RECAPTCHA_SITE_KEY);
 
   const authUrl = (base: string) => refCode ? `${base}?ref=${encodeURIComponent(refCode)}` : base;
 
@@ -29,20 +77,26 @@ export default function LoginPage() {
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
+    if (RECAPTCHA_SITE_KEY && !loginRecaptcha.token) {
+      toast({ title: "Please complete the reCAPTCHA", variant: "destructive" });
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await fetch("/api/auth/login/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+        body: JSON.stringify({ email: loginEmail, password: loginPassword, recaptchaToken: loginRecaptcha.token }),
       });
       const data = await res.json();
       if (!res.ok) {
+        loginRecaptcha.reset();
         toast({ title: "Login failed", description: data.message, variant: "destructive" });
       } else {
         window.location.href = "/";
       }
     } catch {
+      loginRecaptcha.reset();
       toast({ title: "Login failed", description: "An error occurred. Please try again.", variant: "destructive" });
     } finally {
       setIsLoading(false);
@@ -51,6 +105,10 @@ export default function LoginPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (RECAPTCHA_SITE_KEY && !registerRecaptcha.token) {
+      toast({ title: "Please complete the reCAPTCHA", variant: "destructive" });
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -61,15 +119,18 @@ export default function LoginPage() {
           password: registerPassword,
           firstName: registerFirstName,
           lastName: registerLastName,
+          recaptchaToken: registerRecaptcha.token,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
+        registerRecaptcha.reset();
         toast({ title: "Registration failed", description: data.message, variant: "destructive" });
       } else {
         window.location.href = "/";
       }
     } catch {
+      registerRecaptcha.reset();
       toast({ title: "Registration failed", description: "An error occurred. Please try again.", variant: "destructive" });
     } finally {
       setIsLoading(false);
@@ -153,6 +214,11 @@ export default function LoginPage() {
                     data-testid="input-register-password"
                   />
                 </div>
+                {RECAPTCHA_SITE_KEY && (
+                  <div className="flex justify-center">
+                    <div ref={registerRecaptcha.containerRef} />
+                  </div>
+                )}
                 <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-register-submit">
                   {isLoading ? "Creating account..." : "Create Account"}
                 </Button>
@@ -227,6 +293,11 @@ export default function LoginPage() {
                     data-testid="input-login-password"
                   />
                 </div>
+                {RECAPTCHA_SITE_KEY && (
+                  <div className="flex justify-center">
+                    <div ref={loginRecaptcha.containerRef} />
+                  </div>
+                )}
                 <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-login-submit">
                   {isLoading ? "Signing in..." : "Sign In"}
                 </Button>
