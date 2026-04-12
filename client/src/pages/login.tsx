@@ -3,7 +3,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { SiGoogle } from "react-icons/si";
+import { SiGoogle, SiGithub, SiTiktok } from "react-icons/si";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function LoginPage() {
@@ -42,6 +42,28 @@ export default function LoginPage() {
             >
               <SiGoogle className="w-5 h-5" />
               Continue with Google
+            </Button>
+
+            <Button
+              variant="outline"
+              size="lg"
+              className="w-full gap-3"
+              onClick={() => { window.location.href = "/api/auth/github"; }}
+              data-testid="button-github-login"
+            >
+              <SiGithub className="w-5 h-5" />
+              Continue with GitHub
+            </Button>
+
+            <Button
+              variant="outline"
+              size="lg"
+              className="w-full gap-3"
+              onClick={() => { window.location.href = "/api/auth/tiktok"; }}
+              data-testid="button-tiktok-login"
+            >
+              <SiTiktok className="w-5 h-5" />
+              Continue with TikTok
             </Button>
           </div>
 
