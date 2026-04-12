@@ -23,9 +23,9 @@ import {
   Github,
   GitBranch,
 } from "lucide-react";
-import heroBg from "@assets/hero-bg.png";
-import workspaceImg from "@assets/workspace.png";
-import africaTechImg from "@assets/africa-tech.png";
+import heroBg from "@assets/hero-bg.jpg";
+import workspaceImg from "@assets/workspace.jpg";
+import africaTechImg from "@assets/africa-tech.jpg";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function LandingPage() {

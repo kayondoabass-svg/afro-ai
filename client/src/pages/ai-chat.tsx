@@ -1010,7 +1010,7 @@ function MarkdownText({ text }: { text: string }) {
     } else if (/^## /.test(line)) {
       elements.push(<h2 key={i} className="text-base font-bold mt-3 mb-1 text-foreground">{renderInline(line.slice(3))}</h2>);
     } else if (/^# /.test(line)) {
-      elements.push(<h1 key={i} className="text-lg font-bold mt-3 mb-1 text-foreground">{renderInline(line.slice(2))}</h1>);
+      elements.push(<h2 key={i} className="text-lg font-bold mt-3 mb-1 text-foreground">{renderInline(line.slice(2))}</h2>);
     } else if (/^---+$/.test(line.trim())) {
       elements.push(<hr key={i} className="border-border/50 my-2" />);
     } else if (/^[-*] /.test(line)) {
