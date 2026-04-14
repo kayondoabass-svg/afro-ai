@@ -1,19 +1,29 @@
-const CF_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || "fe7bcfa7be264c172e444e854a6bccbb";
+function getCfAccountId(): string {
+  return (
+    process.env.CLOUDFLARE_ACCOUNT_ID ||
+    process.env.R2_ACCOUNT_ID ||
+    "fe7bcfa7be264c172e444e854a6bccbb"
+  );
+}
+
+function getCfToken(): string | undefined {
+  return process.env.CLOUDFLARE_API_TOKEN || process.env.CLOUDFLARE_D1_TOKEN;
+}
 
 export function isD1Configured(): boolean {
-  return !!(process.env.CLOUDFLARE_D1_TOKEN && process.env.CLOUDFLARE_D1_DATABASE_ID);
+  return !!(getCfToken() && process.env.CLOUDFLARE_D1_DATABASE_ID);
 }
 
 function getHeaders() {
   return {
-    "Authorization": `Bearer ${process.env.CLOUDFLARE_D1_TOKEN}`,
+    "Authorization": `Bearer ${getCfToken()}`,
     "Content-Type": "application/json",
   };
 }
 
 function getBaseUrl() {
   const dbId = process.env.CLOUDFLARE_D1_DATABASE_ID;
-  return `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/${dbId}`;
+  return `https://api.cloudflare.com/client/v4/accounts/${getCfAccountId()}/d1/database/${dbId}`;
 }
 
 export async function d1Query(sql: string, params: any[] = []): Promise<{ results: any[]; meta: any }> {
