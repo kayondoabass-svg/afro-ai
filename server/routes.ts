@@ -476,11 +476,41 @@ export async function registerRoutes(
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { content } = req.body;
       const { d1Query } = await import("./d1");
+
+      // Fetch file metadata for R2 path
+      const { results } = await d1Query(
+        `SELECT name, conversation_id FROM project_files WHERE id = ? AND user_id = ?`,
+        [req.params.id, userId]
+      );
+      if (!results.length) return res.status(404).json({ message: "File not found" });
+
+      const { name, conversation_id } = results[0] as { name: string; conversation_id: string };
+
+      // Upload content to R2 for durable backup
+      let r2Url: string | null = null;
+      try {
+        const { uploadToR2, isR2Configured } = await import("./r2");
+        if (isR2Configured()) {
+          const buf = Buffer.from(content || "", "utf-8");
+          const mimeMap: Record<string, string> = {
+            html: "text/html", css: "text/css", js: "application/javascript",
+            ts: "application/typescript", json: "application/json", md: "text/markdown",
+          };
+          const ext = name.split(".").pop()?.toLowerCase() || "txt";
+          const mime = mimeMap[ext] || "text/plain";
+          r2Url = await uploadToR2(buf, `project-files/${conversation_id}/${name}`, mime);
+        }
+      } catch (r2Err: any) {
+        console.warn("R2 backup failed for project file:", r2Err?.message);
+      }
+
+      // Update D1 — content + timestamp (+ r2_url if column exists)
       await d1Query(
         `UPDATE project_files SET content = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`,
         [content || "", req.params.id, userId]
       );
-      res.json({ success: true });
+
+      res.json({ success: true, r2Url, updatedAt: new Date().toISOString() });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

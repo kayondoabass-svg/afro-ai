@@ -1092,6 +1092,8 @@ export default function AIChatPage() {
   const [openedFile, setOpenedFile] = useState<ProjectFile | null>(null);
   const [editorContent, setEditorContent] = useState("");
   const [editorDirty, setEditorDirty] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qcMain = useQueryClient();
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importUrl, setImportUrl] = useState("");
@@ -1466,16 +1468,31 @@ export default function AIChatPage() {
     setEditorDirty(false);
   };
 
-  const handleEditorSave = async () => {
+  const handleEditorSave = useCallback(async (contentToSave?: string) => {
     if (!openedFile) return;
+    const saveContent = contentToSave ?? editorContent;
     try {
-      await apiRequest("PUT", `/api/d1/project-files/${openedFile.id}`, { content: editorContent });
+      setAutoSaveStatus("saving");
+      await apiRequest("PUT", `/api/d1/project-files/${openedFile.id}`, { content: saveContent });
       setEditorDirty(false);
-      setOpenedFile(prev => prev ? { ...prev, content: editorContent } : null);
+      setAutoSaveStatus("saved");
+      setOpenedFile(prev => prev ? { ...prev, content: saveContent } : null);
+      qcMain.invalidateQueries({ queryKey: ["/api/d1/project-files", activeConversation] });
+      setTimeout(() => setAutoSaveStatus("idle"), 2000);
     } catch {
-      // silently fail
+      setAutoSaveStatus("idle");
     }
-  };
+  }, [openedFile, editorContent, activeConversation, qcMain]);
+
+  const handleEditorChange = useCallback((value: string) => {
+    setEditorContent(value);
+    setEditorDirty(true);
+    setAutoSaveStatus("idle");
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      handleEditorSave(value);
+    }, 2000);
+  }, [handleEditorSave]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -2750,13 +2767,25 @@ export default function AIChatPage() {
               <div className="flex items-center gap-2 min-w-0">
                 <Code2 className="w-4 h-4 text-primary flex-shrink-0" />
                 <span className="text-sm font-mono font-medium truncate">{openedFile.name}</span>
-                {editorDirty && <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="Unsaved changes" />}
               </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={handleEditorSave} disabled={!editorDirty} data-testid="button-save-file">
-                  Save
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {autoSaveStatus === "saving" && (
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="text-autosave-saving">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+                  </span>
+                )}
+                {autoSaveStatus === "saved" && (
+                  <span className="flex items-center gap-1 text-xs text-green-500" data-testid="text-autosave-saved">
+                    <Check className="w-3 h-3" /> Saved to R2 & D1
+                  </span>
+                )}
+                {autoSaveStatus === "idle" && editorDirty && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="Unsaved changes" data-testid="indicator-unsaved" />
+                )}
+                <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => handleEditorSave()} disabled={!editorDirty || autoSaveStatus === "saving"} data-testid="button-save-file">
+                  Save now
                 </Button>
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setOpenedFile(null); setEditorDirty(false); }} data-testid="button-close-editor">
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setOpenedFile(null); setEditorDirty(false); setAutoSaveStatus("idle"); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); }} data-testid="button-close-editor">
                   <X className="w-4 h-4" />
                 </Button>
               </div>
@@ -2765,8 +2794,8 @@ export default function AIChatPage() {
               <textarea
                 className="w-full h-full min-h-full resize-none bg-[#1e1e1e] text-[#d4d4d4] font-mono text-xs p-4 focus:outline-none leading-relaxed"
                 value={editorContent}
-                onChange={e => { setEditorContent(e.target.value); setEditorDirty(true); }}
-                onKeyDown={e => { if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleEditorSave(); } }}
+                onChange={e => handleEditorChange(e.target.value)}
+                onKeyDown={e => { if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); handleEditorSave(); } }}
                 spellCheck={false}
                 data-testid="textarea-code-editor"
               />
