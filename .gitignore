@@ -5,5 +5,12 @@ server/public
 vite.config.ts.*
 *.tar.gz
 attached_assets/
+!attached_assets/hero-bg.jpg
+!attached_assets/hero-bg.png
+!attached_assets/workspace.jpg
+!attached_assets/workspace.png
+!attached_assets/africa-tech.jpg
+!attached_assets/africa-tech.png
+!attached_assets/IMG_5719_1771852498362.png
 *.json.key
 *client_secret*.json
