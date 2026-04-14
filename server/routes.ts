@@ -13,7 +13,7 @@ import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, i
 import { analyzeImage } from "./gemini";
 import { checkDomainAvailability, checkSingleDomain, registerDomain, listDomains, getDomainInfo, renewDomain, setNameservers, getCostPrice } from "./namedotcom";
 import { scanHtmlContent, publishedAppHeaders } from "./security";
-import { uploadToGcs, deleteFromGcs, isGcsConfigured } from "./gcs";
+import { uploadToR2, deleteFromR2, isR2Configured } from "./r2";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import path from "path";
@@ -167,18 +167,18 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No files uploaded" });
       }
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
-      const useGcs = isGcsConfigured();
+      const useR2 = isR2Configured();
       const result = await Promise.all(files.map(async (f) => {
         const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
         const ext = path.extname(f.originalname);
         const filename = uniqueSuffix + ext;
         let fileUrl: string;
 
-        if (useGcs) {
+        if (useR2) {
           try {
-            fileUrl = await uploadToGcs(f.buffer, filename, f.mimetype);
-          } catch (gcsErr: any) {
-            console.warn("GCS upload failed, falling back to local disk:", gcsErr?.message || gcsErr);
+            fileUrl = await uploadToR2(f.buffer, filename, f.mimetype);
+          } catch (r2Err: any) {
+            console.warn("R2 upload failed, falling back to local disk:", r2Err?.message || r2Err);
             const filePath = path.join(uploadDir, filename);
             fs.writeFileSync(filePath, f.buffer);
             fileUrl = `/uploads/${filename}`;
@@ -234,7 +234,7 @@ export async function registerRoutes(
       const file = files.find(f => f.id === fileId);
       if (!file) return res.status(404).json({ message: "File not found" });
       if (file.url.startsWith("http")) {
-        await deleteFromGcs(file.url);
+        await deleteFromR2(file.url);
       } else {
         const filePath = path.join(process.cwd(), "public", file.url);
         if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch (_) {} }
