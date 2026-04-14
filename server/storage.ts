@@ -124,8 +124,8 @@ export interface IStorage {
   deleteFormSubmission(id: number): Promise<void>;
   getFormSubmissionCount(formId: number): Promise<number>;
   createAppVersion(publishedAppId: number, htmlContent: string, title: string, reason: string): Promise<PublishedAppVersion>;
-  getAppVersions(publishedAppId: number): Promise<PublishedAppVersion[]>;
-  getAppVersion(id: number): Promise<PublishedAppVersion | undefined>;
+  getPublishedAppVersions(publishedAppId: number): Promise<PublishedAppVersion[]>;
+  getPublishedAppVersion(id: number): Promise<PublishedAppVersion | undefined>;
   restoreAppVersion(publishedAppId: number, versionId: number): Promise<PublishedApp>;
   deleteOldVersions(publishedAppId: number, keepCount: number): Promise<void>;
   // Blog
@@ -701,19 +701,19 @@ class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async getAppVersions(publishedAppId: number): Promise<PublishedAppVersion[]> {
+  async getPublishedAppVersions(publishedAppId: number): Promise<PublishedAppVersion[]> {
     return db.select().from(publishedAppVersions)
       .where(eq(publishedAppVersions.publishedAppId, publishedAppId))
       .orderBy(desc(publishedAppVersions.versionNumber));
   }
 
-  async getAppVersion(id: number): Promise<PublishedAppVersion | undefined> {
+  async getPublishedAppVersion(id: number): Promise<PublishedAppVersion | undefined> {
     const [version] = await db.select().from(publishedAppVersions).where(eq(publishedAppVersions.id, id));
     return version;
   }
 
   async restoreAppVersion(publishedAppId: number, versionId: number): Promise<PublishedApp> {
-    const version = await this.getAppVersion(versionId);
+    const version = await this.getPublishedAppVersion(versionId);
     if (!version || version.publishedAppId !== publishedAppId) {
       throw new Error("Version not found or does not belong to this app");
     }

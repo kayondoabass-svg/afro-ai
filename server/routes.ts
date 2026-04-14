@@ -904,7 +904,7 @@ export async function registerRoutes(
       const apps = await storage.getPublishedAppsByUser(userId);
       const app = apps.find(a => a.id === id);
       if (!app) return res.status(404).json({ error: "App not found or access denied" });
-      const versions = await storage.getAppVersions(id);
+      const versions = await storage.getPublishedAppVersions(id);
       res.json(versions.map(v => ({
         id: v.id,
         versionNumber: v.versionNumber,
