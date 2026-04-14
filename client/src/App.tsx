@@ -53,6 +53,7 @@ import UssdBuilderPage from "@/pages/ussd-builder";
 import UssdDashboardPage from "@/pages/ussd-dashboard";
 import OverviewPage from "@/pages/overview";
 import AppSecretsPage from "@/pages/app-secrets";
+import D1ConsolePage from "@/pages/d1-console";
 import ActivityLogsPage from "@/pages/activity-logs";
 import ConsolePage from "@/pages/console";
 import EmailApiPage from "@/pages/email-api";
@@ -107,6 +108,7 @@ function AuthenticatedLayout() {
               <Route path="/ussd/apps" component={UssdDashboardPage} />
               <Route path="/overview" component={OverviewPage} />
               <Route path="/secrets" component={AppSecretsPage} />
+              <Route path="/d1" component={D1ConsolePage} />
               <Route path="/logs" component={ActivityLogsPage} />
               <Route path="/console" component={ConsolePage} />
               <Route path="/email-api" component={EmailApiPage} />

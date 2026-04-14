@@ -312,6 +312,93 @@ export async function registerRoutes(
     }
   });
 
+  // ============ CLOUDFLARE D1 ============
+  app.get("/api/d1/status", isAuthenticated, async (_req, res) => {
+    const { isD1Configured } = await import("./d1");
+    res.json({ configured: isD1Configured() });
+  });
+
+  app.get("/api/d1/tables", isAuthenticated, async (_req, res) => {
+    try {
+      const { d1ListTables } = await import("./d1");
+      const tables = await d1ListTables();
+      res.json({ tables });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/d1/query", isAuthenticated, async (req: any, res) => {
+    try {
+      const { sql, params } = req.body;
+      if (!sql) return res.status(400).json({ message: "SQL is required" });
+      const forbidden = /^\s*(drop\s+table|delete\s+from|truncate|drop\s+database)/i;
+      if (forbidden.test(sql)) return res.status(400).json({ message: "Destructive statements require explicit confirmation" });
+      const { d1Query } = await import("./d1");
+      const result = await d1Query(sql, params || []);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/d1/query/unsafe", isFounder, async (req: any, res) => {
+    try {
+      const { sql, params } = req.body;
+      if (!sql) return res.status(400).json({ message: "SQL is required" });
+      const { d1Query } = await import("./d1");
+      const result = await d1Query(sql, params || []);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/d1/tables/:name/info", isAuthenticated, async (req, res) => {
+    try {
+      const { d1GetTableInfo } = await import("./d1");
+      const info = await d1GetTableInfo(req.params.name);
+      res.json({ columns: info });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/d1/tables/:name/rows", isAuthenticated, async (req, res) => {
+    try {
+      const limit = parseInt((req.query.limit as string) || "100");
+      const offset = parseInt((req.query.offset as string) || "0");
+      const { d1GetTableRows } = await import("./d1");
+      const result = await d1GetTableRows(req.params.name, limit, offset);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/d1/sync", isFounder, async (_req, res) => {
+    try {
+      const { d1Query } = await import("./d1");
+      const users = await storage.getAllUsersForSync?.() || [];
+      await d1Query(`CREATE TABLE IF NOT EXISTS synced_users (
+        id TEXT PRIMARY KEY,
+        email TEXT,
+        name TEXT,
+        plan TEXT,
+        created_at TEXT
+      )`);
+      for (const u of users) {
+        await d1Query(
+          `INSERT OR REPLACE INTO synced_users (id, email, name, plan, created_at) VALUES (?, ?, ?, ?, ?)`,
+          [u.id, u.email || "", u.name || u.firstName || "", u.plan || "free", u.createdAt ? String(u.createdAt) : ""]
+        );
+      }
+      res.json({ success: true, synced: users.length });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ============ ACTIVITY LOGS ============
   app.get("/api/logs", isAuthenticated, async (req: any, res) => {
     try {

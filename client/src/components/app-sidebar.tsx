@@ -48,6 +48,7 @@ import {
   LayoutGrid,
   KeyRound,
   Activity,
+  DatabaseZap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -75,6 +76,7 @@ const ALL_MENU_ITEMS = [
   { title: "USSD Builder", url: "/ussd", icon: PhoneCall },
   { title: "My USSD Apps", url: "/ussd/apps", icon: Smartphone },
   { title: "Files & Storage", url: "/files", icon: HardDrive },
+  { title: "D1 Database", url: "/d1", icon: DatabaseZap },
   { title: "Secrets", url: "/secrets", icon: KeyRound },
   { title: "Activity Logs", url: "/logs", icon: Activity },
   { title: "Console", url: "/console", icon: Terminal },
