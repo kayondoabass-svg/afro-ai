@@ -12,6 +12,30 @@ const httpServer = createServer(app);
 app.use(compression());
 app.use(securityHeaders);
 
+// CORS — allow the Replit origin, Cloudflare Pages domains, and any custom frontend URL
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    "https://afroaigroup.com",
+    "https://www.afroaigroup.com",
+    ...(process.env.CLOUDFLARE_PAGES_URL ? [process.env.CLOUDFLARE_PAGES_URL] : []),
+  ];
+  const origin = req.headers.origin || "";
+  const isAllowed =
+    allowedOrigins.includes(origin) ||
+    /^https:\/\/[a-z0-9-]+\.pages\.dev$/.test(origin) ||
+    /^https:\/\/[a-z0-9-]+\.afroaigroup\.com$/.test(origin) ||
+    origin.endsWith(".replit.dev") ||
+    origin.endsWith(".repl.co");
+  if (isAllowed) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;

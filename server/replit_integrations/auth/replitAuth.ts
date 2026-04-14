@@ -27,7 +27,8 @@ export function getSession() {
     cookie: {
       httpOnly: true,
       secure: isProduction,
-      sameSite: "lax",
+      // "none" allows cross-origin cookies (needed when frontend is on Cloudflare Pages)
+      sameSite: isProduction ? "none" : "lax",
       maxAge: sessionTtl,
     },
   });
