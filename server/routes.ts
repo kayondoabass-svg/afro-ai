@@ -38,8 +38,16 @@ const publishLimiter = rateLimit({
   message: { message: "Publishing rate limit reached. Please try again later." },
 });
 
-const uploadDir = path.join(process.cwd(), "public", "uploads");
-if (!fs.existsSync(uploadDir)) {
+let uploadDir = process.env.NODE_ENV === "production"
+  ? path.join("/tmp", "uploads")
+  : path.join(process.cwd(), "public", "uploads");
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (e) {
+  console.warn("Could not create upload directory (read-only fs), falling back to /tmp/uploads");
+  uploadDir = path.join("/tmp", "uploads");
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
