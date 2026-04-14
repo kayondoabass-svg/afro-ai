@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { FileTreeSidebar, saveProjectFiles, type ProjectFile } from "@/components/file-tree-sidebar";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -1087,6 +1088,11 @@ export default function AIChatPage() {
   const [imageAnalysisResult, setImageAnalysisResult] = useState<string | null>(null);
   const [analysisImagePreview, setAnalysisImagePreview] = useState<string | null>(null);
   const [secretWarningDismissed, setSecretWarningDismissed] = useState(false);
+  const [showFileTree, setShowFileTree] = useState(false);
+  const [openedFile, setOpenedFile] = useState<ProjectFile | null>(null);
+  const [editorContent, setEditorContent] = useState("");
+  const [editorDirty, setEditorDirty] = useState(false);
+  const qcMain = useQueryClient();
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importLoading, setImportLoading] = useState(false);
@@ -1444,6 +1450,32 @@ export default function AIChatPage() {
       }
     }
   }, [activeConvo?.messages]);
+
+  // Auto-save project files to D1 whenever new code is generated
+  useEffect(() => {
+    if (previewCode && activeConversation) {
+      saveProjectFiles(activeConversation, previewCode).then(() => {
+        qcMain.invalidateQueries({ queryKey: ["/api/d1/project-files", activeConversation] });
+      });
+    }
+  }, [previewCode, activeConversation]);
+
+  const handleFileOpen = (file: ProjectFile) => {
+    setOpenedFile(file);
+    setEditorContent(file.content || "");
+    setEditorDirty(false);
+  };
+
+  const handleEditorSave = async () => {
+    if (!openedFile) return;
+    try {
+      await apiRequest("PUT", `/api/d1/project-files/${openedFile.id}`, { content: editorContent });
+      setEditorDirty(false);
+      setOpenedFile(prev => prev ? { ...prev, content: editorContent } : null);
+    } catch {
+      // silently fail
+    }
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -2342,6 +2374,16 @@ export default function AIChatPage() {
         </ScrollArea>
       </div>
 
+      {/* File Tree Sidebar */}
+      {showFileTree && activeConversation && (
+        <FileTreeSidebar
+          conversationId={activeConversation}
+          openedFileId={openedFile?.id ?? null}
+          onFileOpen={handleFileOpen}
+          onClose={() => { setShowFileTree(false); setOpenedFile(null); }}
+        />
+      )}
+
       <div className="flex-1 flex">
         <div className={`flex flex-col ${previewCode && showPreview ? `${mobileView === "preview" ? "hidden" : "flex"} lg:flex lg:w-1/2 lg:min-w-[320px]` : "flex-1"} ${previewCode ? "pb-14 lg:pb-0" : ""}`}>
           {activeConversation ? (
@@ -2353,6 +2395,15 @@ export default function AIChatPage() {
                     <span>Building Mode</span>
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title="Toggle file tree"
+                      onClick={() => setShowFileTree(!showFileTree)}
+                      data-testid="button-toggle-filetree"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                    </Button>
                     <Button
                       size="icon"
                       variant="ghost"
@@ -2692,7 +2743,38 @@ export default function AIChatPage() {
           </div>
         )}
 
-        {previewCode && showPreview && (
+        {/* Code Editor Panel — shown when a file is opened from the file tree */}
+        {openedFile && (
+          <div className={`${isFullscreen ? "" : "w-full lg:w-1/2"} flex flex-col bg-background border-l`} data-testid="code-editor-panel">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-card/80 flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Code2 className="w-4 h-4 text-primary flex-shrink-0" />
+                <span className="text-sm font-mono font-medium truncate">{openedFile.name}</span>
+                {editorDirty && <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="Unsaved changes" />}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={handleEditorSave} disabled={!editorDirty} data-testid="button-save-file">
+                  Save
+                </Button>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setOpenedFile(null); setEditorDirty(false); }} data-testid="button-close-editor">
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto">
+              <textarea
+                className="w-full h-full min-h-full resize-none bg-[#1e1e1e] text-[#d4d4d4] font-mono text-xs p-4 focus:outline-none leading-relaxed"
+                value={editorContent}
+                onChange={e => { setEditorContent(e.target.value); setEditorDirty(true); }}
+                onKeyDown={e => { if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleEditorSave(); } }}
+                spellCheck={false}
+                data-testid="textarea-code-editor"
+              />
+            </div>
+          </div>
+        )}
+
+        {previewCode && showPreview && !openedFile && (
           <div className={`${isFullscreen ? "" : "w-full lg:w-1/2"} ${mobileView === "chat" ? "hidden lg:flex" : "flex"}`}>
             <LivePreview
               code={previewCode}

@@ -376,6 +376,127 @@ export async function registerRoutes(
     }
   });
 
+  // ---- Project Files (D1) ----
+  app.post("/api/d1/project-files/init", isAuthenticated, async (_req, res) => {
+    try {
+      const { d1Query } = await import("./d1");
+      await d1Query(`CREATE TABLE IF NOT EXISTS project_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        path TEXT NOT NULL,
+        language TEXT DEFAULT 'html',
+        content TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/d1/project-files", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { conversationId } = req.query;
+      if (!conversationId) return res.status(400).json({ message: "conversationId required" });
+      const { d1Query } = await import("./d1");
+      const { results } = await d1Query(
+        `SELECT id, name, path, language, updated_at FROM project_files WHERE conversation_id = ? AND user_id = ? ORDER BY path ASC`,
+        [String(conversationId), userId]
+      );
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/d1/project-files/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { d1Query } = await import("./d1");
+      const { results } = await d1Query(
+        `SELECT * FROM project_files WHERE id = ? AND user_id = ?`,
+        [req.params.id, userId]
+      );
+      if (!results.length) return res.status(404).json({ message: "File not found" });
+      res.json(results[0]);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/d1/project-files", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { conversationId, name, path, language, content } = req.body;
+      if (!conversationId || !name) return res.status(400).json({ message: "conversationId and name required" });
+      const { d1Query } = await import("./d1");
+      await d1Query(`CREATE TABLE IF NOT EXISTS project_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        path TEXT NOT NULL,
+        language TEXT DEFAULT 'html',
+        content TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      const existing = await d1Query(
+        `SELECT id FROM project_files WHERE conversation_id = ? AND user_id = ? AND path = ?`,
+        [conversationId, userId, path || name]
+      );
+      if (existing.results.length > 0) {
+        await d1Query(
+          `UPDATE project_files SET content = ?, updated_at = datetime('now') WHERE id = ?`,
+          [content || "", existing.results[0].id]
+        );
+        res.json({ id: existing.results[0].id, updated: true });
+      } else {
+        await d1Query(
+          `INSERT INTO project_files (conversation_id, user_id, name, path, language, content) VALUES (?, ?, ?, ?, ?, ?)`,
+          [conversationId, userId, name, path || name, language || "html", content || ""]
+        );
+        const inserted = await d1Query(
+          `SELECT id FROM project_files WHERE conversation_id = ? AND user_id = ? AND path = ? ORDER BY id DESC LIMIT 1`,
+          [conversationId, userId, path || name]
+        );
+        res.json({ id: inserted.results[0]?.id, created: true });
+      }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/d1/project-files/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { content } = req.body;
+      const { d1Query } = await import("./d1");
+      await d1Query(
+        `UPDATE project_files SET content = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`,
+        [content || "", req.params.id, userId]
+      );
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/d1/project-files/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { d1Query } = await import("./d1");
+      await d1Query(`DELETE FROM project_files WHERE id = ? AND user_id = ?`, [req.params.id, userId]);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/d1/sync", isFounder, async (_req, res) => {
     try {
       const { d1Query } = await import("./d1");
