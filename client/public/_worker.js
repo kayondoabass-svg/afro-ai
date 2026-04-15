@@ -10,15 +10,7 @@ export default {
         body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
         redirect: "manual",
       });
-      const response = await fetch(backendRequest);
-      const newHeaders = new Headers(response.headers);
-      newHeaders.set("Access-Control-Allow-Origin", request.headers.get("Origin") || "*");
-      newHeaders.set("Access-Control-Allow-Credentials", "true");
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: newHeaders,
-      });
+      return fetch(backendRequest);
     }
 
     return env.ASSETS.fetch(request);
