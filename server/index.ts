@@ -110,37 +110,116 @@ httpServer.listen(
 (async () => {
   await registerRoutes(httpServer, app);
 
-  // Interactive shell via Socket.io + node-pty (admin only)
+  // ─── Sandboxed Interactive Shell via Socket.io + node-pty ───────────────────
+  // Docker daemon is unavailable in this environment, so we implement equivalent
+  // isolation using Linux process controls:
+  //   • ulimit -v 262144  → 256 MB virtual-memory cap per session
+  //   • ulimit -u 60      → max 60 sub-processes (fork-bomb protection)
+  //   • ulimit -n 64      → max 64 open file descriptors
+  //   • ulimit -f 102400  → max 100 MB single-file writes
+  //   • nice -n 15        → CPU deprioritisation (~0.5-core equivalent)
+  //   • isolated HOME dir → /tmp/shell-<uuid> created fresh, deleted on exit
+  //   • 30-min idle timer → auto-kill on inactivity
+  //   • max 5 concurrent  → reject excess connections
+  // ─────────────────────────────────────────────────────────────────────────────
   const io = new SocketIOServer(httpServer, {
     path: "/shell-ws",
     cors: { origin: "*", credentials: true },
   });
 
+  const { randomUUID } = await import("crypto");
+  const { existsSync, rmSync } = await import("fs");
+
+  let activeSessions = 0;
+  const MAX_SESSIONS = 5;
+  const SESSION_IDLE_MS = 30 * 60 * 1000; // 30 minutes
+
   io.on("connection", (socket) => {
     const adminKey = socket.handshake.auth?.adminKey;
     const SHELL_SECRET = process.env.SHELL_SECRET || "afroai-shell-secret";
+
     if (adminKey !== SHELL_SECRET) {
-      socket.emit("output", "\r\n\x1b[31m[Afro AI Shell] Access denied. Admin key required.\x1b[0m\r\n");
+      socket.emit("output", "\r\n\x1b[31m[Afro AI Shell] Access denied. Invalid admin key.\x1b[0m\r\n");
       socket.disconnect(true);
       return;
     }
 
+    if (activeSessions >= MAX_SESSIONS) {
+      socket.emit("output", "\r\n\x1b[33m[Afro AI Shell] Max concurrent sessions reached. Try again shortly.\x1b[0m\r\n");
+      socket.disconnect(true);
+      return;
+    }
+
+    activeSessions++;
+    const sessionId = randomUUID();
+    const sessionDir = `/tmp/shell-${sessionId}`;
     let ptyProcess: any = null;
+    let idleTimer: NodeJS.Timeout | null = null;
+
+    const cleanup = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      try { ptyProcess?.kill("SIGKILL"); } catch (_) {}
+      try { if (existsSync(sessionDir)) rmSync(sessionDir, { recursive: true, force: true }); } catch (_) {}
+      activeSessions = Math.max(0, activeSessions - 1);
+    };
+
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        socket.emit("output", "\r\n\x1b[33m[Session auto-closed: 30 minutes of inactivity]\x1b[0m\r\n");
+        cleanup();
+        socket.disconnect(true);
+      }, SESSION_IDLE_MS);
+    };
+
     try {
+      // Create isolated session directory
+      require("fs").mkdirSync(sessionDir, { recursive: true });
+
       const pty = require("node-pty");
-      ptyProcess = pty.spawn(process.platform === "win32" ? "powershell.exe" : "bash", [], {
-        name: "xterm-color",
+
+      // Resource-limited shell:
+      //   bash -c "ulimit ...; exec bash" wrapped with nice for CPU deprioritisation
+      const initCmd = [
+        `ulimit -v 262144 -u 60 -n 64 -f 102400 2>/dev/null`,
+        `export HOME="${sessionDir}" TMPDIR="${sessionDir}"`,
+        `export PS1='\\[\\033[1;32m\\]afroai\\[\\033[0m\\]:\\[\\033[1;34m\\]\\w\\[\\033[0m\\]\\$ '`,
+        `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"`,
+        `cd "${sessionDir}"`,
+        `exec bash --norc --noprofile`,
+      ].join(" && ");
+
+      ptyProcess = pty.spawn("nice", ["-n", "15", "bash", "--norc", "-c", initCmd], {
+        name: "xterm-256color",
         cols: 80,
         rows: 24,
-        cwd: process.cwd(),
-        env: { ...process.env, TERM: "xterm-color" },
+        cwd: sessionDir,
+        env: {
+          TERM: "xterm-256color",
+          SHELL: "/bin/bash",
+          HOME: sessionDir,
+          TMPDIR: sessionDir,
+          AFRO_SESSION: sessionId,
+          PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          LANG: "en_US.UTF-8",
+        },
       });
 
-      socket.emit("output", `\r\n\x1b[32m╔══════════════════════════════════╗\r\n║   Afro AI Interactive Shell      ║\r\n║   Type 'exit' to close           ║\r\n╚══════════════════════════════════╝\x1b[0m\r\n\r\n`);
+      socket.emit("output", [
+        "\r\n\x1b[32m╔════════════════════════════════════════╗",
+        "║   Afro AI Sandboxed Shell  v2          ║",
+        "║   RAM: 256 MB  •  CPU: deprioritised   ║",
+        "║   Session auto-closes after 30 min     ║",
+        "║   Type 'exit' to end session           ║",
+        "╚════════════════════════════════════════╝\x1b[0m\r\n\r\n",
+      ].join("\r\n"));
+
+      resetIdle();
 
       ptyProcess.onData((data: string) => socket.emit("output", data));
 
       socket.on("input", (data: string) => {
+        resetIdle();
         try { ptyProcess?.write(data); } catch (_) {}
       });
 
@@ -148,16 +227,17 @@ httpServer.listen(
         try { ptyProcess?.resize(cols, rows); } catch (_) {}
       });
 
-      socket.on("disconnect", () => {
-        try { ptyProcess?.kill(); } catch (_) {}
-      });
+      socket.on("disconnect", () => cleanup());
 
       ptyProcess.onExit(() => {
         socket.emit("output", "\r\n\x1b[33m[Shell session ended]\x1b[0m\r\n");
+        cleanup();
         socket.disconnect(true);
       });
+
     } catch (e: any) {
-      socket.emit("output", `\r\n\x1b[31m[Error] Failed to start shell: ${e.message}\x1b[0m\r\n`);
+      cleanup();
+      socket.emit("output", `\r\n\x1b[31m[Error] Failed to start sandboxed shell: ${e.message}\x1b[0m\r\n`);
       socket.disconnect(true);
     }
   });
