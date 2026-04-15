@@ -288,19 +288,31 @@ export async function setupAuth(app: Express) {
     }
   });
 
-  // ── reCAPTCHA verification helper ────────────────────────────
-  async function verifyRecaptcha(token: string): Promise<boolean> {
-    const secret = process.env.RECAPTCHA_SECRET_KEY;
-    if (!secret) return true; // skip if not configured
+  // ── reCAPTCHA Enterprise verification helper ─────────────────
+  async function verifyRecaptcha(token: string, action?: string): Promise<boolean> {
+    const apiKey = process.env.RECAPTCHA_API_KEY;
+    if (!apiKey) return true; // skip if not configured
     try {
-      const r = await fetch("https://www.google.com/recaptcha/api/siteverify", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ secret, response: token }),
-      });
+      const r = await fetch(
+        `https://recaptchaenterprise.googleapis.com/v1/projects/avian-catwalk-488220-g4/assessments?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: {
+              token,
+              expectedAction: action || "submit",
+              siteKey: "6LfqDbksAAAAAEI2i4kTfitA7oBhbiR9lCW3q6of",
+            },
+          }),
+        }
+      );
       const data = await r.json() as any;
-      return data.success === true;
-    } catch {
+      const score: number = data?.riskAnalysis?.score ?? data?.score ?? 0;
+      const valid: boolean = data?.tokenProperties?.valid === true;
+      return valid && score >= 0.5;
+    } catch (err) {
+      console.error("[Auth] reCAPTCHA Enterprise verification error:", err);
       return false;
     }
   }
@@ -310,7 +322,7 @@ export async function setupAuth(app: Express) {
     try {
       const { email, password, firstName, lastName, recaptchaToken } = req.body;
       if (recaptchaToken) {
-        const valid = await verifyRecaptcha(recaptchaToken);
+        const valid = await verifyRecaptcha(recaptchaToken, "register");
         if (!valid) return res.status(400).json({ message: "reCAPTCHA verification failed. Please try again." });
       }
       if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
@@ -347,7 +359,7 @@ export async function setupAuth(app: Express) {
     try {
       const { email, password, recaptchaToken } = req.body;
       if (recaptchaToken) {
-        const valid = await verifyRecaptcha(recaptchaToken);
+        const valid = await verifyRecaptcha(recaptchaToken, "login");
         if (!valid) return res.status(400).json({ message: "reCAPTCHA verification failed. Please try again." });
       }
       if (!email || !password) return res.status(400).json({ message: "Email and password are required" });

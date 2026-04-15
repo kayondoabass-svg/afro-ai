@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLanguage } from "@/hooks/use-language";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
@@ -11,55 +11,40 @@ import { SiGoogle, SiGithub, SiTiktok } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
-const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || "";
+const RECAPTCHA_SITE_KEY = "6LfqDbksAAAAAEI2i4kTfitA7oBhbiR9lCW3q6of";
 
-function useRecaptcha(siteKey: string) {
-  const [token, setToken] = useState<string | null>(null);
-  const widgetRef = useRef<number | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+function loadEnterpriseScript() {
+  const scriptId = "recaptcha-enterprise-script";
+  if (document.getElementById(scriptId)) return;
+  const script = document.createElement("script");
+  script.id = scriptId;
+  script.src = `https://www.google.com/recaptcha/enterprise.js?render=${RECAPTCHA_SITE_KEY}`;
+  script.async = true;
+  script.defer = true;
+  document.head.appendChild(script);
+}
 
-  useEffect(() => {
-    if (!siteKey) return;
-    const scriptId = "recaptcha-script";
-    if (!document.getElementById(scriptId)) {
-      const script = document.createElement("script");
-      script.id = scriptId;
-      script.src = "https://www.google.com/recaptcha/api.js?render=explicit";
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-    }
-
-    const tryRender = () => {
-      const grecaptcha = (window as any).grecaptcha;
-      if (!grecaptcha || !containerRef.current) {
-        setTimeout(tryRender, 300);
-        return;
-      }
-      if (widgetRef.current !== null) return;
-      grecaptcha.ready(() => {
-        if (widgetRef.current !== null || !containerRef.current) return;
+async function getEnterpriseToken(action: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const tryExecute = () => {
+      const gr = (window as any).grecaptcha?.enterprise;
+      if (!gr) { setTimeout(tryExecute, 300); return; }
+      gr.ready(async () => {
         try {
-          widgetRef.current = grecaptcha.render(containerRef.current, {
-            sitekey: siteKey,
-            callback: (t: string) => setToken(t),
-            "expired-callback": () => setToken(null),
-          });
-        } catch (_) {}
+          const token = await gr.execute(RECAPTCHA_SITE_KEY, { action });
+          resolve(token);
+        } catch (e) { reject(e); }
       });
     };
-    tryRender();
-  }, [siteKey]);
+    tryExecute();
+  });
+}
 
-  const reset = () => {
-    const grecaptcha = (window as any).grecaptcha;
-    if (grecaptcha && widgetRef.current !== null) {
-      grecaptcha.reset(widgetRef.current);
-      setToken(null);
-    }
-  };
+function useEnterpriseRecaptcha() {
+  useEffect(() => { loadEnterpriseScript(); }, []);
 
-  return { containerRef, token, reset };
+  const getToken = (action: string) => getEnterpriseToken(action);
+  return { getToken };
 }
 
 export default function LoginPage() {
@@ -68,8 +53,7 @@ export default function LoginPage() {
   const params = new URLSearchParams(window.location.search);
   const refCode = params.get("ref");
   const [isLoading, setIsLoading] = useState(false);
-  const loginRecaptcha = useRecaptcha(RECAPTCHA_SITE_KEY);
-  const registerRecaptcha = useRecaptcha(RECAPTCHA_SITE_KEY);
+  const { getToken } = useEnterpriseRecaptcha();
 
   const authUrl = (base: string) => refCode ? `${base}?ref=${encodeURIComponent(refCode)}` : base;
 
@@ -84,20 +68,19 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
+      const recaptchaToken = await getToken("login");
       const res = await fetch("/api/auth/login/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword, recaptchaToken: loginRecaptcha.token }),
+        body: JSON.stringify({ email: loginEmail, password: loginPassword, recaptchaToken }),
       });
       const data = await res.json();
       if (!res.ok) {
-        loginRecaptcha.reset();
         toast({ title: "Login failed", description: data.message, variant: "destructive" });
       } else {
         window.location.href = "/";
       }
     } catch {
-      loginRecaptcha.reset();
       toast({ title: "Login failed", description: "An error occurred. Please try again.", variant: "destructive" });
     } finally {
       setIsLoading(false);
@@ -108,6 +91,7 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
+      const recaptchaToken = await getToken("register");
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -116,18 +100,16 @@ export default function LoginPage() {
           password: registerPassword,
           firstName: registerFirstName,
           lastName: registerLastName,
-          recaptchaToken: registerRecaptcha.token,
+          recaptchaToken,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        registerRecaptcha.reset();
         toast({ title: "Registration failed", description: data.message, variant: "destructive" });
       } else {
         window.location.href = "/";
       }
     } catch {
-      registerRecaptcha.reset();
       toast({ title: "Registration failed", description: "An error occurred. Please try again.", variant: "destructive" });
     } finally {
       setIsLoading(false);
@@ -211,7 +193,12 @@ export default function LoginPage() {
                     data-testid="input-register-password"
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-register-submit">
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading}
+                  data-testid="button-register-submit"
+                >
                   {isLoading ? "Creating account..." : "Create Account"}
                 </Button>
               </form>
@@ -285,7 +272,12 @@ export default function LoginPage() {
                     data-testid="input-login-password"
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-login-submit">
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading}
+                  data-testid="button-login-submit"
+                >
                   {isLoading ? "Signing in..." : "Sign In"}
                 </Button>
               </form>
