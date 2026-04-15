@@ -111,16 +111,19 @@ httpServer.listen(
   await registerRoutes(httpServer, app);
 
   // ─── Sandboxed Interactive Shell via Socket.io + node-pty ───────────────────
-  // Docker daemon is unavailable in this environment, so we implement equivalent
-  // isolation using Linux process controls:
-  //   • ulimit -v 262144  → 256 MB virtual-memory cap per session
-  //   • ulimit -u 60      → max 60 sub-processes (fork-bomb protection)
-  //   • ulimit -n 64      → max 64 open file descriptors
-  //   • ulimit -f 102400  → max 100 MB single-file writes
-  //   • nice -n 15        → CPU deprioritisation (~0.5-core equivalent)
-  //   • isolated HOME dir → /tmp/shell-<uuid> created fresh, deleted on exit
-  //   • 30-min idle timer → auto-kill on inactivity
-  //   • max 5 concurrent  → reject excess connections
+  // Strategy: Docker first (afro-terminal-box image), ulimit/nice fallback.
+  //
+  // Docker mode (when daemon is available):
+  //   docker run --rm -it --name shell-<id>
+  //     --memory="256m" --cpus=".5"
+  //     --network=none --read-only --tmpfs /home/afro-user --tmpfs /tmp
+  //     afro-terminal-box
+  //
+  // Fallback mode (no Docker daemon):
+  //   nice -n 15 bash -c "ulimit -v 262144 -u 60 -n 64 -f 102400 && exec bash"
+  //   + isolated /tmp/shell-<uuid> HOME directory
+  //
+  // Both modes: 30-min idle timeout, max 5 concurrent sessions, cleanup on exit.
   // ─────────────────────────────────────────────────────────────────────────────
   const io = new SocketIOServer(httpServer, {
     path: "/shell-ws",
@@ -128,7 +131,25 @@ httpServer.listen(
   });
 
   const { randomUUID } = await import("crypto");
-  const { existsSync, rmSync } = await import("fs");
+  const { existsSync, rmSync, mkdirSync } = await import("fs");
+  const { execSync } = await import("child_process");
+
+  // ── Build Docker image on startup ──────────────────────────────────────────
+  const DOCKER_IMAGE = "afro-terminal-box";
+  let dockerAvailable = false;
+
+  try {
+    execSync("docker info", { timeout: 5000, stdio: "ignore" });
+    log(`[Shell] Docker daemon detected — building ${DOCKER_IMAGE} image...`, "shell");
+    execSync(
+      `docker build -t ${DOCKER_IMAGE} -f Dockerfile.shell .`,
+      { cwd: process.cwd(), timeout: 120_000, stdio: "pipe" }
+    );
+    dockerAvailable = true;
+    log(`[Shell] ✓ Docker image '${DOCKER_IMAGE}' ready`, "shell");
+  } catch {
+    log("[Shell] Docker daemon not available — using process isolation fallback", "shell");
+  }
 
   let activeSessions = 0;
   const MAX_SESSIONS = 5;
@@ -151,7 +172,8 @@ httpServer.listen(
     }
 
     activeSessions++;
-    const sessionId = randomUUID();
+    const sessionId = randomUUID().slice(0, 8);
+    const containerName = `afroai-shell-${sessionId}`;
     const sessionDir = `/tmp/shell-${sessionId}`;
     let ptyProcess: any = null;
     let idleTimer: NodeJS.Timeout | null = null;
@@ -159,6 +181,11 @@ httpServer.listen(
     const cleanup = () => {
       if (idleTimer) clearTimeout(idleTimer);
       try { ptyProcess?.kill("SIGKILL"); } catch (_) {}
+      // Remove Docker container if it is still running
+      if (dockerAvailable) {
+        try { execSync(`docker rm -f ${containerName}`, { stdio: "ignore", timeout: 5000 }); } catch (_) {}
+      }
+      // Remove isolated session directory (fallback mode)
       try { if (existsSync(sessionDir)) rmSync(sessionDir, { recursive: true, force: true }); } catch (_) {}
       activeSessions = Math.max(0, activeSessions - 1);
     };
@@ -173,46 +200,83 @@ httpServer.listen(
     };
 
     try {
-      // Create isolated session directory
-      require("fs").mkdirSync(sessionDir, { recursive: true });
-
       const pty = require("node-pty");
 
-      // Resource-limited shell:
-      //   bash -c "ulimit ...; exec bash" wrapped with nice for CPU deprioritisation
-      const initCmd = [
-        `ulimit -v 262144 -u 60 -n 64 -f 102400 2>/dev/null`,
-        `export HOME="${sessionDir}" TMPDIR="${sessionDir}"`,
-        `export PS1='\\[\\033[1;32m\\]afroai\\[\\033[0m\\]:\\[\\033[1;34m\\]\\w\\[\\033[0m\\]\\$ '`,
-        `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"`,
-        `cd "${sessionDir}"`,
-        `exec bash --norc --noprofile`,
-      ].join(" && ");
+      if (dockerAvailable) {
+        // ── Docker container session ────────────────────────────────────────
+        // Each user gets an isolated alpine container:
+        //   --memory="256m"    hard RAM cap
+        //   --cpus=".5"        half a CPU core
+        //   --network=none     no internet access from inside the box
+        //   --read-only        immutable root filesystem
+        //   --tmpfs            writable scratch space only in /home and /tmp
+        ptyProcess = pty.spawn("docker", [
+          "run", "--rm", "-it",
+          `--name`, containerName,
+          "--memory=256m",
+          "--cpus=.5",
+          "--network=none",
+          "--read-only",
+          "--tmpfs", "/home/afro-user:rw,noexec,nosuid,size=64m",
+          "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
+          DOCKER_IMAGE,
+        ], {
+          name: "xterm-256color",
+          cols: 80,
+          rows: 24,
+          env: { TERM: "xterm-256color" },
+        });
 
-      ptyProcess = pty.spawn("nice", ["-n", "15", "bash", "--norc", "-c", initCmd], {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
-        cwd: sessionDir,
-        env: {
-          TERM: "xterm-256color",
-          SHELL: "/bin/bash",
-          HOME: sessionDir,
-          TMPDIR: sessionDir,
-          AFRO_SESSION: sessionId,
-          PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-          LANG: "en_US.UTF-8",
-        },
-      });
+        socket.emit("output", [
+          "\r\n\x1b[32m╔══════════════════════════════════════════════╗",
+          "║   Afro AI Shell  •  Docker Container         ║",
+          `║   Image: ${DOCKER_IMAGE.padEnd(36)}║`,
+          "║   RAM: 256 MB  •  CPU: 0.5 cores             ║",
+          "║   Network: isolated  •  FS: read-only        ║",
+          "║   Auto-closes after 30 min idle              ║",
+          "║   Type 'exit' to end session                 ║",
+          "╚══════════════════════════════════════════════╝\x1b[0m\r\n\r\n",
+        ].join("\r\n"));
 
-      socket.emit("output", [
-        "\r\n\x1b[32m╔════════════════════════════════════════╗",
-        "║   Afro AI Sandboxed Shell  v2          ║",
-        "║   RAM: 256 MB  •  CPU: deprioritised   ║",
-        "║   Session auto-closes after 30 min     ║",
-        "║   Type 'exit' to end session           ║",
-        "╚════════════════════════════════════════╝\x1b[0m\r\n\r\n",
-      ].join("\r\n"));
+      } else {
+        // ── Fallback: Linux process isolation ───────────────────────────────
+        mkdirSync(sessionDir, { recursive: true });
+
+        const initCmd = [
+          `ulimit -v 262144 -u 60 -n 64 -f 102400 2>/dev/null`,
+          `export HOME="${sessionDir}" TMPDIR="${sessionDir}"`,
+          `export PS1='\\[\\033[1;32m\\]afroai\\[\\033[0m\\]:\\[\\033[1;34m\\]\\w\\[\\033[0m\\]\\$ '`,
+          `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"`,
+          `cd "${sessionDir}"`,
+          `exec bash --norc --noprofile`,
+        ].join(" && ");
+
+        ptyProcess = pty.spawn("nice", ["-n", "15", "bash", "--norc", "-c", initCmd], {
+          name: "xterm-256color",
+          cols: 80,
+          rows: 24,
+          cwd: sessionDir,
+          env: {
+            TERM: "xterm-256color",
+            SHELL: "/bin/bash",
+            HOME: sessionDir,
+            TMPDIR: sessionDir,
+            AFRO_SESSION: sessionId,
+            PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            LANG: "en_US.UTF-8",
+          },
+        });
+
+        socket.emit("output", [
+          "\r\n\x1b[32m╔══════════════════════════════════════════════╗",
+          "║   Afro AI Shell  •  Process Sandbox          ║",
+          "║   RAM: 256 MB cap  •  CPU: deprioritised     ║",
+          "║   Isolated home dir  •  Fork-bomb protected  ║",
+          "║   Auto-closes after 30 min idle              ║",
+          "║   Type 'exit' to end session                 ║",
+          "╚══════════════════════════════════════════════╝\x1b[0m\r\n\r\n",
+        ].join("\r\n"));
+      }
 
       resetIdle();
 
@@ -237,7 +301,7 @@ httpServer.listen(
 
     } catch (e: any) {
       cleanup();
-      socket.emit("output", `\r\n\x1b[31m[Error] Failed to start sandboxed shell: ${e.message}\x1b[0m\r\n`);
+      socket.emit("output", `\r\n\x1b[31m[Error] Failed to start shell: ${e.message}\x1b[0m\r\n`);
       socket.disconnect(true);
     }
   });
