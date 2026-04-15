@@ -82,10 +82,6 @@ export default function LoginPage() {
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (RECAPTCHA_SITE_KEY && !loginRecaptcha.token) {
-      toast({ title: "Please complete the reCAPTCHA", variant: "destructive" });
-      return;
-    }
     setIsLoading(true);
     try {
       const res = await fetch("/api/auth/login/email", {
@@ -110,10 +106,6 @@ export default function LoginPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
-    if (RECAPTCHA_SITE_KEY && !registerRecaptcha.token) {
-      toast({ title: "Please complete the reCAPTCHA", variant: "destructive" });
-      return;
-    }
     setIsLoading(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -219,11 +211,6 @@ export default function LoginPage() {
                     data-testid="input-register-password"
                   />
                 </div>
-                {RECAPTCHA_SITE_KEY && (
-                  <div className="flex justify-center">
-                    <div ref={registerRecaptcha.containerRef} />
-                  </div>
-                )}
                 <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-register-submit">
                   {isLoading ? "Creating account..." : "Create Account"}
                 </Button>
@@ -298,11 +285,6 @@ export default function LoginPage() {
                     data-testid="input-login-password"
                   />
                 </div>
-                {RECAPTCHA_SITE_KEY && (
-                  <div className="flex justify-center">
-                    <div ref={loginRecaptcha.containerRef} />
-                  </div>
-                )}
                 <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-login-submit">
                   {isLoading ? "Signing in..." : "Sign In"}
                 </Button>
