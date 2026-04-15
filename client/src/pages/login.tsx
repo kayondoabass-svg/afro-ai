@@ -37,10 +37,15 @@ function useRecaptcha(siteKey: string) {
         return;
       }
       if (widgetRef.current !== null) return;
-      widgetRef.current = grecaptcha.render(containerRef.current, {
-        sitekey: siteKey,
-        callback: (t: string) => setToken(t),
-        "expired-callback": () => setToken(null),
+      grecaptcha.ready(() => {
+        if (widgetRef.current !== null || !containerRef.current) return;
+        try {
+          widgetRef.current = grecaptcha.render(containerRef.current, {
+            sitekey: siteKey,
+            callback: (t: string) => setToken(t),
+            "expired-callback": () => setToken(null),
+          });
+        } catch (_) {}
       });
     };
     tryRender();
