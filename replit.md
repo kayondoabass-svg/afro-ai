@@ -44,7 +44,8 @@ The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind C
 -   **Overview:** A personal dashboard displaying key metrics, recent activity, and quick actions.
 -   **Secrets Manager:** Securely stores environment variables and API keys per published app or globally.
 -   **Activity Logs:** Provides a full event stream of user actions, filterable by type and searchable.
--   **Console:** A terminal-style interface for real-time activity log streaming.
+-   **Dev Console (Unified Dashboard):** A professional IDE-style developer dashboard at /console with three tabs — Activity (color-coded, searchable, filterable real-time log feed), Terminal (interactive Xterm.js bash shell with admin key protection), and Deployments (list of published apps with status). Includes a persistent status bar showing server health, shell state, branch, and port.
+-   **Interactive Shell:** Real-time interactive bash terminal inside the Dev Console Terminal tab, powered by node-pty and Socket.io. Protected by SHELL_SECRET admin key.
 -   **Sidebar Search:** Filters navigation items in real time.
 -   **Email API:** A transactional email sending service powered by AWS SES, offering API keys, domain verification, and sending logs.
 -   **Chatbot API:** Enables users to create embeddable AI chatbots for external websites with a knowledge base and brand customization.
