@@ -3,6 +3,7 @@ import compression from "compression";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { Server as SocketIOServer } from "socket.io";
 import { securityHeaders } from "./security";
 import { storage } from "./storage";
 
@@ -108,6 +109,59 @@ httpServer.listen(
 
 (async () => {
   await registerRoutes(httpServer, app);
+
+  // Interactive shell via Socket.io + node-pty (admin only)
+  const io = new SocketIOServer(httpServer, {
+    path: "/shell-ws",
+    cors: { origin: "*", credentials: true },
+  });
+
+  io.on("connection", (socket) => {
+    const adminKey = socket.handshake.auth?.adminKey;
+    const SHELL_SECRET = process.env.SHELL_SECRET || "afroai-shell-secret";
+    if (adminKey !== SHELL_SECRET) {
+      socket.emit("output", "\r\n\x1b[31m[Afro AI Shell] Access denied. Admin key required.\x1b[0m\r\n");
+      socket.disconnect(true);
+      return;
+    }
+
+    let ptyProcess: any = null;
+    try {
+      const pty = require("node-pty");
+      ptyProcess = pty.spawn(process.platform === "win32" ? "powershell.exe" : "bash", [], {
+        name: "xterm-color",
+        cols: 80,
+        rows: 24,
+        cwd: process.cwd(),
+        env: { ...process.env, TERM: "xterm-color" },
+      });
+
+      socket.emit("output", `\r\n\x1b[32m╔══════════════════════════════════╗\r\n║   Afro AI Interactive Shell      ║\r\n║   Type 'exit' to close           ║\r\n╚══════════════════════════════════╝\x1b[0m\r\n\r\n`);
+
+      ptyProcess.onData((data: string) => socket.emit("output", data));
+
+      socket.on("input", (data: string) => {
+        try { ptyProcess?.write(data); } catch (_) {}
+      });
+
+      socket.on("resize", ({ cols, rows }: { cols: number; rows: number }) => {
+        try { ptyProcess?.resize(cols, rows); } catch (_) {}
+      });
+
+      socket.on("disconnect", () => {
+        try { ptyProcess?.kill(); } catch (_) {}
+      });
+
+      ptyProcess.onExit(() => {
+        socket.emit("output", "\r\n\x1b[33m[Shell session ended]\x1b[0m\r\n");
+        socket.disconnect(true);
+      });
+    } catch (e: any) {
+      socket.emit("output", `\r\n\x1b[31m[Error] Failed to start shell: ${e.message}\x1b[0m\r\n`);
+      socket.disconnect(true);
+    }
+  });
+
 
   // Verify Pesapal credentials on startup
   try {

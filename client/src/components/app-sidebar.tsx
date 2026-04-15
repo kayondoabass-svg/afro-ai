@@ -49,6 +49,7 @@ import {
   KeyRound,
   Activity,
   DatabaseZap,
+  SquareTerminal,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -80,6 +81,7 @@ const ALL_MENU_ITEMS = [
   { title: "Secrets", url: "/secrets", icon: KeyRound },
   { title: "Activity Logs", url: "/logs", icon: Activity },
   { title: "Console", url: "/console", icon: Terminal },
+  { title: "Shell", url: "/shell", icon: SquareTerminal },
   { title: "Referrals", url: "/referrals", icon: Gift },
   { title: "Pricing", url: "/pricing", icon: CreditCard },
   { title: "Billing & Usage", url: "/billing", icon: Receipt },
