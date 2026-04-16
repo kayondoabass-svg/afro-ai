@@ -642,10 +642,10 @@ export default function LandingPage() {
                 <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-ai-assistant">{t("footer.aiAssistant")}</a>
                 <a href="/templates" className="block hover:text-primary transition-colors" data-testid="link-footer-templates">Templates</a>
                 <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">Marketplace</a>
-                <a href="/domains" className="block hover:text-primary transition-colors" data-testid="link-footer-domains">Domain Store</a>
+                <a href="/domain-names" className="block hover:text-primary transition-colors" data-testid="link-footer-domains">Domain Store</a>
                 <a href="/chatbot-api" className="block hover:text-primary transition-colors" data-testid="link-footer-chatbot-api">Chatbot API</a>
-                <a href="/email-api" className="block hover:text-primary transition-colors" data-testid="link-footer-email-api">Email API</a>
-                <a href="/ussd" className="block hover:text-primary transition-colors" data-testid="link-footer-ussd-builder">USSD Builder</a>
+                <a href="/developer-email" className="block hover:text-primary transition-colors" data-testid="link-footer-email-api">Email API</a>
+                <a href="/ussd-builder" className="block hover:text-primary transition-colors" data-testid="link-footer-ussd-builder">USSD Builder</a>
                 <a href="https://pages.github.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors" data-testid="link-footer-github-pages-product">
                   <Github className="w-3.5 h-3.5" /> GitHub Pages
                 </a>
@@ -656,7 +656,7 @@ export default function LandingPage() {
               <h4 className="font-semibold text-sm">Earn</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <a href="/affiliate" className="block hover:text-primary transition-colors" data-testid="link-footer-affiliate">Affiliate Program</a>
-                <a href="/referrals" className="block hover:text-primary transition-colors" data-testid="link-footer-referrals">Refer & Earn</a>
+                <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-referrals">Refer & Earn</a>
               </div>
             </div>
 

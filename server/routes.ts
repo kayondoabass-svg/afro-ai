@@ -88,11 +88,25 @@ export async function registerRoutes(
       "User-agent: *\n" +
       "Allow: /\n" +
       "Disallow: /api/\n" +
-      "Disallow: /admin-command\n" +
-      "Disallow: /founder-dashboard\n" +
       "Disallow: /dashboard\n" +
       "Disallow: /chat\n" +
-      "Disallow: /settings\n\n" +
+      "Disallow: /deployments\n" +
+      "Disallow: /settings\n" +
+      "Disallow: /billing\n" +
+      "Disallow: /files\n" +
+      "Disallow: /logs\n" +
+      "Disallow: /console\n" +
+      "Disallow: /shell\n" +
+      "Disallow: /secrets\n" +
+      "Disallow: /founder\n" +
+      "Disallow: /admin-command\n" +
+      "Disallow: /d1\n" +
+      "Disallow: /overview\n\n" +
+      "User-agent: GPTBot\nAllow: /\n\n" +
+      "User-agent: Google-Extended\nAllow: /\n\n" +
+      "User-agent: ClaudeBot\nAllow: /\n\n" +
+      "User-agent: PerplexityBot\nAllow: /\n\n" +
+      "User-agent: anthropic-ai\nAllow: /\n\n" +
       "Sitemap: https://afroaigroup.com/sitemap.xml\n"
     );
   });
@@ -102,15 +116,21 @@ export async function registerRoutes(
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://afroaigroup.com/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
   <url><loc>https://afroaigroup.com/pricing</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.9</priority></url>
-  <url><loc>https://afroaigroup.com/templates</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/templates</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>
   <url><loc>https://afroaigroup.com/marketplace</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>
-  <url><loc>https://afroaigroup.com/domains</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://afroaigroup.com/blog</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://afroaigroup.com/chatbot-api</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/developer-email</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/ussd-builder</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/domain-names</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/blog</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://afroaigroup.com/articles</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://afroaigroup.com/about</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://afroaigroup.com/affiliate</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://afroaigroup.com/about</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://afroaigroup.com/contact</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://afroaigroup.com/contact</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
   <url><loc>https://afroaigroup.com/privacy</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://afroaigroup.com/terms</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://afroaigroup.com/cookies</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://afroaigroup.com/refund-policy</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
 </urlset>`);
   });
 
