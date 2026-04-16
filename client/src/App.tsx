@@ -59,6 +59,7 @@ import ConsolePage from "@/pages/console";
 import ShellPage from "@/pages/shell";
 import EmailApiPage from "@/pages/email-api";
 import EmailApiLandingPage from "@/pages/email-api-landing";
+import EmailApiDocsPage from "@/pages/docs-email-api";
 import UssdLandingPage from "@/pages/ussd-landing";
 import DomainsLandingPage from "@/pages/domains-landing";
 import NotFound from "@/pages/not-found";
@@ -165,6 +166,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/seo": "SEO Tools — Afro AI",
   "/chatbot-api": "Chatbot API — Afro AI",
   "/developer-email": "Email API — Afro AI | Send Transactional Emails from Your App",
+  "/docs/email-api": "Email API Setup Guide — Afro AI | Send Emails From Your Website",
   "/ussd-builder": "USSD Builder — Afro AI | Build USSD Apps for African Mobile Networks",
   "/domain-names": "Domain Names — Afro AI | .africa, .co.ke, .ng, .co.za & More",
   "/articles": "Articles — Afro AI",
@@ -235,6 +237,7 @@ function AppRouter() {
         <Route path="/chatbot-api" component={ChatbotLandingPage} />
         <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
         <Route path="/developer-email" component={EmailApiLandingPage} />
+        <Route path="/docs/email-api" component={EmailApiDocsPage} />
         <Route path="/ussd-builder" component={UssdLandingPage} />
         <Route path="/domain-names" component={DomainsLandingPage} />
         <Route path="/articles/:slug" component={ArticlePage} />

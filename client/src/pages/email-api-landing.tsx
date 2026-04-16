@@ -168,9 +168,9 @@ export default function EmailApiLandingPage() {
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             </a>
-            <a href="#docs">
+            <a href="/docs/email-api">
               <Button size="lg" variant="outline">
-                <Code2 className="w-4 h-4 mr-1" /> View API Docs
+                <Code2 className="w-4 h-4 mr-1" /> View Setup Guide
               </Button>
             </a>
           </div>
