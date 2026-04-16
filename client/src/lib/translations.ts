@@ -116,7 +116,7 @@ export const translations: Record<LanguageCode, TranslationStrings> = {
     "quote.line2": "If you want to go far, go together.\"",
     "quote.desc": "An African proverb that guides everything we build. Afro AI is more than a tool — it's a movement to empower every African creator to build the technology that shapes our continent's future.",
     "quote.cta": "Join the Movement",
-    "footer.tagline": "Building the future of African technology, one app at a time.",
+    "footer.tagline": "Afro AI is an AI-powered platform for building and launching websites, apps, and digital products.",
     "footer.product": "Product",
     "footer.company": "Company",
     "footer.legal": "Legal",
