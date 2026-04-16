@@ -135,7 +135,7 @@ function AuthenticatedLayout() {
 }
 
 const PAGE_TITLES: Record<string, string> = {
-  "/": "Afroai Group — Cloud IDE on Cloudflare | AI Website & App Builder",
+  "/": "Afro AI — Build Websites & Apps with AI | No Coding Needed",
   "/login": "Sign In — Afro AI",
   "/pricing": "Pricing Plans — Afro AI | Free, Pro & Business",
   "/templates": "Templates — Afro AI | 21 African Business Templates",
