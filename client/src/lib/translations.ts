@@ -46,7 +46,7 @@ export const translations: Record<LanguageCode, TranslationStrings> = {
     "hero.badge": "Built for Africa, by Africans",
     "hero.title1": "Building the Future",
     "hero.title2": "We Want",
-    "hero.subtitle": "Create websites, mobile apps, and digital products in minutes — just describe what you want. No coding, no designers, no technical skills needed. Made in Africa, built for everyone.",
+    "hero.subtitle": "Create websites, mobile apps, and digital products in minutes. Just describe what you want. No coding, no designers, no technical skills needed. Made in Africa, built for everyone.",
     "hero.cta1": "Start Creating",
     "hero.cta2": "See How It Works",
     "hero.check1": "Free to start",
