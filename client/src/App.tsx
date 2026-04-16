@@ -134,6 +134,55 @@ function AuthenticatedLayout() {
   );
 }
 
+const PAGE_TITLES: Record<string, string> = {
+  "/": "Afro AI — AI Website & App Builder Born in Africa",
+  "/login": "Sign In — Afro AI",
+  "/pricing": "Pricing Plans — Afro AI | Free, Pro & Business",
+  "/templates": "Templates — Afro AI | 21 African Business Templates",
+  "/marketplace": "Marketplace — Afro AI | Community Templates & Components",
+  "/blog": "Blog — Afro AI | African Tech News & Tutorials",
+  "/about": "About — Afro AI | Built by KEYO TECHNOLOGIES",
+  "/contact": "Contact — Afro AI",
+  "/affiliate": "Affiliate Program — Afro AI | Earn 20% Recurring Commission",
+  "/domains": "Domain Store — Afro AI | .africa, .co.ug, .co.ke Domains",
+  "/privacy": "Privacy Policy — Afro AI",
+  "/terms": "Terms of Service — Afro AI",
+  "/cookies": "Cookie Policy — Afro AI",
+  "/refund-policy": "Refund Policy — Afro AI",
+  "/dashboard": "Dashboard — Afro AI",
+  "/chat": "AI Builder — Afro AI",
+  "/deployments": "Deployments — Afro AI",
+  "/settings": "Settings — Afro AI",
+  "/billing": "Billing — Afro AI",
+  "/forms": "Form Builder — Afro AI",
+  "/analytics": "Analytics — Afro AI",
+  "/pwa": "PWA Builder — Afro AI",
+  "/collaborate": "Collaboration — Afro AI",
+  "/ussd": "USSD Builder — Afro AI",
+  "/seo": "SEO Tools — Afro AI",
+  "/chatbot-api": "Chatbot API — Afro AI",
+  "/articles": "Articles — Afro AI",
+};
+
+function PageTitleUpdater() {
+  const [location] = useLocation();
+  useEffect(() => {
+    const title = PAGE_TITLES[location] || "Afro AI — AI Website & App Builder";
+    document.title = title;
+    const descMeta = document.querySelector('meta[name="description"]');
+    if (location === "/pricing" && descMeta) {
+      descMeta.setAttribute("content", "Afro AI pricing plans: Free (1 app), Pro $15/mo, Business $29.90/mo. Pay with mobile money. No credit card needed to start.");
+    } else if (location === "/templates" && descMeta) {
+      descMeta.setAttribute("content", "21 ready-to-use African business templates. Build and launch your website or app in minutes with Afro AI.");
+    } else if (location === "/marketplace" && descMeta) {
+      descMeta.setAttribute("content", "Browse and sell templates, components and tools on the Afro AI community marketplace.");
+    } else if (location === "/domains" && descMeta) {
+      descMeta.setAttribute("content", "Register African domain names: .africa, .co.ug, .co.ke, .co.tz and more directly from your Afro AI dashboard.");
+    }
+  }, [location]);
+  return null;
+}
+
 function AppRouter() {
   const { user, isLoading } = useAuth();
   const [, navigate] = useLocation();
@@ -196,6 +245,7 @@ function App() {
         <LanguageProvider>
           <TooltipProvider>
             <Toaster />
+            <PageTitleUpdater />
             <AppRouter />
           </TooltipProvider>
         </LanguageProvider>
