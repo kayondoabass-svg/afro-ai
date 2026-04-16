@@ -1,4 +1,39 @@
 User-agent: *
 Allow: /
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /chat
+Disallow: /deployments
+Disallow: /settings
+Disallow: /billing
+Disallow: /files
+Disallow: /logs
+Disallow: /console
+Disallow: /shell
+Disallow: /secrets
+Disallow: /founder
+Disallow: /admin-command
+Disallow: /d1
+Disallow: /overview
+Disallow: /email-api
+
+# Allow major AI crawlers explicitly
+User-agent: GPTBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
 
 Sitemap: https://afroaigroup.com/sitemap.xml
