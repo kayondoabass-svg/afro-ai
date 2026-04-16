@@ -58,6 +58,9 @@ import ActivityLogsPage from "@/pages/activity-logs";
 import ConsolePage from "@/pages/console";
 import ShellPage from "@/pages/shell";
 import EmailApiPage from "@/pages/email-api";
+import EmailApiLandingPage from "@/pages/email-api-landing";
+import UssdLandingPage from "@/pages/ussd-landing";
+import DomainsLandingPage from "@/pages/domains-landing";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout() {
@@ -161,6 +164,9 @@ const PAGE_TITLES: Record<string, string> = {
   "/ussd": "USSD Builder — Afro AI",
   "/seo": "SEO Tools — Afro AI",
   "/chatbot-api": "Chatbot API — Afro AI",
+  "/developer-email": "Email API — Afro AI | Send Transactional Emails from Your App",
+  "/ussd-builder": "USSD Builder — Afro AI | Build USSD Apps for African Mobile Networks",
+  "/domain-names": "Domain Names — Afro AI | .africa, .co.ke, .ng, .co.za & More",
   "/articles": "Articles — Afro AI",
 };
 
@@ -228,6 +234,9 @@ function AppRouter() {
         <Route path="/affiliate" component={AffiliatePage} />
         <Route path="/chatbot-api" component={ChatbotLandingPage} />
         <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
+        <Route path="/developer-email" component={EmailApiLandingPage} />
+        <Route path="/ussd-builder" component={UssdLandingPage} />
+        <Route path="/domain-names" component={DomainsLandingPage} />
         <Route path="/articles/:slug" component={ArticlePage} />
         <Route path="/articles" component={ArticlesPage} />
         <Route component={LandingPage} />
