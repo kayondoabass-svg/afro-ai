@@ -86,8 +86,9 @@ function AuthenticatedLayout() {
           <main className="flex-1 flex flex-col overflow-y-auto min-h-0">
             <Switch>
               <Route path="/dashboard" component={DashboardPage} />
-              <Route path="/chat" component={AIChatPage} />
+              <Route path="/chat" component={AgentPage} />
               <Route path="/agent" component={AgentPage} />
+              <Route path="/chat-classic" component={AIChatPage} />
               <Route path="/deployments" component={DeploymentsPage} />
               <Route path="/pricing" component={PricingPage} />
               <Route path="/founder" component={FounderDashboardPage} />
