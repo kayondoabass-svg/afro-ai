@@ -2045,6 +2045,79 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // Send a campaign to all active subscribers (via Afro AI's own SES)
+  // Sender is hardcoded to support@afroaigroup.com (verified domain) — clients cannot override.
+  app.post("/api/email/campaigns/:id/send", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const campaign = await storage.getEmailCampaign(id);
+      if (!campaign || campaign.userId !== req.user.id) return res.status(404).json({ message: "Campaign not found" });
+      if (!campaign.htmlContent || !campaign.htmlContent.trim()) {
+        return res.status(400).json({ message: "Campaign has no HTML content. Edit the campaign and add content first." });
+      }
+      // Prevent double-send: claim the campaign by flipping status to "sending" only if currently not sending
+      if (campaign.status === "sending") {
+        return res.status(409).json({ message: "This campaign is already being sent. Please wait." });
+      }
+      await storage.updateEmailCampaign(id, { status: "sending" } as any);
+
+      const fromAddress = "Afro AI <support@afroaigroup.com>";
+      const allSubs = await storage.getEmailSubscribersByUser(req.user.id);
+      const activeSubs = allSubs.filter(s => s.status === "active");
+
+      if (activeSubs.length === 0) {
+        await storage.updateEmailCampaign(id, { status: "draft" } as any);
+        return res.status(400).json({ message: "No active subscribers to send to." });
+      }
+
+      // Hard cap to protect SES reputation from accidental floods
+      const MAX_RECIPIENTS = 1000;
+      if (activeSubs.length > MAX_RECIPIENTS) {
+        await storage.updateEmailCampaign(id, { status: "draft" } as any);
+        return res.status(400).json({ message: `Recipient limit is ${MAX_RECIPIENTS}. Contact support to send to more subscribers.` });
+      }
+
+      let sent = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      // Send sequentially with small delay to respect SES rate limits (sandbox = 1/sec)
+      for (const sub of activeSubs) {
+        try {
+          await sesClient.send(new SendEmailCommand({
+            Source: fromAddress,
+            Destination: { ToAddresses: [sub.email] },
+            Message: {
+              Subject: { Data: campaign.subject, Charset: "UTF-8" },
+              Body: { Html: { Data: campaign.htmlContent, Charset: "UTF-8" } },
+            },
+          }));
+          sent++;
+        } catch (err: any) {
+          failed++;
+          if (errors.length < 5) errors.push(`${sub.email}: ${err.message}`);
+          // If we hit a throttle, back off to avoid cascading failures
+          if (/Throttl|Rate exceeded/i.test(err.message || "")) {
+            await new Promise(r => setTimeout(r, 1500));
+          }
+        }
+        await new Promise(r => setTimeout(r, 120));
+      }
+
+      await storage.updateEmailCampaign(id, {
+        status: sent > 0 ? "sent" : "failed",
+        recipientCount: sent,
+        sentAt: new Date(),
+      } as any);
+
+      res.json({ success: true, sent, failed, total: activeSubs.length, errors });
+    } catch (e: any) {
+      // Best-effort recovery: revert status so the user can retry
+      try { await storage.updateEmailCampaign(parseInt(req.params.id), { status: "draft" } as any); } catch {}
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ============ ANALYTICS ============
   app.get("/api/analytics", isAuthenticated, async (req: any, res) => {
     try {
@@ -3254,7 +3327,7 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
   // ===================== AFRO AI EMAIL API =====================
 
   const sesClient = new SESClient({
-    region: process.env.AWS_REGION || "us-east-1",
+    region: (process.env.AWS_REGION || "us-east-1").toLowerCase(),
     credentials: {
       accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,

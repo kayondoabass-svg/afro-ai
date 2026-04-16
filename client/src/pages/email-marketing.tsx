@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { EmailSubscriber, EmailCampaign } from "@shared/schema";
 import {
   Mail, Users, Plus, Trash2, Send, Copy, Download, Pencil,
-  UserCheck, UserX, Upload, BarChart2, Wand2, CheckCircle2, Clock
+  UserCheck, UserX, Upload, BarChart2, Wand2, CheckCircle2, Clock, Rocket
 } from "lucide-react";
 
 function formatDate(d: string | Date) {
@@ -86,6 +86,35 @@ export default function EmailMarketingPage() {
       toast({ title: "Campaign deleted" });
     },
   });
+
+  const sendCamMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/email/campaigns/${id}/send`, {}),
+    onSuccess: async (res: any) => {
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/email/campaigns"] });
+      toast({
+        title: `Sent to ${data.sent} of ${data.total} subscribers`,
+        description: data.failed > 0 ? `${data.failed} failed. ${data.errors?.[0] || ""}` : "Campaign delivered successfully.",
+        variant: data.failed > 0 ? "destructive" : "default",
+      });
+    },
+    onError: (e: any) => toast({ title: "Send failed", description: e.message, variant: "destructive" }),
+  });
+
+  const handleSendCampaign = (cam: EmailCampaign) => {
+    const activeCount = subscribers.filter(s => s.status === "active").length;
+    if (activeCount === 0) {
+      toast({ title: "No active subscribers", description: "Add subscribers before sending.", variant: "destructive" });
+      return;
+    }
+    if (!cam.htmlContent?.trim()) {
+      toast({ title: "Empty campaign", description: "Add HTML content before sending.", variant: "destructive" });
+      return;
+    }
+    if (window.confirm(`Send "${cam.name}" to ${activeCount} active subscriber${activeCount !== 1 ? "s" : ""}?\n\nFrom: support@afroaigroup.com\nSubject: ${cam.subject}`)) {
+      sendCamMutation.mutate(cam.id);
+    }
+  };
 
   const openCreateCam = () => {
     setEditCampaign(null);
@@ -312,7 +341,17 @@ export default function EmailMarketingPage() {
                         {cam.htmlContent && <span className="ml-2 text-green-500/80">• Has content</span>}
                       </div>
                       <div className="flex gap-1.5 flex-wrap">
-                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1 flex-1" onClick={() => openEditCam(cam)} data-testid={`button-edit-campaign-${cam.id}`}>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs gap-1 flex-1 bg-primary hover:bg-primary/90"
+                          onClick={() => handleSendCampaign(cam)}
+                          disabled={sendCamMutation.isPending}
+                          data-testid={`button-send-campaign-${cam.id}`}
+                        >
+                          <Rocket className="w-3 h-3" />
+                          {sendCamMutation.isPending && sendCamMutation.variables === cam.id ? "Sending..." : "Send Now"}
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => openEditCam(cam)} data-testid={`button-edit-campaign-${cam.id}`}>
                           <Pencil className="w-3 h-3" />Edit
                         </Button>
                         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setPreviewCampaign(cam)} data-testid={`button-preview-campaign-${cam.id}`}>
