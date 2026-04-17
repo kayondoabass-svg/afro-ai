@@ -8,7 +8,16 @@ import {
   Check, X, ArrowRight, Star, ChevronDown, ChevronUp,
   Building2, Landmark, ShoppingBag, GraduationCap,
   Bot, Sparkles, CheckCircle2, TrendingUp, Cpu,
+  Stethoscope, Home, Banknote, Hotel, Languages, Wand2,
+  AlertTriangle, Quote,
 } from "lucide-react";
+
+const LANGUAGES = [
+  "English", "Swahili", "Pidgin", "Yoruba", "Hausa", "Igbo",
+  "Amharic", "Wolof", "Luganda", "Kinyarwanda", "Zulu", "Xhosa",
+  "French", "Arabic", "Portuguese", "Lingala", "Shona", "Somali",
+  "Twi", "Tigrinya", "Oromo", "Chichewa", "Afrikaans", "+ 20 more",
+];
 
 const PLANS = [
   {
@@ -126,6 +135,100 @@ const USE_CASES = [
   { icon: GraduationCap, label: "Schools & Universities", desc: "Student admission and course enquiry bots" },
 ];
 
+function RoiCalculator() {
+  const [msgsPerDay, setMsgsPerDay] = useState(40);
+  const [staffCostMonthly, setStaffCostMonthly] = useState(80000);
+  const [currency, setCurrency] = useState<"NGN" | "KES" | "UGX" | "ZAR" | "USD">("NGN");
+
+  const symbols: Record<string, string> = { NGN: "₦", KES: "KSh", UGX: "USh", ZAR: "R", USD: "$" };
+  const botCosts: Record<string, number> = { NGN: 15000, KES: 2500, UGX: 70000, ZAR: 350, USD: 19 };
+  const sym = symbols[currency];
+  const botCost = botCosts[currency];
+
+  const messagesPerMonth = msgsPerDay * 30;
+  const savings = Math.max(0, staffCostMonthly - botCost);
+  const fmt = (n: number) => n.toLocaleString();
+
+  return (
+    <section className="py-20 px-4 bg-muted/20 border-y border-border/30">
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-10">
+          <Badge className="mb-3 bg-primary/10 text-primary border-primary/20">ROI Calculator</Badge>
+          <h2 className="text-3xl md:text-4xl font-bold mb-3">How much will this save you?</h2>
+          <p className="text-muted-foreground">Adjust the sliders for your business. See the real number.</p>
+        </div>
+        <Card className="border-border/50">
+          <CardContent className="p-6 md:p-8 grid md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <div>
+                <label className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">Currency</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {(["NGN", "KES", "UGX", "ZAR", "USD"] as const).map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setCurrency(c)}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                        currency === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
+                      }`}
+                      data-testid={`roi-currency-${c}`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="flex items-center justify-between text-sm mb-2">
+                  <span>Customer messages per day</span>
+                  <span className="font-bold text-primary">{fmt(msgsPerDay)}</span>
+                </label>
+                <input
+                  type="range"
+                  min={5}
+                  max={500}
+                  step={5}
+                  value={msgsPerDay}
+                  onChange={(e) => setMsgsPerDay(Number(e.target.value))}
+                  className="w-full accent-primary"
+                  data-testid="roi-slider-messages"
+                />
+                <p className="text-xs text-muted-foreground mt-1">≈ {fmt(messagesPerMonth)} per month</p>
+              </div>
+              <div>
+                <label className="flex items-center justify-between text-sm mb-2">
+                  <span>Current monthly cost of replying (staff)</span>
+                  <span className="font-bold text-primary">{sym}{fmt(staffCostMonthly)}</span>
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={currency === "USD" ? 2000 : currency === "UGX" ? 1500000 : currency === "KES" ? 80000 : currency === "ZAR" ? 20000 : 500000}
+                  step={currency === "UGX" ? 10000 : currency === "USD" ? 50 : 1000}
+                  value={staffCostMonthly}
+                  onChange={(e) => setStaffCostMonthly(Number(e.target.value))}
+                  className="w-full accent-primary"
+                  data-testid="roi-slider-staff"
+                />
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-primary/10 to-amber-500/5 rounded-2xl p-6 flex flex-col justify-center text-center">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">You'd save approximately</p>
+              <p className="text-4xl md:text-5xl font-extrabold text-primary mb-1" data-testid="text-roi-savings">
+                {sym}{fmt(savings)}
+              </p>
+              <p className="text-sm text-muted-foreground mb-5">per month</p>
+              <p className="text-xs text-foreground mb-1">+ never miss a customer at 2am</p>
+              <p className="text-xs text-foreground mb-1">+ instant replies in 40+ languages</p>
+              <p className="text-xs text-foreground mb-5">+ scales free as your business grows</p>
+              <p className="text-[10px] text-muted-foreground italic">Estimate based on Starter plan ({sym}{fmt(botCost)}/mo). Actual savings vary.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
 export default function ChatbotLandingPage() {
   const [, navigate] = useLocation();
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -169,12 +272,13 @@ export default function ChatbotLandingPage() {
             <Bot className="w-3.5 h-3.5" /> AI-Powered Chatbot for Any Website
           </Badge>
           <h1 className="text-4xl md:text-6xl font-extrabold mb-6 leading-tight">
-            Your Website Deserves a<br />
-            <span className="text-primary">24/7 AI Assistant</span>
+            Your website's smartest<br />
+            <span className="text-primary">employee. Live in 2 minutes.</span>
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto leading-relaxed">
-            Add an intelligent chatbot to any website in 60 seconds — one line of code, no developer needed.
-            Built for African businesses, government portals, and agencies worldwide.
+            Paste your website link. Our AI reads it, learns your business, and starts answering customers
+            in <span className="text-foreground font-medium">English, Pidgin, Swahili, Yoruba</span> and 40+ languages — 24/7.
+            One line of code. No developer needed.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button
@@ -275,6 +379,113 @@ export default function ChatbotLandingPage() {
         </div>
       </section>
 
+      {/* NEW: Auto-Scan spotlight */}
+      <section className="py-20 px-4 bg-gradient-to-br from-primary/5 via-background to-amber-500/5 border-y border-border/30">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-10 items-center">
+            <div>
+              <Badge className="mb-3 bg-primary/10 text-primary border-primary/20 gap-1.5">
+                <Wand2 className="w-3.5 h-3.5" /> NEW · Auto-Scan
+              </Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4 leading-tight">
+                Paste a link. <span className="text-primary">Get a trained bot.</span>
+              </h2>
+              <p className="text-muted-foreground mb-5 leading-relaxed">
+                We crawl your website, extract every Q&A your customers might ask, group them by topic,
+                and auto-flag anything sensitive — prices, salaries, personal data — so you control what the bot can share.
+              </p>
+              <ul className="space-y-2.5 text-sm">
+                <li className="flex gap-2 items-start">
+                  <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span><span className="font-medium text-foreground">Up to 30 pages</span> scanned automatically — no manual training</span>
+                </li>
+                <li className="flex gap-2 items-start">
+                  <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span><span className="font-medium text-foreground">Sensitive content detection</span> — emails, phones, prices, confidential info auto-excluded by default</span>
+                </li>
+                <li className="flex gap-2 items-start">
+                  <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span><span className="font-medium text-foreground">Confidence-tiered answers</span> — bot escalates to a human when it isn't sure</span>
+                </li>
+                <li className="flex gap-2 items-start">
+                  <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span><span className="font-medium text-foreground">Source citations</span> — every answer links back to the page it learned from</span>
+                </li>
+                <li className="flex gap-2 items-start">
+                  <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span><span className="font-medium text-foreground">Smart re-scans</span> — only re-learns pages that actually changed</span>
+                </li>
+              </ul>
+            </div>
+            <div className="relative">
+              <div className="rounded-2xl border border-border/50 bg-card shadow-2xl overflow-hidden">
+                <div className="bg-muted/40 px-4 py-2 flex items-center gap-2 border-b border-border/50">
+                  <div className="flex gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
+                  </div>
+                  <span className="text-xs text-muted-foreground ml-2">Auto-Scan in progress</span>
+                </div>
+                <div className="p-5 space-y-3 text-xs">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    Crawling https://yourbusiness.com…
+                  </div>
+                  <div className="space-y-1.5 pl-4 border-l-2 border-primary/30">
+                    <p className="text-foreground"><span className="text-green-500">✓</span> 28 pages scanned</p>
+                    <p className="text-foreground"><span className="text-green-500">✓</span> 142 Q&As extracted</p>
+                    <p className="text-foreground"><span className="text-amber-500">⚠</span> 11 flagged as sensitive</p>
+                    <p className="text-foreground"><span className="text-green-500">✓</span> Grouped into 9 topics</p>
+                  </div>
+                  <div className="pt-3 border-t border-border/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Pricing & Plans</span>
+                      <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 text-[9px] gap-1">
+                        <AlertTriangle className="w-2.5 h-2.5" /> sensitive
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Shipping & Delivery</span>
+                      <span className="text-green-500 text-[10px]">14 Q&As · active</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Returns Policy</span>
+                      <span className="text-green-500 text-[10px]">8 Q&As · active</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* NEW: Languages section */}
+      <section className="py-16 px-4">
+        <div className="max-w-5xl mx-auto text-center">
+          <Badge className="mb-3 bg-primary/10 text-primary border-primary/20 gap-1.5">
+            <Languages className="w-3.5 h-3.5" /> Speaks how your customers actually speak
+          </Badge>
+          <h2 className="text-3xl md:text-4xl font-bold mb-3">40+ languages, including African ones nobody else supports</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto mb-8">
+            Western chatbots reply in textbook English. Yours replies in Pidgin, Swahili, Luganda, Amharic — the way your customers actually message you on WhatsApp.
+          </p>
+          <div className="flex flex-wrap gap-2 justify-center max-w-3xl mx-auto">
+            {LANGUAGES.map((lang) => (
+              <Badge
+                key={lang}
+                variant="outline"
+                className="bg-background border-border/50 text-foreground px-3 py-1.5 text-xs hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                data-testid={`lang-${lang.toLowerCase().replace(/\s|\+/g, "-")}`}
+              >
+                {lang}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Features */}
       <section id="features" className="py-24 px-4">
         <div className="max-w-5xl mx-auto">
@@ -333,6 +544,45 @@ export default function ChatbotLandingPage() {
           </div>
         </div>
       </section>
+
+      {/* NEW: Vertical use cases (deep) */}
+      <section className="py-20 px-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <Badge className="mb-3 bg-primary/10 text-primary border-primary/20">Built for your industry</Badge>
+            <h2 className="text-3xl md:text-4xl font-bold mb-3">A chatbot tuned for what you actually do</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              Pre-built starting points for the businesses we see most. Customise in minutes.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[
+              { icon: ShoppingBag, title: "E-commerce", desc: "Answers product, shipping, return, sizing & payment questions. Captures abandoned-cart leads at 2am." },
+              { icon: GraduationCap, title: "Schools & Universities", desc: "Handles admissions enquiries, fees, deadlines, course details — in 5+ local languages, 24/7." },
+              { icon: Stethoscope, title: "Clinics & Hospitals", desc: "Answers FAQs, doctor availability, opening hours, and routes urgent cases to a human instantly." },
+              { icon: Home, title: "Real Estate", desc: "Qualifies leads — budget, location, bedrooms — and books property viewings before your agent calls back." },
+              { icon: Banknote, title: "SACCOs & Microfinance", desc: "Loan eligibility checks, balance enquiries, branch info, account-opening guidance — without queues." },
+              { icon: Hotel, title: "Hotels & Travel", desc: "Booking enquiries, rates, amenities, directions, check-in times — answered in the guest's language." },
+              { icon: Landmark, title: "Government Portals", desc: "Citizen FAQs about services, fees, documents needed, office locations — without expanding headcount." },
+              { icon: Building2, title: "Professional Services", desc: "Answers client questions about your services, pricing tiers, availability, and books discovery calls." },
+              { icon: MessageSquare, title: "WhatsApp-first SMBs", desc: "Replace the staff member you pay to reply to messages. Coming soon: native WhatsApp routing." },
+            ].map(({ icon: Icon, title, desc }) => (
+              <Card key={title} className="border-border/50 hover:border-primary/30 transition-colors">
+                <CardContent className="p-5">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                    <Icon className="w-4.5 h-4.5 text-primary" />
+                  </div>
+                  <h3 className="font-semibold text-sm mb-1.5">{title}</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* NEW: ROI calculator */}
+      <RoiCalculator />
 
       {/* Pricing */}
       <section id="pricing" className="py-24 px-4">
@@ -586,6 +836,24 @@ export default function ChatbotLandingPage() {
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* NEW: Final guarantee strip */}
+      <section className="py-6 px-4 bg-muted/20 border-y border-border/30">
+        <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+          {[
+            { icon: Shield, label: "Your data stays yours", desc: "Encrypted. Never used to train models." },
+            { icon: CheckCircle2, label: "Cancel anytime", desc: "No contracts, no lock-in." },
+            { icon: Zap, label: "60-second install", desc: "One line of code, any website." },
+            { icon: Globe, label: "Pay how Africa pays", desc: "M-Pesa · MoMo · Airtel · Card" },
+          ].map(({ icon: Icon, label, desc }) => (
+            <div key={label} className="flex flex-col items-center gap-1.5">
+              <Icon className="w-5 h-5 text-primary" />
+              <p className="text-xs font-semibold">{label}</p>
+              <p className="text-[10px] text-muted-foreground">{desc}</p>
+            </div>
+          ))}
         </div>
       </section>
 
