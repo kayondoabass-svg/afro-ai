@@ -17,6 +17,8 @@ import {
   Eye, EyeOff, Loader2, ExternalLink, Zap, Key, BookOpen, Palette, ScanLine, Sparkles, AlertTriangle
 } from "lucide-react";
 import type { ChatbotWidget } from "@shared/schema";
+import { ChatbotKnowledgeBase } from "@/components/chatbot-knowledge-base";
+import { Sparkles as SparklesIcon } from "lucide-react";
 
 const SENSITIVE_CATEGORIES = [
   { id: "staff_contacts", label: "Staff personal phone numbers & home addresses" },
@@ -575,6 +577,7 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
           <TabsTrigger value="embed" className="text-xs gap-1.5"><Code2 className="w-3.5 h-3.5" />Embed</TabsTrigger>
           <TabsTrigger value="settings" className="text-xs gap-1.5"><Settings className="w-3.5 h-3.5" />Settings</TabsTrigger>
           <TabsTrigger value="knowledge" className="text-xs gap-1.5"><BookOpen className="w-3.5 h-3.5" />Knowledge</TabsTrigger>
+          <TabsTrigger value="autoscan" className="text-xs gap-1.5"><SparklesIcon className="w-3.5 h-3.5" />Auto-Scan</TabsTrigger>
         </TabsList>
       </div>
 
@@ -862,6 +865,10 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
         <Button onClick={() => onUpdate({ knowledgeBase: edit.knowledgeBase })} disabled={isUpdating} className="w-full">
           {isUpdating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</> : <><BookOpen className="w-4 h-4 mr-2" />Save Knowledge Base</>}
         </Button>
+      </TabsContent>
+
+      <TabsContent value="autoscan" className="flex-1 overflow-auto p-6 mt-0">
+        <ChatbotKnowledgeBase widget={widget} />
       </TabsContent>
     </Tabs>
   );

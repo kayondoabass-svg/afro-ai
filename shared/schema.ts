@@ -379,6 +379,34 @@ export const widgetConversations = pgTable("widget_conversations", {
 });
 export type WidgetConversation = typeof widgetConversations.$inferSelect;
 
+// ============ CHATBOT AUTO-SCAN: Q&A KNOWLEDGE & PAGES ============
+export const chatbotQas = pgTable("chatbot_qas", {
+  id: serial("id").primaryKey(),
+  widgetId: integer("widget_id").notNull().references(() => chatbotWidgets.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  topic: varchar("topic", { length: 100 }).notNull().default("General"),
+  sourceUrl: text("source_url"),
+  sourceHash: varchar("source_hash", { length: 64 }),
+  sensitive: boolean("sensitive").notNull().default(false),
+  sensitiveReason: text("sensitive_reason"),
+  included: boolean("included").notNull().default(true),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertChatbotQaSchema = createInsertSchema(chatbotQas).omit({ id: true, createdAt: true, updatedAt: true });
+export type ChatbotQa = typeof chatbotQas.$inferSelect;
+export type InsertChatbotQa = z.infer<typeof insertChatbotQaSchema>;
+
+export const chatbotScannedPages = pgTable("chatbot_scanned_pages", {
+  id: serial("id").primaryKey(),
+  widgetId: integer("widget_id").notNull().references(() => chatbotWidgets.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  contentHash: varchar("content_hash", { length: 64 }).notNull(),
+  scannedAt: timestamp("scanned_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export type ChatbotScannedPage = typeof chatbotScannedPages.$inferSelect;
+
 // ============ USER FILES (uploaded images/videos) ============
 export const userFiles = pgTable("user_files", {
   id: serial("id").primaryKey(),

@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -63,6 +63,16 @@ export interface IStorage {
   createChatbotWidget(data: InsertChatbotWidget & { apiKey: string }): Promise<ChatbotWidget>;
   updateChatbotWidget(id: number, data: Partial<InsertChatbotWidget>): Promise<ChatbotWidget>;
   deleteChatbotWidget(id: number): Promise<void>;
+  // Auto-Scan Q&A knowledge
+  getChatbotQasByWidget(widgetId: number, opts?: { includedOnly?: boolean }): Promise<ChatbotQa[]>;
+  getChatbotQaById(id: number): Promise<ChatbotQa | undefined>;
+  bulkInsertChatbotQas(rows: InsertChatbotQa[]): Promise<ChatbotQa[]>;
+  updateChatbotQa(id: number, data: Partial<InsertChatbotQa>): Promise<ChatbotQa>;
+  deleteChatbotQa(id: number): Promise<void>;
+  bulkUpdateChatbotQas(widgetId: number, filter: { topic?: string; sensitive?: boolean }, data: Partial<InsertChatbotQa>): Promise<number>;
+  bulkDeleteChatbotQas(widgetId: number, filter: { topic?: string; sensitive?: boolean }): Promise<number>;
+  getChatbotScannedPages(widgetId: number): Promise<ChatbotScannedPage[]>;
+  upsertChatbotScannedPage(widgetId: number, url: string, contentHash: string): Promise<void>;
   incrementWidgetConversationCount(widgetId: number): Promise<void>;
   getWidgetConversation(widgetId: number, sessionId: string): Promise<WidgetConversation | undefined>;
   upsertWidgetConversation(widgetId: number, sessionId: string, messages: any[]): Promise<WidgetConversation>;
@@ -1004,6 +1014,53 @@ class DatabaseStorage implements IStorage {
   }
   async deleteChatbotWidget(id: number): Promise<void> {
     await db.delete(chatbotWidgets).where(eq(chatbotWidgets.id, id));
+  }
+
+  // ============ Chatbot Q&A (Auto-Scan knowledge base) ============
+  async getChatbotQasByWidget(widgetId: number, opts: { includedOnly?: boolean } = {}): Promise<ChatbotQa[]> {
+    const conds = [eq(chatbotQas.widgetId, widgetId)];
+    if (opts.includedOnly) conds.push(eq(chatbotQas.included, true));
+    return db.select().from(chatbotQas).where(and(...conds)).orderBy(chatbotQas.topic, desc(chatbotQas.createdAt));
+  }
+  async getChatbotQaById(id: number): Promise<ChatbotQa | undefined> {
+    const [row] = await db.select().from(chatbotQas).where(eq(chatbotQas.id, id));
+    return row;
+  }
+  async bulkInsertChatbotQas(rows: InsertChatbotQa[]): Promise<ChatbotQa[]> {
+    if (rows.length === 0) return [];
+    return db.insert(chatbotQas).values(rows).returning();
+  }
+  async updateChatbotQa(id: number, data: Partial<InsertChatbotQa>): Promise<ChatbotQa> {
+    const [updated] = await db.update(chatbotQas).set({ ...data, updatedAt: new Date() } as any).where(eq(chatbotQas.id, id)).returning();
+    return updated;
+  }
+  async deleteChatbotQa(id: number): Promise<void> {
+    await db.delete(chatbotQas).where(eq(chatbotQas.id, id));
+  }
+  async bulkUpdateChatbotQas(widgetId: number, filter: { topic?: string; sensitive?: boolean }, data: Partial<InsertChatbotQa>): Promise<number> {
+    const conds = [eq(chatbotQas.widgetId, widgetId)];
+    if (filter.topic) conds.push(eq(chatbotQas.topic, filter.topic));
+    if (typeof filter.sensitive === "boolean") conds.push(eq(chatbotQas.sensitive, filter.sensitive));
+    const updated = await db.update(chatbotQas).set({ ...data, updatedAt: new Date() } as any).where(and(...conds)).returning({ id: chatbotQas.id });
+    return updated.length;
+  }
+  async bulkDeleteChatbotQas(widgetId: number, filter: { topic?: string; sensitive?: boolean }): Promise<number> {
+    const conds = [eq(chatbotQas.widgetId, widgetId)];
+    if (filter.topic) conds.push(eq(chatbotQas.topic, filter.topic));
+    if (typeof filter.sensitive === "boolean") conds.push(eq(chatbotQas.sensitive, filter.sensitive));
+    const deleted = await db.delete(chatbotQas).where(and(...conds)).returning({ id: chatbotQas.id });
+    return deleted.length;
+  }
+  async getChatbotScannedPages(widgetId: number): Promise<ChatbotScannedPage[]> {
+    return db.select().from(chatbotScannedPages).where(eq(chatbotScannedPages.widgetId, widgetId));
+  }
+  async upsertChatbotScannedPage(widgetId: number, url: string, contentHash: string): Promise<void> {
+    const existing = await db.select().from(chatbotScannedPages).where(and(eq(chatbotScannedPages.widgetId, widgetId), eq(chatbotScannedPages.url, url)));
+    if (existing.length > 0) {
+      await db.update(chatbotScannedPages).set({ contentHash, scannedAt: new Date() }).where(eq(chatbotScannedPages.id, existing[0].id));
+    } else {
+      await db.insert(chatbotScannedPages).values({ widgetId, url, contentHash });
+    }
   }
   async incrementWidgetConversationCount(widgetId: number): Promise<void> {
     await db.update(chatbotWidgets).set({ conversationCount: sql`${chatbotWidgets.conversationCount} + 1` }).where(eq(chatbotWidgets.id, widgetId));
