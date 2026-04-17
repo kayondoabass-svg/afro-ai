@@ -3535,6 +3535,88 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
     }
   });
 
+  // Public demo: send a test email from the landing page playground.
+  // Rate-limited per IP, per recipient, and globally. Uses EMAIL_API_DEMO_FROM as the verified sender.
+  const demoIpCooldown = new Map<string, number>();
+  const demoEmailCooldown = new Map<string, number>();
+  let demoGlobalCount = { day: new Date().toISOString().slice(0, 10), count: 0 };
+  const DEMO_GLOBAL_DAILY_CAP = 200;
+  app.post("/api/email-api/demo-send", async (req, res) => {
+    try {
+      // Use the leftmost X-Forwarded-For only as a soft signal; combine with socket IP.
+      const xff = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim();
+      const socketIp = req.socket.remoteAddress || "unknown";
+      const ipKey = `${xff || ""}|${socketIp}`;
+      const now = Date.now();
+      const IP_COOLDOWN_MS = 10 * 60 * 1000;        // 1 send per ~IP per 10 min
+      const EMAIL_COOLDOWN_MS = 60 * 60 * 1000;     // 1 send per recipient per hour
+
+      const lastIp = demoIpCooldown.get(ipKey) || 0;
+      if (now - lastIp < IP_COOLDOWN_MS) {
+        const wait = Math.ceil((IP_COOLDOWN_MS - (now - lastIp)) / 1000);
+        return res.status(429).json({ error: `Please wait ${wait}s before sending another test email.` });
+      }
+
+      const { to } = req.body || {};
+      if (!to || typeof to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to.length > 254) {
+        return res.status(400).json({ error: "Please provide a valid email address." });
+      }
+      const toKey = to.toLowerCase();
+
+      const lastEmail = demoEmailCooldown.get(toKey) || 0;
+      if (now - lastEmail < EMAIL_COOLDOWN_MS) {
+        return res.status(429).json({ error: "A test email was already sent to this address recently. Please try again later." });
+      }
+
+      // Global daily cap (resets each UTC day)
+      const today = new Date().toISOString().slice(0, 10);
+      if (demoGlobalCount.day !== today) demoGlobalCount = { day: today, count: 0 };
+      if (demoGlobalCount.count >= DEMO_GLOBAL_DAILY_CAP) {
+        return res.status(429).json({ error: "Daily demo limit reached. Please try again tomorrow." });
+      }
+
+      const from = process.env.EMAIL_API_DEMO_FROM;
+      if (!from) {
+        return res.status(503).json({ error: "Demo sender is not configured yet. Please try again later." });
+      }
+
+      const subject = "Hello from Afro AI Email API";
+      const html = `
+        <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background:#0b0b0c; color:#fff; border-radius: 12px;">
+          <h2 style="color:#f5b400; margin: 0 0 12px;">It works! 🎉</h2>
+          <p style="line-height:1.6; color:#e5e5e5;">This test email was sent from the Afro AI Email API landing page playground.</p>
+          <p style="line-height:1.6; color:#e5e5e5;">In production, you'd send emails like this from your own domain with one API call:</p>
+          <pre style="background:#18181b; border:1px solid #27272a; padding:12px; border-radius:8px; color:#a7f3d0; font-size:12px; overflow:auto;">POST https://api.afroaigroup.com/v1/email/send
+Authorization: Bearer YOUR_API_KEY</pre>
+          <p style="margin-top:20px;">
+            <a href="https://afroaigroup.com/email-api" style="background:#f5b400; color:#000; padding:10px 18px; border-radius:8px; text-decoration:none; font-weight:600;">Start sending free →</a>
+          </p>
+          <p style="font-size:11px; color:#71717a; margin-top:24px;">Sent by Afro AI Email API · KEYO TECHNOLOGIES</p>
+        </div>`;
+      const text = "It works! This test email was sent from the Afro AI Email API. Visit https://afroaigroup.com/email-api to start sending.";
+
+      await sesClient.send(new SendEmailCommand({
+        Source: from,
+        Destination: { ToAddresses: [to] },
+        Message: {
+          Subject: { Data: subject, Charset: "UTF-8" },
+          Body: {
+            Html: { Data: html, Charset: "UTF-8" },
+            Text: { Data: text, Charset: "UTF-8" },
+          },
+        },
+      }));
+
+      demoIpCooldown.set(ipKey, now);
+      demoEmailCooldown.set(toKey, now);
+      demoGlobalCount.count += 1;
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[email-api/demo-send]", e?.message || e);
+      res.status(500).json({ error: "We couldn't send the test email right now. Please try again later." });
+    }
+  });
+
   // Get email send logs
   app.get("/api/email-api/logs", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
