@@ -177,7 +177,9 @@ function AfricasTalkingPanel() {
               <span className="text-[10px] text-muted-foreground ml-1">balance</span>
             </div>
           ) : status?.error ? (
-            <span className="text-[11px] text-red-400">{status.error}</span>
+            <button onClick={() => refetch()} className="text-[11px] text-red-400 hover:text-red-300 underline" data-testid="button-at-retry">
+              Balance unavailable — retry
+            </button>
           ) : null}
         </div>
       </div>
@@ -216,6 +218,11 @@ function AfricasTalkingPanel() {
       {status?.mode === "sandbox" && (
         <p className="text-[10px] text-muted-foreground">
           Sandbox mode — messages won't actually deliver. Switch <code>AFRICASTALKING_USERNAME</code> to your live username when ready.
+        </p>
+      )}
+      {status?.error && (
+        <p className="text-[10px] text-red-400/80 break-words">
+          {status.error.length > 200 ? status.error.slice(0, 200) + "…" : status.error}
         </p>
       )}
     </div>

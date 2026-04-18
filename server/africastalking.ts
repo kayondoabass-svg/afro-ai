@@ -68,10 +68,11 @@ export async function sendSms(opts: {
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error(`AT returned non-JSON (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(`Africa's Talking SMS API is temporarily unavailable (HTTP ${res.status}). Please retry in a moment.`);
   }
   if (!res.ok) {
-    throw new Error(`AT SMS failed (${res.status}): ${data?.SMSMessageData?.Message || text.slice(0, 200)}`);
+    const cleanMsg = data?.SMSMessageData?.Message || `HTTP ${res.status}`;
+    throw new Error(`Africa's Talking SMS failed: ${cleanMsg}`);
   }
   return data;
 }
@@ -98,10 +99,11 @@ export async function getAccountBalance(): Promise<{ balance: string; currency: 
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error(`AT returned non-JSON (${res.status}): ${text.slice(0, 200)}`);
+    // Upstream returned HTML (e.g. Cloudflare 5xx) — keep error message clean
+    throw new Error(`Africa's Talking API is temporarily unavailable (HTTP ${res.status}). Please retry in a moment.`);
   }
   if (!res.ok) {
-    throw new Error(`AT balance check failed (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(`Africa's Talking returned an error (HTTP ${res.status}). Check your username and API key.`);
   }
   // Parse "KES 1,000.0000" or "USD -3.50" → currency + amount
   const raw = data.UserData?.balance || "";
