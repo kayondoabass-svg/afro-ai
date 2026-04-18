@@ -3044,6 +3044,17 @@ Never invent features or pricing not listed above.`;
       const widget = await storage.getChatbotWidgetByApiKey(apiKey);
       if (!widget || !widget.isActive) return res.status(404).json({ message: "Widget not found or inactive" });
 
+      // Enforce monthly reply quota for the bot owner's plan (auto-resets per 30-day period)
+      const { enforceChatbotReplyLimit } = await import("./chatbot-limits");
+      const enforcement = await enforceChatbotReplyLimit(widget.userId);
+      if (!enforcement.ok) {
+        return res.status(429).json({
+          message: "Monthly reply limit reached for this chatbot. The owner needs to upgrade their Afro AI plan to keep replying.",
+          code: enforcement.reason,
+          limit: enforcement.reason === "REPLY_LIMIT_REACHED" ? enforcement.limit : undefined,
+        });
+      }
+
       const OpenAI = (await import("openai")).default;
       const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
 
@@ -3152,9 +3163,65 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       const updatedHistory = [...history, { role: "user", content: message }, { role: "assistant", content: reply }];
       await storage.upsertWidgetConversation(widget.id, sessionId, updatedHistory);
 
+      // Count this reply against the owner's monthly quota (skip founders)
+      if (!enforcement.founder) {
+        await storage.incrementChatbotRepliesUsed(widget.userId).catch(() => {});
+      }
+
       res.json({ reply, confidence, tier, citations, clarifyingQuestion: clarifying || undefined, needsHuman });
     } catch (e: any) {
       console.error("[widget-chat] error:", e.message);
+      res.status(500).json({ message: "AI service temporarily unavailable" });
+    }
+  });
+
+  // ─── Agency-only programmatic API: server-to-server / mobile / custom UI ──
+  // Header: Authorization: Bearer <apiKey>   Body: { message, sessionId?, history? }
+  app.post("/api/v1/chatbot/message", async (req, res) => {
+    try {
+      const auth = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+      if (!auth) return res.status(401).json({ message: "Missing Bearer API key in Authorization header" });
+      const widget = await storage.getChatbotWidgetByApiKey(auth);
+      if (!widget || !widget.isActive) return res.status(404).json({ message: "Invalid API key" });
+
+      const { enforceAgencyForApi } = await import("./chatbot-limits");
+      const enforcement = await enforceAgencyForApi(widget.userId);
+      if (!enforcement.ok) {
+        if (enforcement.reason === "API_REQUIRES_AGENCY") {
+          return res.status(403).json({
+            message: "Programmatic API access requires the Agency plan. Upgrade at /chatbot-api to enable this endpoint.",
+            code: "API_REQUIRES_AGENCY",
+            currentPlan: enforcement.plan,
+          });
+        }
+        return res.status(429).json({ message: "Monthly reply limit reached. Upgrade your plan to continue.", code: enforcement.reason });
+      }
+
+      const { message, sessionId, history = [] } = req.body || {};
+      if (!message) return res.status(400).json({ message: "message is required" });
+
+      // Reuse the widget-chat pipeline by forwarding internally
+      req.params = { apiKey: auth };
+      req.body = { message, sessionId: sessionId || `api-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, history };
+      // Delegate by invoking the same handler logic via a fetch to ourselves would be heavier;
+      // instead we duplicate the minimal call here:
+      const OpenAI = (await import("openai")).default;
+      const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
+      const sysPrompt = `You are the AI assistant for ${widget.name}. ${widget.knowledgeBase ? `Knowledge:\n${widget.knowledgeBase}` : ""}`;
+      const completion = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [
+          { role: "system", content: sysPrompt },
+          ...history.slice(-8).map((m: any) => ({ role: m.role, content: m.content })),
+          { role: "user", content: message },
+        ],
+        max_tokens: 600,
+      });
+      const reply = completion.choices[0].message.content || "";
+      if (!enforcement.founder) await storage.incrementChatbotRepliesUsed(widget.userId).catch(() => {});
+      res.json({ reply, sessionId: req.body.sessionId });
+    } catch (e: any) {
+      console.error("[v1/chatbot/message] error:", e.message);
       res.status(500).json({ message: "AI service temporarily unavailable" });
     }
   });

@@ -503,6 +503,7 @@ export const chatbotSubscriptions = pgTable("chatbot_subscriptions", {
   repliesLimit: integer("replies_limit").notNull().default(1000),
   botsLimit: integer("bots_limit").notNull().default(1), // -1 = unlimited
   activatedAt: timestamp("activated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  periodStartsAt: timestamp("period_starts_at").default(sql`CURRENT_TIMESTAMP`).notNull(), // current 30-day billing period start
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

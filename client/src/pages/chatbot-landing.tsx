@@ -109,7 +109,7 @@ const FAQS = [
   },
   {
     q: "What language does the chatbot support?",
-    a: "The chatbot responds in any language your visitors write in — Swahili, French, Arabic, English, Portuguese, and more — powered by Afro AI Agent 4.",
+    a: "The chatbot responds in any language your visitors write in — Swahili, French, Arabic, English, Portuguese, and more. Powered by Afro AI Agent 4 — our African-tuned AI stack built on top of leading frontier language models, fine-tuned for African languages and conversational context.",
   },
   {
     q: "Is there a free trial?",
@@ -500,7 +500,7 @@ export default function ChatbotLandingPage() {
           <div className="grid md:grid-cols-3 gap-6">
             {[
               { icon: Zap, title: "60-Second Setup", desc: "Paste one line of code. Your chatbot is live instantly — no developer, no configuration, no downtime." },
-              { icon: Cpu, title: "Powered by Afro AI Agent 4", desc: "Understands context, answers follow-up questions, and handles complex queries." },
+              { icon: Cpu, title: "Powered by Afro AI Agent 4", desc: "Our African-tuned AI stack built on leading frontier language models — understands context, follow-ups, and complex queries." },
               { icon: Globe, title: "Speaks Every Language", desc: "Automatically replies in Swahili, French, Arabic, English, Portuguese — any language your visitors write in." },
               { icon: Shield, title: "Your Knowledge Base", desc: "Feed it your FAQs, services, policies, and products. The AI only answers from your approved content." },
               { icon: BarChart3, title: "Conversation Analytics", desc: "See what visitors are asking, conversation volumes, and trends to improve your service over time." },
