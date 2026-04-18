@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -46,6 +46,8 @@ import {
   UserCheck,
   Trash2,
   RefreshCw,
+  Network,
+  Smartphone,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -921,6 +923,70 @@ export default function FounderDashboardPage() {
                     : "—"}
                 </p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Telco / Aggregator config */}
+        <Card className="border-green-500/20 bg-green-500/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Network className="w-4 h-4 text-green-400" />
+              Telco & Aggregator Config
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Status of carrier integrations powering USSD, SMS and the public partner page.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between p-2 rounded bg-muted/30 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-green-400" />
+                  <span className="font-medium">Africa's Talking</span>
+                  <Badge variant="outline" className="text-[10px]">Webhook-ready</Badge>
+                </div>
+                <span className="text-xs text-muted-foreground">Customer apps connect via per-app gateway URL</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded bg-muted/30 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-yellow-400" />
+                  <span className="font-medium">Hubtel / Termii / Beem</span>
+                  <Badge variant="outline" className="text-[10px]">Compatible</Badge>
+                </div>
+                <span className="text-xs text-muted-foreground">Same webhook protocol — paste gateway URL</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded bg-muted/30 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-muted-foreground" />
+                  <span className="font-medium">MTN VAS / Safaricom Daraja (direct)</span>
+                  <Badge variant="outline" className="text-[10px]">Pending partnership</Badge>
+                </div>
+                <span className="text-xs text-muted-foreground">Apply once aggregator MRR ≥ $5K</span>
+              </div>
+            </div>
+
+            <div className="bg-muted/40 rounded-lg p-3 text-xs space-y-2 border border-border/50">
+              <p className="font-semibold text-foreground">Optional: enable outbound SMS via Africa's Talking</p>
+              <p className="text-muted-foreground">Add these secrets to enable platform-level SMS sending (OTPs, low-balance SMS alerts, etc.):</p>
+              <ul className="text-muted-foreground space-y-0.5 font-mono">
+                <li>• <code className="text-foreground">AFRICAS_TALKING_USERNAME</code></li>
+                <li>• <code className="text-foreground">AFRICAS_TALKING_API_KEY</code></li>
+              </ul>
+              <p className="text-muted-foreground">Until these are set, SMS endpoints return 503 — webhook USSD continues to work without them.</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <a href="/partners" target="_blank">
+                <Button size="sm" variant="outline" className="gap-1.5" data-testid="button-view-partners-page">
+                  <ExternalLink className="w-3.5 h-3.5" /> View public partners page
+                </Button>
+              </a>
+              <a href="https://account.africastalking.com" target="_blank" rel="noopener">
+                <Button size="sm" variant="outline" className="gap-1.5">
+                  <ExternalLink className="w-3.5 h-3.5" /> Africa's Talking dashboard
+                </Button>
+              </a>
             </div>
           </CardContent>
         </Card>

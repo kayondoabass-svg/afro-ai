@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import {
   Plus, Trash2, Edit2, Copy, Check, Smartphone, Zap, Globe,
-  BarChart3, Power, PowerOff, ExternalLink, Code2, Info
+  BarChart3, Power, PowerOff, ExternalLink, Code2, Info, Play, Send, RotateCcw
 } from "lucide-react";
 
 interface UssdApp {
@@ -42,6 +42,73 @@ export default function UssdDashboardPage() {
   const [form, setForm] = useState(emptyForm);
   const [copied, setCopied] = useState<string | null>(null);
   const [showGateway, setShowGateway] = useState<UssdApp | null>(null);
+  const [showSimulator, setShowSimulator] = useState<UssdApp | null>(null);
+  const [simSession, setSimSession] = useState<{ session: string; phone: string; history: { text: string; reply: string; ended: boolean }[]; input: string; sending: boolean }>(() => ({
+    session: `sim_${Date.now()}`, phone: "+256700000000", history: [], input: "", sending: false,
+  }));
+
+  async function simulatorSend(app: UssdApp, currentText: string, sessionId: string, phoneNumber: string) {
+    setSimSession(s => ({ ...s, sending: true }));
+    try {
+      const url = `/api/ussd/gateway/${app.apiKey}`;
+      const body = new URLSearchParams({
+        sessionId,
+        serviceCode: "*185*7#",
+        phoneNumber,
+        text: currentText,
+      });
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      const reply = await res.text();
+      if (!res.ok) {
+        setSimSession(s => ({
+          ...s,
+          history: [...s.history, { text: currentText, reply: `Error ${res.status}: ${reply.slice(0, 200)}`, ended: true }],
+          input: "",
+          sending: false,
+        }));
+        return;
+      }
+      const ended = reply.startsWith("END");
+      const cleaned = reply.startsWith("CON") || reply.startsWith("END") ? reply.replace(/^(CON|END)\s?/, "") : reply;
+      setSimSession(s => ({
+        ...s,
+        history: [...s.history, { text: currentText, reply: cleaned, ended }],
+        input: "",
+        sending: false,
+      }));
+    } catch (e: any) {
+      toast({ title: "Simulator error", description: e.message, variant: "destructive" });
+      setSimSession(s => ({ ...s, sending: false }));
+    }
+  }
+
+  function openSimulator(app: UssdApp) {
+    const newSession = `sim_${Date.now()}`;
+    const phone = simSession.phone || "+256700000000";
+    setSimSession({ session: newSession, phone, history: [], input: "", sending: false });
+    setShowSimulator(app);
+    setTimeout(() => simulatorSend(app, "", newSession, phone), 50);
+  }
+
+  function restartSimulator(app: UssdApp) {
+    const newSession = `sim_${Date.now()}`;
+    const phone = simSession.phone;
+    setSimSession({ session: newSession, phone, history: [], input: "", sending: false });
+    setTimeout(() => simulatorSend(app, "", newSession, phone), 50);
+  }
+
+  function handleSimulatorInput() {
+    if (!showSimulator || simSession.sending) return;
+    const lastEnded = simSession.history[simSession.history.length - 1]?.ended;
+    if (lastEnded) { toast({ title: "Session ended", description: "Press Restart to dial again." }); return; }
+    // Build accumulated text path: previous inputs joined by *
+    const previousInputs = simSession.history.filter(h => h.text !== "").map(h => {
+      const parts = h.text.split("*");
+      return parts[parts.length - 1];
+    });
+    const newText = [...previousInputs, simSession.input].join("*");
+    simulatorSend(showSimulator, newText, simSession.session, simSession.phone);
+  }
 
   const { data: subscription } = useQuery<UssdSubscription | null>({
     queryKey: ["/api/ussd/subscription"],
@@ -210,8 +277,11 @@ export default function UssdDashboardPage() {
 
                   {/* Actions */}
                   <div className="flex gap-2 flex-wrap pt-1">
+                    <Button size="sm" variant="outline" onClick={() => openSimulator(app)} className="flex-1 border-green-500/30 text-green-400 hover:bg-green-500/10" data-testid={`button-simulate-ussd-${app.id}`}>
+                      <Play className="w-3.5 h-3.5 mr-1" /> Test Now
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => setShowGateway(app)} className="flex-1" data-testid={`button-setup-ussd-${app.id}`}>
-                      <Code2 className="w-3.5 h-3.5 mr-1" /> Setup Guide
+                      <Code2 className="w-3.5 h-3.5 mr-1" /> Setup
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => copy(gatewayUrl(app), `url-${app.id}`)} data-testid={`button-copy-url-${app.id}`}>
                       {copied === `url-${app.id}` ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -265,6 +335,58 @@ export default function UssdDashboardPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* USSD Simulator — phone-style in-browser tester */}
+        {showSimulator && (
+          <Dialog open={!!showSimulator} onOpenChange={() => setShowSimulator(null)}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-green-400" /> USSD Simulator — {showSimulator.name}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                {/* Phone screen */}
+                <div className="bg-black rounded-2xl p-4 border-4 border-zinc-800 min-h-[280px] flex flex-col" data-testid="ussd-simulator-screen">
+                  <div className="text-[10px] text-zinc-500 mb-2 flex justify-between">
+                    <span>{simSession.phone}</span>
+                    <span>*185*7#</span>
+                  </div>
+                  <div className="flex-1 space-y-2 font-mono text-sm text-green-300 overflow-auto max-h-[280px]">
+                    {simSession.history.length === 0 && simSession.sending && <p className="text-zinc-500 text-xs">Dialing…</p>}
+                    {simSession.history.map((h, i) => (
+                      <div key={i} className="space-y-1">
+                        {h.text && <p className="text-blue-400 text-xs">› You: {h.text.split("*").slice(-1)[0]}</p>}
+                        <p className="whitespace-pre-wrap leading-snug">{h.reply}</p>
+                        {h.ended && <p className="text-zinc-500 text-[10px] italic mt-1">— Session ended —</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Input */}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Type reply (e.g. 1)"
+                    value={simSession.input}
+                    onChange={e => setSimSession(s => ({ ...s, input: e.target.value }))}
+                    onKeyDown={e => { if (e.key === "Enter") handleSimulatorInput(); }}
+                    disabled={simSession.sending || simSession.history[simSession.history.length - 1]?.ended}
+                    data-testid="input-simulator"
+                  />
+                  <Button onClick={handleSimulatorInput} disabled={simSession.sending || !simSession.input || simSession.history[simSession.history.length - 1]?.ended} data-testid="button-simulator-send">
+                    <Send className="w-4 h-4" />
+                  </Button>
+                  <Button variant="outline" onClick={() => restartSimulator(showSimulator)} title="Restart" data-testid="button-simulator-reset">
+                    <RotateCcw className="w-4 h-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This hits your real gateway endpoint exactly the way Africa's Talking would. If it works here, it works on a real phone.
+                </p>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* Setup Guide Modal */}
         {showGateway && (

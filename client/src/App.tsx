@@ -63,6 +63,7 @@ import EmailApiLandingPage from "@/pages/email-api-landing";
 import EmailAuditPage from "@/pages/email-audit";
 import EmailApiDocsPage from "@/pages/docs-email-api";
 import UssdLandingPage from "@/pages/ussd-landing";
+import PartnersPage from "@/pages/partners";
 import DomainsLandingPage from "@/pages/domains-landing";
 import NotFound from "@/pages/not-found";
 
@@ -123,6 +124,7 @@ function AuthenticatedLayout() {
               <Route path="/shell" component={ShellPage} />
               <Route path="/email-api" component={EmailApiPage} />
               <Route path="/email-audit" component={EmailAuditPage} />
+              <Route path="/partners" component={PartnersPage} />
               <Route path="/chatbot-api" component={ChatbotLandingPage} />
               <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
               <Route path="/articles/:slug" component={ArticlePage} />
@@ -244,6 +246,7 @@ function AppRouter() {
         <Route path="/developer-email" component={EmailApiLandingPage} />
         <Route path="/docs/email-api" component={EmailApiDocsPage} />
         <Route path="/ussd-builder" component={UssdLandingPage} />
+        <Route path="/partners" component={PartnersPage} />
         <Route path="/domain-names" component={DomainsLandingPage} />
         <Route path="/articles/:slug" component={ArticlePage} />
         <Route path="/articles" component={ArticlesPage} />
