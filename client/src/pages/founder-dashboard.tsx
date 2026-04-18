@@ -119,6 +119,109 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
   );
 }
 
+function AfricasTalkingPanel() {
+  const { toast } = useToast();
+  const [testTo, setTestTo] = useState("");
+  const [testMsg, setTestMsg] = useState("Hello from Afro AI 🚀");
+
+  const { data: status, isLoading, refetch } = useQuery<{
+    configured: boolean;
+    mode: "sandbox" | "live" | "unconfigured";
+    balance?: number | null;
+    currency?: string | null;
+    raw?: string;
+    error?: string;
+  }>({ queryKey: ["/api/founder/at/status"] });
+
+  const sendTest = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/founder/at/test-sms", { to: testTo, message: testMsg });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const r = data.recipients?.[0];
+      toast({
+        title: "Test SMS submitted",
+        description: r ? `${r.status} — cost ${r.cost}` : data.summary || "Sent",
+      });
+      refetch();
+    },
+    onError: (e: any) => toast({ title: "Test SMS failed", description: e.message, variant: "destructive" }),
+  });
+
+  const modeColor =
+    status?.mode === "live" ? "text-green-400" :
+    status?.mode === "sandbox" ? "text-yellow-400" :
+    "text-muted-foreground";
+
+  return (
+    <div className="rounded border border-border/50 bg-muted/30 p-3 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Smartphone className={`w-4 h-4 ${modeColor}`} />
+          <span className="font-medium text-sm">Africa's Talking</span>
+          {isLoading ? (
+            <Badge variant="outline" className="text-[10px]">Checking…</Badge>
+          ) : status?.configured ? (
+            <Badge variant="outline" className={`text-[10px] ${status.mode === "live" ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}`}>
+              {status.mode === "live" ? "Live" : "Sandbox"}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] border-red-500/40 text-red-400">Not configured</Badge>
+          )}
+        </div>
+        <div className="text-right">
+          {status?.configured && status.balance !== null && status.balance !== undefined ? (
+            <div className="text-sm" data-testid="text-at-balance">
+              <span className="font-bold text-primary">{status.currency} {status.balance.toFixed(2)}</span>
+              <span className="text-[10px] text-muted-foreground ml-1">balance</span>
+            </div>
+          ) : status?.error ? (
+            <span className="text-[11px] text-red-400">{status.error}</span>
+          ) : null}
+        </div>
+      </div>
+
+      {status?.configured && (
+        <div className="grid sm:grid-cols-[1fr_2fr_auto] gap-2 items-end pt-1 border-t border-border/30">
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">To (with country code)</label>
+            <Input
+              value={testTo}
+              onChange={e => setTestTo(e.target.value)}
+              placeholder="+256700000000"
+              className="h-8 text-xs"
+              data-testid="input-at-test-to"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Message</label>
+            <Input
+              value={testMsg}
+              onChange={e => setTestMsg(e.target.value)}
+              className="h-8 text-xs"
+              data-testid="input-at-test-msg"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={() => sendTest.mutate()}
+            disabled={!testTo || !testMsg || sendTest.isPending}
+            data-testid="button-at-test-send"
+          >
+            {sendTest.isPending ? "Sending…" : "Send test SMS"}
+          </Button>
+        </div>
+      )}
+      {status?.mode === "sandbox" && (
+        <p className="text-[10px] text-muted-foreground">
+          Sandbox mode — messages won't actually deliver. Switch <code>AFRICASTALKING_USERNAME</code> to your live username when ready.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
@@ -939,15 +1042,8 @@ export default function FounderDashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <AfricasTalkingPanel />
             <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between p-2 rounded bg-muted/30 border border-border/50">
-                <div className="flex items-center gap-2">
-                  <Smartphone className="w-4 h-4 text-green-400" />
-                  <span className="font-medium">Africa's Talking</span>
-                  <Badge variant="outline" className="text-[10px]">Webhook-ready</Badge>
-                </div>
-                <span className="text-xs text-muted-foreground">Customer apps connect via per-app gateway URL</span>
-              </div>
               <div className="flex items-center justify-between p-2 rounded bg-muted/30 border border-border/50">
                 <div className="flex items-center gap-2">
                   <Smartphone className="w-4 h-4 text-yellow-400" />

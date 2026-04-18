@@ -12,6 +12,7 @@ import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPubl
 import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./pesapal";
 import { analyzeImage } from "./gemini";
 import { checkDomainAvailability, checkSingleDomain, registerDomain, listDomains, getDomainInfo, renewDomain, setNameservers, getCostPrice } from "./namedotcom";
+import { sendSms as atSendSms, getAccountBalance as atGetBalance, isAtConfigured, atMode } from "./africastalking";
 import { scanHtmlContent, publishedAppHeaders } from "./security";
 import { uploadToR2, deleteFromR2, isR2Configured } from "./r2";
 import rateLimit from "express-rate-limit";
@@ -1343,6 +1344,41 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching referral info:", error);
       res.status(500).json({ message: "Failed to fetch referral info" });
+    }
+  });
+
+  // ============ Africa's Talking (founder-only diagnostics) ============
+  app.get("/api/founder/at/status", isFounder, async (_req, res) => {
+    try {
+      const mode = atMode();
+      if (mode === "unconfigured") {
+        return res.json({ configured: false, mode, balance: null, currency: null });
+      }
+      const bal = await atGetBalance();
+      res.json({ configured: true, mode, balance: bal.amount, currency: bal.currency, raw: bal.balance });
+    } catch (e: any) {
+      res.json({ configured: isAtConfigured(), mode: atMode(), error: e.message });
+    }
+  });
+
+  // Strict throttle on cost-incurring test endpoint (defence-in-depth on top of founder auth)
+  const atTestSmsLimiter = rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false });
+  app.post("/api/founder/at/test-sms", atTestSmsLimiter, isFounder, async (req, res) => {
+    try {
+      const to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+      const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+      // E.164: + then 8–15 digits, single recipient only
+      if (!/^\+[1-9]\d{7,14}$/.test(to)) {
+        return res.status(400).json({ ok: false, message: "Phone must be in E.164 format, e.g. +256700000000" });
+      }
+      if (message.length < 1 || message.length > 160) {
+        return res.status(400).json({ ok: false, message: "Message must be 1–160 characters for the test endpoint" });
+      }
+      const result = await atSendSms({ to, message });
+      const recipients = result?.SMSMessageData?.Recipients || [];
+      res.json({ ok: true, mode: atMode(), summary: result?.SMSMessageData?.Message, recipients });
+    } catch (e: any) {
+      res.status(502).json({ ok: false, message: e.message });
     }
   });
 
