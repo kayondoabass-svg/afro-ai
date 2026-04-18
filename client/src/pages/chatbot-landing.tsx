@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import LiveDemoChat from "@/components/live-demo-chat";
 import {
   MessageSquare, Zap, Globe, Shield, BarChart3, Code2,
   Check, X, ArrowRight, Star, ChevronDown, ChevronUp,
@@ -856,6 +857,9 @@ export default function ChatbotLandingPage() {
           ))}
         </div>
       </section>
+
+      {/* Live demo chat widget — visitors can talk to a working bot before signing up */}
+      <LiveDemoChat />
 
       {/* Footer */}
       <footer className="border-t border-border/40 py-8 px-4">

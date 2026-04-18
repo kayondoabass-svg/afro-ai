@@ -2903,6 +2903,87 @@ ${app.knowledgeBase || "Provide helpful, concise answers to general questions."}
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ============ PUBLIC DEMO CHAT (landing page) ============
+  // No auth, no DB, no quotas — for visitors to try the bot live on the marketing page.
+  app.options("/api/demo-chat", (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.sendStatus(200);
+  });
+
+  app.post("/api/demo-chat", async (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    try {
+      const { message, history = [] } = req.body || {};
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({ message: "message required" });
+      }
+      // Simple per-IP rate limit using in-memory map
+      const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "anon";
+      (global as any).__demoChatHits ||= new Map<string, { count: number; ts: number }>();
+      const hits: Map<string, { count: number; ts: number }> = (global as any).__demoChatHits;
+      const now = Date.now();
+      const rec = hits.get(ip);
+      if (rec && now - rec.ts < 60_000) {
+        if (rec.count >= 12) {
+          return res.status(429).json({ reply: "You've reached the demo limit. Sign up for a free trial to continue chatting." });
+        }
+        rec.count += 1;
+      } else {
+        hits.set(ip, { count: 1, ts: now });
+      }
+
+      const OpenAI = (await import("openai")).default;
+      const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
+
+      const systemPrompt = `You are the live demo assistant for Afro AI Chatbot, a product that lets African businesses add an AI chatbot to any website in 2 minutes.
+
+You are demonstrating how an Afro AI chatbot would behave on a real customer's site. Be concise (2-4 sentences max), friendly, and helpful. Answer in the same language the user writes in (English, Pidgin, Swahili, Yoruba, French, etc.).
+
+KNOWLEDGE BASE about Afro AI Chatbot:
+- Setup time: under 2 minutes — paste website URL, our Auto-Scan crawls up to 30 pages and builds the knowledge base automatically
+- Installation: one line of HTML <script> tag, works on WordPress, Wix, Shopify, custom code, anything
+- Languages: 40+ including Pidgin, Swahili, Yoruba, Hausa, Igbo, Amharic, Wolof, Luganda, Kinyarwanda, Zulu, French, Arabic, Portuguese
+- Pricing (USD): Starter $19/mo (1 bot, 1,000 replies), Business $49/mo (5 bots, 5,000 replies, white-label), Agency $99/mo (unlimited bots, 20,000 replies, API access)
+- Pricing in local currencies: ~₦15,000 / KSh 2,500 / USh 70,000 / R350 per month for Starter
+- Free trial: 14 days, no credit card required
+- Payment methods: M-Pesa, Airtel Money, MTN MoMo, Visa, Mastercard, bank transfer (via Pesapal)
+- Features: Auto-Scan knowledge base, sensitive content auto-flagging (prices/emails/phones excluded by default), confidence-tiered responses, source citations, conversation analytics, white-label, install verification, conversation history
+- Industries supported: e-commerce, schools/universities, clinics, real estate, SACCOs/microfinance, hotels, government portals, professional services
+- Security: data encrypted, never used to train models, GDPR/NDPR compliance
+- Coming soon: native WhatsApp integration
+- Company: Afro AI by KEYO TECHNOLOGIES, registered in Uganda
+- Website: afroaigroup.com/chatbot-api
+- To sign up: click the "Start Free Trial" button on the page
+
+If the user seems interested in buying, gently nudge them toward the "Start Free Trial" button.
+If you don't know an answer, say so honestly and suggest they contact the team.
+Never invent features or pricing not listed above.`;
+
+      const messages: any[] = [
+        { role: "system", content: systemPrompt },
+        ...history.slice(-6).map((m: any) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: String(m.content || "").slice(0, 1000),
+        })),
+        { role: "user", content: message.slice(0, 1000) },
+      ];
+
+      const completion = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages,
+        max_tokens: 250,
+        temperature: 0.4,
+      });
+      const reply = completion.choices[0].message.content?.trim() || "I'm sorry, could you rephrase that?";
+      res.json({ reply });
+    } catch (e: any) {
+      console.error("[demo-chat] error:", e.message);
+      res.status(500).json({ reply: "The demo is temporarily unavailable. Please try again in a moment." });
+    }
+  });
+
   // ============ CHATBOT WIDGETS ============
   // Public CORS-enabled chat endpoint (used by embedded widgets on external sites)
   app.options("/api/widget-chat/:apiKey", (req, res) => {
