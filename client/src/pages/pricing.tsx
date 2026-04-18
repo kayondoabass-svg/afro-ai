@@ -8,7 +8,7 @@ import { useLanguage } from "@/hooks/use-language";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Check, Rocket, Globe, Loader2, Shield, CreditCard, Smartphone, Zap, Coins, Clock, Bot, Mail, ArrowRight, Receipt, FileText, MessageCircle, Search } from "lucide-react";
+import { Check, Rocket, Globe, Loader2, Shield, CreditCard, Smartphone, Zap, Coins, Clock, Bot, Mail, ArrowRight, Receipt, FileText, MessageCircle, Search, Phone } from "lucide-react";
 import { Link } from "wouter";
 import { africanCountries, formatLocalPrice, formatUsdPrice, type AfricanCountry } from "@shared/currencies";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -163,9 +163,9 @@ export default function PricingPage() {
         <div className="space-y-3">
           <div className="text-center">
             <h2 className="text-xl font-semibold">Choose your product</h2>
-            <p className="text-sm text-muted-foreground mt-1">Afro AI ships three products. Pick what you need — each has its own plans.</p>
+            <p className="text-sm text-muted-foreground mt-1">Afro AI ships four products. Pick what you need — each has its own plans.</p>
           </div>
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* App Builder */}
             <a href="#app-builder-plans" className="block" data-testid="link-product-app-builder">
               <Card className="hover-elevate h-full border-primary/30">
@@ -186,7 +186,7 @@ export default function PricingPage() {
             </a>
 
             {/* Chatbot */}
-            <Link href="/chatbots" className="block" data-testid="link-product-chatbot">
+            <Link href="/chatbot-api" className="block" data-testid="link-product-chatbot">
               <Card className="hover-elevate h-full border-yellow-500/30">
                 <CardContent className="p-5 space-y-3">
                   <div className="flex items-center gap-3">
@@ -205,7 +205,7 @@ export default function PricingPage() {
             </Link>
 
             {/* Email API */}
-            <Link href="/email-api" className="block" data-testid="link-product-email-api">
+            <Link href="/developer-email" className="block" data-testid="link-product-email-api">
               <Card className="hover-elevate h-full">
                 <CardContent className="p-5 space-y-3">
                   <div className="flex items-center gap-3">
@@ -219,6 +219,25 @@ export default function PricingPage() {
                   </div>
                   <p className="text-sm text-muted-foreground">Transactional email at half the price of Resend or SendGrid. Built for African senders.</p>
                   <div className="flex items-center text-xs text-blue-400 font-medium">See email plans <ArrowRight className="w-3 h-3 ml-1" /></div>
+                </CardContent>
+              </Card>
+            </Link>
+
+            {/* USSD Builder */}
+            <Link href="/ussd-builder" className="block" data-testid="link-product-ussd">
+              <Card className="hover-elevate h-full border-green-500/30">
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                      <Phone className="w-5 h-5 text-green-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold flex items-center gap-2">USSD Builder <Badge variant="outline" className="text-[10px] border-green-500/40 text-green-400">Builder live</Badge></h3>
+                      <p className="text-xs text-muted-foreground">Contact sales for pricing</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Build *123#-style USSD apps for feature phones. No internet needed. Reaches everyone.</p>
+                  <div className="flex items-center text-xs text-green-400 font-medium">See USSD <ArrowRight className="w-3 h-3 ml-1" /></div>
                 </CardContent>
               </Card>
             </Link>
