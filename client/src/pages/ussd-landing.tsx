@@ -50,7 +50,7 @@ const PLANS = [
   {
     name: "Enterprise",
     price: 99,
-    desc: "For telcos and large-scale deployments",
+    desc: "For telcos and large-scale deployments. Live on Africa's Talking — Kenya, Uganda, Tanzania, Rwanda, Malawi, Nigeria, Ethiopia, South Africa.",
     color: "border-amber-500/40",
     badge: "Best Value",
     features: [

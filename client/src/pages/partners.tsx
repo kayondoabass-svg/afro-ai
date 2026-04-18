@@ -50,7 +50,7 @@ export default function PartnersPage() {
         <div className="space-y-3">
           <h2 className="text-xl font-semibold text-center">Operators we support today</h2>
           <p className="text-sm text-muted-foreground text-center">
-            Currently delivered via licensed aggregators (Africa's Talking, Hubtel, Beem, Termii). Direct VAS partnerships in progress.
+            Live integration with Africa's Talking — delivering SMS, USSD and airtime across 8 African markets today. Hubtel, Beem & Termii compatible (paste your gateway URL). Direct VAS partnerships in progress.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pt-3">
             {TELCOS.map((t) => (
