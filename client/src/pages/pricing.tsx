@@ -8,7 +8,8 @@ import { useLanguage } from "@/hooks/use-language";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Check, Rocket, Globe, Loader2, Shield, CreditCard, Smartphone, Zap, Coins, Clock } from "lucide-react";
+import { Check, Rocket, Globe, Loader2, Shield, CreditCard, Smartphone, Zap, Coins, Clock, Bot, Mail, ArrowRight, Receipt, FileText, MessageCircle, Search } from "lucide-react";
+import { Link } from "wouter";
 import { africanCountries, formatLocalPrice, formatUsdPrice, type AfricanCountry } from "@shared/currencies";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
@@ -156,6 +157,78 @@ export default function PricingPage() {
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        {/* Product family — choose what you're here for */}
+        <div className="space-y-3">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold">Choose your product</h2>
+            <p className="text-sm text-muted-foreground mt-1">Afro AI ships three products. Pick what you need — each has its own plans.</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-4">
+            {/* App Builder */}
+            <a href="#app-builder-plans" className="block" data-testid="link-product-app-builder">
+              <Card className="hover-elevate h-full border-primary/30">
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Rocket className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">AI App Builder</h3>
+                      <p className="text-xs text-muted-foreground">From Free</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Build & publish full apps from a prompt. Custom domains, hosting, AI editing.</p>
+                  <div className="flex items-center text-xs text-primary font-medium">See plans <ArrowRight className="w-3 h-3 ml-1" /></div>
+                </CardContent>
+              </Card>
+            </a>
+
+            {/* Chatbot */}
+            <Link href="/chatbots" className="block" data-testid="link-product-chatbot">
+              <Card className="hover-elevate h-full border-yellow-500/30">
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center">
+                      <Bot className="w-5 h-5 text-yellow-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold flex items-center gap-2">AI Chatbot <Badge variant="outline" className="text-[10px] border-yellow-500/40 text-yellow-400">Live</Badge></h3>
+                      <p className="text-xs text-muted-foreground">From $19/mo</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Trainable widget chat for your website. Auto-scans your site, white-label, programmatic API.</p>
+                  <div className="flex items-center text-xs text-yellow-400 font-medium">See chatbot plans <ArrowRight className="w-3 h-3 ml-1" /></div>
+                </CardContent>
+              </Card>
+            </Link>
+
+            {/* Email API */}
+            <Link href="/email-api" className="block" data-testid="link-product-email-api">
+              <Card className="hover-elevate h-full">
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                      <Mail className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold flex items-center gap-2">Email API <Badge variant="outline" className="text-[10px]">Free tier</Badge></h3>
+                      <p className="text-xs text-muted-foreground">Free / $9 / $29</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Transactional email at half the price of Resend or SendGrid. Built for African senders.</p>
+                  <div className="flex items-center text-xs text-blue-400 font-medium">See email plans <ArrowRight className="w-3 h-3 ml-1" /></div>
+                </CardContent>
+              </Card>
+            </Link>
+          </div>
+        </div>
+
+        {/* AI App Builder Plans heading */}
+        <div id="app-builder-plans" className="text-center pt-4 scroll-mt-24">
+          <h2 className="text-2xl font-bold">AI App Builder Plans</h2>
+          <p className="text-sm text-muted-foreground mt-1">Build, host and publish AI apps. All plans include unlimited drafts.</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
@@ -354,6 +427,73 @@ export default function PricingPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Related — links to other parts of the platform */}
+        <div className="space-y-3 pt-2">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold">Related</h2>
+            <p className="text-xs text-muted-foreground mt-1">Tools, docs and policies</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {user && (
+              <Link href="/billing" className="block" data-testid="link-related-billing">
+                <Card className="hover-elevate h-full">
+                  <CardContent className="p-4 flex items-start gap-3">
+                    <Receipt className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h4 className="font-medium text-sm">Your account & receipts</h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">Usage, plan, payment history</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            )}
+            <Link href="/email-audit" className="block" data-testid="link-related-email-audit">
+              <Card className="hover-elevate h-full">
+                <CardContent className="p-4 flex items-start gap-3">
+                  <Search className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-sm">Free Email Audit</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">Check your domain's deliverability</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link href="/docs/email-api" className="block" data-testid="link-related-docs">
+              <Card className="hover-elevate h-full">
+                <CardContent className="p-4 flex items-start gap-3">
+                  <FileText className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-sm">Email API Docs</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">Endpoints, examples, SDKs</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link href="/refund-policy" className="block" data-testid="link-related-refund">
+              <Card className="hover-elevate h-full">
+                <CardContent className="p-4 flex items-start gap-3">
+                  <Shield className="w-5 h-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-sm">Refund policy</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">How refunds & cancellations work</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link href="/contact" className="block" data-testid="link-related-contact">
+              <Card className="hover-elevate h-full">
+                <CardContent className="p-4 flex items-start gap-3">
+                  <MessageCircle className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-sm">Talk to sales</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">Custom plans & enterprise</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );
