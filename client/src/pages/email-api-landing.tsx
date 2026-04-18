@@ -301,9 +301,25 @@ export default function EmailApiLandingPage() {
                 Start Free — 1,000 emails/mo <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             </a>
-            <a href="#playground">
-              <Button size="lg" variant="outline" data-testid="button-hero-try">
-                <Sparkles className="w-4 h-4 mr-1" /> Send a test email
+            <a href="/email-audit">
+              <Button size="lg" variant="outline" data-testid="button-hero-audit">
+                <Sparkles className="w-4 h-4 mr-1" /> Free deliverability audit
+              </Button>
+            </a>
+          </div>
+
+          {/* Audit teaser strip */}
+          <div className="max-w-xl mx-auto mt-6 rounded-xl border border-primary/20 bg-primary/5 p-4 text-left flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold">Are your emails landing in spam?</p>
+              <p className="text-xs text-muted-foreground">Free 30-second audit. We check SPF, DKIM, DMARC, blacklists.</p>
+            </div>
+            <a href="/email-audit" data-testid="link-hero-audit">
+              <Button size="sm" variant="outline" className="flex-shrink-0">
+                Check now <ArrowRight className="w-3 h-3 ml-1" />
               </Button>
             </a>
           </div>

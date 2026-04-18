@@ -60,6 +60,7 @@ import ConsolePage from "@/pages/console";
 import ShellPage from "@/pages/shell";
 import EmailApiPage from "@/pages/email-api";
 import EmailApiLandingPage from "@/pages/email-api-landing";
+import EmailAuditPage from "@/pages/email-audit";
 import EmailApiDocsPage from "@/pages/docs-email-api";
 import UssdLandingPage from "@/pages/ussd-landing";
 import DomainsLandingPage from "@/pages/domains-landing";
@@ -121,6 +122,7 @@ function AuthenticatedLayout() {
               <Route path="/console" component={ConsolePage} />
               <Route path="/shell" component={ShellPage} />
               <Route path="/email-api" component={EmailApiPage} />
+              <Route path="/email-audit" component={EmailAuditPage} />
               <Route path="/chatbot-api" component={ChatbotLandingPage} />
               <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
               <Route path="/articles/:slug" component={ArticlePage} />

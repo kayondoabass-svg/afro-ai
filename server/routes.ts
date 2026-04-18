@@ -2903,6 +2903,48 @@ ${app.knowledgeBase || "Provide helpful, concise answers to general questions."}
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ============ PUBLIC EMAIL DELIVERABILITY AUDIT ============
+  // Free tool — checks SPF/DKIM/DMARC/blacklists/provider for any domain.
+  // Lead-magnet for the Email API product.
+  app.options("/api/email-audit", (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.sendStatus(200);
+  });
+
+  app.post("/api/email-audit", async (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    try {
+      const { domain } = req.body || {};
+      if (!domain || typeof domain !== "string") {
+        return res.status(400).json({ message: "domain is required" });
+      }
+
+      // Per-IP rate limit: 6 audits / minute (the DNS lookups cost real time)
+      const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "anon";
+      (global as any).__emailAuditHits ||= new Map<string, { count: number; ts: number }>();
+      const hits: Map<string, { count: number; ts: number }> = (global as any).__emailAuditHits;
+      const now = Date.now();
+      const rec = hits.get(ip);
+      if (rec && now - rec.ts < 60_000) {
+        if (rec.count >= 6) {
+          return res.status(429).json({ message: "Too many audits. Please wait a minute." });
+        }
+        rec.count += 1;
+      } else {
+        hits.set(ip, { count: 1, ts: now });
+      }
+
+      const { auditDomain } = await import("./email-audit");
+      const report = await auditDomain(domain);
+      res.json(report);
+    } catch (e: any) {
+      console.error("[email-audit] error:", e.message);
+      res.status(400).json({ message: e.message || "Audit failed. Please try again." });
+    }
+  });
+
   // ============ PUBLIC DEMO CHAT (landing page) ============
   // No auth, no DB, no quotas — for visitors to try the bot live on the marketing page.
   app.options("/api/demo-chat", (req, res) => {
