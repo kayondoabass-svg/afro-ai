@@ -2265,6 +2265,43 @@ export async function registerRoutes(
   });
 
   // ============ DOMAIN RESELLER (name.com) ============
+  // Public domain search — rate limited per IP (no auth needed so users can search freely)
+  const _publicDomainSearchHits = new Map<string, { count: number; resetAt: number }>();
+  let _publicDomainGlobal = { count: 0, resetAt: Date.now() + 60_000 };
+  function publicDomainSearchAllowed(ip: string): "ok" | "ip" | "global" {
+    const now = Date.now();
+    // Global cap to protect upstream registrar API even against IP spoofing/DDoS
+    if (_publicDomainGlobal.resetAt < now) _publicDomainGlobal = { count: 0, resetAt: now + 60_000 };
+    if (_publicDomainGlobal.count >= 300) return "global";
+    _publicDomainGlobal.count++;
+
+    const rec = _publicDomainSearchHits.get(ip);
+    if (!rec || rec.resetAt < now) {
+      _publicDomainSearchHits.set(ip, { count: 1, resetAt: now + 60_000 });
+      return "ok";
+    }
+    if (rec.count >= 30) return "ip";
+    rec.count++;
+    return "ok";
+  }
+  app.post("/api/public/domains/check", async (req: any, res) => {
+    try {
+      // trust-proxy is on, so req.ip is the real client IP from the proxy chain
+      const ip = (req.ip || "unknown").toString();
+      const gate = publicDomainSearchAllowed(ip);
+      if (gate !== "ok") return res.status(429).json({ message: gate === "global" ? "Search service is busy. Please try again shortly." : "Too many searches. Please wait a minute." });
+      const { query } = req.body;
+      if (!query || typeof query !== "string") return res.status(400).json({ message: "Search query required" });
+      const cleaned = query.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      if (cleaned.length < 1 || cleaned.length > 64) return res.status(400).json({ message: "Invalid search term" });
+      const results = await checkDomainAvailability(cleaned);
+      res.json(results);
+    } catch (e: any) {
+      console.error("[public-domain-search]", e);
+      res.status(500).json({ message: e.message || "Search failed" });
+    }
+  });
+
   app.post("/api/domains/check", isAuthenticated, async (req: any, res) => {
     try {
       const { query } = req.body;
@@ -2295,14 +2332,18 @@ export async function registerRoutes(
       const { domainName, years, contact } = req.body;
       if (!domainName || !contact) return res.status(400).json({ message: "Domain name and contact info required" });
 
-      // Get cost price
-      const costPrice = await getCostPrice(domainName);
-      if (!costPrice) return res.status(400).json({ message: "Domain not available or could not get price" });
+      const yearsNum = Math.max(1, Math.min(10, parseInt(years) || 1));
+
+      // Get cost price (per-year)
+      const costPricePerYear = await getCostPrice(domainName);
+      if (!costPricePerYear) return res.status(400).json({ message: "Domain not available or could not get price" });
 
       const MARKUP = 0.35;
-      const retailPrice = parseFloat((costPrice * (1 + MARKUP)).toFixed(2));
-      const priceCents = Math.round(retailPrice * 100);
-      const costCents = Math.round(costPrice * 100);
+      const retailPerYear = costPricePerYear * (1 + MARKUP);
+      const totalRetail = parseFloat((retailPerYear * yearsNum).toFixed(2));
+      const totalCost = parseFloat((costPricePerYear * yearsNum).toFixed(2));
+      const priceCents = Math.round(totalRetail * 100);
+      const costCents = Math.round(totalCost * 100);
 
       // Create pending order
       const order = await storage.createDomainOrder({
@@ -2311,7 +2352,7 @@ export async function registerRoutes(
         status: "pending_payment",
         pricePaid: priceCents,
         costPrice: costCents,
-        years: years || 1,
+        years: yearsNum,
         contactFirstName: contact.firstName,
         contactLastName: contact.lastName,
         contactEmail: contact.email,
@@ -2323,33 +2364,36 @@ export async function registerRoutes(
         contactCountry: contact.country || "UG",
       });
 
-      // Create Pesapal payment
-      try {
-        const baseUrl = `https://${req.headers.host}`;
-        const ipnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`);
-        const pesapalResp = await submitOrder({
-          id: `domain-${order.id}`,
-          amount: retailPrice,
-          currency: "USD",
-          description: `Domain registration: ${domainName} (${years || 1} year)`,
-          callbackUrl: `${baseUrl}/domains?order=${order.id}&status=success`,
-          ipnId,
-          email: contact.email || req.user.email,
-          firstName: contact.firstName,
-          lastName: contact.lastName,
-          phone: contact.phone,
-        });
+      // Create Pesapal payment — fail hard if it doesn't return a redirect URL
+      const baseUrl = `https://${req.headers.host}`;
+      const ipnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`);
+      const pesapalResp = await submitOrder({
+        id: `domain-${order.id}-${Date.now().toString(36)}`,
+        amount: totalRetail,
+        currency: "USD",
+        description: `Domain: ${domainName} (${yearsNum} year${yearsNum > 1 ? "s" : ""})`,
+        callback_url: `${baseUrl}/domains?order=${order.id}&status=success`,
+        notification_id: ipnId,
+        billing_address: {
+          email_address: contact.email || req.user.email,
+          phone_number: contact.phone || undefined,
+          country_code: contact.country || "UG",
+          first_name: contact.firstName || undefined,
+          last_name: contact.lastName || undefined,
+        },
+      });
 
-        if (pesapalResp.redirect_url) {
-          await storage.updateDomainOrder(order.id, { pesapalOrderId: pesapalResp.order_tracking_id });
-          return res.json({ orderId: order.id, paymentUrl: pesapalResp.redirect_url, amount: retailPrice });
-        }
-      } catch (payErr) {
-        console.error("Pesapal error:", payErr);
+      if (!pesapalResp.redirect_url) {
+        await storage.updateDomainOrder(order.id, { status: "failed" }).catch(() => {});
+        return res.status(502).json({ message: pesapalResp.error || "Payment provider did not return a checkout URL" });
       }
 
-      res.json({ orderId: order.id, amount: retailPrice, message: "Order created, payment pending" });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+      await storage.updateDomainOrder(order.id, { pesapalOrderId: pesapalResp.order_tracking_id });
+      return res.json({ orderId: order.id, paymentUrl: pesapalResp.redirect_url, amount: totalRetail });
+    } catch (e: any) {
+      console.error("[domain-order]", e);
+      res.status(500).json({ message: e.message });
+    }
   });
 
   app.post("/api/domains/activate/:orderId", isAuthenticated, async (req: any, res) => {

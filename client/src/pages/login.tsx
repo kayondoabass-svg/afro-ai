@@ -78,7 +78,9 @@ export default function LoginPage() {
       if (!res.ok) {
         toast({ title: "Login failed", description: data.message, variant: "destructive" });
       } else {
-        window.location.href = "/";
+        const stored = sessionStorage.getItem("after_login_redirect");
+        if (stored) sessionStorage.removeItem("after_login_redirect");
+        window.location.href = stored && stored.startsWith("/") ? stored : "/";
       }
     } catch {
       toast({ title: "Login failed", description: "An error occurred. Please try again.", variant: "destructive" });
@@ -107,7 +109,9 @@ export default function LoginPage() {
       if (!res.ok) {
         toast({ title: "Registration failed", description: data.message, variant: "destructive" });
       } else {
-        window.location.href = "/";
+        const stored = sessionStorage.getItem("after_login_redirect");
+        if (stored) sessionStorage.removeItem("after_login_redirect");
+        window.location.href = stored && stored.startsWith("/") ? stored : "/";
       }
     } catch {
       toast({ title: "Registration failed", description: "An error occurred. Please try again.", variant: "destructive" });

@@ -621,8 +621,8 @@ export default function LandingPage() {
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">{t("footer.product")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-website-builder">{t("footer.websiteBuilder")}</a>
-                <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-app-designer">{t("footer.appDesigner")}</a>
+                <a href="/website-builder" className="block hover:text-primary transition-colors" data-testid="link-footer-website-builder">{t("footer.websiteBuilder")}</a>
+                <a href="/app-designer" className="block hover:text-primary transition-colors" data-testid="link-footer-app-designer">{t("footer.appDesigner")}</a>
                 <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-ai-assistant">{t("footer.aiAssistant")}</a>
                 <a href="/templates" className="block hover:text-primary transition-colors" data-testid="link-footer-templates">Templates</a>
                 <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">Marketplace</a>

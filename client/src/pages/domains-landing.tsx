@@ -5,8 +5,19 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Globe, Search, Shield, Zap, Check,
   ArrowRight, ChevronDown, ChevronUp,
-  CheckCircle2, Lock, RefreshCw, Star,
+  CheckCircle2, Lock, RefreshCw, Star, Loader2, ShoppingCart, XCircle,
 } from "lucide-react";
+
+interface DomainResult {
+  domainName: string;
+  available: boolean;
+  purchasable: boolean;
+  premium: boolean;
+  purchasePrice: number | null;
+  retailPrice: number | null;
+  renewalPrice: number | null;
+  currency: string;
+}
 
 const DOMAIN_EXTENSIONS = [
   { ext: ".africa", price: 12, desc: "Pan-African identity", popular: true },
@@ -86,11 +97,49 @@ const FAQS = [
 export default function DomainsLandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<DomainResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const loginUrl = "/login";
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    window.location.href = loginUrl;
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setSearchError(null);
+    setResults(null);
+    try {
+      const res = await fetch("/api/public/domains/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: searchQuery.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Search failed" }));
+        throw new Error(err.message || "Search failed");
+      }
+      const data: DomainResult[] = await res.json();
+      // Show available first, then taken
+      data.sort((a, b) => {
+        if (a.available !== b.available) return a.available ? -1 : 1;
+        return (a.retailPrice || 999) - (b.retailPrice || 999);
+      });
+      setResults(data);
+      setTimeout(() => {
+        document.getElementById("search-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    } catch (e: any) {
+      setSearchError(e.message || "Could not search right now. Please try again.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleBuy = (domain: DomainResult) => {
+    // Send to checkout which handles login redirect itself
+    const params = new URLSearchParams({ domain: domain.domainName });
+    if (domain.retailPrice) params.set("price", String(domain.retailPrice));
+    window.location.href = `/domain-names/checkout?${params.toString()}`;
   };
 
   return (
@@ -130,14 +179,16 @@ export default function DomainsLandingPage() {
           <form onSubmit={handleSearch} className="flex gap-2 max-w-lg mx-auto mt-4">
             <input
               type="text"
-              placeholder="Search for your domain name..."
+              placeholder="e.g. mybusiness or yourstore.africa"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="flex-1 px-4 py-3 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="input-domain-search"
+              disabled={searching}
             />
-            <Button type="submit" size="lg">
-              <Search className="w-4 h-4 mr-1" /> Search
+            <Button type="submit" size="lg" disabled={searching || !searchQuery.trim()} data-testid="button-domain-search">
+              {searching ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Search className="w-4 h-4 mr-1" />}
+              {searching ? "Searching..." : "Search"}
             </Button>
           </form>
 
@@ -148,6 +199,70 @@ export default function DomainsLandingPage() {
           </div>
         </div>
       </section>
+
+      {/* Live search results */}
+      {(searchError || results) && (
+        <section id="search-results" className="py-10 px-4 border-y bg-card">
+          <div className="max-w-3xl mx-auto space-y-3">
+            {searchError && (
+              <Card className="border-red-500/30 bg-red-500/5">
+                <CardContent className="p-4 flex items-start gap-3">
+                  <XCircle className="w-5 h-5 text-red-400 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-sm">Couldn't search right now</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{searchError}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {results && results.length === 0 && (
+              <p className="text-center text-muted-foreground py-6">No results found. Try a different search term.</p>
+            )}
+            {results && results.length > 0 && (
+              <>
+                <h2 className="font-serif text-xl font-bold mb-2">Search results for <span className="text-primary">{searchQuery}</span></h2>
+                <div className="space-y-2" data-testid="list-domain-results">
+                  {results.map((d) => (
+                    <Card key={d.domainName} className={`border ${d.available ? "border-green-500/30 hover:border-green-500/60" : "border-border opacity-70"} transition-colors`} data-testid={`row-domain-${d.domainName}`}>
+                      <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {d.available ? <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" /> : <XCircle className="w-5 h-5 text-muted-foreground flex-shrink-0" />}
+                          <div className="min-w-0">
+                            <p className="font-semibold text-base truncate" data-testid={`text-domain-name-${d.domainName}`}>{d.domainName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {d.available ? (d.premium ? "Premium domain — available" : "Available") : "Already registered"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {d.available && d.retailPrice ? (
+                            <>
+                              <div className="text-right">
+                                <p className="font-bold text-lg text-primary">${d.retailPrice}</p>
+                                <p className="text-[10px] text-muted-foreground">/ year</p>
+                              </div>
+                              <Button onClick={() => handleBuy(d)} data-testid={`button-buy-${d.domainName}`}>
+                                <ShoppingCart className="w-4 h-4 mr-1" /> Buy
+                              </Button>
+                            </>
+                          ) : !d.available ? (
+                            <Badge variant="outline" className="text-xs">Taken</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">Unavailable</Badge>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground text-center pt-2">
+                  Prices include WHOIS privacy, DNS management, and auto-renewal at the same rate.
+                </p>
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Domain pricing grid */}
       <section className="py-12 px-4 bg-muted/30">
