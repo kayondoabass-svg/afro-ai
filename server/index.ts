@@ -157,13 +157,33 @@ httpServer.listen(
 
   let activeSessions = 0;
   const MAX_SESSIONS = 5;
-  const SESSION_IDLE_MS = 30 * 60 * 1000; // 30 minutes
+  const SESSION_IDLE_MS = 30 * 60 * 1000;       // 30 minutes idle
+  const SESSION_HARD_MAX_MS = 60 * 60 * 1000;   // 60 minutes wall-clock cap
+
+  // ── Hard-fail if SHELL_SECRET is missing or weak ──────────────────────────
+  // The shell endpoint runs commands as the host process. Without a strong
+  // secret, anyone who finds /shell-ws can take over the box.
+  const SHELL_SECRET = process.env.SHELL_SECRET || "";
+  const SHELL_ENABLED = SHELL_SECRET.length >= 32;
+  if (!SHELL_ENABLED) {
+    log(
+      "[Shell] DISABLED — SHELL_SECRET env var is missing or shorter than 32 chars. " +
+      "Set a strong random value (e.g. `openssl rand -hex 32`) to enable the admin shell.",
+      "shell"
+    );
+  } else {
+    log("[Shell] Admin shell enabled (gated by SHELL_SECRET)", "shell");
+  }
 
   io.on("connection", (socket) => {
-    const adminKey = socket.handshake.auth?.adminKey;
-    const SHELL_SECRET = process.env.SHELL_SECRET || "afroai-shell-secret";
+    if (!SHELL_ENABLED) {
+      socket.emit("output", "\r\n\x1b[31m[Afro AI Shell] Disabled by server config.\x1b[0m\r\n");
+      socket.disconnect(true);
+      return;
+    }
 
-    if (adminKey !== SHELL_SECRET) {
+    const adminKey = socket.handshake.auth?.adminKey;
+    if (typeof adminKey !== "string" || adminKey.length !== SHELL_SECRET.length || adminKey !== SHELL_SECRET) {
       socket.emit("output", "\r\n\x1b[31m[Afro AI Shell] Access denied. Invalid admin key.\x1b[0m\r\n");
       socket.disconnect(true);
       return;
@@ -181,9 +201,12 @@ httpServer.listen(
     const sessionDir = `/tmp/shell-${sessionId}`;
     let ptyProcess: any = null;
     let idleTimer: NodeJS.Timeout | null = null;
+    let hardTimer: NodeJS.Timeout | null = null;
+    log(`[Shell] Session ${sessionId} started (active=${activeSessions})`, "shell");
 
     const cleanup = () => {
       if (idleTimer) clearTimeout(idleTimer);
+      if (hardTimer) clearTimeout(hardTimer);
       try { ptyProcess?.kill("SIGKILL"); } catch (_) {}
       // Remove Docker container if it is still running
       if (dockerAvailable) {
@@ -202,6 +225,14 @@ httpServer.listen(
         socket.disconnect(true);
       }, SESSION_IDLE_MS);
     };
+
+    // Wall-clock cap: kill any session that runs longer than 60 minutes
+    // regardless of activity. Stops runaway loops from hogging the box.
+    hardTimer = setTimeout(() => {
+      socket.emit("output", "\r\n\x1b[33m[Session auto-closed: 60 minute hard limit reached]\x1b[0m\r\n");
+      cleanup();
+      socket.disconnect(true);
+    }, SESSION_HARD_MAX_MS);
 
     try {
       const pty = require("node-pty");
@@ -272,11 +303,16 @@ httpServer.listen(
         });
 
         socket.emit("output", [
-          "\r\n\x1b[32m╔══════════════════════════════════════════════╗",
-          "║   Afro AI Shell  •  Process Sandbox          ║",
-          "║   RAM: 256 MB cap  •  CPU: deprioritised     ║",
-          "║   Isolated home dir  •  Fork-bomb protected  ║",
-          "║   Auto-closes after 30 min idle              ║",
+          "\r\n\x1b[33m╔══════════════════════════════════════════════╗",
+          "║   Afro AI Shell  •  ADMIN MODE (limited)     ║",
+          "║   RAM: 256 MB cap  •  Procs: 60 max          ║",
+          "║   Files: 100 MB max  •  FDs: 64              ║",
+          "║   Isolated $HOME at /tmp/shell-<id>          ║",
+          "║                                              ║",
+          "║   ⚠  No kernel-level isolation on this host  ║",
+          "║      Do NOT expose this to untrusted users.  ║",
+          "║                                              ║",
+          "║   Idle: 30 min  •  Hard cap: 60 min          ║",
           "║   Type 'exit' to end session                 ║",
           "╚══════════════════════════════════════════════╝\x1b[0m\r\n\r\n",
         ].join("\r\n"));
