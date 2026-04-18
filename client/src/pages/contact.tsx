@@ -7,8 +7,39 @@ import { ArrowLeft, Mail, MapPin, Clock, Phone, MessageCircle } from "lucide-rea
 import { Link } from "wouter";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
+const SERVICE_LABELS: Record<string, string> = {
+  "sms-payg": "Bulk SMS — Pay As You Go",
+  "sms-business": "Bulk SMS — Business Pack",
+  "sms-enterprise": "Bulk SMS — Enterprise quote",
+  "ussd-starter": "USSD Builder — Starter",
+  "ussd-growth": "USSD Builder — Growth",
+  "ussd-enterprise": "USSD Builder — Enterprise quote",
+  "whatsapp-setup": "WhatsApp — Setup",
+  "whatsapp-business": "WhatsApp — Business",
+  "whatsapp-scale": "WhatsApp — Scale quote",
+  "airtime-standard": "Airtime API — Standard",
+  "airtime-volume": "Airtime API — High Volume quote",
+  "momo-collect": "Mobile Money — Collections",
+  "momo-bundle": "Mobile Money — Collect + Payout",
+  "momo-marketplace": "Mobile Money — Marketplace quote",
+  "consultation": "General consultation",
+};
+
+function getServicePrefill(): { subject: string; message: string } {
+  if (typeof window === "undefined") return { subject: "", message: "" };
+  const params = new URLSearchParams(window.location.search);
+  const service = params.get("service");
+  if (!service) return { subject: "", message: "" };
+  const label = SERVICE_LABELS[service] || service;
+  return {
+    subject: `Inquiry: ${label}`,
+    message: `Hi Afro AI team,\n\nI'd like to learn more about your ${label} offering.\n\nMy business: \nMonthly volume / use case: \nCountry: \n\nPlease send pricing and next steps.\n\nThanks!`,
+  };
+}
+
 export default function ContactPage() {
   const { t } = useLanguage();
+  const prefill = getServicePrefill();
 
   return (
     <div className="min-h-screen bg-background">
@@ -137,6 +168,7 @@ export default function ContactPage() {
                     name="subject"
                     type="text"
                     required
+                    defaultValue={prefill.subject}
                     className="w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     placeholder="What's this about?"
                     data-testid="input-contact-subject"
@@ -148,6 +180,7 @@ export default function ContactPage() {
                     name="message"
                     required
                     rows={5}
+                    defaultValue={prefill.message}
                     className="w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                     placeholder="Tell us how we can help..."
                     data-testid="input-contact-message"

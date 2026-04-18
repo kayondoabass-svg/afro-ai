@@ -223,6 +223,25 @@ export default function PricingPage() {
               </Card>
             </Link>
 
+            {/* Business Services (SMS/USSD/WhatsApp/Airtime/MoMo) */}
+            <Link href="/business-services" className="block" data-testid="link-product-business">
+              <Card className="hover-elevate h-full border-emerald-500/30">
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                      <MessageCircle className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold flex items-center gap-2">Business Services <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-400">For business</Badge></h3>
+                      <p className="text-xs text-muted-foreground">SMS · USSD · WhatsApp · Airtime · MoMo</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Telecom-grade products for SACCOs, NGOs, schools, e-commerce. Custom plans + enterprise pricing.</p>
+                  <div className="flex items-center text-xs text-emerald-400 font-medium">See business plans <ArrowRight className="w-3 h-3 ml-1" /></div>
+                </CardContent>
+              </Card>
+            </Link>
+
             {/* USSD Builder */}
             <Link href="/ussd-builder" className="block" data-testid="link-product-ussd">
               <Card className="hover-elevate h-full border-green-500/30">
