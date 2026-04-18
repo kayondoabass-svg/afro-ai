@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import path from "path";
 
 let _client: S3Client | null = null;
@@ -52,5 +52,42 @@ export async function deleteFromR2(fileUrl: string): Promise<void> {
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   } catch (e) {
     console.error("R2 delete error:", e);
+  }
+}
+
+// Generic blob helpers — write/read structured content (HTML, JSON, etc.) to R2 by key.
+// Used for: published-app HTML, email-campaign HTML, email API bodies, chatbot scans, exports.
+export async function putBlob(key: string, body: string | Buffer, contentType = "application/octet-stream"): Promise<string> {
+  const client = getClient();
+  const bucket = process.env.R2_BUCKET_NAME!;
+  await client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  }));
+  return key;
+}
+
+export async function getBlobText(key: string): Promise<string | null> {
+  try {
+    const client = getClient();
+    const bucket = process.env.R2_BUCKET_NAME!;
+    const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    return (await res.Body!.transformToString()) || null;
+  } catch (e: any) {
+    if (e?.name === "NoSuchKey" || e?.$metadata?.httpStatusCode === 404) return null;
+    console.error("R2 get error:", e?.message || e);
+    return null;
+  }
+}
+
+export async function deleteBlob(key: string): Promise<void> {
+  try {
+    const client = getClient();
+    const bucket = process.env.R2_BUCKET_NAME!;
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (e: any) {
+    console.error("R2 delete blob error:", e?.message || e);
   }
 }

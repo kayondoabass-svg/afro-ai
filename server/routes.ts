@@ -14,7 +14,7 @@ import { analyzeImage } from "./gemini";
 import { checkDomainAvailability, checkSingleDomain, registerDomain, listDomains, getDomainInfo, renewDomain, setNameservers, getCostPrice } from "./namedotcom";
 import { sendSms as atSendSms, getAccountBalance as atGetBalance, isAtConfigured, atMode } from "./africastalking";
 import { scanHtmlContent, publishedAppHeaders } from "./security";
-import { uploadToR2, deleteFromR2, isR2Configured } from "./r2";
+import { uploadToR2, deleteFromR2, isR2Configured, putBlob, getBlobText, deleteBlob } from "./r2";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import path from "path";
@@ -163,7 +163,12 @@ export async function registerRoutes(
           if (publishedApp) {
             if (publishedApp.appStatus === "suspended") return serveSuspendedPage(res);
             publishedAppHeaders(res);
-            return res.send(publishedApp.htmlContent);
+            let body = publishedApp.htmlContent;
+            if (publishedApp.htmlR2Key && isR2Configured()) {
+              const r2Body = await getBlobText(publishedApp.htmlR2Key);
+              if (r2Body) body = r2Body;
+            }
+            return res.send(body);
           }
           return serveNotFoundPage(res);
         } catch (err) {
@@ -177,7 +182,12 @@ export async function registerRoutes(
         if (publishedApp) {
           if (publishedApp.appStatus === "suspended") return serveSuspendedPage(res);
           publishedAppHeaders(res);
-          return res.send(publishedApp.htmlContent);
+          let body = publishedApp.htmlContent;
+          if (publishedApp.htmlR2Key && isR2Configured()) {
+            const r2Body = await getBlobText(publishedApp.htmlR2Key);
+            if (r2Body) body = r2Body;
+          }
+          return res.send(body);
         }
       } catch (err) {
         console.error("Custom domain routing error:", err);
@@ -903,7 +913,20 @@ export async function registerRoutes(
           cloudflareDnsRecordId: dnsRecordId || null,
         });
       }
-      sendStep("deploy", "done", "App saved to database");
+
+      // Mirror HTML to R2 (Cloudflare object storage). Read path prefers R2 if key is set.
+      if (result && isR2Configured()) {
+        try {
+          const r2Key = `sites/${result.id}.html`;
+          await putBlob(r2Key, htmlContent, "text/html; charset=utf-8");
+          await storage.updatePublishedApp(result.id, { htmlR2Key: r2Key });
+          result.htmlR2Key = r2Key;
+        } catch (r2err: any) {
+          console.warn("[publish] R2 mirror failed (DB copy is still authoritative):", r2err?.message || r2err);
+        }
+      }
+
+      sendStep("deploy", "done", "App saved to database + R2");
 
       // Log the publish event
       try {

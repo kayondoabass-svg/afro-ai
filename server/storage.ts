@@ -241,6 +241,17 @@ class DatabaseStorage implements IStorage {
   }
 
   async deletePublishedApp(id: number): Promise<void> {
+    try {
+      const { deleteBlob, isR2Configured } = await import("./r2");
+      if (isR2Configured()) {
+        const [appRow] = await db.select({ key: publishedApps.htmlR2Key }).from(publishedApps).where(eq(publishedApps.id, id));
+        const versionKeys = await db.select({ key: publishedAppVersions.htmlR2Key }).from(publishedAppVersions).where(eq(publishedAppVersions.publishedAppId, id));
+        const allKeys = [appRow?.key, ...versionKeys.map(v => v.key)].filter((k): k is string => !!k);
+        await Promise.all(allKeys.map(k => deleteBlob(k).catch(e => console.warn(`[r2] delete failed ${k}:`, e?.message))));
+      }
+    } catch (e: any) {
+      console.warn("[deletePublishedApp] R2 cleanup skipped:", e?.message);
+    }
     await db.delete(publishedApps).where(eq(publishedApps.id, id));
   }
 
@@ -727,6 +738,18 @@ class DatabaseStorage implements IStorage {
       versionNumber: nextVersion,
       snapshotReason: reason,
     }).returning();
+
+    try {
+      const { putBlob, isR2Configured } = await import("./r2");
+      if (isR2Configured()) {
+        const key = `sites/${publishedAppId}/v${nextVersion}.html`;
+        await putBlob(key, htmlContent, "text/html; charset=utf-8");
+        await db.update(publishedAppVersions).set({ htmlR2Key: key }).where(eq(publishedAppVersions.id, created.id));
+        created.htmlR2Key = key;
+      }
+    } catch (e: any) {
+      console.warn(`[createAppVersion] R2 mirror failed for v${nextVersion}:`, e?.message);
+    }
     return created;
   }
 
@@ -754,6 +777,20 @@ class DatabaseStorage implements IStorage {
       .set({ htmlContent: version.htmlContent, title: version.title, updatedAt: new Date() })
       .where(eq(publishedApps.id, publishedAppId))
       .returning();
+
+    try {
+      const { putBlob, isR2Configured } = await import("./r2");
+      if (isR2Configured()) {
+        const key = updated.htmlR2Key || `sites/${publishedAppId}.html`;
+        await putBlob(key, version.htmlContent, "text/html; charset=utf-8");
+        if (!updated.htmlR2Key) {
+          await db.update(publishedApps).set({ htmlR2Key: key }).where(eq(publishedApps.id, publishedAppId));
+          updated.htmlR2Key = key;
+        }
+      }
+    } catch (e: any) {
+      console.warn("[restoreAppVersion] R2 mirror failed:", e?.message);
+    }
     return updated;
   }
 

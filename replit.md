@@ -54,8 +54,10 @@ The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind C
 -   **AI Services:** OpenAI, Google Gemini.
 -   **Payment Gateway:** Pesapal (API 3.0).
 -   **Authentication:** Google OAuth 2.0.
--   **Database:** PostgreSQL.
+-   **Database:** PostgreSQL (primary). Cloudflare D1 wired but unused (Phase 2).
+-   **Object Storage:** Cloudflare R2 — published-app HTML mirrored at `sites/{appId}.html` and `sites/{appId}/v{n}.html` for versions. Read path prefers R2 with DB fallback (Phase 1 of off-Replit migration).
 -   **DNS Management:** Cloudflare DNS API.
 -   **Domain Registration:** name.com reseller API.
 -   **Email Sending:** AWS SES.
+-   **SMS:** Africa's Talking (live mode; awaiting production approval for non-sandbox numbers).
 -   **Authentication (External Apps):** Firebase Auth.
