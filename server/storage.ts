@@ -528,11 +528,30 @@ class DatabaseStorage implements IStorage {
   }
 
   async deductPaygBalance(userId: string, cents: number): Promise<void> {
+    // Read balance before+after to detect threshold crossings (low / depleted)
+    const [before] = await db.select({ balance: users.paygBalance, email: users.email }).from(users).where(eq(users.id, userId));
     await db.update(users).set({
       paygBalance: sql`GREATEST(payg_balance - ${cents}, 0)`,
       paygSpent: sql`payg_spent + ${cents}`,
       updatedAt: new Date(),
     }).where(eq(users.id, userId));
+
+    if (!before?.email) return;
+    const beforeCents = before.balance ?? 0;
+    const afterCents = Math.max(beforeCents - cents, 0);
+    const LOW_THRESHOLD_CENTS = 100; // $1 left
+
+    // Crossed into low-balance band: send "low" once when crossing threshold
+    if (beforeCents > LOW_THRESHOLD_CENTS && afterCents <= LOW_THRESHOLD_CENTS && afterCents > 0) {
+      const { sendLowBalanceEmail } = await import("./mailer");
+      const remainingGen = Math.floor(afterCents / 2);
+      sendLowBalanceEmail(before.email, { balanceCents: afterCents, remainingGenerations: remainingGen }).catch(() => {});
+    }
+    // Crossed to zero: send "depleted"
+    if (beforeCents > 0 && afterCents === 0) {
+      const { sendDepletedEmail } = await import("./mailer");
+      sendDepletedEmail(before.email).catch(() => {});
+    }
   }
 
   async setPaygLimit(userId: string, limitCents: number): Promise<void> {

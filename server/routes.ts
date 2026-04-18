@@ -919,6 +919,17 @@ export async function registerRoutes(
       const url = getPublishedUrl(subdomainLower);
       sendStep("live", "done", `Live at ${url}`);
 
+      // Email the user that their app is live (best-effort, fire-and-forget)
+      (async () => {
+        try {
+          const { sendAppPublishedEmail } = await import("./mailer");
+          const u = await storage.getUser(userId);
+          if (u?.email) await sendAppPublishedEmail(u.email, { title, url, isUpdate: !!existing });
+        } catch (e: any) {
+          console.error("[publish-email] failed:", e?.message || e);
+        }
+      })();
+
       sendResult({ url, id: result.id, subdomain: subdomainLower });
     } catch (error: any) {
       console.error("Error publishing app:", error);
@@ -1793,6 +1804,26 @@ export async function registerRoutes(
 
     const userId = existingPayment.userId;
     const plan = existingPayment.plan;
+
+    // Send receipt email (best-effort, never block plan activation)
+    try {
+      const { sendReceiptEmail } = await import("./mailer");
+      const buyer = await storage.getUser(userId);
+      if (buyer?.email) {
+        await sendReceiptEmail(buyer.email, {
+          customerName: [buyer.firstName, buyer.lastName].filter(Boolean).join(" ") || buyer.email.split("@")[0],
+          plan,
+          amount: String(existingPayment.amount),
+          currency: existingPayment.currency || "USD",
+          method: status.payment_method || "—",
+          confirmationCode: status.confirmation_code || "—",
+          merchantRef,
+          date: new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }),
+        });
+      }
+    } catch (emailErr: any) {
+      console.error("[receipt-email] failed:", emailErr?.message || emailErr);
+    }
 
     // Chatbot subscription — activate or upgrade chatbot plan
     if (plan.startsWith("chatbot-")) {
@@ -3048,6 +3079,19 @@ Never invent features or pricing not listed above.`;
       const { enforceChatbotReplyLimit } = await import("./chatbot-limits");
       const enforcement = await enforceChatbotReplyLimit(widget.userId);
       if (!enforcement.ok) {
+        // Notify the bot owner once per period that they've hit the cap (best-effort, debounced via cache)
+        try {
+          const ownerLimitNotified = (global as any).__ownerLimitNotified ||= new Map<string, number>();
+          const lastNotified = ownerLimitNotified.get(widget.userId) || 0;
+          if (Date.now() - lastNotified > 6 * 60 * 60 * 1000) {
+            ownerLimitNotified.set(widget.userId, Date.now());
+            const owner = await storage.getUser(widget.userId);
+            if (owner?.email && enforcement.reason === "REPLY_LIMIT_REACHED") {
+              const { sendChatbotLimitEmail } = await import("./mailer");
+              sendChatbotLimitEmail(owner.email, { plan: enforcement.plan, limit: enforcement.limit }).catch(() => {});
+            }
+          }
+        } catch {}
         return res.status(429).json({
           message: "Monthly reply limit reached for this chatbot. The owner needs to upgrade their Afro AI plan to keep replying.",
           code: enforcement.reason,

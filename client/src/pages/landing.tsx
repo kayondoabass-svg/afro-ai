@@ -524,9 +524,8 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* PAYG + Founder callout row */}
-          <div className="grid md:grid-cols-2 gap-4 max-w-5xl mx-auto mt-6">
-            {/* Pay As You Go */}
+          {/* Pay As You Go callout */}
+          <div className="max-w-3xl mx-auto mt-6">
             <div className="glass-card rounded-2xl p-5 flex items-start gap-4" style={{ borderColor: "rgba(212,175,55,0.2)" }}>
               <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0 mt-0.5">
                 <span className="text-lg">💳</span>
@@ -544,21 +543,6 @@ export default function LandingPage() {
                     </a>
                   ))}
                 </div>
-              </div>
-            </div>
-
-            {/* Founder / Enterprise */}
-            <div className="glass-card rounded-2xl p-5 flex items-start gap-4" style={{ borderColor: "rgba(212,175,55,0.15)" }}>
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-lg">🏛</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="font-semibold text-sm">Founder Access</h4>
-                  <Badge variant="outline" className="text-xs border-primary/30 text-primary">Enterprise</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mb-2">Full platform management: user oversight, app control, analytics command centre, domain management, and admin AI commands.</p>
-                <a href="mailto:hello@afroaigroup.com" className="text-xs text-primary font-medium hover:underline">Contact KEYO TECHNOLOGIES →</a>
               </div>
             </div>
           </div>

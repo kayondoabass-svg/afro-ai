@@ -61,6 +61,18 @@ class AuthStorage implements IAuthStorage {
         },
       })
       .returning();
+
+    // Welcome email — best-effort, only on truly new accounts (created within last few seconds)
+    try {
+      if (!isFounderEmail && user.email && user.createdAt) {
+        const ageMs = Date.now() - new Date(user.createdAt).getTime();
+        if (ageMs < 30_000) {
+          const { sendWelcomeEmail } = await import("../../mailer");
+          sendWelcomeEmail(user.email, user.firstName || user.email.split("@")[0]).catch(() => {});
+        }
+      }
+    } catch {}
+
     return user;
   }
 }
