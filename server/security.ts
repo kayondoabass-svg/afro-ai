@@ -1,48 +1,122 @@
 import type { Request, Response, NextFunction } from "express";
 
 const DANGEROUS_PATTERNS = [
-  { pattern: /document\.cookie/gi, name: "Cookie access", severity: "high" as const },
-  { pattern: /localStorage\s*\.\s*(getItem|setItem|removeItem|clear)/gi, name: "localStorage access", severity: "medium" as const },
-  { pattern: /sessionStorage\s*\.\s*(getItem|setItem|removeItem|clear)/gi, name: "sessionStorage access", severity: "medium" as const },
-  { pattern: /window\.(top|parent|opener)\s*\./gi, name: "Parent frame access", severity: "high" as const },
-  { pattern: /eval\s*\(/gi, name: "eval() usage", severity: "high" as const },
-  { pattern: /new\s+Function\s*\(/gi, name: "Function constructor", severity: "high" as const },
-  { pattern: /fetch\s*\(\s*['"`]https?:\/\/(?!fonts\.googleapis|cdnjs\.cloudflare|cdn\.jsdelivr|unpkg\.com|api\.unsplash|images\.unsplash)/gi, name: "External fetch", severity: "medium" as const },
-  { pattern: /XMLHttpRequest/gi, name: "XMLHttpRequest", severity: "medium" as const },
-  { pattern: /<script[^>]*src\s*=\s*['"](?!https:\/\/(cdn|cdnjs|unpkg|fonts)\.[a-z])/gi, name: "External script loading", severity: "medium" as const },
-  { pattern: /crypto\s*\.\s*subtle/gi, name: "Crypto mining potential", severity: "high" as const },
-  { pattern: /WebSocket\s*\(/gi, name: "WebSocket connection", severity: "medium" as const },
-  { pattern: /navigator\s*\.\s*(geolocation|mediaDevices|clipboard\.readText|credentials)/gi, name: "Sensitive API access", severity: "high" as const },
-  { pattern: /postMessage\s*\(/gi, name: "postMessage usage", severity: "low" as const },
+  {
+    pattern: /document\.cookie/gi,
+    name: "Cookie access",
+    severity: "high" as const,
+    friendly: "Reads or writes browser cookies — not allowed for safety.",
+  },
+  {
+    pattern: /localStorage\s*\.\s*(getItem|setItem|removeItem|clear)/gi,
+    name: "localStorage access",
+    severity: "medium" as const,
+    friendly: "Saves data on the visitor's device.",
+  },
+  {
+    pattern: /sessionStorage\s*\.\s*(getItem|setItem|removeItem|clear)/gi,
+    name: "sessionStorage access",
+    severity: "medium" as const,
+    friendly: "Saves temporary data on the visitor's device.",
+  },
+  {
+    pattern: /window\.(top|parent|opener)\s*\./gi,
+    name: "Parent frame access",
+    severity: "high" as const,
+    friendly: "Tries to talk to the page that opened it — not allowed.",
+  },
+  {
+    pattern: /eval\s*\(/gi,
+    name: "eval() usage",
+    severity: "high" as const,
+    friendly: "Runs code from text — risky and not allowed.",
+  },
+  {
+    pattern: /new\s+Function\s*\(/gi,
+    name: "Function constructor",
+    severity: "high" as const,
+    friendly: "Builds code on the fly — risky and not allowed.",
+  },
+  {
+    pattern: /fetch\s*\(\s*['"`]https?:\/\/(?!fonts\.googleapis|cdnjs\.cloudflare|cdn\.jsdelivr|unpkg\.com|api\.unsplash|images\.unsplash)/gi,
+    name: "External fetch",
+    severity: "medium" as const,
+    friendly: "Calls an outside website that isn't on our trusted list.",
+  },
+  {
+    pattern: /XMLHttpRequest/gi,
+    name: "XMLHttpRequest",
+    severity: "medium" as const,
+    friendly: "Old-style network call — please use modern fetch instead.",
+  },
+  {
+    pattern: /<script[^>]*src\s*=\s*['"](?!https:\/\/(cdn|cdnjs|unpkg|fonts)\.[a-z])/gi,
+    name: "External script loading",
+    severity: "medium" as const,
+    friendly: "Loads code from an outside source we don't trust.",
+  },
+  {
+    pattern: /crypto\s*\.\s*subtle/gi,
+    name: "Crypto mining potential",
+    severity: "high" as const,
+    friendly: "Could be used to mine crypto on visitor devices — not allowed.",
+  },
+  {
+    pattern: /WebSocket\s*\(/gi,
+    name: "WebSocket connection",
+    severity: "medium" as const,
+    friendly: "Opens a live connection to an outside server.",
+  },
+  {
+    pattern: /navigator\s*\.\s*(geolocation|mediaDevices|clipboard\.readText|credentials)/gi,
+    name: "Sensitive API access",
+    severity: "high" as const,
+    friendly: "Asks for camera, location, or other private device features — not allowed.",
+  },
+  {
+    pattern: /postMessage\s*\(/gi,
+    name: "postMessage usage",
+    severity: "low" as const,
+    friendly: "Sends messages between page frames.",
+  },
 ];
 
 export interface ScanResult {
   safe: boolean;
-  warnings: { name: string; severity: "high" | "medium" | "low"; count: number }[];
+  warnings: { name: string; severity: "high" | "medium" | "low"; count: number; friendly: string }[];
   blocked: boolean;
   reason?: string;
+  friendlyReason?: string;
+  autoFixHint?: string;
 }
 
 export function scanHtmlContent(html: string): ScanResult {
   const warnings: ScanResult["warnings"] = [];
   let highCount = 0;
 
-  for (const { pattern, name, severity } of DANGEROUS_PATTERNS) {
+  for (const { pattern, name, severity, friendly } of DANGEROUS_PATTERNS) {
     const matches = html.match(pattern);
     if (matches && matches.length > 0) {
-      warnings.push({ name, severity, count: matches.length });
+      warnings.push({ name, severity, count: matches.length, friendly });
       if (severity === "high") highCount += matches.length;
     }
   }
 
   const blocked = highCount >= 1;
+  const blockingNames = warnings.filter(w => w.severity === "high").map(w => w.name);
 
   return {
     safe: warnings.length === 0,
     warnings,
     blocked,
     reason: blocked
-      ? `Content blocked: ${highCount} high-severity security issues detected (${warnings.filter(w => w.severity === "high").map(w => w.name).join(", ")})`
+      ? `Content blocked: ${highCount} high-severity security issues detected (${blockingNames.join(", ")})`
+      : undefined,
+    friendlyReason: blocked
+      ? `Your app uses ${blockingNames.length === 1 ? "a feature" : "features"} we don't allow on published sites for safety: ${warnings.filter(w => w.severity === "high").map(w => w.friendly).join(" ")}`
+      : undefined,
+    autoFixHint: blocked
+      ? `Remove the following from my app so it can be published safely, but keep the design and all other features exactly the same: ${blockingNames.join(", ")}. Replace any blocked feature with a safe alternative (for example, replace cookies/localStorage with a simple in-memory variable, replace eval() with normal function calls, remove any geolocation/camera prompts).`
       : undefined,
   };
 }

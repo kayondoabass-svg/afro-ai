@@ -303,10 +303,11 @@ const PUBLISH_STEPS: { id: string; label: string }[] = [
   { id: "live", label: "Going live" },
 ];
 
-function PublishDialog({ code, open, onOpenChange }: {
+function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
   code: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onAutoFixSecurity?: (hint: string) => void;
 }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -318,6 +319,8 @@ function PublishDialog({ code, open, onOpenChange }: {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishSteps, setPublishSteps] = useState<PublishStep[]>([]);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [securityBlock, setSecurityBlock] = useState<{ warnings: { name: string; friendly: string }[]; autoFixHint: string } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
   const [existingApp, setExistingApp] = useState<{ subdomain: string; title: string } | null>(null);
@@ -350,6 +353,8 @@ function PublishDialog({ code, open, onOpenChange }: {
       setPublishedUrl(null);
       setPublishSteps([]);
       setPublishError(null);
+      setSecurityBlock(null);
+      setLinkCopied(false);
       setIsPublishing(false);
     }
     return () => {
@@ -427,7 +432,10 @@ function PublishDialog({ code, open, onOpenChange }: {
               queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
             } else if (data.type === "error") {
               setPublishError(data.message);
-              toast({ title: "Error", description: data.message, variant: "destructive" });
+              if (data.kind === "security" && Array.isArray(data.warnings) && data.autoFixHint) {
+                setSecurityBlock({ warnings: data.warnings, autoFixHint: data.autoFixHint });
+              }
+              toast({ title: "We couldn't publish yet", description: data.message, variant: "destructive" });
             }
           } catch {}
         }
@@ -505,28 +513,126 @@ function PublishDialog({ code, open, onOpenChange }: {
                 </div>
               </div>
             ))}
-            {publishError && (
+            {publishError && !securityBlock && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mt-2">
-                <p className="text-sm text-red-500">{publishError}</p>
+                <p className="text-sm text-red-500" data-testid="text-publish-error">{publishError}</p>
+              </div>
+            )}
+            {securityBlock && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mt-2 space-y-3" data-testid="block-security-fix">
+                <div className="flex items-start gap-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+                      Almost there — your app uses a few features we can't allow on the open web for safety:
+                    </p>
+                    <ul className="mt-2 space-y-1 text-xs text-amber-700/90 dark:text-amber-300/90 list-disc list-inside">
+                      {securityBlock.warnings.map((w, i) => (
+                        <li key={i}><strong>{w.name}</strong> — {w.friendly}</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-amber-600/80 dark:text-amber-400/80 mt-2">
+                      Don't worry — Afro AI can fix this for you in a few seconds.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+                  onClick={() => {
+                    if (onAutoFixSecurity && securityBlock.autoFixHint) {
+                      onAutoFixSecurity(securityBlock.autoFixHint);
+                      onOpenChange(false);
+                    }
+                  }}
+                  data-testid="button-auto-fix-security"
+                >
+                  <Sparkles className="w-4 h-4 mr-1" />
+                  Let Afro AI fix this for me
+                </Button>
               </div>
             )}
             {publishedUrl && (
               <div className="space-y-3 mt-2">
-                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                     <p className="text-sm font-semibold text-green-600 dark:text-green-400">Your app is live!</p>
                   </div>
-                  <a
-                    href={publishedUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline flex items-center gap-1 font-medium text-sm"
-                    data-testid="link-published-url"
-                  >
-                    {publishedUrl}
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  <div className="flex items-center gap-2 bg-background/60 border rounded-md px-3 py-2">
+                    <a
+                      href={publishedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline font-medium text-sm truncate flex-1"
+                      data-testid="link-published-url"
+                    >
+                      {publishedUrl}
+                    </a>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 gap-1"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(publishedUrl);
+                          setLinkCopied(true);
+                          toast({ title: "Link copied!", description: "Paste it anywhere to share." });
+                          setTimeout(() => setLinkCopied(false), 2000);
+                        } catch {
+                          toast({ title: "Couldn't copy", description: "Long-press the link to copy it manually.", variant: "destructive" });
+                        }
+                      }}
+                      data-testid="button-copy-published-url"
+                    >
+                      {linkCopied ? <><Check className="w-3.5 h-3.5 text-green-500" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                    </Button>
+                    <a
+                      href={publishedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-primary"
+                      title="Open in new tab"
+                      data-testid="link-open-published-url"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3 items-center">
+                    <div className="bg-white p-2 rounded-md border flex-shrink-0" data-testid="img-published-qr">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&margin=0&data=${encodeURIComponent(publishedUrl)}`}
+                        alt="QR code to open your app"
+                        width={120}
+                        height={120}
+                        className="w-[120px] h-[120px] block"
+                        loading="lazy"
+                      />
+                    </div>
+                    <div className="flex-1 text-xs text-muted-foreground">
+                      <p className="font-medium text-foreground mb-1">📱 Scan to open on a phone</p>
+                      <p>Show this code to a friend or customer — they just point their phone camera at it and your app opens. No typing.</p>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent("Check out my new site: " + publishedUrl)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400 text-xs font-medium"
+                          data-testid="link-share-whatsapp"
+                        >
+                          Share on WhatsApp
+                        </a>
+                        <a
+                          href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(publishedUrl)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-medium"
+                          data-testid="link-share-facebook"
+                        >
+                          Share on Facebook
+                        </a>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
                   <div className="flex items-center gap-2">
@@ -3055,6 +3161,7 @@ export default function AIChatPage() {
           code={previewCode}
           open={showPublishFromChat}
           onOpenChange={setShowPublishFromChat}
+          onAutoFixSecurity={(hint) => sendDirectMessage(hint)}
         />
       )}
 

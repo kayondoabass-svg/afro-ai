@@ -819,8 +819,8 @@ export async function registerRoutes(
       res.write(`data: ${JSON.stringify({ type: "result", ...data })}\n\n`);
       res.end();
     };
-    const sendError = (message: string) => {
-      res.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+    const sendError = (message: string, extra?: Record<string, any>) => {
+      res.write(`data: ${JSON.stringify({ type: "error", message, ...(extra || {}) })}\n\n`);
       res.end();
     };
 
@@ -839,8 +839,15 @@ export async function registerRoutes(
 
       const scanResult = scanHtmlContent(htmlContent);
       if (scanResult.blocked) {
-        sendStep("validate", "error", "Security check failed");
-        return sendError(scanResult.reason || "Content contains potentially dangerous code patterns");
+        sendStep("validate", "error", "Safety check");
+        return sendError(
+          scanResult.friendlyReason || scanResult.reason || "Your app uses features we don't allow on published sites for safety.",
+          {
+            kind: "security",
+            warnings: scanResult.warnings.filter(w => w.severity === "high").map(w => ({ name: w.name, friendly: w.friendly })),
+            autoFixHint: scanResult.autoFixHint,
+          }
+        );
       }
       if (scanResult.warnings.length > 0) {
         const highWarnings = scanResult.warnings.filter(w => w.severity === "high");
