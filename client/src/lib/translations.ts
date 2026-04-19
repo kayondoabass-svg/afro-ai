@@ -1852,4 +1852,7 @@ export const translations: Record<LanguageCode, TranslationStrings> = {
     "pricingPage.pesapalDesc": "Integramos Pesapal para aceitar Mobile Money, Visa, Mastercard e transferencias bancarias em Uganda e toda a Africa.",
     "common.language": "Idioma",
   },
+  zh: {},
+  gu: {},
+  ta: {},
 };

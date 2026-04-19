@@ -3032,6 +3032,9 @@ export default function AIChatPage() {
                   tw: { hi: "Akwaaba", ask: "dɛn na wopɛ sɛ woyɛ?", beginnerAsk: "dɛn na yɛbɛyɛ ɛnnɛ? Ka kyerɛ me wɔ wo nsɛm mu." },
                   hi: { hi: "नमस्ते", ask: "आप क्या बनाना चाहते हैं?", beginnerAsk: "आज हम क्या बनाएँ? अपने शब्दों में बताइए।" },
                   es: { hi: "Hola", ask: "¿qué quieres crear?", beginnerAsk: "¿qué construimos hoy? Cuéntamelo con tus propias palabras." },
+                  zh: { hi: "你好", ask: "你想创建什么？", beginnerAsk: "今天我们建什么？用你自己的话告诉我就行。" },
+                  gu: { hi: "નમસ્તે", ask: "તમે શું બનાવવા માંગો છો?", beginnerAsk: "આજે આપણે શું બનાવીએ? તમારા શબ્દોમાં મને કહો." },
+                  ta: { hi: "வணக்கம்", ask: "என்ன உருவாக்க விரும்புகிறீர்கள்?", beginnerAsk: "இன்று என்ன கட்டுவோம்? உங்கள் வார்த்தைகளில் சொல்லுங்கள்." },
                 };
                 const g = greetings[language] || greetings.en;
                 const firstName = user?.name?.split(" ")[0] || "";
@@ -3099,6 +3102,9 @@ export default function AIChatPage() {
                         tw: { norm: "Kyerɛkyerɛ w'adwene mu, Afro AI bɛyɛ...", beg: "nhwɛsoɔ: 'Mepɛ wɛbsaet ketewa bi ma me dwadwa a ɛkyerɛ me bo ne me WhatsApp number'" },
                         hi: { norm: "अपना आइडिया बताइए, Afro AI बना देगा...", beg: "उदा: 'मुझे अपनी दुकान के लिए छोटी वेबसाइट चाहिए जिसमें मेरे दाम और WhatsApp नंबर हों'" },
                         es: { norm: "Describe tu idea, Afro AI le dará vida...", beg: "ej: 'Quiero un sitio pequeño para mi tienda con mis precios y mi WhatsApp'" },
+                        zh: { norm: "描述你的想法，Afro AI 会帮你实现……", beg: "例如：'我想为我在内罗毕的商店做一个简单网站，显示我的产品价格和微信/WhatsApp号码'" },
+                        gu: { norm: "તમારો વિચાર જણાવો, Afro AI બનાવી દેશે...", beg: "ઉદા: 'મારે મારી દુકાન માટે નાની વેબસાઇટ જોઈએ જે મારા ભાવ અને WhatsApp નંબર બતાવે'" },
+                        ta: { norm: "உங்கள் யோசனையை சொல்லுங்கள், Afro AI உருவாக்கும்...", beg: "உதா: 'எனது கடைக்கான சிறிய வலைத்தளம் வேண்டும், விலை மற்றும் WhatsApp எண் காட்ட வேண்டும்'" },
                       };
                       const p = ph[language] || ph.en;
                       return isBeginner ? p.beg : p.norm;
@@ -3216,6 +3222,24 @@ export default function AIChatPage() {
                         { text: "Página de menú de restaurante con precios y botón 'Llamar para pedir'", icon: Globe },
                         { text: "Página de reservas donde clientes eligen hora y pagan", icon: Smartphone },
                         { text: "Página sobre mí/mi negocio para compartir en WhatsApp", icon: Globe },
+                      ],
+                      zh: [
+                        { text: "一个简单的商店网站，展示我的产品和WhatsApp号码", icon: Globe },
+                        { text: "餐厅菜单页面，带价格和'电话订餐'按钮", icon: Globe },
+                        { text: "预订页面，客户选择时间并通过M-Pesa付款", icon: Smartphone },
+                        { text: "关于我/我的生意的页面，可以在WhatsApp上分享", icon: Globe },
+                      ],
+                      gu: [
+                        { text: "મારી દુકાન માટે સાદી વેબસાઇટ જે ઉત્પાદનો અને WhatsApp બતાવે", icon: Globe },
+                        { text: "રેસ્ટોરન્ટ મેનુ પેજ ભાવ અને 'ઓર્ડર માટે કોલ' બટન સાથે", icon: Globe },
+                        { text: "બુકિંગ પેજ જ્યાં ગ્રાહકો સમય પસંદ કરી M-Pesa થી ચૂકવે", icon: Smartphone },
+                        { text: "મારા/મારા ધંધા વિશે પેજ WhatsApp પર શેર કરવા", icon: Globe },
+                      ],
+                      ta: [
+                        { text: "எனது கடையின் தயாரிப்புகள் மற்றும் WhatsApp எண் காட்டும் எளிய வலைத்தளம்", icon: Globe },
+                        { text: "உணவகம் மெனு பக்கம், விலை மற்றும் 'ஆர்டர் செய்ய அழை' பொத்தான் உடன்", icon: Globe },
+                        { text: "முன்பதிவு பக்கம், வாடிக்கையாளர்கள் நேரம் தேர்வுசெய்து M-Pesa மூலம் பணம் செலுத்துவர்", icon: Smartphone },
+                        { text: "எனது/எனது வணிகம் பற்றிய பக்கம், WhatsApp இல் பகிர", icon: Globe },
                       ],
                     };
                     const expertSet = [
