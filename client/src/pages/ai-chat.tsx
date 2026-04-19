@@ -2518,6 +2518,17 @@ export default function AIChatPage() {
 
               <div className="border-t p-3 bg-background">
                 <div className="max-w-2xl mx-auto space-y-2">
+                  {pendingAttachments.some(a => a.mimetype.startsWith("image/")) && (
+                    <div
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300"
+                      data-testid="hint-screenshot-to-site"
+                    >
+                      <span className="text-base leading-none">✨</span>
+                      <span>
+                        I'll recreate this layout in your Afro AI theme — just tell me what business it's for.
+                      </span>
+                    </div>
+                  )}
                   {pendingAttachments.length > 0 && (
                     <div className="flex flex-wrap gap-2 px-1">
                       {pendingAttachments.map((att, i) => (
