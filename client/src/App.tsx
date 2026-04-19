@@ -17,6 +17,7 @@ import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import AIChatPage from "@/pages/ai-chat";
 import AgentPage from "@/pages/agent";
+import PreviewPage from "@/pages/preview";
 import PricingPage from "@/pages/pricing";
 import DeploymentsPage from "@/pages/deployments";
 import FounderDashboardPage from "@/pages/founder-dashboard";
@@ -94,6 +95,7 @@ function AuthenticatedLayout() {
               <Route path="/dashboard" component={DashboardPage} />
               <Route path="/chat" component={AgentPage} />
               <Route path="/agent" component={AgentPage} />
+              <Route path="/preview/:id" component={PreviewPage} />
               <Route path="/chat-classic" component={AIChatPage} />
               <Route path="/deployments" component={DeploymentsPage} />
               <Route path="/pricing" component={PricingPage} />

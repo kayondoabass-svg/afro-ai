@@ -6,6 +6,7 @@ import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { storage } from "./storage";
 import { insertProjectSchema, appViews, emailApiKeys, emailApiDomains, emailApiLogs } from "@shared/schema";
+import { conversations } from "@shared/models/chat";
 import { db } from "./db";
 import { eq as dbEq, sql as dbSql, and as dbAnd, desc as dbDesc } from "drizzle-orm";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
@@ -726,6 +727,65 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching projects:", error);
       res.status(500).json({ message: "Failed to fetch projects" });
+    }
+  });
+
+  // Latest preview HTML for a project — used by the in-app /preview/:id page
+  app.get("/api/projects/:id/preview", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const projectId = parseInt(req.params.id);
+      if (!projectId || Number.isNaN(projectId)) {
+        return res.status(400).json({ message: "Invalid project id" });
+      }
+      const project = await storage.getProject(projectId);
+      if (!project || project.userId !== userId) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Find conversations for this project, then the latest app version across them
+      const convos = await db
+        .select()
+        .from(conversations)
+        .where(dbEq(conversations.projectId, projectId))
+        .orderBy(dbSql`${conversations.createdAt} DESC`);
+
+      let latestVersion: any = null;
+      for (const c of convos) {
+        const versions = await storage.getAppVersions(c.id);
+        if (versions.length > 0) {
+          if (!latestVersion || new Date(versions[0].createdAt) > new Date(latestVersion.createdAt)) {
+            latestVersion = versions[0];
+          }
+        }
+      }
+
+      // Also try to fall back to a published app for this project (matched by title)
+      let publishedUrl: string | null = null;
+      try {
+        const apps = await storage.getPublishedAppsByUser(userId);
+        const match = apps.find(a => (a.title || "").toLowerCase() === project.name.toLowerCase());
+        if (match) {
+          publishedUrl = match.customDomain
+            ? `https://${match.customDomain}`
+            : `https://${match.subdomain}.afroaigroup.com`;
+          if (!latestVersion) {
+            latestVersion = { htmlContent: match.htmlContent, label: "Published version", createdAt: match.updatedAt };
+          }
+        }
+      } catch {}
+
+      res.json({
+        project: { id: project.id, name: project.name, description: project.description, type: project.type },
+        hasContent: !!latestVersion,
+        htmlContent: latestVersion?.htmlContent || "",
+        label: latestVersion?.label || null,
+        updatedAt: latestVersion?.createdAt || null,
+        publishedUrl,
+      });
+    } catch (error) {
+      console.error("Error fetching project preview:", error);
+      res.status(500).json({ message: "Failed to load preview" });
     }
   });
 
