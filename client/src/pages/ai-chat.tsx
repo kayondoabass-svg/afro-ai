@@ -70,7 +70,13 @@ import {
   BookMarked,
   MoreHorizontal,
   MousePointerClick,
+  Palette,
+  Type,
+  Wand2,
+  Zap,
+  PanelBottom,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -193,70 +199,162 @@ function validateHtmlCode(code: string): CodeTestResult {
 
 type AutoPublishStatus = "idle" | "testing" | "test-passed" | "test-failed" | "publishing" | "published" | "publish-failed";
 
-interface BuildStep {
+type StepIcon = typeof FolderOpen;
+interface StepDef {
+  key: string;
+  icon: StepIcon;
   label: string;
-  done: boolean;
+  regex: RegExp;
 }
 
-function detectBuildSteps(code: string): BuildStep[] {
-  const steps: BuildStep[] = [];
-  const checks: [RegExp, string][] = [
-    [/<html|<!DOCTYPE/i, "Setting up the project structure"],
-    [/<style|css/i, "Designing the layout and styles"],
-    [/<nav|<header/i, "Building the navigation"],
-    [/hero|<main|<section/i, "Creating content sections"],
-    [/font-family|google.*font|@import.*font/i, "Adding typography and fonts"],
-    [/<img|background-image|picsum|placeholder/i, "Adding images and media"],
-    [/<button|<a.*href|cta|btn/i, "Setting up buttons and links"],
-    [/<footer/i, "Building the footer"],
-    [/animation|@keyframes|transition|transform/i, "Adding animations and effects"],
-    [/media.*query|@media|responsive/i, "Making it responsive"],
-    [/<script|addEventListener|function\s/i, "Adding interactive features"],
-  ];
-  for (const [regex, label] of checks) {
-    steps.push({ label, done: regex.test(code) });
-  }
-  return steps;
+const STEP_DEFS: StepDef[] = [
+  { key: "setup", icon: FolderOpen, label: "Opening your project file", regex: /<html|<!DOCTYPE/i },
+  { key: "design", icon: Palette, label: "Designing the look and feel", regex: /<style|css/i },
+  { key: "nav", icon: PanelBottom, label: "Building the top navigation", regex: /<nav|<header/i },
+  { key: "sections", icon: Code2, label: "Creating the main sections", regex: /hero|<main|<section/i },
+  { key: "fonts", icon: Type, label: "Picking the fonts", regex: /font-family|google.*font|@import.*font/i },
+  { key: "images", icon: Image, label: "Placing the photos and images", regex: /<img|background-image|picsum|placeholder/i },
+  { key: "buttons", icon: MousePointerClick, label: "Wiring up the buttons", regex: /<button|<a.*href|cta|btn/i },
+  { key: "footer", icon: PanelBottom, label: "Building the footer", regex: /<footer/i },
+  { key: "animation", icon: Wand2, label: "Adding smooth animations", regex: /animation|@keyframes|transition|transform/i },
+  { key: "responsive", icon: Smartphone, label: "Making it work on every phone", regex: /media.*query|@media|responsive/i },
+  { key: "interactive", icon: Zap, label: "Adding the smart features", regex: /<script|addEventListener|function\s/i },
+];
+
+interface LiveActivityTimelineProps {
+  code: string;
+  isComplete: boolean;
+  onStepClick?: () => void;
 }
 
-function BuildProgress({ code, isComplete }: { code: string; isComplete: boolean }) {
-  const steps = detectBuildSteps(code);
-  const doneSteps = steps.filter(s => s.done);
-  const progress = isComplete ? 100 : Math.round((doneSteps.length / steps.length) * 100);
+function LiveActivityTimeline({ code, isComplete, onStepClick }: LiveActivityTimelineProps) {
+  const doneStates = STEP_DEFS.map(s => s.regex.test(code));
+  const doneCount = doneStates.filter(Boolean).length;
+
+  // Sequential reveal: only show steps that are done + 1 in-progress step
+  const revealCount = isComplete
+    ? STEP_DEFS.length
+    : Math.min(STEP_DEFS.length, doneCount + 1);
+
+  const visibleSteps = STEP_DEFS.slice(0, revealCount).map((s, i) => ({
+    ...s,
+    done: isComplete ? doneStates[i] : doneStates[i],
+    active: !isComplete && i === doneCount,
+  }));
+
+  const progress = isComplete
+    ? 100
+    : Math.round((doneCount / STEP_DEFS.length) * 100);
 
   return (
-    <div className="space-y-3 bg-card/50 border rounded-lg p-3">
+    <div className="space-y-3 bg-gradient-to-br from-card/80 to-card/40 border border-border/60 rounded-xl p-3.5 shadow-sm">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-foreground">
-          {isComplete ? "Build complete" : "Building your project..."}
+        <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+          <span className="relative flex items-center justify-center w-4 h-4">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            {!isComplete && (
+              <span className="absolute inset-0 rounded-full bg-primary/30 animate-ping" />
+            )}
+          </span>
+          {isComplete ? "Build complete" : "Building your project…"}
         </span>
-        <span className="text-xs text-primary font-semibold">{progress}%</span>
+        <span className="text-xs text-primary font-bold tabular-nums">{progress}%</span>
       </div>
-      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-        <div
-          className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
-          style={{ width: `${progress}%` }}
+      <div className="h-1 bg-muted rounded-full overflow-hidden">
+        <motion.div
+          className="h-full bg-gradient-to-r from-primary via-amber-500 to-primary rounded-full"
+          initial={{ width: 0 }}
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
         />
       </div>
-      <div className="space-y-1">
-        {(isComplete ? doneSteps : steps).map((step, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            {step.done ? (
-              <Check className="w-3 h-3 text-primary flex-shrink-0" />
-            ) : (
-              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground flex-shrink-0" />
-            )}
-            <span className={step.done ? "text-foreground" : "text-muted-foreground"}>
-              {step.label}
-            </span>
-          </div>
-        ))}
+      <div className="space-y-0.5">
+        <AnimatePresence initial={false}>
+          {visibleSteps.map((step) => {
+            const Icon = step.icon;
+            const clickable = !!onStepClick && (step.done || step.active);
+            return (
+              <motion.button
+                key={step.key}
+                type="button"
+                layout
+                initial={{ opacity: 0, x: -8, height: 0 }}
+                animate={{ opacity: 1, x: 0, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.28, ease: "easeOut" }}
+                disabled={!clickable}
+                onClick={() => clickable && onStepClick && onStepClick()}
+                data-testid={`activity-step-${step.key}`}
+                className={[
+                  "group w-full flex items-center gap-2.5 text-left text-xs rounded-md px-2 py-1.5 transition-all",
+                  clickable
+                    ? "hover-elevate active-elevate-2 cursor-pointer"
+                    : "cursor-default opacity-90",
+                  step.active ? "bg-primary/5" : "",
+                ].join(" ")}
+              >
+                <span
+                  className={[
+                    "flex items-center justify-center w-6 h-6 rounded-full flex-shrink-0 transition-colors",
+                    step.done
+                      ? "bg-primary/15 text-primary"
+                      : step.active
+                      ? "bg-primary/10 text-primary ring-2 ring-primary/20"
+                      : "bg-muted text-muted-foreground",
+                  ].join(" ")}
+                >
+                  {step.done ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : step.active ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Icon className="w-3.5 h-3.5" />
+                  )}
+                </span>
+                <Icon
+                  className={[
+                    "w-3.5 h-3.5 flex-shrink-0",
+                    step.done
+                      ? "text-primary/80"
+                      : step.active
+                      ? "text-primary"
+                      : "text-muted-foreground/70",
+                  ].join(" ")}
+                />
+                <span
+                  className={[
+                    "flex-1 truncate",
+                    step.done
+                      ? "text-foreground"
+                      : step.active
+                      ? "text-foreground font-medium"
+                      : "text-muted-foreground",
+                  ].join(" ")}
+                >
+                  {step.label}
+                </span>
+                {clickable && (
+                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                )}
+              </motion.button>
+            );
+          })}
+        </AnimatePresence>
       </div>
+      {onStepClick && (doneCount > 0 || isComplete) && (
+        <div className="text-[10px] text-muted-foreground/70 pt-0.5 italic">
+          {isComplete ? "Tap any step to see what was built" : "Tap a step to peek at what's been built so far"}
+        </div>
+      )}
     </div>
   );
 }
 
-function StreamingBuildProgress({ content }: { content: string }) {
+function BuildProgress({ code, isComplete, onStepClick }: { code: string; isComplete: boolean; onStepClick?: () => void }) {
+  return <LiveActivityTimeline code={code} isComplete={isComplete} onStepClick={onStepClick} />;
+}
+
+function StreamingBuildProgress({ content, onStepClick }: { content: string; onStepClick?: () => void }) {
   const hasHtmlBlock = content.includes("```html");
   const hasHtmlTag = content.includes("<!DOCTYPE") || content.includes("<html");
   const hasGenericBlock = content.includes("```\n") && hasHtmlTag;
@@ -276,7 +374,7 @@ function StreamingBuildProgress({ content }: { content: string }) {
     codeContent = content.substring(Math.min(idx >= 0 ? idx : Infinity, idx2 >= 0 ? idx2 : Infinity));
   }
 
-  return <BuildProgress code={codeContent} isComplete={false} />;
+  return <LiveActivityTimeline code={codeContent} isComplete={false} onStepClick={onStepClick} />;
 }
 
 function parseMessageContent(content: string): ParsedMessageContent {
@@ -2544,7 +2642,7 @@ export default function AIChatPage() {
         {textOnly && <MarkdownText text={textOnly} />}
         {code && (
           <>
-            <BuildProgress code={code} isComplete={true} />
+            <BuildProgress code={code} isComplete={true} onStepClick={() => handleViewCode(content)} />
             {autoPublishStatus !== "idle" && (
               <div className="bg-card/50 border rounded-lg p-3 space-y-2" data-testid="auto-publish-status">
                 <div className="flex items-center gap-2 text-xs font-medium">
@@ -2838,7 +2936,41 @@ export default function AIChatPage() {
                             {removeCodeBlock(streamingContent) && (
                               <p className="whitespace-pre-wrap break-words">{removeCodeBlock(streamingContent)}</p>
                             )}
-                            <StreamingBuildProgress content={streamingContent} />
+                            <StreamingBuildProgress
+                              content={streamingContent}
+                              onStepClick={() => {
+                                // First try the strict extractor (works once a code block is closed)
+                                let partialCode = extractAllCodeBlocks(streamingContent);
+                                // Fallback for in-progress streams: grab everything from the opening fence/tag onwards
+                                if (!partialCode) {
+                                  const c = streamingContent;
+                                  const fenceIdx = c.indexOf("```html");
+                                  const docIdx = c.indexOf("<!DOCTYPE");
+                                  const htmlIdx = c.indexOf("<html");
+                                  const start =
+                                    fenceIdx >= 0
+                                      ? fenceIdx + 7
+                                      : Math.min(
+                                          docIdx >= 0 ? docIdx : Number.POSITIVE_INFINITY,
+                                          htmlIdx >= 0 ? htmlIdx : Number.POSITIVE_INFINITY,
+                                        );
+                                  if (Number.isFinite(start)) {
+                                    let raw = c.substring(start as number).trim();
+                                    // Auto-close so the iframe can render the partial document
+                                    if (!/<\/html>/i.test(raw)) {
+                                      if (!/<\/body>/i.test(raw)) raw += "\n</body>";
+                                      raw += "\n</html>";
+                                    }
+                                    partialCode = raw;
+                                  }
+                                }
+                                if (partialCode) {
+                                  setPreviewCode(partialCode);
+                                  setShowPreview(true);
+                                  setMobileView("preview");
+                                }
+                              }}
+                            />
                             {!streamingContent.includes("```html") && !streamingContent.includes("<!DOCTYPE") && !streamingContent.includes("<html") && !removeCodeBlock(streamingContent) && (
                               <div className="flex items-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
