@@ -1403,7 +1403,7 @@ function renderInline(text: string): React.ReactNode[] {
 
 export default function AIChatPage() {
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { toast } = useToast();
   const [activeConversation, setActiveConversation] = useState<number | null>(null);
   const [input, setInput] = useState("");
@@ -2328,7 +2328,7 @@ export default function AIChatPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({ content: text, language }),
       });
       if (!response.ok) throw new Error("Failed");
       const reader = response.body?.getReader();
@@ -2413,6 +2413,7 @@ export default function AIChatPage() {
         body: JSON.stringify({
           content: userMessage,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+          language,
         }),
       });
 
@@ -3015,15 +3016,36 @@ export default function AIChatPage() {
             <div className="flex-1 overflow-y-auto min-h-0" data-testid="welcome-screen">
             <div className="flex flex-col items-center justify-center min-h-full p-4 md:p-6 gap-6 md:gap-8">
 
-              {/* Greeting */}
-              <div className="text-center space-y-2">
-                <h1 className="text-3xl md:text-4xl font-light text-foreground/90 tracking-tight" data-testid="text-chat-welcome">
-                  Hi {user?.name?.split(" ")[0] || "there"},
-                </h1>
-                <h2 className="text-3xl md:text-4xl font-light text-foreground/60 tracking-tight">
-                  what do you want to make?
-                </h2>
-              </div>
+              {/* Greeting — beginner mode is bigger & friendlier */}
+              {(() => {
+                const isBeginner = user?.experienceLevel === "beginner";
+                const greetings: Record<string, { hi: string; ask: string; beginnerAsk: string }> = {
+                  en: { hi: "Hi", ask: "what do you want to make?", beginnerAsk: "what shall we build today? Just tell me in your own words." },
+                  sw: { hi: "Habari", ask: "unataka kutengeneza nini?", beginnerAsk: "tutengeneze nini leo? Niambie tu kwa maneno yako." },
+                  fr: { hi: "Salut", ask: "que veux-tu créer ?", beginnerAsk: "qu'est-ce qu'on construit aujourd'hui ? Dis-le-moi simplement avec tes propres mots." },
+                  ar: { hi: "مرحبا", ask: "ماذا تريد أن تصنع؟", beginnerAsk: "ماذا سنبني اليوم؟ فقط أخبرني بكلماتك." },
+                  pt: { hi: "Olá", ask: "o que queres criar?", beginnerAsk: "o que vamos construir hoje? Diz-me apenas pelas tuas palavras." },
+                  yo: { hi: "Bawo", ask: "kini o fẹ kọ?", beginnerAsk: "kini a máa kọ́ lónìí? Sọ fún mi lọ́nà tirẹ." },
+                  ha: { hi: "Sannu", ask: "me kake son ginawa?", beginnerAsk: "me za mu gina yau? Ka gaya min cikin kalmominka." },
+                  zu: { hi: "Sawubona", ask: "ufuna ukwakha ini?", beginnerAsk: "sizokwakha ini namuhla? Ngitshele ngamagama akho." },
+                  lg: { hi: "Ki kati", ask: "oyagala kuzimba ki?", beginnerAsk: "tuzimbe ki leero? Ŋŋamba mu bigambo byo." },
+                  tw: { hi: "Akwaaba", ask: "dɛn na wopɛ sɛ woyɛ?", beginnerAsk: "dɛn na yɛbɛyɛ ɛnnɛ? Ka kyerɛ me wɔ wo nsɛm mu." },
+                  hi: { hi: "नमस्ते", ask: "आप क्या बनाना चाहते हैं?", beginnerAsk: "आज हम क्या बनाएँ? अपने शब्दों में बताइए।" },
+                  es: { hi: "Hola", ask: "¿qué quieres crear?", beginnerAsk: "¿qué construimos hoy? Cuéntamelo con tus propias palabras." },
+                };
+                const g = greetings[language] || greetings.en;
+                const firstName = user?.name?.split(" ")[0] || "";
+                return (
+                  <div className="text-center space-y-2">
+                    <h1 className={`${isBeginner ? "text-4xl md:text-5xl" : "text-3xl md:text-4xl"} font-light text-foreground/90 tracking-tight`} data-testid="text-chat-welcome">
+                      {g.hi}{firstName ? ` ${firstName}` : ""},
+                    </h1>
+                    <h2 className={`${isBeginner ? "text-2xl md:text-3xl" : "text-3xl md:text-4xl"} font-light text-foreground/60 tracking-tight`}>
+                      {isBeginner ? g.beginnerAsk : g.ask}
+                    </h2>
+                  </div>
+                );
+              })()}
 
               {/* Category chips — horizontally scrollable */}
               <div className="w-full max-w-xl overflow-x-auto pb-1 scrollbar-none">
@@ -3062,8 +3084,26 @@ export default function AIChatPage() {
                         if (input.trim()) { setPendingWelcomeSend(true); createConvoMutation.mutate(); }
                       }
                     }}
-                    placeholder="Describe your idea, Afro AI will bring it to life..."
-                    className="min-h-[80px] border-0 bg-transparent resize-none focus-visible:ring-0 p-0 text-base placeholder:text-muted-foreground/50"
+                    placeholder={(() => {
+                      const isBeginner = user?.experienceLevel === "beginner";
+                      const ph: Record<string, { norm: string; beg: string }> = {
+                        en: { norm: "Describe your idea, Afro AI will bring it to life...", beg: "e.g. 'I want a small website for my shop in Kampala that shows my prices and my WhatsApp number'" },
+                        sw: { norm: "Eleza wazo lako, Afro AI itaifanya kuwa hai...", beg: "mfano: 'Nataka tovuti ndogo ya duka langu Dar inayoonyesha bei zangu na namba yangu ya WhatsApp'" },
+                        fr: { norm: "Décris ton idée, Afro AI va la réaliser...", beg: "ex : 'Je veux un petit site pour ma boutique à Dakar avec mes prix et mon numéro WhatsApp'" },
+                        ar: { norm: "صف فكرتك، وسيقوم Afro AI بإنشائها...", beg: "مثال: 'أريد موقع صغير لمتجري يعرض أسعاري ورقم واتساب الخاص بي'" },
+                        pt: { norm: "Descreve a tua ideia, o Afro AI vai criá-la...", beg: "ex: 'Quero um pequeno site para a minha loja em Maputo com os preços e o meu WhatsApp'" },
+                        yo: { norm: "Ṣàlàyé èrò rẹ, Afro AI yóò mú u wáyé...", beg: "àpẹẹrẹ: 'Mo fẹ́ ojú-òpó kékeré fún ile-iṣẹ́ mi ní Lagos pẹ̀lú owó àwọn nǹkan àti nọ́mbà WhatsApp mi'" },
+                        ha: { norm: "Bayyana ra'ayinka, Afro AI zai gina shi...", beg: "misali: 'Ina son ƙaramin gidan yanar gizo don shagona a Kano da farashin kayana da lambar WhatsApp dina'" },
+                        zu: { norm: "Chaza umqondo wakho, i-Afro AI izowuphilisa...", beg: "isib: 'Ngifuna iwebhusayithi encane yesitolo sami enamanani nenombolo yami ye-WhatsApp'" },
+                        lg: { norm: "Nnyonnyola ekirowoozo kyo, Afro AI ajja kukikola...", beg: "ekyokulabirako: 'Njagala wansayiti ntono ey'edduka lyange erambika emiwendo ne nnamba ya WhatsApp'" },
+                        tw: { norm: "Kyerɛkyerɛ w'adwene mu, Afro AI bɛyɛ...", beg: "nhwɛsoɔ: 'Mepɛ wɛbsaet ketewa bi ma me dwadwa a ɛkyerɛ me bo ne me WhatsApp number'" },
+                        hi: { norm: "अपना आइडिया बताइए, Afro AI बना देगा...", beg: "उदा: 'मुझे अपनी दुकान के लिए छोटी वेबसाइट चाहिए जिसमें मेरे दाम और WhatsApp नंबर हों'" },
+                        es: { norm: "Describe tu idea, Afro AI le dará vida...", beg: "ej: 'Quiero un sitio pequeño para mi tienda con mis precios y mi WhatsApp'" },
+                      };
+                      const p = ph[language] || ph.en;
+                      return isBeginner ? p.beg : p.norm;
+                    })()}
+                    className={`${user?.experienceLevel === "beginner" ? "min-h-[120px] text-lg" : "min-h-[80px] text-base"} border-0 bg-transparent resize-none focus-visible:ring-0 p-0 placeholder:text-muted-foreground/50`}
                     data-testid="input-welcome-message"
                   />
                   <div className="flex items-center justify-between">
@@ -3102,12 +3142,91 @@ export default function AIChatPage() {
               <div className="w-full max-w-xl space-y-2">
                 <p className="text-xs text-muted-foreground/50 text-center">Try one of these</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {[
-                    { text: "Build a football penalty shootout game", icon: Gamepad2 },
-                    { text: "Restaurant website with menu & booking", icon: Globe },
-                    { text: "African endless runner game", icon: Swords },
-                    { text: "Fitness tracking app with charts", icon: Smartphone },
-                  ].map((s, i) => (
+                  {(() => {
+                    const isBeginner = user?.experienceLevel === "beginner";
+                    const beginnerSets: Record<string, { text: string; icon: any }[]> = {
+                      en: [
+                        { text: "A simple shop website that shows my products and WhatsApp number", icon: Globe },
+                        { text: "A restaurant menu page with prices and a 'Call to order' button", icon: Globe },
+                        { text: "A booking page where customers pick a time and pay with M-Pesa", icon: Smartphone },
+                        { text: "A page about me/my business that I can share on WhatsApp", icon: Globe },
+                      ],
+                      sw: [
+                        { text: "Tovuti ndogo ya duka inayoonyesha bidhaa zangu na namba ya WhatsApp", icon: Globe },
+                        { text: "Ukurasa wa menyu ya mgahawa na bei na kitufe cha 'Piga simu kuagiza'", icon: Globe },
+                        { text: "Ukurasa wa kuhifadhi ambapo wateja wanachagua muda na kulipa kwa M-Pesa", icon: Smartphone },
+                        { text: "Ukurasa kuhusu mimi/biashara yangu wa kushiriki WhatsApp", icon: Globe },
+                      ],
+                      fr: [
+                        { text: "Un petit site boutique qui montre mes produits et mon WhatsApp", icon: Globe },
+                        { text: "Une page menu de restaurant avec prix et bouton 'Appeler pour commander'", icon: Globe },
+                        { text: "Une page de réservation où les clients choisissent l'heure et paient", icon: Smartphone },
+                        { text: "Une page à propos de mon business à partager sur WhatsApp", icon: Globe },
+                      ],
+                      ar: [
+                        { text: "موقع متجر بسيط يعرض منتجاتي ورقم واتساب", icon: Globe },
+                        { text: "صفحة قائمة مطعم بالأسعار وزر 'اتصل للطلب'", icon: Globe },
+                        { text: "صفحة حجز يختار فيها العملاء الوقت ويدفعون", icon: Smartphone },
+                        { text: "صفحة عني/عن مشروعي لمشاركتها على واتساب", icon: Globe },
+                      ],
+                      pt: [
+                        { text: "Um site simples de loja com produtos e WhatsApp", icon: Globe },
+                        { text: "Página de menu de restaurante com preços e botão 'Ligar para pedir'", icon: Globe },
+                        { text: "Página de reservas onde clientes escolhem horário e pagam", icon: Smartphone },
+                        { text: "Página sobre mim/meu negócio para partilhar no WhatsApp", icon: Globe },
+                      ],
+                      yo: [
+                        { text: "Ojú-òpó ile-iṣẹ́ kékeré tó fi àwọn ẹrù mi àti WhatsApp han", icon: Globe },
+                        { text: "Ojú-òpó menu ile-oúnjẹ pẹ̀lú owó àti bọ́tìnì 'Pe láti pàṣẹ'", icon: Globe },
+                        { text: "Ojú-òpó ìfipamọ́ tí àwọn alábàárà yan àkókò tí wọ́n sì sanwó", icon: Smartphone },
+                        { text: "Ojú-òpó nípa mi/ile-iṣẹ́ mi tí mò lè pín lórí WhatsApp", icon: Globe },
+                      ],
+                      ha: [
+                        { text: "Ƙaramin gidan yanar shago wanda ke nuna kayana da WhatsApp", icon: Globe },
+                        { text: "Shafin menu na gidan abinci da farashi da maɓallin 'Kira don oda'", icon: Globe },
+                        { text: "Shafin ajiyar inda abokan ciniki ke zaɓar lokaci kuma su biya", icon: Smartphone },
+                        { text: "Shafin game da ni/kasuwancina don rabawa a WhatsApp", icon: Globe },
+                      ],
+                      zu: [
+                        { text: "Iwebhusayithi elula yesitolo ekhombisa imikhiqizo nenombolo ye-WhatsApp", icon: Globe },
+                        { text: "Ikhasi le-menu lendawo yokudla namanani nenkinobho yokufona", icon: Globe },
+                        { text: "Ikhasi lokubhukha lapho amakhasimende ekhetha isikhathi ekhokha", icon: Smartphone },
+                        { text: "Ikhasi mayelana nami/ibhizinisi lami lokwabelana ku-WhatsApp", icon: Globe },
+                      ],
+                      lg: [
+                        { text: "Wansayiti omutono ow'edduka olaga ebintu ne nnamba ya WhatsApp", icon: Globe },
+                        { text: "Olupapula olw'emmere n'emiwendo ne pulani 'Kuba simu okusalawo'", icon: Globe },
+                        { text: "Olupapula olw'okukuuma ekifo abakasitoma we balondamu ekiseera", icon: Smartphone },
+                        { text: "Olupapula olukukwatako/olw'ebizinensi lyo okugabana ku WhatsApp", icon: Globe },
+                      ],
+                      tw: [
+                        { text: "Wɛbsaet ketewa bi a ɛkyerɛ me dwadi ne me WhatsApp", icon: Globe },
+                        { text: "Restaurant menu page a ɛwɔ bo ne 'Frɛ na to' button", icon: Globe },
+                        { text: "Booking page a customers pa bere na wɔtua ka", icon: Smartphone },
+                        { text: "Page bi a ɛfa me/m'adwumayɛ ho a metumi de akyɛ wɔ WhatsApp", icon: Globe },
+                      ],
+                      hi: [
+                        { text: "एक सरल दुकान वेबसाइट जो मेरे उत्पाद और WhatsApp नंबर दिखाए", icon: Globe },
+                        { text: "रेस्तराँ मेनू पेज दामों और 'ऑर्डर के लिए कॉल करें' बटन के साथ", icon: Globe },
+                        { text: "बुकिंग पेज जहाँ ग्राहक समय चुनकर भुगतान करें", icon: Smartphone },
+                        { text: "मेरे/मेरे बिजनेस के बारे में पेज जो WhatsApp पर शेयर हो सके", icon: Globe },
+                      ],
+                      es: [
+                        { text: "Un sitio sencillo de tienda con productos y WhatsApp", icon: Globe },
+                        { text: "Página de menú de restaurante con precios y botón 'Llamar para pedir'", icon: Globe },
+                        { text: "Página de reservas donde clientes eligen hora y pagan", icon: Smartphone },
+                        { text: "Página sobre mí/mi negocio para compartir en WhatsApp", icon: Globe },
+                      ],
+                    };
+                    const expertSet = [
+                      { text: "Build a football penalty shootout game", icon: Gamepad2 },
+                      { text: "Restaurant website with menu & booking", icon: Globe },
+                      { text: "African endless runner game", icon: Swords },
+                      { text: "Fitness tracking app with charts", icon: Smartphone },
+                    ];
+                    const list = isBeginner ? (beginnerSets[language] || beginnerSets.en) : expertSet;
+                    return list;
+                  })().map((s, i) => (
                     <button
                       key={i}
                       onClick={async () => {

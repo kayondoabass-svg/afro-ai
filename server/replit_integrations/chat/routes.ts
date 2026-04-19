@@ -1787,7 +1787,14 @@ export function registerChatRoutes(app: Express): void {
   app.post("/api/conversations/:id/messages", chatLimiter, async (req: Request, res: Response) => {
     try {
       const conversationId = parseInt(req.params.id as string);
-      const { content: userContent, attachments } = req.body;
+      const { content: userContent, attachments, language: rawLanguage } = req.body;
+      const LANG_MAP: Record<string, string> = {
+        en: "English", sw: "Swahili (Kiswahili)", ar: "Arabic (العربية)",
+        zu: "Zulu (isiZulu)", hi: "Hindi (हिन्दी)", es: "Spanish (Español)",
+        fr: "French (Français)", lg: "Luganda (Oluganda)", yo: "Yoruba (Yorùbá)",
+        ha: "Hausa", tw: "Twi", pt: "Portuguese (Português)",
+      };
+      const replyLanguage = LANG_MAP[String(rawLanguage || "").toLowerCase()] || "English";
 
       let userPlan: UserPlan = "starter";
       let userProfile: { name?: string; email?: string; plan?: string; experienceLevel?: string | null } = {};
@@ -1936,6 +1943,8 @@ User's name: ${userProfile.name || "Unknown"}
 User's email: ${userProfile.email || "Unknown"}
 User's plan: ${userProfile.plan || "starter"}
 User's experience level: ${experienceLabel}
+User's preferred language: ${replyLanguage}
+IMPORTANT — LANGUAGE: Reply ONLY in ${replyLanguage}, even if the user types in a different language. Use natural, everyday ${replyLanguage} the way ordinary Africans actually speak it — not formal/textbook style. Keep code (HTML/CSS/JS) and technical labels in English unless the user asks for the website's interface to be translated. Plans, explanations, questions, and confirmations must all be in ${replyLanguage}.
 IMPORTANT: Apply the behaviour mode matching this experience level throughout the entire conversation.
 Platform: Afro AI (afroaigroup.com) — AI-powered website and app builder
 Builder's business: KEYO TECHNOLOGIES, Registration No. 80030812159711, Kampala, Uganda
