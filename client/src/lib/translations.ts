@@ -1,4 +1,4 @@
-export type LanguageCode = "en" | "sw" | "ar" | "zu" | "hi" | "es" | "fr" | "lg" | "yo" | "ha" | "tw" | "pt";
+export type LanguageCode = "en" | "sw" | "ar" | "zu" | "hi" | "es" | "fr" | "lg" | "yo" | "ha" | "tw" | "pt" | "zh" | "gu" | "ta";
 
 export interface LanguageInfo {
   code: LanguageCode;
@@ -20,6 +20,9 @@ export const languages: LanguageInfo[] = [
   { code: "ha", name: "Hausa", nativeName: "Hausa", rtl: false },
   { code: "tw", name: "Twi", nativeName: "Twi", rtl: false },
   { code: "pt", name: "Portuguese", nativeName: "Português", rtl: false },
+  { code: "zh", name: "Chinese", nativeName: "中文", rtl: false },
+  { code: "gu", name: "Gujarati", nativeName: "ગુજરાતી", rtl: false },
+  { code: "ta", name: "Tamil", nativeName: "தமிழ்", rtl: false },
 ];
 
 export const countryToLanguage: Record<string, LanguageCode> = {
@@ -28,6 +31,7 @@ export const countryToLanguage: Record<string, LanguageCode> = {
   ZA: "zu",
   EG: "ar", MA: "ar", DZ: "ar", TN: "ar", LY: "ar", SD: "ar", SA: "ar", AE: "ar", IQ: "ar", JO: "ar", LB: "ar", SY: "ar", YE: "ar", OM: "ar", KW: "ar", BH: "ar", QA: "ar",
   IN: "hi",
+  CN: "zh", TW: "zh", HK: "zh", SG: "zh", MO: "zh",
   ES: "es", MX: "es", AR: "es", CO: "es", PE: "es", CL: "es", VE: "es", EC: "es", GT: "es", CU: "es", BO: "es", DO: "es", HN: "es", PY: "es", SV: "es", NI: "es", CR: "es", PA: "es", UY: "es",
   FR: "fr", SN: "fr", CI: "fr", ML: "fr", BF: "fr", NE: "fr", TD: "fr", GN: "fr", BJ: "fr", TG: "fr", CM: "fr", CD: "fr", CG: "fr", GA: "fr", MG: "fr", RW: "fr", BI: "fr", DJ: "fr", KM: "fr", HT: "fr", BE: "fr", CH: "fr", LU: "fr", MC: "fr",
   BR: "pt", PT: "pt", AO: "pt", MZ: "pt", GW: "pt", CV: "pt", ST: "pt", TL: "pt",

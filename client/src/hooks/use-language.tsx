@@ -28,6 +28,7 @@ async function detectCountryLanguage(): Promise<LanguageCode> {
     const mapping: Record<string, LanguageCode> = {
       sw: "sw", ar: "ar", zu: "zu", hi: "hi",
       es: "es", fr: "fr", pt: "pt", yo: "yo", ha: "ha",
+      zh: "zh", gu: "gu", ta: "ta",
     };
     if (mapping[code]) return mapping[code];
   }

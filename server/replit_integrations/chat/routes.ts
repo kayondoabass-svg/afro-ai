@@ -1793,6 +1793,8 @@ export function registerChatRoutes(app: Express): void {
         zu: "Zulu (isiZulu)", hi: "Hindi (हिन्दी)", es: "Spanish (Español)",
         fr: "French (Français)", lg: "Luganda (Oluganda)", yo: "Yoruba (Yorùbá)",
         ha: "Hausa", tw: "Twi", pt: "Portuguese (Português)",
+        zh: "Chinese (中文 — use Mandarin / 普通话, simplified characters)",
+        gu: "Gujarati (ગુજરાતી)", ta: "Tamil (தமிழ்)",
       };
       const replyLanguage = LANG_MAP[String(rawLanguage || "").toLowerCase()] || "English";
 
