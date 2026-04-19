@@ -47,6 +47,51 @@ app.get("/_health", (_req, res) => {
   res.status(200).send("ok");
 });
 
+// ── Friendly holding page while server is still booting ──────────────────────
+// Express starts listening on the port BEFORE registerRoutes() finishes (the
+// async block below). Any request that lands during that 1-3s window — or
+// during a deploy restart — would otherwise hit Express's default
+// "Cannot GET /" 404 page. Serve a calm branded page instead.
+let routesReady = false;
+export function markRoutesReady() { routesReady = true; }
+
+const HOLDING_PAGE = `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Afro AI — Updating</title>
+<meta http-equiv="refresh" content="4"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:linear-gradient(135deg,#0f0a1f 0%,#1a0f2e 100%);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{max-width:420px;text-align:center}
+  .logo{font-size:32px;font-weight:800;background:linear-gradient(90deg,#a78bfa,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+  .tag{font-size:13px;color:#a1a1aa;letter-spacing:.3px;margin-bottom:32px}
+  .spinner{width:48px;height:48px;border:3px solid rgba(167,139,250,.2);border-top-color:#a78bfa;border-radius:50%;margin:0 auto 24px;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  h1{font-size:22px;font-weight:600;margin-bottom:12px}
+  p{color:#a1a1aa;font-size:15px;line-height:1.5;margin-bottom:24px}
+  .hint{font-size:12px;color:#71717a}
+</style></head><body><div class="card">
+<div class="logo">Afro AI</div>
+<div class="tag">Made in Africa, built for everyone</div>
+<div class="spinner"></div>
+<h1>We're updating, back in a moment</h1>
+<p>This usually takes 10–30 seconds. The page will reload by itself.</p>
+<div class="hint">Tubaako mu kaseera ntono • Tutarudi punde • Nous revenons bientôt</div>
+</div></body></html>`;
+
+app.use((req, res, next) => {
+  if (routesReady) return next();
+  // Let health checks and static asset probes pass through untouched
+  if (req.path === "/_health") return next();
+  // For API calls, return JSON so the frontend can show a friendly toast
+  if (req.path.startsWith("/api")) {
+    return res.status(503).json({ message: "Afro AI is updating, please try again in a few seconds." });
+  }
+  res.status(503).set("Retry-After", "5").send(HOLDING_PAGE);
+});
+
 app.use(
   express.json({
     limit: "50mb",
@@ -109,6 +154,8 @@ httpServer.listen(
 
 (async () => {
   await registerRoutes(httpServer, app);
+  markRoutesReady();
+  log("✓ Routes ready — accepting traffic");
 
   // Start daily cleanup job that trims old chatbot conversations per plan retention
   const { startChatbotRetentionJob } = await import("./chatbot-retention");
