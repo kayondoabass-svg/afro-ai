@@ -66,6 +66,29 @@ export const publishedAppVersions = pgTable("published_app_versions", {
 
 export type PublishedAppVersion = typeof publishedAppVersions.$inferSelect;
 
+export const appFeedback = pgTable("app_feedback", {
+  id: serial("id").primaryKey(),
+  publishedAppId: integer("published_app_id").notNull().references(() => publishedApps.id, { onDelete: "cascade" }),
+  visitorName: varchar("visitor_name", { length: 80 }).notNull().default("Anonymous"),
+  message: text("message").notNull(),
+  elementSelector: text("element_selector"),
+  pageUrl: text("page_url"),
+  resolved: boolean("resolved").notNull().default(false),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertAppFeedbackSchema = createInsertSchema(appFeedback).omit({
+  id: true,
+  resolved: true,
+  createdAt: true,
+}).extend({
+  visitorName: z.string().trim().min(1).max(80).default("Anonymous"),
+  message: z.string().trim().min(2, "Please write a bit more").max(2000),
+});
+
+export type AppFeedback = typeof appFeedback.$inferSelect;
+export type InsertAppFeedback = z.infer<typeof insertAppFeedbackSchema>;
+
 export const referrals = pgTable("referrals", {
   id: serial("id").primaryKey(),
   referrerId: varchar("referrer_id").notNull().references(() => users.id),

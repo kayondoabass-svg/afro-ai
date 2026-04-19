@@ -14,6 +14,8 @@ import { analyzeImage } from "./gemini";
 import { checkDomainAvailability, checkSingleDomain, registerDomain, listDomains, getDomainInfo, renewDomain, setNameservers, getCostPrice } from "./namedotcom";
 import { sendSms as atSendSms, getAccountBalance as atGetBalance, isAtConfigured, atMode } from "./africastalking";
 import { scanHtmlContent, publishedAppHeaders } from "./security";
+import { injectFeedbackWidget } from "./feedback-widget";
+import { insertAppFeedbackSchema } from "@shared/schema";
 import { uploadToR2, deleteFromR2, isR2Configured, putBlob, getBlobText, deleteBlob } from "./r2";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
@@ -168,7 +170,7 @@ export async function registerRoutes(
               const r2Body = await getBlobText(publishedApp.htmlR2Key);
               if (r2Body) body = r2Body;
             }
-            return res.send(body);
+            return res.send(injectFeedbackWidget(body, publishedApp.subdomain));
           }
           return serveNotFoundPage(res);
         } catch (err) {
@@ -187,7 +189,7 @@ export async function registerRoutes(
             const r2Body = await getBlobText(publishedApp.htmlR2Key);
             if (r2Body) body = r2Body;
           }
-          return res.send(body);
+          return res.send(injectFeedbackWidget(body, publishedApp.subdomain));
         }
       } catch (err) {
         console.error("Custom domain routing error:", err);
@@ -1049,6 +1051,89 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error checking subdomain:", error);
       res.status(500).json({ available: false, error: "Failed to check subdomain" });
+    }
+  });
+
+  const feedbackPostLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many feedback submissions. Please wait a minute." },
+  });
+
+  app.post("/api/feedback/:subdomain", feedbackPostLimiter, async (req, res) => {
+    try {
+      const subdomain = (req.params.subdomain || "").toLowerCase().trim();
+      const app = await storage.getPublishedAppBySubdomain(subdomain);
+      if (!app) return res.status(404).json({ message: "Site not found" });
+      if (app.appStatus === "suspended") return res.status(403).json({ message: "Site is unavailable" });
+      const parsed = insertAppFeedbackSchema.safeParse({
+        publishedAppId: app.id,
+        visitorName: (req.body?.visitorName ?? "Anonymous").toString().slice(0, 80) || "Anonymous",
+        message: (req.body?.message ?? "").toString(),
+        elementSelector: req.body?.elementSelector ? String(req.body.elementSelector).slice(0, 500) : null,
+        pageUrl: req.body?.pageUrl ? String(req.body.pageUrl).slice(0, 500) : null,
+      });
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid feedback" });
+      }
+      const row = await storage.createAppFeedback(parsed.data);
+      res.status(201).json({ id: row.id, ok: true });
+    } catch (err) {
+      console.error("[feedback] create error:", err);
+      res.status(500).json({ message: "Failed to send feedback" });
+    }
+  });
+
+  app.get("/api/published-apps/:id/feedback", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user?.claims?.sub;
+      const app = await storage.getPublishedAppById(id);
+      if (!app || app.userId !== userId) return res.status(404).json({ message: "Not found" });
+      const onlyOpen = req.query.open === "1";
+      const items = await storage.getAppFeedback(id, { onlyOpen });
+      const openCount = await storage.getAppFeedbackCount(id, true);
+      res.json({ items, openCount });
+    } catch (err) {
+      console.error("[feedback] list error:", err);
+      res.status(500).json({ message: "Failed to load feedback" });
+    }
+  });
+
+  app.patch("/api/published-apps/:id/feedback/:fbId", isAuthenticated, async (req: any, res) => {
+    try {
+      const appId = parseInt(req.params.id);
+      const fbId = parseInt(req.params.fbId);
+      const userId = req.user?.claims?.sub;
+      const app = await storage.getPublishedAppById(appId);
+      if (!app || app.userId !== userId) return res.status(404).json({ message: "Not found" });
+      const fb = await storage.getAppFeedbackById(fbId);
+      if (!fb || fb.publishedAppId !== appId) return res.status(404).json({ message: "Feedback not found" });
+      const resolved = req.body?.resolved === true;
+      const updated = await storage.resolveAppFeedback(fbId, resolved);
+      res.json(updated);
+    } catch (err) {
+      console.error("[feedback] update error:", err);
+      res.status(500).json({ message: "Failed to update feedback" });
+    }
+  });
+
+  app.delete("/api/published-apps/:id/feedback/:fbId", isAuthenticated, async (req: any, res) => {
+    try {
+      const appId = parseInt(req.params.id);
+      const fbId = parseInt(req.params.fbId);
+      const userId = req.user?.claims?.sub;
+      const app = await storage.getPublishedAppById(appId);
+      if (!app || app.userId !== userId) return res.status(404).json({ message: "Not found" });
+      const fb = await storage.getAppFeedbackById(fbId);
+      if (!fb || fb.publishedAppId !== appId) return res.status(404).json({ message: "Feedback not found" });
+      await storage.deleteAppFeedback(fbId);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[feedback] delete error:", err);
+      res.status(500).json({ message: "Failed to delete feedback" });
     }
   });
 

@@ -45,6 +45,7 @@ import {
   Gamepad2,
   Swords,
   ShieldAlert,
+  Users,
   Key,
   Upload,
   Link2,
@@ -303,6 +304,193 @@ const PUBLISH_STEPS: { id: string; label: string }[] = [
   { id: "live", label: "Going live" },
 ];
 
+function FeedbackPanel({ appId, publishedUrl, feedbackCopied, setFeedbackCopied, showInbox, setShowInbox, onApplyFeedback }: {
+  appId: number;
+  publishedUrl: string;
+  feedbackCopied: boolean;
+  setFeedbackCopied: (v: boolean) => void;
+  showInbox: boolean;
+  setShowInbox: (v: boolean) => void;
+  onApplyFeedback: (text: string) => void;
+}) {
+  const { toast } = useToast();
+  const feedbackUrl = publishedUrl + (publishedUrl.includes("?") ? "&" : "?") + "feedback=1";
+  const { data, isLoading } = useQuery<{ items: any[]; openCount: number }>({
+    queryKey: ["/api/published-apps", appId, "feedback"],
+    queryFn: async () => {
+      const r = await fetch(`/api/published-apps/${appId}/feedback`);
+      if (!r.ok) throw new Error("Failed to load feedback");
+      return r.json();
+    },
+    refetchInterval: showInbox ? 8000 : 30000,
+  });
+  const items = data?.items || [];
+  const openCount = data?.openCount || 0;
+
+  const resolveMut = useMutation({
+    mutationFn: async ({ id, resolved }: { id: number; resolved: boolean }) => {
+      return apiRequest("PATCH", `/api/published-apps/${appId}/feedback/${id}`, { resolved });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/published-apps", appId, "feedback"] }),
+  });
+  const deleteMut = useMutation({
+    mutationFn: async (id: number) => apiRequest("DELETE", `/api/published-apps/${appId}/feedback/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/published-apps", appId, "feedback"] }),
+  });
+
+  return (
+    <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4 space-y-3" data-testid="panel-feedback">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-purple-500 flex-shrink-0" />
+          <p className="text-sm font-semibold">Get feedback from clients & friends</p>
+        </div>
+        {openCount > 0 && (
+          <span className="bg-purple-500 text-white text-[11px] font-bold rounded-full px-2 py-0.5" data-testid="badge-feedback-count">
+            {openCount} new
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Send this special link. Anyone who opens it can leave comments — no account needed. You'll see them here and Afro AI can apply them in one click.
+      </p>
+      <div className="flex items-center gap-2 bg-background/60 border rounded-md px-3 py-2">
+        <span className="text-xs font-mono truncate flex-1 text-muted-foreground" data-testid="text-feedback-url">{feedbackUrl}</span>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 gap-1"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(feedbackUrl);
+              setFeedbackCopied(true);
+              toast({ title: "Feedback link copied!", description: "Send it on WhatsApp to get instant feedback." });
+              setTimeout(() => setFeedbackCopied(false), 2000);
+            } catch {
+              toast({ title: "Couldn't copy", variant: "destructive" });
+            }
+          }}
+          data-testid="button-copy-feedback-url"
+        >
+          {feedbackCopied ? <><Check className="w-3.5 h-3.5 text-green-500" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent("I'd love your feedback on my new site: " + feedbackUrl)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-green-500/10 hover:bg-green-500/20 text-green-700 dark:text-green-400 text-xs font-medium"
+          data-testid="link-share-feedback-whatsapp"
+        >
+          📲 Ask on WhatsApp
+        </a>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-3 text-xs"
+          onClick={() => setShowInbox(!showInbox)}
+          data-testid="button-toggle-feedback-inbox"
+        >
+          {showInbox ? "Hide inbox" : `View inbox${items.length ? ` (${items.length})` : ""}`}
+        </Button>
+      </div>
+      {showInbox && (
+        <div className="space-y-2 max-h-72 overflow-y-auto pr-1" data-testid="list-feedback">
+          {isLoading && <div className="text-xs text-muted-foreground py-3 text-center">Loading…</div>}
+          {!isLoading && items.length === 0 && (
+            <div className="text-xs text-muted-foreground py-4 text-center bg-background/40 rounded-md border border-dashed">
+              No feedback yet. Share the link above to get the first one.
+            </div>
+          )}
+          {items.map((fb: any) => (
+            <div
+              key={fb.id}
+              className={`p-3 rounded-md border text-xs space-y-2 ${fb.resolved ? "bg-muted/30 border-border opacity-70" : "bg-background border-purple-500/30"}`}
+              data-testid={`card-feedback-${fb.id}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-foreground" data-testid={`text-feedback-name-${fb.id}`}>
+                    {fb.visitorName || "Anonymous"}
+                    <span className="ml-2 text-muted-foreground font-normal text-[10px]">
+                      {new Date(fb.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-foreground/90 whitespace-pre-wrap break-words" data-testid={`text-feedback-msg-${fb.id}`}>{fb.message}</div>
+                  {fb.elementSelector && (
+                    <div className="mt-1 text-[10px] text-purple-600 dark:text-purple-400 font-mono break-all">
+                      📍 {fb.elementSelector}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {!fb.resolved && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <Button
+                    size="sm"
+                    className="h-7 px-2 text-xs bg-purple-500 hover:bg-purple-600 text-white gap-1"
+                    onClick={() => {
+                      const hint = `[CUSTOMER FEEDBACK] A visitor left this feedback on the published site${fb.elementSelector ? ` (about element "${fb.elementSelector}")` : ""}: "${fb.message}". Apply this change to the current code while keeping everything else identical and on-theme.`;
+                      onApplyFeedback(hint);
+                      resolveMut.mutate({ id: fb.id, resolved: true });
+                    }}
+                    data-testid={`button-apply-feedback-${fb.id}`}
+                  >
+                    <Sparkles className="w-3 h-3" /> Apply with AI
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => resolveMut.mutate({ id: fb.id, resolved: true })}
+                    disabled={resolveMut.isPending}
+                    data-testid={`button-resolve-feedback-${fb.id}`}
+                  >
+                    <Check className="w-3 h-3" /> Mark done
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                    onClick={() => deleteMut.mutate(fb.id)}
+                    disabled={deleteMut.isPending}
+                    data-testid={`button-delete-feedback-${fb.id}`}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              )}
+              {fb.resolved && (
+                <div className="flex gap-1.5 pt-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[11px]"
+                    onClick={() => resolveMut.mutate({ id: fb.id, resolved: false })}
+                    data-testid={`button-reopen-feedback-${fb.id}`}
+                  >
+                    Reopen
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[11px] text-destructive hover:text-destructive"
+                    onClick={() => deleteMut.mutate(fb.id)}
+                    data-testid={`button-delete-feedback-${fb.id}`}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
   code: string;
   open: boolean;
@@ -323,7 +511,9 @@ function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
   const [linkCopied, setLinkCopied] = useState(false);
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
-  const [existingApp, setExistingApp] = useState<{ subdomain: string; title: string } | null>(null);
+  const [existingApp, setExistingApp] = useState<{ id?: number; subdomain: string; title: string } | null>(null);
+  const [feedbackCopied, setFeedbackCopied] = useState(false);
+  const [showFeedbackInbox, setShowFeedbackInbox] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(true);
 
   useEffect(() => {
@@ -341,7 +531,7 @@ function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
               setAvailable(true);
             }
             if (latest.title && latest.subdomain) {
-              setExistingApp({ subdomain: latest.subdomain, title: latest.title });
+              setExistingApp({ id: latest.id, subdomain: latest.subdomain, title: latest.title });
             }
           }
         })
@@ -427,7 +617,7 @@ function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
               ));
             } else if (data.type === "result") {
               setPublishedUrl(data.url);
-              setExistingApp({ subdomain: data.subdomain || subdomain, title });
+              setExistingApp({ id: data.id, subdomain: data.subdomain || subdomain, title });
               toast({ title: "Published!", description: `Your app is live at ${data.url}` });
               queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
             } else if (data.type === "error") {
@@ -634,6 +824,22 @@ function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
                     </div>
                   </div>
                 </div>
+                {existingApp?.id && (
+                  <FeedbackPanel
+                    appId={existingApp.id}
+                    publishedUrl={publishedUrl}
+                    feedbackCopied={feedbackCopied}
+                    setFeedbackCopied={setFeedbackCopied}
+                    showInbox={showFeedbackInbox}
+                    setShowInbox={setShowFeedbackInbox}
+                    onApplyFeedback={(text) => {
+                      if (onAutoFixSecurity) {
+                        onAutoFixSecurity(text);
+                        onOpenChange(false);
+                      }
+                    }}
+                  />
+                )}
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4 text-primary flex-shrink-0" />

@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -19,6 +19,13 @@ export interface IStorage {
   updatePublishedApp(id: number, data: Partial<InsertPublishedApp>): Promise<PublishedApp>;
   deletePublishedApp(id: number): Promise<void>;
   suspendPublishedApp(id: number, reason: string): Promise<PublishedApp>;
+  // App Feedback (Share-for-Feedback collab)
+  createAppFeedback(data: InsertAppFeedback): Promise<AppFeedback>;
+  getAppFeedback(publishedAppId: number, opts?: { onlyOpen?: boolean }): Promise<AppFeedback[]>;
+  getAppFeedbackCount(publishedAppId: number, onlyOpen?: boolean): Promise<number>;
+  getAppFeedbackById(id: number): Promise<AppFeedback | undefined>;
+  resolveAppFeedback(id: number, resolved: boolean): Promise<AppFeedback>;
+  deleteAppFeedback(id: number): Promise<void>;
   reactivatePublishedApp(id: number): Promise<PublishedApp>;
   suspendAppsByUser(userId: string, reason: string): Promise<void>;
   reactivateAppsByUser(userId: string): Promise<void>;
@@ -253,6 +260,35 @@ class DatabaseStorage implements IStorage {
       console.warn("[deletePublishedApp] R2 cleanup skipped:", e?.message);
     }
     await db.delete(publishedApps).where(eq(publishedApps.id, id));
+  }
+
+  async createAppFeedback(data: InsertAppFeedback): Promise<AppFeedback> {
+    const [row] = await db.insert(appFeedback).values(data).returning();
+    return row;
+  }
+  async getAppFeedback(publishedAppId: number, opts?: { onlyOpen?: boolean }): Promise<AppFeedback[]> {
+    const where = opts?.onlyOpen
+      ? and(eq(appFeedback.publishedAppId, publishedAppId), eq(appFeedback.resolved, false))
+      : eq(appFeedback.publishedAppId, publishedAppId);
+    return await db.select().from(appFeedback).where(where).orderBy(desc(appFeedback.createdAt));
+  }
+  async getAppFeedbackCount(publishedAppId: number, onlyOpen?: boolean): Promise<number> {
+    const where = onlyOpen
+      ? and(eq(appFeedback.publishedAppId, publishedAppId), eq(appFeedback.resolved, false))
+      : eq(appFeedback.publishedAppId, publishedAppId);
+    const [row] = await db.select({ c: count() }).from(appFeedback).where(where);
+    return Number(row?.c || 0);
+  }
+  async getAppFeedbackById(id: number): Promise<AppFeedback | undefined> {
+    const [row] = await db.select().from(appFeedback).where(eq(appFeedback.id, id));
+    return row;
+  }
+  async resolveAppFeedback(id: number, resolved: boolean): Promise<AppFeedback> {
+    const [row] = await db.update(appFeedback).set({ resolved }).where(eq(appFeedback.id, id)).returning();
+    return row;
+  }
+  async deleteAppFeedback(id: number): Promise<void> {
+    await db.delete(appFeedback).where(eq(appFeedback.id, id));
   }
 
   async suspendPublishedApp(id: number, reason: string): Promise<PublishedApp> {
