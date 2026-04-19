@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { useLanguage } from "@/hooks/use-language";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
@@ -284,6 +285,15 @@ export default function LoginPage() {
                 >
                   {isLoading ? "Signing in..." : "Sign In"}
                 </Button>
+                <div className="text-center">
+                  <Link
+                    href="/forgot-password"
+                    className="text-xs text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+                    data-testid="link-forgot-password"
+                  >
+                    Forgot your password?
+                  </Link>
+                </div>
               </form>
 
               <div className="relative">

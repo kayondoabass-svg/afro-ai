@@ -40,3 +40,17 @@ export const users = pgTable("users", {
 
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+
+// Password reset tokens — single-use, expire after 1 hour
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    tokenHash: varchar("token_hash").primaryKey(),
+    userId: varchar("user_id").notNull(),
+    email: varchar("email").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("IDX_password_reset_user").on(table.userId)]
+);

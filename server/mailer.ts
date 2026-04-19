@@ -128,6 +128,19 @@ export async function sendChatbotLimitEmail(to: string, opts: { plan: string; li
   return send(to, subject, wrapped.html, wrapped.text);
 }
 
+export async function sendPasswordResetEmail(to: string, opts: { name: string; resetUrl: string }): Promise<boolean> {
+  const subject = "Reset your Afro AI password";
+  const html = `
+    <p>Hi ${opts.name || "there"},</p>
+    <p>We got a request to reset the password on your Afro AI account. Tap the button below to set a new one. The link works for the next <strong>60 minutes</strong> and can only be used once.</p>
+    <p style="margin:24px 0;text-align:center;"><a href="${opts.resetUrl}" style="background:${BRAND_COLOR};color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Reset my password →</a></p>
+    <p style="font-size:13px;color:#a1a1aa;">If the button doesn't work, copy this link into your browser:<br/><span style="word-break:break-all;color:${BRAND_COLOR};">${opts.resetUrl}</span></p>
+    <p style="font-size:13px;color:#a1a1aa;margin-top:18px;">Didn't ask to reset your password? You can safely ignore this email — your account stays the same.</p>`;
+  const text = `Hi ${opts.name || "there"},\n\nReset your Afro AI password using this link (works for 60 minutes):\n${opts.resetUrl}\n\nIf you didn't ask for this, just ignore the email.`;
+  const wrapped = shell("Reset your password", html, text);
+  return send(to, subject, wrapped.html, wrapped.text);
+}
+
 export async function sendWelcomeEmail(to: string, name: string): Promise<boolean> {
   const subject = "Welcome to Afro AI 🎉";
   const html = `

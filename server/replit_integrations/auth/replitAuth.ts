@@ -385,6 +385,105 @@ export async function setupAuth(app: Express) {
     }
   });
 
+  // ── Forgot Password ──────────────────────────────────────────
+  // Always returns 200 — never reveal whether the email exists, to prevent
+  // attackers from enumerating accounts.
+  app.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
+    try {
+      const { email } = req.body || {};
+      if (!email || typeof email !== "string") {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      const emailNorm = email.toLowerCase().trim();
+
+      const { db } = await import("../../db");
+      const { users, passwordResetTokens } = await import("@shared/models/auth");
+      const { eq } = await import("drizzle-orm");
+      const crypto = await import("crypto");
+      const { sendPasswordResetEmail } = await import("../../mailer");
+
+      const [user] = await db.select().from(users).where(eq(users.email, emailNorm));
+
+      if (user && user.passwordHash) {
+        // Token shown to the user (in URL) — keep raw, store only hash
+        const rawToken = crypto.randomBytes(32).toString("base64url");
+        const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        await db.insert(passwordResetTokens).values({
+          tokenHash,
+          userId: user.id,
+          email: emailNorm,
+          expiresAt,
+        });
+
+        const origin = `${req.protocol}://${req.get("host")}`;
+        const resetUrl = `${origin}/reset-password?token=${rawToken}`;
+        const name = user.firstName || user.email?.split("@")[0] || "";
+
+        // Fire-and-don't-block: any SES error is logged inside mailer
+        sendPasswordResetEmail(emailNorm, { name, resetUrl }).catch(() => {});
+      }
+
+      // Always the same response, regardless of whether we sent anything
+      res.json({ ok: true, message: "If that email is on Afro AI, we just sent a reset link." });
+    } catch (err) {
+      console.error("[Auth] Forgot-password error:", err);
+      // Still return 200 to avoid leaking server state
+      res.json({ ok: true, message: "If that email is on Afro AI, we just sent a reset link." });
+    }
+  });
+
+  // ── Reset Password ───────────────────────────────────────────
+  app.post("/api/auth/reset-password", authLimiter, async (req, res) => {
+    try {
+      const { token, password } = req.body || {};
+      if (!token || typeof token !== "string") {
+        return res.status(400).json({ message: "Reset token is missing." });
+      }
+      if (!password || typeof password !== "string" || password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters." });
+      }
+
+      const { db } = await import("../../db");
+      const { users, passwordResetTokens } = await import("@shared/models/auth");
+      const { eq } = await import("drizzle-orm");
+      const crypto = await import("crypto");
+
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const [record] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash));
+
+      if (!record) return res.status(400).json({ message: "This reset link is invalid or has already been used." });
+      if (record.usedAt) return res.status(400).json({ message: "This reset link has already been used. Request a new one." });
+      if (record.expiresAt.getTime() < Date.now()) {
+        return res.status(400).json({ message: "This reset link has expired. Request a new one." });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, record.userId));
+      // Invalidate ALL outstanding reset tokens for this user — not just the one used.
+      // Otherwise a leaked second link would still work after the password is changed.
+      await db.update(passwordResetTokens)
+        .set({ usedAt: new Date() })
+        .where(eq(passwordResetTokens.userId, record.userId));
+
+      // Auto-login the user after a successful reset
+      const [user] = await db.select().from(users).where(eq(users.id, record.userId));
+      if (user) {
+        const userClaims = buildUserClaims(user, { email: user.email || "", firstName: user.firstName || "", lastName: user.lastName || "" });
+        req.logIn(userClaims, (err) => {
+          if (err) return res.json({ ok: true, loggedIn: false });
+          res.json({ ok: true, loggedIn: true });
+        });
+      } else {
+        res.json({ ok: true, loggedIn: false });
+      }
+    } catch (err) {
+      console.error("[Auth] Reset-password error:", err);
+      res.status(500).json({ message: "Something went wrong. Please try again." });
+    }
+  });
+
   // ── Logout ───────────────────────────────────────────────────
   app.get("/api/logout", (req, res) => {
     req.logout((err) => {
