@@ -97,6 +97,7 @@ export default function AgentPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [queueDrainTrigger, setQueueDrainTrigger] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [progressStep, setProgressStep] = useState(0); // 0..4
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -174,17 +175,27 @@ export default function AgentPage() {
     setInput("");
     setPendingAttachments([]);
     setWorking(true);
-    setWorkingStatus("Thinking...");
+    setWorkingStatus("Thinking…");
+    setProgressStep(0);
     setStreamingContent("");
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    const statusUpdates = ["Reading context...", "Reasoning...", "Drafting response...", "Finalizing..."];
+    // Step 0: Thinking, 1: Reading, 2: Drafting, 3: Polishing, 4: Done
+    const statusUpdates = [
+      { step: 1, label: "Reading what you asked…" },
+      { step: 2, label: "Drafting a response…" },
+      { step: 3, label: "Polishing the words…" },
+    ];
     let statusIdx = 0;
     const statusTimer = setInterval(() => {
-      if (statusIdx < statusUpdates.length) setWorkingStatus(statusUpdates[statusIdx++]);
-    }, 800);
+      if (statusIdx < statusUpdates.length) {
+        const s = statusUpdates[statusIdx++];
+        setProgressStep(s.step);
+        setWorkingStatus(s.label);
+      }
+    }, 1100);
 
     let assistantText = "";
     let serverError: string | null = null;
@@ -193,7 +204,7 @@ export default function AgentPage() {
       if (!payload || payload === "[DONE]") return;
       let evt: any;
       try { evt = JSON.parse(payload); }
-      catch { assistantText += payload; setStreamingContent(assistantText); return; }
+      catch { assistantText += payload; setStreamingContent(assistantText); if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus("Writing response…"); } return; }
       if (evt && evt.type === "error") { serverError = evt.message || "Agent error"; return; }
       if (evt && typeof evt.error === "string") { serverError = evt.error; return; }
       if (typeof evt === "string") assistantText += evt;
@@ -202,6 +213,7 @@ export default function AgentPage() {
       else if (evt && typeof evt.text === "string") assistantText += evt.text;
       else if (evt && typeof evt.delta === "string") assistantText += evt.delta;
       setStreamingContent(assistantText);
+      if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus("Writing response…"); }
     };
 
     try {
@@ -254,6 +266,7 @@ export default function AgentPage() {
       setStreamingContent("");
       setWorking(false);
       setWorkingStatus("");
+      setProgressStep(0);
       abortRef.current = null;
     }
   };
@@ -417,7 +430,27 @@ export default function AgentPage() {
   };
   const goToShell = () => setLocation("/shell");
   const goToTasks = () => setLocation("/dashboard");
-  const goToWeb = () => window.open("https://afroaigroup.com", "_blank");
+  const goToWeb = async () => {
+    try {
+      const res = await fetch("/api/published-apps", { credentials: "include" });
+      if (!res.ok) throw new Error("not signed in");
+      const apps: any[] = await res.json();
+      // Try to match by current project (title or projectId)
+      let match: any | undefined;
+      if (projectName) match = apps.find(a => (a.title || "").toLowerCase() === projectName.toLowerCase());
+      if (!match && apps.length > 0) match = apps[apps.length - 1]; // most recent
+      if (!match) {
+        toast({ title: "Nothing published yet", description: "Press the publish button after you build to put your site online.", });
+        return;
+      }
+      const url = match.customDomain
+        ? `https://${match.customDomain}`
+        : `https://${match.subdomain}.afroaigroup.com`;
+      window.open(url, "_blank");
+    } catch {
+      toast({ title: "Sign in to view your site", variant: "destructive" });
+    }
+  };
   const goToCode = () => setLocation("/chat-classic");
 
   // ---------- Render ----------
@@ -536,18 +569,7 @@ export default function AgentPage() {
         )}
 
         {working && (
-          <div className="flex items-center gap-2 text-sm text-zinc-400">
-            <div className="flex gap-1.5">
-              <ActionIcon kind="edit" />
-              <ActionIcon kind="reasoning" pulse />
-              <ActionIcon kind="docs" />
-              <ActionIcon kind="search" />
-              <div className="w-6 h-6 rounded-md border border-violet-500/40 bg-violet-500/15 flex items-center justify-center">
-                <Sparkles className="w-3 h-3 text-violet-400 animate-pulse" />
-              </div>
-            </div>
-            <span data-testid="text-working-status">{workingStatus || "Working..."}</span>
-          </div>
+          <ProgressSteps step={progressStep} status={workingStatus} hasStreamed={streamingContent.length > 0} />
         )}
       </div>
 
@@ -741,6 +763,128 @@ function ActionChipsRow({ actions }: { actions: ActionChip[] }) {
         </div>
       )}
       <span className="ml-1">{actions.length} action{actions.length !== 1 ? "s" : ""}</span>
+    </div>
+  );
+}
+
+function ProgressSteps({ step, status, hasStreamed }: { step: number; status: string; hasStreamed: boolean }) {
+  const [open, setOpen] = useState(false);
+  const steps = [
+    { icon: Brain, label: "Thinking", desc: "Understanding your request" },
+    { icon: Search, label: "Reading", desc: "Looking at the context" },
+    { icon: FileEdit, label: "Drafting", desc: "Writing the first version" },
+    { icon: BookOpen, label: "Polishing", desc: "Improving the wording" },
+    { icon: Sparkles, label: "Writing", desc: "Sending the response to you" },
+  ];
+  return (
+    <div className="space-y-2" data-testid="progress-steps">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 p-2 -m-2 rounded-lg hover:bg-zinc-900/60 transition-colors text-left"
+        aria-expanded={open}
+        data-testid="button-progress-toggle"
+      >
+        <div className="flex items-center gap-1.5">
+          {steps.map((s, i) => {
+            const Icon = s.icon;
+            const isActive = i === step;
+            const isDone = i < step;
+            return (
+              <div key={i} className="flex items-center gap-1.5">
+                <div
+                  className={`w-7 h-7 rounded-md flex items-center justify-center transition-all duration-300 ${
+                    isActive
+                      ? "border border-violet-500/60 bg-violet-500/20 scale-110"
+                      : isDone
+                      ? "border border-emerald-500/40 bg-emerald-500/10"
+                      : "border border-zinc-800 bg-zinc-900/50"
+                  }`}
+                >
+                  <Icon
+                    className={`w-3.5 h-3.5 ${
+                      isActive
+                        ? "text-violet-300 animate-pulse"
+                        : isDone
+                        ? "text-emerald-400"
+                        : "text-zinc-600"
+                    }`}
+                  />
+                </div>
+                {i < steps.length - 1 && (
+                  <div
+                    className={`h-0.5 w-3 rounded-full transition-colors duration-300 ${
+                      isDone ? "bg-emerald-500/50" : "bg-zinc-800"
+                    }`}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <span className="text-sm text-violet-400 font-medium ml-1 flex-1 truncate" data-testid="text-working-status">
+          {status || "Working…"}
+        </span>
+        {!hasStreamed && (
+          <span className="flex gap-0.5">
+            <span className="w-1 h-1 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+            <span className="w-1 h-1 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+            <span className="w-1 h-1 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+          </span>
+        )}
+        <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="ml-1 pl-4 border-l border-zinc-800 space-y-2.5 py-2" data-testid="progress-dropdown">
+          {steps.map((s, i) => {
+            const Icon = s.icon;
+            const isActive = i === step;
+            const isDone = i < step;
+            const stateLabel = isDone ? "Done" : isActive ? "In progress…" : "Waiting";
+            const stateColor = isDone ? "text-emerald-400" : isActive ? "text-violet-300" : "text-zinc-500";
+            return (
+              <div key={i} className="flex items-start gap-2.5" data-testid={`progress-item-${i}`}>
+                <div
+                  className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                    isActive
+                      ? "bg-violet-500/20 border border-violet-500/50"
+                      : isDone
+                      ? "bg-emerald-500/15 border border-emerald-500/40"
+                      : "bg-zinc-900 border border-zinc-800"
+                  }`}
+                >
+                  <Icon
+                    className={`w-3 h-3 ${
+                      isActive ? "text-violet-300" : isDone ? "text-emerald-400" : "text-zinc-600"
+                    }`}
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-medium ${isActive ? "text-zinc-100" : isDone ? "text-zinc-300" : "text-zinc-500"}`}>
+                      {s.label}
+                    </span>
+                    <span className={`text-[11px] ${stateColor}`}>{stateLabel}</span>
+                  </div>
+                  <p className="text-xs text-zinc-500 leading-snug">{s.desc}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!hasStreamed && !open && (
+        <div className="space-y-1.5 mt-1.5">
+          <div className="h-2 w-full rounded bg-zinc-900 overflow-hidden">
+            <div className="h-full w-1/3 bg-gradient-to-r from-violet-500/40 to-transparent animate-pulse" />
+          </div>
+          <div className="h-2 w-4/5 rounded bg-zinc-900 overflow-hidden">
+            <div className="h-full w-1/4 bg-gradient-to-r from-violet-500/30 to-transparent animate-pulse" style={{ animationDelay: "200ms" }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
