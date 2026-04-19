@@ -68,6 +68,7 @@ import {
   ChevronDown,
   BookMarked,
   MoreHorizontal,
+  MousePointerClick,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -666,7 +667,7 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth, onGithubExport }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth, onGithubExport, onSelectElement, isSelectMode, onToggleSelectMode }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -681,6 +682,9 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   historyCount?: number;
   onAddAuth?: () => void;
   onGithubExport?: (mode: "gist" | "repo") => void;
+  onSelectElement?: (sel: { selector: string; tagName: string; textPreview: string; outerHtmlPreview: string }) => void;
+  isSelectMode?: boolean;
+  onToggleSelectMode?: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
@@ -694,25 +698,41 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
     setErrorsDismissed(false);
   }, [code]);
 
-  // Listen for JS errors from inside the iframe
+  // Listen for JS errors AND element-selection messages from inside the iframe
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (e.data?.type === "afroai-iframe-error") {
         const msg = String(e.data.message || "Unknown error");
         setIframeErrors(prev => prev.includes(msg) ? prev : [...prev, msg]);
         setErrorsDismissed(false);
+      } else if (e.data?.type === "afroai-element-selected" && onSelectElement) {
+        onSelectElement({
+          selector: String(e.data.selector || ""),
+          tagName: String(e.data.tagName || ""),
+          textPreview: String(e.data.textPreview || ""),
+          outerHtmlPreview: String(e.data.outerHtmlPreview || ""),
+        });
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  }, [onSelectElement]);
 
-  // Inject error-catcher script so iframe errors bubble up
+  // Toggle select-mode inside the iframe via postMessage when prop changes
+  useEffect(() => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage({ type: "afroai-set-select-mode", enabled: !!isSelectMode }, "*");
+  }, [isSelectMode, code]);
+
+  // Inject error-catcher + element-picker scripts so iframe errors and clicks bubble up
   const instrumentedCode = useMemo(() => {
     const errorScript = `<script>(function(){function s(m){try{window.parent.postMessage({type:'afroai-iframe-error',message:m},'*')}catch(e){}}window.addEventListener('error',function(e){var msg=e.message||'';if(!msg||msg==='Script error'||msg==='Script error.')return;if(!e.filename||e.filename.indexOf(location.origin)===-1&&e.filename!=='')return;s(msg)});window.addEventListener('unhandledrejection',function(e){var r=e.reason;if(!r)return;var m=r.message?r.message:String(r);if(m==='Script error'||m==='Script error.')return;s(m)})})();<\/script>`;
-    if (code.includes('<head>')) return code.replace('<head>', '<head>' + errorScript);
-    if (/<html/i.test(code)) return code.replace(/<html[^>]*>/i, m => m + errorScript);
-    return errorScript + code;
+    const pickerScript = `<script>(function(){var on=false,hov=null;var st=document.createElement('style');st.textContent='[data-afroai-hover]{outline:2px dashed #F59E0B!important;outline-offset:2px!important;cursor:crosshair!important;background:rgba(245,158,11,0.08)!important}html.afroai-pick *{cursor:crosshair!important}';document.head.appendChild(st);function sel(el){if(el.id)return el.tagName.toLowerCase()+'#'+el.id;var p=[],n=el,depth=0;while(n&&n.nodeType===1&&depth<5){var s=n.tagName.toLowerCase();if(n.className&&typeof n.className==='string'){var c=n.className.trim().split(/\\s+/).slice(0,2).join('.');if(c)s+='.'+c}var par=n.parentNode;if(par&&par.children){var sib=Array.prototype.filter.call(par.children,function(x){return x.tagName===n.tagName});if(sib.length>1)s+=':nth-of-type('+(Array.prototype.indexOf.call(sib,n)+1)+')'}p.unshift(s);n=n.parentElement;depth++}return p.join(' > ')}function clr(){if(hov){hov.removeAttribute('data-afroai-hover');hov=null}}function over(e){if(!on)return;clr();hov=e.target;hov.setAttribute('data-afroai-hover','1')}function out(){if(!on)return;clr()}function clk(e){if(!on)return;e.preventDefault();e.stopPropagation();var el=e.target;var oh=el.outerHTML||'';if(oh.length>500)oh=oh.slice(0,500)+'...';var tx=(el.innerText||el.textContent||'').trim().slice(0,140);try{window.parent.postMessage({type:'afroai-element-selected',selector:sel(el),tagName:el.tagName.toLowerCase(),textPreview:tx,outerHtmlPreview:oh},'*')}catch(_){}clr();on=false;document.documentElement.classList.remove('afroai-pick')}document.addEventListener('mouseover',over,true);document.addEventListener('mouseout',out,true);document.addEventListener('click',clk,true);window.addEventListener('message',function(e){if(e.data&&e.data.type==='afroai-set-select-mode'){on=!!e.data.enabled;if(on)document.documentElement.classList.add('afroai-pick');else{document.documentElement.classList.remove('afroai-pick');clr()}}})})();<\/script>`;
+    const inject = errorScript + pickerScript;
+    if (code.includes('<head>')) return code.replace('<head>', '<head>' + inject);
+    if (/<html/i.test(code)) return code.replace(/<html[^>]*>/i, m => m + inject);
+    return inject + code;
   }, [code]);
 
   return (
@@ -748,6 +768,19 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
                 <Smartphone className="w-3.5 h-3.5" />
               </Button>
             </div>
+            {onToggleSelectMode && (
+              <Button
+                size="sm"
+                variant={isSelectMode ? "default" : "outline"}
+                onClick={onToggleSelectMode}
+                className={`gap-1 ${isSelectMode ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-500" : "border-border/60 hover:border-amber-400/60 hover:text-amber-500"}`}
+                title={isSelectMode ? "Click an element on the page (or press here to cancel)" : "Click any part of your page to edit just that section"}
+                data-testid="button-toggle-select-element"
+              >
+                <MousePointerClick className="w-3 h-3" />
+                <span className="hidden lg:inline">{isSelectMode ? "Click an element..." : "Edit Section"}</span>
+              </Button>
+            )}
             {onAddAuth && (
               <Button size="sm" variant="outline" onClick={onAddAuth} className="gap-1 border-border/60 hover:border-amber-400/60 hover:text-amber-500" title="Add login" data-testid="button-add-auth">
                 <Lock className="w-3 h-3" /><span className="hidden lg:inline">Add Login</span>
@@ -1066,6 +1099,8 @@ export default function AIChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [previewCode, setPreviewCode] = useState<string | null>(null);
   const [previousCode, setPreviousCode] = useState<string | null>(null);
+  const [selectedElement, setSelectedElement] = useState<{ selector: string; tagName: string; textPreview: string; outerHtmlPreview: string } | null>(null);
+  const [isSelectMode, setIsSelectMode] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [previewingVersionId, setPreviewingVersionId] = useState<number | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -2026,10 +2061,15 @@ export default function AIChatPage() {
   const handleSend = async () => {
     if ((!input.trim() && pendingAttachments.length === 0) || !activeConversation || isStreaming) return;
 
-    const userMessage = input.trim() || "Check these attachments";
+    const baseMessage = input.trim() || "Check these attachments";
     const currentAttachments = [...pendingAttachments];
+    const targetedSel = selectedElement;
+    const userMessage = targetedSel
+      ? `[TARGETED EDIT — change ONLY this element, leave the rest of the app untouched]\nSelector: ${targetedSel.selector}\nElement: <${targetedSel.tagName}>\nCurrent text: ${targetedSel.textPreview || "(no text)"}\nCurrent HTML snippet: ${targetedSel.outerHtmlPreview}\n\nUser request: ${baseMessage}`
+      : baseMessage;
     setInput("");
     setPendingAttachments([]);
+    setSelectedElement(null);
     setIsStreaming(true);
     setStreamingContent("");
 
@@ -2529,6 +2569,35 @@ export default function AIChatPage() {
                       </span>
                     </div>
                   )}
+                  {selectedElement && (
+                    <div
+                      className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/40 text-xs"
+                      data-testid="chip-selected-element"
+                    >
+                      <MousePointerClick className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-amber-700 dark:text-amber-300">
+                          Editing just this element: <code className="font-mono bg-amber-500/15 px-1 py-0.5 rounded">&lt;{selectedElement.tagName}&gt;</code>
+                        </div>
+                        {selectedElement.textPreview && (
+                          <div className="text-amber-700/80 dark:text-amber-300/80 truncate mt-0.5">
+                            "{selectedElement.textPreview}"
+                          </div>
+                        )}
+                        <div className="text-amber-600/70 dark:text-amber-400/70 text-[10px] mt-0.5">
+                          Tell me what to change — the rest of your app stays untouched.
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSelectedElement(null)}
+                        className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 flex-shrink-0"
+                        data-testid="button-clear-selected-element"
+                        title="Cancel targeted edit"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                   {pendingAttachments.length > 0 && (
                     <div className="flex flex-wrap gap-2 px-1">
                       {pendingAttachments.map((att, i) => (
@@ -2837,6 +2906,19 @@ export default function AIChatPage() {
               historyCount={appVersionsList?.length ?? 0}
               onAddAuth={() => { setAuthStep(1); setShowAuthModal(true); }}
               onGithubExport={handleGithubExport}
+              isSelectMode={isSelectMode}
+              onToggleSelectMode={() => {
+                setIsSelectMode(prev => {
+                  const next = !prev;
+                  if (next) setSelectedElement(null);
+                  return next;
+                });
+              }}
+              onSelectElement={(el) => {
+                setSelectedElement(el);
+                setIsSelectMode(false);
+                setMobileView("chat");
+              }}
             />
           </div>
         )}
