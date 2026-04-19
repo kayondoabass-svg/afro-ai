@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Smartphone, Monitor, Tablet, ExternalLink,
-  Sparkles, RefreshCw, Globe, Share2, Copy, Loader2,
+  Sparkles, RefreshCw, Globe, Share2, Copy, Loader2, QrCode, Download, X,
 } from "lucide-react";
 
 interface PreviewData {
@@ -31,6 +31,7 @@ export default function PreviewPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [device, setDevice] = useState<Device>("mobile");
+  const [showQr, setShowQr] = useState(false);
 
   const { data, isLoading, refetch, isRefetching } = useQuery<PreviewData>({
     queryKey: ["/api/projects", projectId, "preview"],
@@ -204,6 +205,16 @@ export default function PreviewPage() {
             variant="outline"
             size="icon"
             className="h-9 w-9 bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800"
+            onClick={() => setShowQr(true)}
+            data-testid="button-qr"
+            aria-label="Show QR code"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800"
             onClick={copyPublishedLink}
             data-testid="button-copy-link"
             aria-label="Copy link"
@@ -222,6 +233,94 @@ export default function PreviewPage() {
           </Button>
         </div>
       )}
+
+      {showQr && data?.publishedUrl && (
+        <QrModal
+          url={data.publishedUrl}
+          name={data.project?.name || "My site"}
+          onClose={() => setShowQr(false)}
+          onCopy={copyPublishedLink}
+        />
+      )}
+    </div>
+  );
+}
+
+function QrModal({ url, name, onClose, onCopy }: { url: string; name: string; onClose: () => void; onCopy: () => void }) {
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=2&data=${encodeURIComponent(url)}`;
+  const downloadSrc = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=4&format=png&data=${encodeURIComponent(url)}`;
+
+  const handleDownload = async () => {
+    try {
+      const res = await fetch(downloadSrc);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${name.replace(/[^a-z0-9]/gi, "-").toLowerCase()}-qr.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {}
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+      onClick={onClose}
+      data-testid="modal-qr"
+    >
+      <div
+        className="bg-zinc-900 rounded-2xl border border-zinc-800 max-w-sm w-full p-6 relative"
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 w-8 h-8 rounded-md flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+          aria-label="Close"
+          data-testid="button-qr-close"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <h3 className="text-base font-semibold text-zinc-100 mb-1 pr-8">Scan to open your site</h3>
+        <p className="text-xs text-zinc-400 mb-4">Show this to a customer — they point their phone camera at it and your site opens.</p>
+
+        <div className="bg-white rounded-xl p-4 flex items-center justify-center mb-4">
+          <img
+            src={qrSrc}
+            alt={`QR code for ${url}`}
+            className="w-full max-w-[280px] h-auto"
+            data-testid="img-qr-large"
+          />
+        </div>
+
+        <p className="text-[11px] text-zinc-500 text-center mb-4 break-all" data-testid="text-qr-url">{url}</p>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            className="bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700 h-10"
+            onClick={handleDownload}
+            data-testid="button-qr-download"
+          >
+            <Download className="w-4 h-4 mr-1.5" />
+            Download
+          </Button>
+          <Button
+            className="bg-violet-500 hover:bg-violet-600 text-white h-10"
+            onClick={onCopy}
+            data-testid="button-qr-copy"
+          >
+            <Copy className="w-4 h-4 mr-1.5" />
+            Copy link
+          </Button>
+        </div>
+        <p className="text-[11px] text-zinc-500 text-center mt-3 leading-relaxed">
+          Tip: print it on a flyer, business card, or stick it on your shop door.
+        </p>
+      </div>
     </div>
   );
 }
