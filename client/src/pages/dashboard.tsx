@@ -69,6 +69,7 @@ export default function DashboardPage() {
   const [, navigate] = useLocation();
   const [showNewProject, setShowNewProject] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [paymentSuccess, setPaymentSuccess] = useState<{ plan: string } | null>(null);
 
   useEffect(() => {
@@ -115,13 +116,32 @@ export default function DashboardPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/projects/${id}`);
+      const r = await apiRequest("DELETE", `/api/projects/${id}`);
+      try { return await r.json(); } catch { return { ok: true, removedPublished: [] }; }
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: t("dashboard.projectDeleted") });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      const live = (data?.removedPublished || []) as { subdomain: string }[];
+      if (live.length > 0) {
+        toast({
+          title: "Project & live site deleted",
+          description: `Took down ${live.length} live site${live.length > 1 ? "s" : ""}: ${live.map(l => l.subdomain + ".afroaigroup.com").join(", ")}`,
+        });
+      } else {
+        toast({ title: t("dashboard.projectDeleted") });
+      }
+      setProjectToDelete(null);
+      setDeleteConfirmText("");
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete failed", description: err?.message || "Could not delete", variant: "destructive" });
     },
   });
+
+  const matchingLiveSites = (publishedApps || []).filter(
+    a => projectToDelete && a.title === projectToDelete.name
+  );
 
   const form = useForm({
     defaultValues: { name: "", description: "", type: "website" },
@@ -481,28 +501,58 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
+      <AlertDialog
+        open={!!projectToDelete}
+        onOpenChange={(open) => { if (!open) { setProjectToDelete(null); setDeleteConfirmText(""); } }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Project</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete <strong>"{projectToDelete?.name}"</strong>? Once deleted, there is no going back. All project data will be permanently removed.
+            <AlertDialogTitle className="text-destructive">Delete "{projectToDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>This will permanently delete the project draft. <strong>This cannot be undone.</strong></p>
+                {matchingLiveSites.length > 0 && (
+                  <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3 space-y-2">
+                    <p className="font-semibold text-destructive">⚠ This will also take down your live site{matchingLiveSites.length > 1 ? "s" : ""}:</p>
+                    <ul className="list-disc list-inside text-xs">
+                      {matchingLiveSites.map(a => (
+                        <li key={a.id} className="font-mono" data-testid={`text-live-site-${a.id}`}>
+                          {a.subdomain}.afroaigroup.com
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-muted-foreground">Visitors will see "site not found" right after deletion.</p>
+                  </div>
+                )}
+                <div className="pt-1">
+                  <p className="text-xs font-medium mb-1.5">Type <strong className="font-mono bg-muted px-1.5 py-0.5 rounded text-destructive">DELETE</strong> below to confirm:</p>
+                  <Input
+                    autoFocus
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="DELETE"
+                    className="font-mono"
+                    data-testid="input-confirm-delete"
+                  />
+                </div>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-cancel-delete-project">Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (projectToDelete) {
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={deleteConfirmText.trim() !== "DELETE" || deleteMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (projectToDelete && deleteConfirmText.trim() === "DELETE") {
                   deleteMutation.mutate(projectToDelete.id);
-                  setProjectToDelete(null);
                 }
               }}
               data-testid="button-confirm-delete-project"
             >
               <Trash2 className="w-4 h-4 mr-1" />
-              Delete Forever
+              {deleteMutation.isPending ? "Deleting…" : `Delete${matchingLiveSites.length > 0 ? " everything" : " project"}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

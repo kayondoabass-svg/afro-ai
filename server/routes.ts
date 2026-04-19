@@ -787,8 +787,27 @@ export async function registerRoutes(
       if (project.userId !== userId) {
         return res.status(403).json({ message: "Forbidden" });
       }
+      // Also tear down any of this user's published live sites whose title matches
+      // the project name. This is what the user expects when deleting from the dashboard:
+      // the live URL should also stop serving.
+      let removedPublished: { id: number; subdomain: string }[] = [];
+      try {
+        const userApps = await storage.getPublishedAppsByUser(userId);
+        const matches = userApps.filter(a => a.title === project.name);
+        for (const app of matches) {
+          if (app.cloudflareDnsRecordId) {
+            try { await deleteSubdomainRecord(app.cloudflareDnsRecordId); }
+            catch (e) { console.error("[delete-project] DNS cleanup failed:", e); }
+          }
+          await storage.deletePublishedApp(app.id);
+          removedPublished.push({ id: app.id, subdomain: app.subdomain });
+        }
+      } catch (e) {
+        console.error("[delete-project] published-app cascade failed:", e);
+      }
+
       await storage.deleteProject(id);
-      res.status(204).send();
+      res.json({ ok: true, removedPublished });
     } catch (error) {
       console.error("Error deleting project:", error);
       res.status(500).json({ message: "Failed to delete project" });

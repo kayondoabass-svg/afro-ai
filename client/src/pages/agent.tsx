@@ -135,15 +135,16 @@ export default function AgentPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-send initial description from URL once conversation is ready
+  // Pre-fill (don't auto-send) the initial description from URL so the user
+  // can review/edit it before pressing Send. They wanted to give instructions first.
   useEffect(() => {
-    if (!conversationId || initialDescriptionSentRef.current) return;
+    if (initialDescriptionSentRef.current) return;
     if (initialDescription && initialDescription.trim().length > 0) {
       initialDescriptionSentRef.current = true;
-      sendMessage(initialDescription.trim());
+      setInput(initialDescription.trim());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
+  }, [initialDescription]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
