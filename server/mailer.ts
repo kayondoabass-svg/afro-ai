@@ -141,6 +141,19 @@ export async function sendPasswordResetEmail(to: string, opts: { name: string; r
   return send(to, subject, wrapped.html, wrapped.text);
 }
 
+export async function sendSetPasswordEmail(to: string, opts: { name: string; resetUrl: string }): Promise<boolean> {
+  const subject = "Set your Afro AI password";
+  const html = `
+    <p>Hi ${opts.name || "there"},</p>
+    <p>We've upgraded the way you sign in to Afro AI. Your existing account is still here — just choose a password to keep using it. Tap the button below to set one. The link works for the next <strong>60 minutes</strong> and can only be used once.</p>
+    <p style="margin:24px 0;text-align:center;"><a href="${opts.resetUrl}" style="background:${BRAND_COLOR};color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Set my password →</a></p>
+    <p style="font-size:13px;color:#a1a1aa;">If the button doesn't work, copy this link into your browser:<br/><span style="word-break:break-all;color:${BRAND_COLOR};">${opts.resetUrl}</span></p>
+    <p style="font-size:13px;color:#a1a1aa;margin-top:18px;">If you don't recognise this account, you can safely ignore this email.</p>`;
+  const text = `Hi ${opts.name || "there"},\n\nSet your Afro AI password using this one-time link (works for 60 minutes):\n${opts.resetUrl}\n\nIf you don't recognise this account, just ignore the email.`;
+  const wrapped = shell("Set your password", html, text);
+  return send(to, subject, wrapped.html, wrapped.text);
+}
+
 export async function sendWelcomeEmail(to: string, name: string): Promise<boolean> {
   const subject = "Welcome to Afro AI 🎉";
   const html = `

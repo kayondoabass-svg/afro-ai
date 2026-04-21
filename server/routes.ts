@@ -248,6 +248,58 @@ export async function registerRoutes(
   registerAuthRoutes(app);
   registerChatRoutes(app);
 
+  // ============ INTERNAL EMAIL (Cloudflare Worker → Express SES) ============
+  // The Cloudflare Worker (cloudflare/src/index.ts) calls this endpoint to
+  // send transactional mail through our single AWS SES sender, instead of
+  // talking to Resend directly. Authenticated via a shared secret header.
+  // Set INTERNAL_EMAIL_SECRET in both Express env and `wrangler secret put`.
+  app.post("/api/internal/send-email", express.json({ limit: "32kb" }), async (req, res) => {
+    try {
+      const secret = process.env.INTERNAL_EMAIL_SECRET;
+      if (!secret) {
+        console.error("[internal-email] INTERNAL_EMAIL_SECRET not set");
+        return res.status(503).json({ ok: false, message: "Email bridge not configured." });
+      }
+      const auth = req.header("authorization") || "";
+      const provided = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      // Constant-time compare to avoid leaking the secret length via timing.
+      const a = Buffer.from(provided);
+      const b = Buffer.from(secret);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ ok: false, message: "Unauthorized." });
+      }
+
+      const { template, to, vars } = req.body ?? {};
+      if (typeof to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        return res.status(400).json({ ok: false, message: "Invalid recipient." });
+      }
+      const v = (vars && typeof vars === "object") ? vars : {};
+
+      const mailer = await import("./mailer");
+      let sent = false;
+      switch (template) {
+        case "password_reset":
+          sent = await mailer.sendPasswordResetEmail(to, {
+            name: String(v.name || ""),
+            resetUrl: String(v.resetUrl || ""),
+          });
+          break;
+        case "set_password":
+          sent = await mailer.sendSetPasswordEmail(to, {
+            name: String(v.name || ""),
+            resetUrl: String(v.resetUrl || ""),
+          });
+          break;
+        default:
+          return res.status(400).json({ ok: false, message: "Unknown template." });
+      }
+      return res.json({ ok: sent });
+    } catch (err: any) {
+      console.error("[internal-email] error:", err?.message || err);
+      return res.status(500).json({ ok: false, message: "Send failed." });
+    }
+  });
+
   app.post("/api/upload", isAuthenticated, upload.array("files", 5), async (req: any, res) => {
     try {
       const files = req.files as Express.Multer.File[];

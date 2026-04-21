@@ -46,15 +46,22 @@ else
 fi
 
 echo ""
-if [ -n "${RESEND_API_KEY:-}" ]; then
-  echo "Found RESEND_API_KEY in env — uploading."
-  echo "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY
+# Mail bridge: Worker forwards transactional mail to Express's AWS SES
+# sender via POST /api/internal/send-email, protected by a shared secret.
+if [ -n "${INTERNAL_EMAIL_SECRET:-}" ]; then
+  echo "Found INTERNAL_EMAIL_SECRET in env — uploading."
+  echo "$INTERNAL_EMAIL_SECRET" | npx wrangler secret put INTERNAL_EMAIL_SECRET
 else
-  echo "(Optional) Paste your Resend API key for password-reset emails (or hit Enter to skip):"
-  read -r RESEND_INPUT
-  if [ -n "$RESEND_INPUT" ]; then
-    echo "$RESEND_INPUT" | npx wrangler secret put RESEND_API_KEY
+  echo "Paste the INTERNAL_EMAIL_SECRET shared with Express (or hit Enter to skip):"
+  read -r INTERNAL_INPUT
+  if [ -n "$INTERNAL_INPUT" ]; then
+    echo "$INTERNAL_INPUT" | npx wrangler secret put INTERNAL_EMAIL_SECRET
   fi
+fi
+
+if [ -n "${EXPRESS_BASE_URL:-}" ]; then
+  echo "Found EXPRESS_BASE_URL in env — uploading."
+  echo "$EXPRESS_BASE_URL" | npx wrangler secret put EXPRESS_BASE_URL
 fi
 
 echo "==> 5/5  Deploying Worker..."

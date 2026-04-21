@@ -24,7 +24,11 @@ interface Env {
   COOKIE_DOMAIN: string;
   JWT_SECRET: string;
   TURNSTILE_SECRET_KEY: string;
-  RESEND_API_KEY?: string;
+  // Shared secret + base URL for the Express mail bridge
+  // (Express route: POST /api/internal/send-email).
+  // All transactional mail now goes through AWS SES on the Express side.
+  INTERNAL_EMAIL_SECRET?: string;
+  EXPRESS_BASE_URL?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
@@ -214,59 +218,63 @@ async function getCurrentUserId(c: any): Promise<string | null> {
 }
 
 /**
- * Sign a request body with HMAC-SHA256 using the shared JWT_SECRET.
- * Both sides know JWT_SECRET, so this proves the call came from the Worker
- * without introducing yet another secret to manage.
+ * Send transactional mail by forwarding to the Express SES bridge.
+ *
+ * We deliberately do NOT keep a separate Resend integration here — every
+ * transactional email in the platform must go through one provider (AWS SES,
+ * via Express) so deliverability, DKIM, suppression lists, and audit logs
+ * stay in one place.
+ *
+ * Supersedes the earlier HMAC-signed `/api/internal/cf-mail` proxy: the
+ * Bearer + template path is simpler, lets Express own the email templates
+ * (so all transactional copy lives in one place), and shares its secret
+ * with the admin /mint-reset-token endpoint below.
  */
-async function signBody(secret: string, body: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(body));
-  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Send transactional mail by proxying to the Express SES sender. The Express
- * side already has AWS SES configured with our domain identity, so all
- * outgoing mail goes through one provider.
- */
-async function sendViaExpressSES(
-  c: any,
+async function sendViaBridge(
+  env: Env,
+  template: 'password_reset' | 'set_password',
   to: string,
-  subject: string,
-  html: string,
-  text: string,
+  vars: Record<string, string>,
 ): Promise<void> {
-  const body = JSON.stringify({ to, subject, html, text });
-  const sig = await signBody(c.env.JWT_SECRET, body);
-  const res = await fetch(`${c.env.APP_URL}/api/internal/cf-mail`, {
+  if (!env.INTERNAL_EMAIL_SECRET) {
+    console.error('[mail-bridge] INTERNAL_EMAIL_SECRET not set — cannot send', template, 'to', to);
+    return;
+  }
+  const base = env.EXPRESS_BASE_URL || env.APP_URL;
+  const res = await fetch(`${base}/api/internal/send-email`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CF-Sig': sig },
-    body,
+    headers: {
+      Authorization: `Bearer ${env.INTERNAL_EMAIL_SECRET}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ template, to, vars }),
   });
+  // Express returns 200 { ok: false } when SES rejects the message, so we
+  // need to inspect the body — not just res.ok — for full visibility.
+  const text = await res.text().catch(() => '');
   if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`Express mail proxy ${res.status}: ${txt.slice(0, 200)}`);
+    console.error('[mail-bridge] send failed', res.status, text);
+    return;
+  }
+  try {
+    const body = JSON.parse(text || '{}') as { ok?: boolean; message?: string };
+    if (body.ok === false) {
+      console.error('[mail-bridge] SES rejected', template, 'to', to, body.message || '');
+    }
+  } catch {
+    /* non-JSON body — already 2xx, treat as success */
   }
 }
 
-async function sendPasswordResetEmail(c: any, to: string, name: string, url: string): Promise<void> {
-  const subject = 'Reset your Afro AI password';
-  const html = `
-    <p>Hi ${name},</p>
-    <p>You asked to reset your Afro AI password. Tap the button below to choose a new one:</p>
-    <p><a href="${url}" style="background:#F59E0B;color:#000;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">Reset my password</a></p>
-    <p>Or copy this link into your browser: <br>${url}</p>
-    <p>This link expires in 1 hour. If you didn't ask for this, you can safely ignore this message.</p>
-    <p>— Afro AI</p>
-  `;
-  const text = `Hi ${name},\n\nYou asked to reset your Afro AI password.\nOpen this link to choose a new one (expires in 1 hour):\n${url}\n\nIf you didn't ask for this, you can safely ignore this message.\n— Afro AI`;
-  await sendViaExpressSES(c, to, subject, html, text);
+/**
+ * Constant-time string compare for the Worker admin shared secret. Avoids
+ * leaking the secret length / contents through response-time differences.
+ */
+function timingSafeStrEq(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 /* ------------------------------ Routes ------------------------------ */
@@ -443,14 +451,69 @@ app.post('/forgot-password', async (c) => {
     .run();
 
   const resetUrl = `${c.env.APP_URL}/reset-password?token=${rawToken}`;
-  try {
-    await sendPasswordResetEmail(c, email, user.first_name || 'there', resetUrl);
-  } catch (err) {
-    // Email failures are intentionally silent to the caller (we never want
-    // to reveal whether the email exists), but logged for ops.
-    console.error('[forgot-password] send failed', err);
+  if (c.env.INTERNAL_EMAIL_SECRET) {
+    try {
+      await sendViaBridge(c.env, 'password_reset', email, {
+        name: user.first_name || 'there',
+        resetUrl,
+      });
+    } catch (err) {
+      // Email failures are intentionally silent to the caller (we never want
+      // to reveal whether the email exists), but logged for ops.
+      console.error('[forgot-password] send failed', err);
+    }
+  } else {
+    console.log('Password reset URL (no email provider configured):', resetUrl);
   }
   return c.json({ ok: true });
+});
+
+/**
+ * Admin-only endpoint used by the existing-user reset blast script.
+ * Mints a single-use reset token (same shape as /forgot-password) and
+ * returns the URL to the caller — the caller sends the email itself
+ * (the blast script uses the "set_password" template via Express).
+ *
+ * Protected by the same INTERNAL_EMAIL_SECRET shared with Express, so we
+ * don't have to manage another secret. Never exposed to end users.
+ */
+app.post('/admin/mint-reset-token', async (c) => {
+  const secret = c.env.INTERNAL_EMAIL_SECRET;
+  if (!secret) return c.json({ message: 'Mail bridge not configured.' }, 503);
+  const auth = c.req.header('authorization') || '';
+  const provided = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!timingSafeStrEq(provided, secret)) return c.json({ message: 'Unauthorized.' }, 401);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ message: 'Invalid request.' }, 400);
+  }
+  const email = String(body.email || '').trim().toLowerCase();
+  if (!isValidEmail(email)) return c.json({ message: 'Invalid email.' }, 400);
+
+  const user = await c.env.DB.prepare(
+    'SELECT id, first_name FROM users WHERE email = ?',
+  )
+    .bind(email)
+    .first<{ id: string; first_name: string | null }>();
+  if (!user) return c.json({ message: 'No such user.' }, 404);
+
+  const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+  const rawToken = [...tokenBytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const tokenHash = await sha256Hex(rawToken);
+  const ts = nowSec();
+  const expiresAt = ts + 60 * 60;
+
+  await c.env.DB.prepare(
+    'INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
+  )
+    .bind(uuid(), user.id, tokenHash, expiresAt, ts)
+    .run();
+
+  const resetUrl = `${c.env.APP_URL}/reset-password?token=${rawToken}`;
+  return c.json({ ok: true, resetUrl, name: user.first_name || '' });
 });
 
 app.post('/reset-password', async (c) => {
