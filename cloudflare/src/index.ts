@@ -24,6 +24,10 @@ interface Env {
   JWT_SECRET: string;
   TURNSTILE_SECRET_KEY: string;
   RESEND_API_KEY?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -418,6 +422,319 @@ app.post('/api/auth/reset-password', async (c) => {
 
   await issueSession(c, row.user_id);
   return c.json({ ok: true });
+});
+
+/* ------------------------------ OAuth ------------------------------ */
+
+const STATE_COOKIE = 'afroai_oauth_state';
+
+async function makeStateToken(
+  c: any,
+  provider: string,
+  redirectTo: string,
+): Promise<string> {
+  const secret = enc.encode(c.env.JWT_SECRET);
+  return await new SignJWT({ provider, redirect: redirectTo, nonce: uuid() })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('10m')
+    .sign(secret);
+}
+
+async function readStateToken(
+  c: any,
+  token: string,
+): Promise<{ provider: string; redirect: string } | null> {
+  try {
+    const secret = enc.encode(c.env.JWT_SECRET);
+    const { payload } = await jwtVerify(token, secret);
+    return {
+      provider: String(payload.provider || ''),
+      redirect: String(payload.redirect || c.env.APP_URL),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Look up or create a user for an OAuth identity. Links by email if possible. */
+async function upsertOAuthUser(
+  db: D1Database,
+  provider: string,
+  providerUserId: string,
+  email: string,
+  firstName: string | null,
+  lastName: string | null,
+  profileImageUrl: string | null,
+): Promise<string> {
+  const linked = await db
+    .prepare(
+      'SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?',
+    )
+    .bind(provider, providerUserId)
+    .first<{ user_id: string }>();
+  if (linked) return linked.user_id;
+
+  const ts = nowSec();
+  const normalisedEmail = email.toLowerCase();
+  const existing = await db
+    .prepare('SELECT id FROM users WHERE email = ?')
+    .bind(normalisedEmail)
+    .first<{ id: string }>();
+
+  let userId: string;
+  if (existing) {
+    userId = existing.id;
+  } else {
+    userId = uuid();
+    await db
+      .prepare(
+        'INSERT INTO users (id, email, first_name, last_name, profile_image_url, email_verified, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)',
+      )
+      .bind(
+        userId,
+        normalisedEmail,
+        firstName,
+        lastName,
+        profileImageUrl,
+        'free',
+        ts,
+        ts,
+      )
+      .run();
+  }
+
+  await db
+    .prepare(
+      'INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, created_at) VALUES (?, ?, ?, ?, ?)',
+    )
+    .bind(uuid(), userId, provider, providerUserId, ts)
+    .run();
+  return userId;
+}
+
+function callbackUrl(c: any, provider: string): string {
+  return new URL(c.req.url).origin + `/api/auth/${provider}/callback`;
+}
+
+function safeRedirect(target: string, appUrl: string): string {
+  try {
+    const u = new URL(target);
+    const allowedHost = new URL(appUrl).host;
+    if (u.host === allowedHost || u.host.endsWith('.' + allowedHost)) {
+      return u.toString();
+    }
+  } catch {
+    /* fall through */
+  }
+  return appUrl;
+}
+
+/* ----- Google ----- */
+
+app.get('/api/auth/google/start', async (c) => {
+  if (!c.env.GOOGLE_CLIENT_ID) {
+    return c.text('Google login is not configured.', 500);
+  }
+  const redirectTo = safeRedirect(c.req.query('redirect') || c.env.APP_URL, c.env.APP_URL);
+  const state = await makeStateToken(c, 'google', redirectTo);
+  setCookie(c, STATE_COOKIE, state, {
+    path: '/',
+    secure: true,
+    httpOnly: true,
+    sameSite: 'Lax',
+    maxAge: 600,
+  });
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id', c.env.GOOGLE_CLIENT_ID);
+  url.searchParams.set('redirect_uri', callbackUrl(c, 'google'));
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', 'openid email profile');
+  url.searchParams.set('state', state);
+  url.searchParams.set('access_type', 'online');
+  url.searchParams.set('prompt', 'select_account');
+  return c.redirect(url.toString());
+});
+
+app.get('/api/auth/google/callback', async (c) => {
+  const code = c.req.query('code');
+  const stateParam = c.req.query('state');
+  const stateCookie = getCookie(c, STATE_COOKIE);
+  deleteCookie(c, STATE_COOKIE, { path: '/' });
+
+  if (!code || !stateParam || stateParam !== stateCookie) {
+    return c.text('Login flow expired. Please try again.', 400);
+  }
+  const state = await readStateToken(c, stateParam);
+  if (!state || state.provider !== 'google') {
+    return c.text('Login flow expired. Please try again.', 400);
+  }
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: c.env.GOOGLE_CLIENT_ID!,
+      client_secret: c.env.GOOGLE_CLIENT_SECRET!,
+      redirect_uri: callbackUrl(c, 'google'),
+      grant_type: 'authorization_code',
+    }).toString(),
+  });
+  if (!tokenRes.ok) {
+    const text = await tokenRes.text();
+    console.error('Google token exchange failed', tokenRes.status, text);
+    return c.text('Could not finish Google login. Please try again.', 502);
+  }
+  const tokenJson = (await tokenRes.json()) as { access_token?: string };
+  if (!tokenJson.access_token) {
+    return c.text('Could not finish Google login. Please try again.', 502);
+  }
+
+  const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+  });
+  if (!userRes.ok) return c.text('Could not load your Google profile.', 502);
+  const profile = (await userRes.json()) as {
+    sub: string;
+    email?: string;
+    given_name?: string;
+    family_name?: string;
+    picture?: string;
+  };
+  if (!profile.email) {
+    return c.text('Your Google account did not share an email address.', 400);
+  }
+
+  const userId = await upsertOAuthUser(
+    c.env.DB,
+    'google',
+    profile.sub,
+    profile.email,
+    profile.given_name || null,
+    profile.family_name || null,
+    profile.picture || null,
+  );
+  await issueSession(c, userId);
+  return c.redirect(state.redirect);
+});
+
+/* ----- GitHub ----- */
+
+app.get('/api/auth/github/start', async (c) => {
+  if (!c.env.GITHUB_CLIENT_ID) {
+    return c.text('GitHub login is not configured.', 500);
+  }
+  const redirectTo = safeRedirect(c.req.query('redirect') || c.env.APP_URL, c.env.APP_URL);
+  const state = await makeStateToken(c, 'github', redirectTo);
+  setCookie(c, STATE_COOKIE, state, {
+    path: '/',
+    secure: true,
+    httpOnly: true,
+    sameSite: 'Lax',
+    maxAge: 600,
+  });
+  const url = new URL('https://github.com/login/oauth/authorize');
+  url.searchParams.set('client_id', c.env.GITHUB_CLIENT_ID);
+  url.searchParams.set('redirect_uri', callbackUrl(c, 'github'));
+  url.searchParams.set('scope', 'read:user user:email');
+  url.searchParams.set('state', state);
+  url.searchParams.set('allow_signup', 'true');
+  return c.redirect(url.toString());
+});
+
+app.get('/api/auth/github/callback', async (c) => {
+  const code = c.req.query('code');
+  const stateParam = c.req.query('state');
+  const stateCookie = getCookie(c, STATE_COOKIE);
+  deleteCookie(c, STATE_COOKIE, { path: '/' });
+
+  if (!code || !stateParam || stateParam !== stateCookie) {
+    return c.text('Login flow expired. Please try again.', 400);
+  }
+  const state = await readStateToken(c, stateParam);
+  if (!state || state.provider !== 'github') {
+    return c.text('Login flow expired. Please try again.', 400);
+  }
+
+  const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'afro-ai-auth',
+    },
+    body: JSON.stringify({
+      client_id: c.env.GITHUB_CLIENT_ID,
+      client_secret: c.env.GITHUB_CLIENT_SECRET,
+      code,
+      redirect_uri: callbackUrl(c, 'github'),
+    }),
+  });
+  if (!tokenRes.ok) {
+    return c.text('Could not finish GitHub login. Please try again.', 502);
+  }
+  const tokenJson = (await tokenRes.json()) as { access_token?: string; error?: string };
+  if (!tokenJson.access_token) {
+    return c.text('Could not finish GitHub login. Please try again.', 502);
+  }
+
+  const ghHeaders = {
+    Authorization: `Bearer ${tokenJson.access_token}`,
+    'User-Agent': 'afro-ai-auth',
+    Accept: 'application/vnd.github+json',
+  };
+  const userRes = await fetch('https://api.github.com/user', { headers: ghHeaders });
+  if (!userRes.ok) return c.text('Could not load your GitHub profile.', 502);
+  const profile = (await userRes.json()) as {
+    id: number;
+    login: string;
+    name?: string | null;
+    email?: string | null;
+    avatar_url?: string | null;
+  };
+
+  let email = profile.email || null;
+  if (!email) {
+    const emailsRes = await fetch('https://api.github.com/user/emails', {
+      headers: ghHeaders,
+    });
+    if (emailsRes.ok) {
+      const emails = (await emailsRes.json()) as Array<{
+        email: string;
+        primary: boolean;
+        verified: boolean;
+      }>;
+      const primary =
+        emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified);
+      email = primary?.email || null;
+    }
+  }
+  if (!email) {
+    return c.text('Your GitHub account does not have a verified email.', 400);
+  }
+
+  let firstName: string | null = null;
+  let lastName: string | null = null;
+  if (profile.name) {
+    const parts = profile.name.trim().split(/\s+/);
+    firstName = parts[0] || null;
+    lastName = parts.slice(1).join(' ') || null;
+  } else {
+    firstName = profile.login || null;
+  }
+
+  const userId = await upsertOAuthUser(
+    c.env.DB,
+    'github',
+    String(profile.id),
+    email,
+    firstName,
+    lastName,
+    profile.avatar_url || null,
+  );
+  await issueSession(c, userId);
+  return c.redirect(state.redirect);
 });
 
 export default app;
