@@ -2089,7 +2089,7 @@ export async function registerRoutes(
           id: merchantReference,
           currency,
           amount,
-          description: `Afro AI Credits — $${usdAmount} pack (${credits / 100} AI generations)`,
+          description: `Afro AI Credits — $${usdAmount} pack (${credits.toLocaleString()} credits)`,
           callback_url: `${baseUrl}/api/pesapal/callback`,
           notification_id: cachedIpnId,
           billing_address: { email_address: userEmail },
