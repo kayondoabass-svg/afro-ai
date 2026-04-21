@@ -143,9 +143,28 @@ async function verifyTurnstile(token: string, secret: string, ip?: string): Prom
   return data.success === true;
 }
 
+/** Build the JWT payload for a session cookie. Includes a small set of public
+ *  user fields so the Express bridge on the Replit side can verify and trust
+ *  the session without an extra D1 lookup. */
+async function buildSessionClaims(c: any, userId: string): Promise<Record<string, any>> {
+  const row = await c.env.DB.prepare(
+    'SELECT email, first_name AS firstName, last_name AS lastName, profile_image_url AS profileImageUrl FROM users WHERE id = ?',
+  )
+    .bind(userId)
+    .first<{ email: string; firstName?: string; lastName?: string; profileImageUrl?: string }>();
+  return {
+    sub: userId,
+    email: row?.email || '',
+    first_name: row?.firstName || '',
+    last_name: row?.lastName || '',
+    profile_image_url: row?.profileImageUrl || '',
+  };
+}
+
 async function issueSession(c: any, userId: string) {
   const secret = enc.encode(c.env.JWT_SECRET);
-  const token = await new SignJWT({ sub: userId })
+  const claims = await buildSessionClaims(c, userId);
+  const token = await new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('30d')
