@@ -38,12 +38,25 @@ JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
 echo "$JWT_SECRET" | npx wrangler secret put JWT_SECRET
 
 echo ""
-echo "Now paste your Turnstile SECRET key when prompted:"
-npx wrangler secret put TURNSTILE_SECRET_KEY
+if [ -n "${TURNSTILE_SECRET_KEY:-}" ]; then
+  echo "Found TURNSTILE_SECRET_KEY in env — uploading."
+  echo "$TURNSTILE_SECRET_KEY" | npx wrangler secret put TURNSTILE_SECRET_KEY
+else
+  echo "Now paste your Turnstile SECRET key when prompted:"
+  npx wrangler secret put TURNSTILE_SECRET_KEY
+fi
 
 echo ""
-echo "(Optional) Paste your Resend API key for password-reset emails (or hit Ctrl+C to skip):"
-npx wrangler secret put RESEND_API_KEY || true
+if [ -n "${RESEND_API_KEY:-}" ]; then
+  echo "Found RESEND_API_KEY in env — uploading."
+  echo "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY
+else
+  echo "(Optional) Paste your Resend API key for password-reset emails (or hit Enter to skip):"
+  read -r RESEND_INPUT
+  if [ -n "$RESEND_INPUT" ]; then
+    echo "$RESEND_INPUT" | npx wrangler secret put RESEND_API_KEY
+  fi
+fi
 
 echo "==> 5/5  Deploying Worker..."
 npx wrangler deploy

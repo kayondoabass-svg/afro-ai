@@ -8,7 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "afro-ai-auth"
-database_id = "REPLACE_WITH_DB_ID_AFTER_CREATING"
+database_id = "e796b2ab-d062-42c2-8412-7d281e4c0f5d"
 
 [vars]
 APP_URL = "https://afroaigroup.com"
