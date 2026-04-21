@@ -86,6 +86,51 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use("/uploads", express.static(uploadDir));
 
+  // ── Internal SES proxy for the Cloudflare Worker (cf-auth) ──────────────
+  // The Worker forwards transactional mail (password resets, etc.) here so
+  // every outgoing message goes through the same SES domain identity. Auth
+  // is HMAC-SHA256 of the raw body using the shared JWT_SECRET — no extra
+  // secret to manage. Bypasses the API rate-limiter on purpose; it's gated
+  // by the signature check.
+  app.post("/api/internal/cf-mail", async (req, res) => {
+    try {
+      const sig = String(req.headers["x-cf-sig"] || "");
+      const secret = process.env.JWT_SECRET;
+      if (!sig || !secret) return res.status(401).json({ message: "unauthorized" });
+
+      const raw = (req.rawBody as Buffer | undefined)?.toString("utf8") || JSON.stringify(req.body || {});
+      const expected = crypto.createHmac("sha256", secret).update(raw).digest("hex");
+      const a = Buffer.from(sig, "hex");
+      const b = Buffer.from(expected, "hex");
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ message: "bad signature" });
+      }
+
+      const { to, subject, html, text } = req.body || {};
+      if (!to || !subject || !html) {
+        return res.status(400).json({ message: "to, subject and html are required" });
+      }
+
+      const fromAddress = process.env.EMAIL_API_DEMO_FROM || "noreply@afroaigroup.com";
+      const ses = new SESClient({ region: process.env.AWS_REGION || "us-east-1" });
+      await ses.send(new SendEmailCommand({
+        Source: fromAddress,
+        Destination: { ToAddresses: [to] },
+        Message: {
+          Subject: { Data: subject, Charset: "UTF-8" },
+          Body: {
+            Html: { Data: html, Charset: "UTF-8" },
+            ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}),
+          },
+        },
+      }));
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[cf-mail] failed:", err?.message || err);
+      res.status(500).json({ message: "send failed" });
+    }
+  });
+
   // Serve SEO files explicitly so crawlers always find them
   app.get("/robots.txt", (_req, res) => {
     res.type("text/plain").send(

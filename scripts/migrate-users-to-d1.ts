@@ -60,7 +60,9 @@ async function main() {
   }
 
   // Build a single SQL file with all INSERTs (D1 supports multi-statement files).
-  const lines: string[] = ["BEGIN;"];
+  // D1 wraps every statement in an implicit transaction and rejects
+  // explicit BEGIN/COMMIT, so we just emit a flat list of INSERTs.
+  const lines: string[] = [];
   for (const u of candidates) {
     const created = u.createdAt ? Math.floor(new Date(u.createdAt).getTime() / 1000) : Math.floor(Date.now() / 1000);
     const updated = u.updatedAt ? Math.floor(new Date(u.updatedAt).getTime() / 1000) : created;
@@ -72,7 +74,6 @@ async function main() {
       )}, 1, ${escape(u.plan || "starter")}, ${created}, ${updated});`,
     );
   }
-  lines.push("COMMIT;");
   const sql = lines.join("\n");
 
   const tmpPath = path.join(os.tmpdir(), `afroai-d1-migration-${Date.now()}.sql`);

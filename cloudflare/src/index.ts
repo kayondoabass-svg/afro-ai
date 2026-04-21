@@ -16,6 +16,7 @@
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { SignJWT, jwtVerify } from 'jose';
+import bcrypt from 'bcryptjs';
 
 interface Env {
   DB: D1Database;
@@ -90,7 +91,25 @@ async function hashPassword(password: string): Promise<string> {
   return `pbkdf2$200000$${saltB64}$${hashB64}`;
 }
 
+/**
+ * Verify a password against a stored hash. Supports two formats:
+ *
+ *   1. `pbkdf2$…` — native Worker hashes (preferred going forward).
+ *   2. `$2a$…` / `$2b$…` / `$2y$…` — bcrypt hashes carried over from the
+ *      legacy Express stack so existing users keep logging in with their
+ *      current password without any reset email blast.
+ *
+ * The login route silently re-hashes bcrypt verifications to PBKDF2 on
+ * success so the legacy format is gradually retired with zero user impact.
+ */
 async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  if (stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$')) {
+    try {
+      return await bcrypt.compare(password, stored);
+    } catch {
+      return false;
+    }
+  }
   const parts = stored.split('$');
   if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
   const iterations = parseInt(parts[1], 10);
@@ -194,32 +213,60 @@ async function getCurrentUserId(c: any): Promise<string | null> {
   }
 }
 
-async function sendPasswordResetEmail(
-  apiKey: string,
+/**
+ * Sign a request body with HMAC-SHA256 using the shared JWT_SECRET.
+ * Both sides know JWT_SECRET, so this proves the call came from the Worker
+ * without introducing yet another secret to manage.
+ */
+async function signBody(secret: string, body: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(body));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Send transactional mail by proxying to the Express SES sender. The Express
+ * side already has AWS SES configured with our domain identity, so all
+ * outgoing mail goes through one provider.
+ */
+async function sendViaExpressSES(
+  c: any,
   to: string,
-  name: string,
-  url: string,
+  subject: string,
+  html: string,
+  text: string,
 ): Promise<void> {
-  await fetch('https://api.resend.com/emails', {
+  const body = JSON.stringify({ to, subject, html, text });
+  const sig = await signBody(c.env.JWT_SECRET, body);
+  const res = await fetch(`${c.env.APP_URL}/api/internal/cf-mail`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: 'Afro AI <noreply@afroaigroup.com>',
-      to,
-      subject: 'Reset your Afro AI password',
-      html: `
-        <p>Hi ${name},</p>
-        <p>You asked to reset your Afro AI password. Tap the button below to choose a new one:</p>
-        <p><a href="${url}" style="background:#F59E0B;color:#000;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">Reset my password</a></p>
-        <p>Or copy this link into your browser: <br>${url}</p>
-        <p>This link expires in 1 hour. If you didn't ask for this, you can safely ignore this message.</p>
-        <p>— Afro AI</p>
-      `,
-    }),
+    headers: { 'Content-Type': 'application/json', 'X-CF-Sig': sig },
+    body,
   });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Express mail proxy ${res.status}: ${txt.slice(0, 200)}`);
+  }
+}
+
+async function sendPasswordResetEmail(c: any, to: string, name: string, url: string): Promise<void> {
+  const subject = 'Reset your Afro AI password';
+  const html = `
+    <p>Hi ${name},</p>
+    <p>You asked to reset your Afro AI password. Tap the button below to choose a new one:</p>
+    <p><a href="${url}" style="background:#F59E0B;color:#000;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">Reset my password</a></p>
+    <p>Or copy this link into your browser: <br>${url}</p>
+    <p>This link expires in 1 hour. If you didn't ask for this, you can safely ignore this message.</p>
+    <p>— Afro AI</p>
+  `;
+  const text = `Hi ${name},\n\nYou asked to reset your Afro AI password.\nOpen this link to choose a new one (expires in 1 hour):\n${url}\n\nIf you didn't ask for this, you can safely ignore this message.\n— Afro AI`;
+  await sendViaExpressSES(c, to, subject, html, text);
 }
 
 /* ------------------------------ Routes ------------------------------ */
@@ -320,6 +367,24 @@ app.post('/login', async (c) => {
     return c.json({ message: 'Wrong email or password.' }, 401);
   }
 
+  // Rolling upgrade: if the stored hash is a legacy bcrypt one, transparently
+  // re-hash to the Worker's native PBKDF2 format. Best-effort — if the update
+  // fails, the user just stays on bcrypt and we'll try again next login.
+  if (
+    user.password_hash.startsWith('$2a$') ||
+    user.password_hash.startsWith('$2b$') ||
+    user.password_hash.startsWith('$2y$')
+  ) {
+    try {
+      const upgraded = await hashPassword(password);
+      await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+        .bind(upgraded, nowSec(), user.id)
+        .run();
+    } catch (err) {
+      console.warn('[login] bcrypt → pbkdf2 upgrade failed', err);
+    }
+  }
+
   await issueSession(c, user.id);
   return c.json({
     id: user.id,
@@ -378,19 +443,12 @@ app.post('/forgot-password', async (c) => {
     .run();
 
   const resetUrl = `${c.env.APP_URL}/reset-password?token=${rawToken}`;
-  if (c.env.RESEND_API_KEY) {
-    try {
-      await sendPasswordResetEmail(
-        c.env.RESEND_API_KEY,
-        email,
-        user.first_name || 'there',
-        resetUrl,
-      );
-    } catch (err) {
-      console.error('Failed to send reset email', err);
-    }
-  } else {
-    console.log('Password reset URL (no email provider configured):', resetUrl);
+  try {
+    await sendPasswordResetEmail(c, email, user.first_name || 'there', resetUrl);
+  } catch (err) {
+    // Email failures are intentionally silent to the caller (we never want
+    // to reveal whether the email exists), but logged for ops.
+    console.error('[forgot-password] send failed', err);
   }
   return c.json({ ok: true });
 });
