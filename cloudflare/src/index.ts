@@ -657,7 +657,10 @@ app.post('/admin/mint-reset-token', async (c) => {
     .bind(uuid(), user.id, tokenHash, expiresAt, ts)
     .run();
 
-  const resetUrl = `${c.env.APP_URL}/reset-password?token=${rawToken}`;
+  // welcome=1 tells the /reset-password page that this is a first-time
+  // "set your password" flow (migration blast), so it shows friendlier copy
+  // instead of the default "Reset your password" wording.
+  const resetUrl = `${c.env.APP_URL}/reset-password?token=${rawToken}&welcome=1`;
   return c.json({ ok: true, resetUrl, name: user.first_name || '' });
 });
 

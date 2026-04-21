@@ -14,6 +14,7 @@ export default function ResetPasswordPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [token, setToken] = useState("");
+  const [isWelcome, setIsWelcome] = useState(false);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPwd, setShowPwd] = useState(false);
@@ -21,8 +22,11 @@ export default function ResetPasswordPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("token") || "";
-    setToken(t);
+    const params = new URLSearchParams(window.location.search);
+    setToken(params.get("token") || "");
+    // welcome=1 is appended by the migration blast (cf-auth/admin/mint-reset-token)
+    // so first-time users see "Set your password" copy instead of "Reset your password".
+    setIsWelcome(params.get("welcome") === "1");
   }, []);
 
   const passwordTooShort = password.length > 0 && password.length < 6;
@@ -68,8 +72,14 @@ export default function ResetPasswordPage() {
         <Card className="w-full max-w-md p-6 space-y-5">
           <div className="text-center space-y-2">
             <img src={afroLogo} alt="Afro AI" className="w-14 h-14 mx-auto rounded-xl" />
-            <h1 className="text-2xl font-bold" data-testid="text-title">Set a new password</h1>
-            <p className="text-sm text-muted-foreground">Choose something you can remember. At least 6 characters.</p>
+            <h1 className="text-2xl font-bold" data-testid="text-title">
+              {isWelcome ? "Welcome back — finish setting up your account" : "Set a new password"}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {isWelcome
+                ? "We've moved to email + password sign-in. Pick a password to finish setting up your account. At least 6 characters."
+                : "Choose something you can remember. At least 6 characters."}
+            </p>
           </div>
 
           {!token ? (
@@ -93,7 +103,9 @@ export default function ResetPasswordPage() {
                 <CheckCircle2 className="w-7 h-7 text-emerald-500" />
               </div>
               <div>
-                <h2 className="font-semibold text-lg" data-testid="text-done-heading">Password updated</h2>
+                <h2 className="font-semibold text-lg" data-testid="text-done-heading">
+                  {isWelcome ? "You're all set" : "Password updated"}
+                </h2>
                 <p className="text-sm text-muted-foreground mt-1">Signing you in now…</p>
               </div>
             </div>
@@ -155,7 +167,7 @@ export default function ResetPasswordPage() {
                 disabled={!canSubmit}
                 data-testid="button-submit"
               >
-                {isLoading ? "Saving..." : "Save new password"}
+                {isLoading ? "Saving..." : isWelcome ? "Set my password" : "Save new password"}
               </Button>
             </form>
           )}
