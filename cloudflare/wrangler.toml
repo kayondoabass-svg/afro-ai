@@ -1,0 +1,26 @@
+name = "afro-ai-auth"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database binding — fill in database_id after running:
+#   npx wrangler d1 create afro-ai-auth
+[[d1_databases]]
+binding = "DB"
+database_name = "afro-ai-auth"
+database_id = "REPLACE_WITH_DB_ID_AFTER_CREATING"
+
+[vars]
+APP_URL = "https://afroaigroup.com"
+COOKIE_DOMAIN = ".afroaigroup.com"
+
+# Secrets are NOT committed here. Set them via:
+#   npx wrangler secret put JWT_SECRET
+#   npx wrangler secret put TURNSTILE_SECRET_KEY
+#   npx wrangler secret put RESEND_API_KEY            # optional
+#   npx wrangler secret put GOOGLE_CLIENT_ID          # optional, for OAuth pass 2
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET
+#   npx wrangler secret put GITHUB_CLIENT_ID
+#   npx wrangler secret put GITHUB_CLIENT_SECRET
+#   npx wrangler secret put TIKTOK_CLIENT_KEY
+#   npx wrangler secret put TIKTOK_CLIENT_SECRET
