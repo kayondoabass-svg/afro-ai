@@ -7,11 +7,13 @@ import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import { Lock, CheckCircle2, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function ResetPasswordPage() {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [, setLocation] = useLocation();
   const [token, setToken] = useState("");
   const [isWelcome, setIsWelcome] = useState(false);
@@ -46,7 +48,7 @@ export default function ResetPasswordPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        toast({ title: "Couldn't reset password", description: data.message || "Please try again.", variant: "destructive" });
+        toast({ title: t("resetPassword.toast.errorTitle"), description: data.message || t("resetPassword.toast.errorRetry"), variant: "destructive" });
         return;
       }
       setDone(true);
@@ -55,7 +57,7 @@ export default function ResetPasswordPage() {
         else setLocation("/login");
       }, 2000);
     } catch {
-      toast({ title: "Couldn't reset password", description: "Check your internet and try again.", variant: "destructive" });
+      toast({ title: t("resetPassword.toast.errorTitle"), description: t("resetPassword.toast.errorNetwork"), variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -73,12 +75,12 @@ export default function ResetPasswordPage() {
           <div className="text-center space-y-2">
             <img src={afroLogo} alt="Afro AI" className="w-14 h-14 mx-auto rounded-xl" />
             <h1 className="text-2xl font-bold" data-testid="text-title">
-              {isWelcome ? "Welcome back — finish setting up your account" : "Set a new password"}
+              {isWelcome ? t("resetPassword.title.welcome") : t("resetPassword.title.reset")}
             </h1>
             <p className="text-sm text-muted-foreground">
               {isWelcome
-                ? "We've moved to email + password sign-in. Pick a password to finish setting up your account. At least 6 characters."
-                : "Choose something you can remember. At least 6 characters."}
+                ? t("resetPassword.subtitle.welcome")
+                : t("resetPassword.subtitle.reset")}
             </p>
           </div>
 
@@ -88,13 +90,13 @@ export default function ResetPasswordPage() {
                 <AlertTriangle className="w-7 h-7 text-amber-500" />
               </div>
               <div>
-                <h2 className="font-semibold text-lg">Reset link is missing</h2>
+                <h2 className="font-semibold text-lg">{t("resetPassword.noToken.heading")}</h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  This page needs a valid reset link. Tap the button in the email we sent you, or request a new link.
+                  {t("resetPassword.noToken.desc")}
                 </p>
               </div>
               <Link href="/forgot-password">
-                <Button className="w-full" data-testid="button-request-new">Request a new link</Button>
+                <Button className="w-full" data-testid="button-request-new">{t("resetPassword.noToken.cta")}</Button>
               </Link>
             </div>
           ) : done ? (
@@ -104,21 +106,21 @@ export default function ResetPasswordPage() {
               </div>
               <div>
                 <h2 className="font-semibold text-lg" data-testid="text-done-heading">
-                  {isWelcome ? "You're all set" : "Password updated"}
+                  {isWelcome ? t("resetPassword.done.welcome") : t("resetPassword.done.reset")}
                 </h2>
-                <p className="text-sm text-muted-foreground mt-1">Signing you in now…</p>
+                <p className="text-sm text-muted-foreground mt-1">{t("resetPassword.done.signingIn")}</p>
               </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1">
-                <Label htmlFor="password">New password</Label>
+                <Label htmlFor="password">{t("resetPassword.field.password")}</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     id="password"
                     type={showPwd ? "text" : "password"}
-                    placeholder="At least 6 characters"
+                    placeholder={t("resetPassword.field.passwordPlaceholder")}
                     required
                     autoFocus
                     value={password}
@@ -130,25 +132,25 @@ export default function ResetPasswordPage() {
                     type="button"
                     onClick={() => setShowPwd(s => !s)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    aria-label={showPwd ? "Hide password" : "Show password"}
+                    aria-label={showPwd ? t("resetPassword.field.hidePassword") : t("resetPassword.field.showPassword")}
                     data-testid="button-toggle-password"
                   >
                     {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 {passwordTooShort && (
-                  <p className="text-xs text-amber-500" data-testid="text-password-error">Password must be at least 6 characters.</p>
+                  <p className="text-xs text-amber-500" data-testid="text-password-error">{t("resetPassword.field.tooShort")}</p>
                 )}
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="confirm">Type it again</Label>
+                <Label htmlFor="confirm">{t("resetPassword.field.confirm")}</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     id="confirm"
                     type={showPwd ? "text" : "password"}
-                    placeholder="Same password"
+                    placeholder={t("resetPassword.field.confirmPlaceholder")}
                     required
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
@@ -157,7 +159,7 @@ export default function ResetPasswordPage() {
                   />
                 </div>
                 {mismatch && (
-                  <p className="text-xs text-amber-500" data-testid="text-mismatch-error">Passwords don't match yet.</p>
+                  <p className="text-xs text-amber-500" data-testid="text-mismatch-error">{t("resetPassword.field.mismatch")}</p>
                 )}
               </div>
 
@@ -167,7 +169,7 @@ export default function ResetPasswordPage() {
                 disabled={!canSubmit}
                 data-testid="button-submit"
               >
-                {isLoading ? "Saving..." : isWelcome ? "Set my password" : "Save new password"}
+                {isLoading ? t("resetPassword.button.saving") : isWelcome ? t("resetPassword.button.welcome") : t("resetPassword.button.reset")}
               </Button>
             </form>
           )}
