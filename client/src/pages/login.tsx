@@ -42,11 +42,13 @@ function parseRetryAfter(res: Response, message: string): number {
   return 15 * 60;
 }
 
-function formatRemaining(seconds: number): string {
-  if (seconds <= 0) return "a moment";
-  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
+
+function formatRemaining(seconds: number, t: TranslateFn): string {
+  if (seconds <= 0) return t("auth.locked.duration.moment");
+  if (seconds < 60) return t("auth.locked.duration.seconds", { count: seconds });
   const minutes = Math.ceil(seconds / 60);
-  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  return t("auth.locked.duration.minutes", { count: minutes });
 }
 
 function LockedPanel({
@@ -55,13 +57,21 @@ function LockedPanel({
   remainingSec,
   onDismiss,
   testIdPrefix,
+  t,
 }: {
   title: string;
   lock: LockState;
   remainingSec: number;
   onDismiss: () => void;
   testIdPrefix: string;
+  t: TranslateFn;
 }) {
+  const tryAgainTpl = t("auth.locked.tryAgainIn");
+  const [tryAgainPre, tryAgainPost = ""] = tryAgainTpl.split("{duration}");
+
+  const forgotTpl = t("auth.locked.forgotLine");
+  const [forgotPre, forgotPost = ""] = forgotTpl.split("{link}");
+
   return (
     <div className="space-y-4 mt-4" data-testid={`${testIdPrefix}-locked-panel`}>
       <Alert variant="destructive">
@@ -70,18 +80,20 @@ function LockedPanel({
         <AlertDescription className="space-y-2">
           <p data-testid={`${testIdPrefix}-locked-message`}>{lock.message}</p>
           <p className="text-xs opacity-90" data-testid={`${testIdPrefix}-locked-countdown`}>
-            Try again in <span className="font-semibold">{formatRemaining(remainingSec)}</span>.
+            {tryAgainPre}
+            <span className="font-semibold">{formatRemaining(remainingSec, t)}</span>
+            {tryAgainPost}
           </p>
           <p className="text-xs opacity-80">
-            If you've forgotten your password, you can{" "}
+            {forgotPre}
             <Link
               href="/forgot-password"
               className="underline underline-offset-2 font-medium"
               data-testid={`${testIdPrefix}-locked-forgot-link`}
             >
-              reset it now
-            </Link>{" "}
-            — that still works while your account is locked.
+              {t("auth.locked.forgotLink")}
+            </Link>
+            {forgotPost}
           </p>
         </AlertDescription>
       </Alert>
@@ -92,14 +104,14 @@ function LockedPanel({
         disabled={remainingSec > 0}
         data-testid={`${testIdPrefix}-locked-dismiss`}
       >
-        {remainingSec > 0 ? "Please wait…" : "Try again"}
+        {remainingSec > 0 ? t("auth.locked.pleaseWait") : t("auth.locked.tryAgain")}
       </Button>
     </div>
   );
 }
 
 export default function LoginPage() {
-  useLanguage();
+  const { t } = useLanguage();
   const { toast } = useToast();
   const params = new URLSearchParams(window.location.search);
   const refCode = params.get("ref");
@@ -320,11 +332,12 @@ export default function LoginPage() {
             <TabsContent value="signup" className="space-y-4 mt-4">
               {signupLock ? (
                 <LockedPanel
-                  title="Too many signup attempts"
+                  title={t("auth.locked.signup.title")}
                   lock={signupLock}
                   remainingSec={signupRemaining}
                   onDismiss={() => setSignupLock(null)}
                   testIdPrefix="signup"
+                  t={t}
                 />
               ) : (
                 <>
@@ -430,11 +443,12 @@ export default function LoginPage() {
             <TabsContent value="login" className="space-y-4 mt-4">
               {loginLock ? (
                 <LockedPanel
-                  title="Your account is temporarily locked"
+                  title={t("auth.locked.login.title")}
                   lock={loginLock}
                   remainingSec={loginRemaining}
                   onDismiss={() => setLoginLock(null)}
                   testIdPrefix="login"
+                  t={t}
                 />
               ) : (
                 <>

@@ -1,10 +1,24 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { translations, languages, countryToLanguage, type LanguageCode } from "@/lib/translations";
 
+type TranslationParams = Record<string, string | number>;
+
 interface LanguageContextType {
   language: LanguageCode;
   setLanguage: (code: LanguageCode) => void;
-  t: (key: string) => string;
+  t: (key: string, params?: TranslationParams) => string;
+}
+
+function lookup(language: LanguageCode, key: string): string | undefined {
+  return translations[language]?.[key] ?? translations.en[key];
+}
+
+function interpolate(template: string, params?: TranslationParams): string {
+  if (!params) return template;
+  return template.replace(/\{(\w+)\}/g, (_, name) => {
+    const v = params[name];
+    return v === undefined || v === null ? `{${name}}` : String(v);
+  });
 }
 
 const LanguageContext = createContext<LanguageContextType | null>(null);
@@ -69,8 +83,17 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const t = useCallback(
-    (key: string): string => {
-      return translations[language]?.[key] || translations.en[key] || key;
+    (key: string, params?: TranslationParams): string => {
+      let resolvedKey = key;
+      if (params && typeof params.count === "number") {
+        const suffix = params.count === 1 ? "_one" : "_other";
+        if (lookup(language, key + suffix) !== undefined) {
+          resolvedKey = key + suffix;
+        }
+      }
+      const template = lookup(language, resolvedKey);
+      if (template === undefined) return key;
+      return interpolate(template, params);
     },
     [language]
   );
