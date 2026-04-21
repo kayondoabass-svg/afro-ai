@@ -7,6 +7,8 @@ import { eq } from "drizzle-orm";
 import rateLimit from "express-rate-limit";
 import fs from "fs";
 import path from "path";
+import { isAuthenticated } from "../auth/replitAuth";
+import { aiQuotaGuard } from "../quota";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -1821,7 +1823,7 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/conversations/:id/messages", chatLimiter, async (req: Request, res: Response) => {
+  app.post("/api/conversations/:id/messages", isAuthenticated, chatLimiter, aiQuotaGuard("chat"), async (req: Request, res: Response) => {
     try {
       const conversationId = parseInt(req.params.id as string);
       const { content: userContent, attachments, language: rawLanguage } = req.body;

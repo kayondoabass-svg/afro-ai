@@ -4,6 +4,17 @@ import crypto from "crypto";
 import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder, FOUNDER_EMAIL } from "./replit_integrations/auth";
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { registerChatRoutes } from "./replit_integrations/chat";
+import { registerImageRoutes } from "./replit_integrations/image";
+import { registerAudioRoutes } from "./replit_integrations/audio";
+import {
+  aiBurstLimiters,
+  aiQuotaGuard,
+  publicAiBurstLimiter,
+  assertOwnerDailyCap,
+  recordAiUsage,
+  checkAndBumpPublicGlobalCap,
+  checkAndBumpPublicIpCap,
+} from "./replit_integrations/quota";
 import { storage } from "./storage";
 import { insertProjectSchema, appViews, emailApiKeys, emailApiDomains, emailApiLogs } from "@shared/schema";
 import { conversations } from "@shared/models/chat";
@@ -247,6 +258,8 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
   registerChatRoutes(app);
+  registerImageRoutes(app);
+  registerAudioRoutes(app);
 
   // ============ INTERNAL EMAIL (Cloudflare Worker → Express SES) ============
   // The Cloudflare Worker (cloudflare/src/index.ts) calls this endpoint to
@@ -3065,7 +3078,8 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/seo/:publishedAppId/analyze", isAuthenticated, async (req: any, res) => {
+  app.post("/api/seo/:publishedAppId/analyze", isAuthenticated, aiBurstLimiters.chat, aiQuotaGuard("chat"), async (req: any, res) => {
+    const ctx = (req as any).aiContext as { userId: string; plan: any; cost: number; kind: "chat" } | undefined;
     try {
       const id = parseInt(req.params.publishedAppId);
       const appRecord = await storage.getPublishedAppById(id);
@@ -3087,6 +3101,16 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
       });
+      if (ctx) {
+        await recordAiUsage({
+          userId: ctx.userId,
+          kind: "chat",
+          model: "gpt-4.1-mini",
+          tokensUsed: completion.usage?.total_tokens ?? Math.ceil(prompt.length / 4),
+          costCents: ctx.cost,
+          plan: ctx.plan,
+        });
+      }
       res.json(JSON.parse(completion.choices[0].message.content || "{}"));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3181,7 +3205,7 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
     res.sendStatus(200);
   });
 
-  app.post("/api/ussd/gateway/:appKey", async (req, res) => {
+  app.post("/api/ussd/gateway/:appKey", publicAiBurstLimiter, async (req, res) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.set("Content-Type", "text/plain");
     try {
@@ -3209,6 +3233,13 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
       if (level1 === "1" && parts.length >= 2) {
         const userQuestion = parts.slice(1).join(" ").trim();
         if (!userQuestion) return res.send("END Please type a valid question.");
+        // Bill-shock guard: cap AI calls per owner per day, billed against the USSD app owner.
+        if (app.userId) {
+          const cap = await assertOwnerDailyCap({ ownerUserId: app.userId, kind: "chat" });
+          if (cap) {
+            return res.send("END This service has reached today's question limit. Please try again tomorrow.");
+          }
+        }
         // Call OpenAI
         try {
           const OpenAI = (await import("openai")).default;
@@ -3226,6 +3257,15 @@ ${app.knowledgeBase || "Provide helpful, concise answers to general questions."}
             max_tokens: 120,
           });
           const reply = (completion.choices[0].message.content || "Unable to process your request.").slice(0, 160);
+          // Bill the USSD app owner for this AI call so daily caps actually advance.
+          if (app.userId) {
+            await recordAiUsage({
+              userId: app.userId,
+              kind: "chat",
+              model: "gpt-4.1-mini",
+              tokensUsed: completion.usage?.total_tokens ?? Math.ceil((systemPrompt.length + userQuestion.length) / 4),
+            }).catch((e) => console.error("[ussd] recordAiUsage failed:", e));
+          }
           return res.send(`END ${reply}`);
         } catch {
           return res.send("END AI service is temporarily unavailable. Please try again.");
@@ -3356,26 +3396,21 @@ ${app.knowledgeBase || "Provide helpful, concise answers to general questions."}
     res.sendStatus(200);
   });
 
-  app.post("/api/demo-chat", async (req, res) => {
+  app.post("/api/demo-chat", publicAiBurstLimiter, async (req, res) => {
     res.header("Access-Control-Allow-Origin", "*");
     try {
       const { message, history = [] } = req.body || {};
       if (!message || typeof message !== "string") {
         return res.status(400).json({ message: "message required" });
       }
-      // Simple per-IP rate limit using in-memory map
       const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "anon";
-      (global as any).__demoChatHits ||= new Map<string, { count: number; ts: number }>();
-      const hits: Map<string, { count: number; ts: number }> = (global as any).__demoChatHits;
-      const now = Date.now();
-      const rec = hits.get(ip);
-      if (rec && now - rec.ts < 60_000) {
-        if (rec.count >= 12) {
-          return res.status(429).json({ reply: "You've reached the demo limit. Sign up for a free trial to continue chatting." });
-        }
-        rec.count += 1;
-      } else {
-        hits.set(ip, { count: 1, ts: now });
+      // Per-IP daily cap so one visitor can't farm the demo all day.
+      if (!checkAndBumpPublicIpCap(ip, 50)) {
+        return res.status(429).json({ reply: "You've reached today's demo limit. Sign up for a free trial to keep chatting." });
+      }
+      // Global per-day budget so a coordinated swarm can't bill us into the ground.
+      if (!checkAndBumpPublicGlobalCap(5000)) {
+        return res.status(503).json({ reply: "The demo is taking a quick break — please try again tomorrow or sign up for a free trial." });
       }
 
       const OpenAI = (await import("openai")).default;
@@ -3437,7 +3472,7 @@ Never invent features or pricing not listed above.`;
     res.sendStatus(200);
   });
 
-  app.post("/api/widget-chat/:apiKey", async (req, res) => {
+  app.post("/api/widget-chat/:apiKey", publicAiBurstLimiter, async (req, res) => {
     res.header("Access-Control-Allow-Origin", "*");
     try {
       const { apiKey } = req.params;
@@ -3592,7 +3627,7 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
 
   // ─── Agency-only programmatic API: server-to-server / mobile / custom UI ──
   // Header: Authorization: Bearer <apiKey>   Body: { message, sessionId?, history? }
-  app.post("/api/v1/chatbot/message", async (req, res) => {
+  app.post("/api/v1/chatbot/message", publicAiBurstLimiter, async (req, res) => {
     try {
       const auth = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
       if (!auth) return res.status(401).json({ message: "Missing Bearer API key in Authorization header" });

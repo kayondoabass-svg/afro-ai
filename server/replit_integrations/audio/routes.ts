@@ -1,13 +1,15 @@
 import express, { type Express, type Request, type Response } from "express";
 import { chatStorage } from "../chat/storage";
 import { openai, speechToText, ensureCompatibleFormat } from "./client";
+import { isAuthenticated } from "../auth/replitAuth";
+import { aiBurstLimiters, aiQuotaGuard, recordAiUsage } from "../quota";
 
 // Body parser with 50MB limit for audio payloads
 const audioBodyParser = express.json({ limit: "50mb" });
 
 export function registerAudioRoutes(app: Express): void {
   // Get all conversations
-  app.get("/api/conversations", async (req: Request, res: Response) => {
+  app.get("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const conversations = await chatStorage.getAllConversations();
       res.json(conversations);
@@ -18,7 +20,7 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Get single conversation with messages
-  app.get("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.get("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const conversation = await chatStorage.getConversation(id);
@@ -34,7 +36,7 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Create new conversation
-  app.post("/api/conversations", async (req: Request, res: Response) => {
+  app.post("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { title } = req.body;
       const conversation = await chatStorage.createConversation(title || "New Chat");
@@ -46,7 +48,7 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Delete conversation
-  app.delete("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.delete("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       await chatStorage.deleteConversation(id);
@@ -60,7 +62,14 @@ export function registerAudioRoutes(app: Express): void {
   // Send voice message and get streaming audio response
   // Auto-detects audio format and converts WebM/MP4/OGG to WAV
   // Uses gpt-4o-mini-transcribe for STT, gpt-audio for voice response
-  app.post("/api/conversations/:id/messages", audioBodyParser, async (req: Request, res: Response) => {
+  app.post(
+    "/api/conversations/:id/messages",
+    isAuthenticated,
+    aiBurstLimiters.audio,
+    aiQuotaGuard("audio"),
+    audioBodyParser,
+    async (req: Request, res: Response) => {
+    const ctx = (req as any).aiContext as { userId: string; plan: any; cost: number; kind: "audio" };
     try {
       const conversationId = parseInt(req.params.id);
       const { audio, voice = "alloy" } = req.body;
@@ -120,6 +129,17 @@ export function registerAudioRoutes(app: Express): void {
 
       // 7. Save assistant message
       await chatStorage.createMessage(conversationId, "assistant", assistantTranscript);
+
+      // 8. Record AI usage so daily quota + PAYG balance both stay accurate.
+      await recordAiUsage({
+        userId: ctx.userId,
+        kind: "audio",
+        model: "gpt-audio",
+        tokensUsed: Math.ceil((userTranscript.length + assistantTranscript.length) / 4),
+        conversationId,
+        costCents: ctx.cost,
+        plan: ctx.plan,
+      });
 
       res.write(`data: ${JSON.stringify({ type: "done", transcript: assistantTranscript })}\n\n`);
       res.end();
