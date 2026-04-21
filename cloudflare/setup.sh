@@ -33,9 +33,8 @@ npx wrangler d1 execute afro-ai-auth --remote --file=./schema.sql
 
 echo "==> 4/5  Setting Worker secrets (you'll be prompted for each)..."
 echo ""
-echo "First — JWT_SECRET. We'll generate a strong one for you:"
-JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-echo "$JWT_SECRET" | npx wrangler secret put JWT_SECRET
+echo "First — JWT_SECRET. We'll generate a strong one and pipe it directly to wrangler (it is never printed)."
+openssl rand -base64 64 | tr -d '\n' | npx wrangler secret put JWT_SECRET
 
 echo ""
 if [ -n "${TURNSTILE_SECRET_KEY:-}" ]; then
