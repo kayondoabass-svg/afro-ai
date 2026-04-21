@@ -10,13 +10,19 @@ export type UserPlan = "starter" | "pro" | "business" | "payg";
 
 const DAILY_REQUEST_LIMITS: Record<AiKind, Record<UserPlan, number>> = {
   chat:  { starter: 200, pro: 1000, business: 2000, payg: 5000 },
-  image: { starter: 20,  pro: 100,  business: 200,  payg: 500  },
+  // Image caps tightened: at 100/day a Pro user could generate 3,000 images/mo
+  // costing ~$120 in OpenAI fees against $15 of revenue. New caps keep the
+  // worst-case monthly OpenAI spend per user under the plan price.
+  image: { starter: 10,  pro: 30,   business: 60,   payg: 500  },
   audio: { starter: 30,  pro: 200,  business: 400,  payg: 1000 },
 };
 
+// PAYG charge per generation. Must clear OpenAI cost + payment processor fees
+// (~3.5% Pesapal / 3% + 30c Stripe). gpt-4.1-mini chat ~0.2c, gpt-image-1
+// standard ~4c (HD ~8c), gpt-4o-mini-tts ~1-2c per short clip.
 const COST_CENTS: Record<AiKind, number> = {
   chat: 2,
-  image: 8,
+  image: 10,
   audio: 5,
 };
 

@@ -19,10 +19,10 @@ const USD_PRICES = {
 };
 
 const PAYG_PACKS = [
-  { key: "pack5",  usd: 5,  credits: 500,  gens: 250 },
-  { key: "pack10", usd: 10, credits: 1000, gens: 500 },
-  { key: "pack20", usd: 20, credits: 2000, gens: 1000 },
-  { key: "pack50", usd: 50, credits: 5000, gens: 2500 },
+  { key: "pack5",  usd: 5,  credits: 500  },
+  { key: "pack10", usd: 10, credits: 1000 },
+  { key: "pack20", usd: 20, credits: 2000 },
+  { key: "pack50", usd: 50, credits: 5000 },
 ];
 
 function useCountryDetection() {
@@ -387,8 +387,13 @@ export default function PricingPage() {
                   <Badge variant="outline" className="text-xs border-yellow-500/40 text-yellow-400">No monthly fee</Badge>
                 </h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Buy credits and use them when you need. <strong className="text-foreground">$0.02 per AI generation</strong> (same quality as Pro). Set a spending limit — AI stops when you hit it.
+                  Buy credits and use them only when you need. Same quality as Pro. Set a spending limit — AI stops when you hit it.
                 </p>
+                <ul className="text-xs text-muted-foreground mt-2 space-y-0.5">
+                  <li>• Text / chat reply — <strong className="text-foreground">$0.02</strong></li>
+                  <li>• Image generation — <strong className="text-foreground">$0.10</strong></li>
+                  <li>• Voice / audio clip — <strong className="text-foreground">$0.05</strong></li>
+                </ul>
               </div>
             </div>
 
@@ -411,13 +416,14 @@ export default function PricingPage() {
                 <p className="text-xs text-muted-foreground mt-1">AI pauses when this is reached</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">With each pack you get</p>
+                <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">Each $1 = 100 credits</p>
                 <div className="text-sm space-y-1">
-                  <div className="flex justify-between"><span>$5 pack</span><span className="text-muted-foreground">250 AI generations</span></div>
-                  <div className="flex justify-between"><span>$10 pack</span><span className="text-muted-foreground">500 AI generations</span></div>
-                  <div className="flex justify-between"><span>$20 pack</span><span className="text-muted-foreground">1,000 AI generations</span></div>
-                  <div className="flex justify-between"><span>$50 pack</span><span className="text-muted-foreground">2,500 AI generations</span></div>
+                  <div className="flex justify-between"><span>$5 pack</span><span className="text-muted-foreground">500 credits</span></div>
+                  <div className="flex justify-between"><span>$10 pack</span><span className="text-muted-foreground">1,000 credits</span></div>
+                  <div className="flex justify-between"><span>$20 pack</span><span className="text-muted-foreground">2,000 credits</span></div>
+                  <div className="flex justify-between"><span>$50 pack</span><span className="text-muted-foreground">5,000 credits</span></div>
                 </div>
+                <p className="text-[11px] text-muted-foreground mt-2">Credits never expire. 2 = chat, 10 = image, 5 = audio.</p>
               </div>
             </div>
 
@@ -432,7 +438,7 @@ export default function PricingPage() {
                   data-testid={`button-payg-${pack.key}`}
                 >
                   {toppingUp === pack.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="text-lg font-bold text-yellow-400">${pack.usd}</span>}
-                  <span className="text-xs text-muted-foreground">{pack.gens.toLocaleString()} gens</span>
+                  <span className="text-xs text-muted-foreground">{pack.credits.toLocaleString()} credits</span>
                 </Button>
               ))}
             </div>
