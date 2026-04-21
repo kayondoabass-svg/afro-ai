@@ -39,3 +39,16 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reset_tokens_user ON password_reset_tokens(user_id);
+
+-- Per-IP and per-email rate limiting for /cf-auth/login, /cf-auth/signup,
+-- and /cf-auth/forgot-password. The Worker writes one row per throttle key
+-- (e.g. "login:ip:1.2.3.4" or "login:email:foo@bar.com") and locks the key
+-- for a cool-off period after too many failures inside the rolling window.
+CREATE TABLE IF NOT EXISTS auth_throttle (
+  key           TEXT PRIMARY KEY,
+  count         INTEGER NOT NULL DEFAULT 0,
+  window_start  INTEGER NOT NULL,
+  locked_until  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_throttle_locked ON auth_throttle(locked_until);

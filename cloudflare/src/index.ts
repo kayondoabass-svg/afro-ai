@@ -266,6 +266,107 @@ async function sendViaBridge(
   }
 }
 
+/* ------------------------------ Throttling ------------------------------
+ *
+ * Server-side rate limiter that backs Turnstile on the abuse-sensitive
+ * endpoints (/login, /signup, /forgot-password). Turnstile alone isn't enough
+ * — a CAPTCHA-farm or single-solve-then-replay attacker can still brute-force
+ * passwords or spam reset emails. We keep one row per "throttle key" in D1
+ * (e.g. "login:ip:1.2.3.4" or "login:email:foo@bar.com") and lock the key
+ * for a cool-off period once too many failures land inside a rolling window.
+ *
+ * Defaults: 5 failures / 15 min → 30 min lock, applied per-IP AND per-email
+ * so a single bad actor can't pivot across either axis.
+ */
+const THROTTLE_WINDOW_SEC = 15 * 60;
+const THROTTLE_MAX_ATTEMPTS = 5;
+const THROTTLE_LOCK_SEC = 30 * 60;
+
+interface ThrottleRow {
+  count: number;
+  window_start: number;
+  locked_until: number | null;
+}
+
+/** Returns >0 retry-after if the key is currently locked, else 0. */
+async function throttleRetryAfter(
+  db: D1Database,
+  key: string,
+  now: number,
+): Promise<number> {
+  const row = await db
+    .prepare('SELECT count, window_start, locked_until FROM auth_throttle WHERE key = ?')
+    .bind(key)
+    .first<ThrottleRow>();
+  if (!row || !row.locked_until) return 0;
+  if (row.locked_until <= now) return 0;
+  return row.locked_until - now;
+}
+
+/** Check a list of keys; return the longest retry-after, or 0 if none locked. */
+async function checkThrottles(
+  db: D1Database,
+  keys: string[],
+  now: number,
+): Promise<number> {
+  let max = 0;
+  for (const k of keys) {
+    const r = await throttleRetryAfter(db, k, now);
+    if (r > max) max = r;
+  }
+  return max;
+}
+
+/**
+ * Bump the failure counter for `key`. If we cross THROTTLE_MAX_ATTEMPTS
+ * inside the current rolling window, set a lock for THROTTLE_LOCK_SEC.
+ * If the previous window has expired, reset the counter to 1.
+ */
+async function recordThrottleFailure(
+  db: D1Database,
+  key: string,
+  now: number,
+): Promise<void> {
+  const row = await db
+    .prepare('SELECT count, window_start FROM auth_throttle WHERE key = ?')
+    .bind(key)
+    .first<{ count: number; window_start: number }>();
+  if (!row || now - row.window_start >= THROTTLE_WINDOW_SEC) {
+    await db
+      .prepare(
+        'INSERT OR REPLACE INTO auth_throttle (key, count, window_start, locked_until) VALUES (?, 1, ?, NULL)',
+      )
+      .bind(key, now)
+      .run();
+    return;
+  }
+  const newCount = row.count + 1;
+  const lockedUntil = newCount >= THROTTLE_MAX_ATTEMPTS ? now + THROTTLE_LOCK_SEC : null;
+  await db
+    .prepare('UPDATE auth_throttle SET count = ?, locked_until = ? WHERE key = ?')
+    .bind(newCount, lockedUntil, key)
+    .run();
+}
+
+/** Wipe throttle state for a key (called on a successful login). */
+async function clearThrottle(db: D1Database, key: string): Promise<void> {
+  await db.prepare('DELETE FROM auth_throttle WHERE key = ?').bind(key).run();
+}
+
+/** Standard 429 response for a throttle hit. */
+function tooManyAttempts(c: any, retryAfter: number) {
+  c.header('Retry-After', String(Math.max(1, retryAfter)));
+  const minutes = Math.max(1, Math.ceil(retryAfter / 60));
+  return c.json(
+    {
+      message: `Too many attempts. Please try again in about ${minutes} minute${
+        minutes === 1 ? '' : 's'
+      }.`,
+    },
+    429,
+  );
+}
+
 /**
  * Constant-time string compare for the Worker admin shared secret. Avoids
  * leaking the secret length / contents through response-time differences.
@@ -300,13 +401,21 @@ app.post('/signup', async (c) => {
     return c.json({ message: 'Password must be at least 6 characters.' }, 400);
   }
 
-  const ip = c.req.header('CF-Connecting-IP');
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `signup:ip:${ip}`;
+  const emailKey = `signup:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor);
+
   const captchaOk = await verifyTurnstile(
     String(body.turnstileToken || ''),
     c.env.TURNSTILE_SECRET_KEY,
     ip,
   );
   if (!captchaOk) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
     return c.json({ message: 'Captcha check failed. Please try again.' }, 400);
   }
 
@@ -314,6 +423,8 @@ app.post('/signup', async (c) => {
     .bind(email)
     .first();
   if (existing) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
     return c.json({ message: 'An account with this email already exists.' }, 409);
   }
 
@@ -344,13 +455,21 @@ app.post('/login', async (c) => {
     return c.json({ message: 'Please enter your email and password.' }, 400);
   }
 
-  const ip = c.req.header('CF-Connecting-IP');
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `login:ip:${ip}`;
+  const emailKey = `login:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor);
+
   const captchaOk = await verifyTurnstile(
     String(body.turnstileToken || ''),
     c.env.TURNSTILE_SECRET_KEY,
     ip,
   );
   if (!captchaOk) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
     return c.json({ message: 'Captcha check failed. Please try again.' }, 400);
   }
 
@@ -368,12 +487,22 @@ app.post('/login', async (c) => {
     }>();
 
   if (!user || !user.password_hash) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
     return c.json({ message: 'Wrong email or password.' }, 401);
   }
   const ok = await verifyPassword(password, user.password_hash);
   if (!ok) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
     return c.json({ message: 'Wrong email or password.' }, 401);
   }
+
+  // Successful login wipes the failure counters so a legitimate user who
+  // mistyped a few times before getting it right doesn't stay near the lock
+  // threshold. We clear both axes for the same reason.
+  await clearThrottle(c.env.DB, ipKey);
+  await clearThrottle(c.env.DB, emailKey);
 
   // Rolling upgrade: if the stored hash is a legacy bcrypt one, transparently
   // re-hash to the Worker's native PBKDF2 format. Best-effort — if the update
@@ -431,6 +560,22 @@ app.post('/forgot-password', async (c) => {
 
   // Always respond ok — never reveal whether the email exists
   if (!isValidEmail(email)) return c.json({ ok: true });
+
+  // Per-IP and per-email throttling. We deliberately keep the response shape
+  // identical (always 200 { ok: true }) so the throttle can't be used as an
+  // email-enumeration oracle — when we're locked we just silently skip the
+  // DB lookup and the email send.
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `forgot:ip:${ip}`;
+  const emailKey = `forgot:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return c.json({ ok: true });
+
+  // Every well-formed request counts toward the throttle (regardless of
+  // whether the email exists), so an attacker can't blast reset emails.
+  await recordThrottleFailure(c.env.DB, ipKey, now);
+  await recordThrottleFailure(c.env.DB, emailKey, now);
 
   const user = await c.env.DB.prepare('SELECT id, first_name FROM users WHERE email = ?')
     .bind(email)
