@@ -52,3 +52,4 @@ CREATE TABLE IF NOT EXISTS auth_throttle (
 );
 
 CREATE INDEX IF NOT EXISTS idx_auth_throttle_locked ON auth_throttle(locked_until);
+CREATE INDEX IF NOT EXISTS idx_auth_throttle_window_start ON auth_throttle(window_start);
