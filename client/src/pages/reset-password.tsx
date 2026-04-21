@@ -9,6 +9,7 @@ import { LanguageSelector } from "@/components/language-selector";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { Lock, CheckCircle2, AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { LockedPanel, parseRetryAfter, type LockState } from "@/components/locked-panel";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function ResetPasswordPage() {
@@ -22,6 +23,12 @@ export default function ResetPasswordPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [done, setDone] = useState(false);
+  // Mirrors the login/signup lock flow. The Worker doesn't currently throttle
+  // /reset-password, but if/when it starts returning 429 (e.g. to slow down
+  // token-guessing) the page reuses the same shared lock UI so the experience
+  // stays consistent across login, signup, and reset.
+  const [lock, setLock] = useState<LockState | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -30,6 +37,18 @@ export default function ResetPasswordPage() {
     // so first-time users see "Set your password" copy instead of "Reset your password".
     setIsWelcome(params.get("welcome") === "1");
   }, []);
+
+  useEffect(() => {
+    if (!lock) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [lock]);
+
+  useEffect(() => {
+    if (lock && now >= lock.until) setLock(null);
+  }, [now, lock]);
+
+  const lockRemaining = lock ? Math.max(0, Math.ceil((lock.until - now) / 1000)) : 0;
 
   const passwordTooShort = password.length > 0 && password.length < 6;
   const mismatch = confirm.length > 0 && password !== confirm;
@@ -46,7 +65,16 @@ export default function ResetPasswordPage() {
         credentials: "include",
         body: JSON.stringify({ token, password }),
       });
-      const data = await res.json();
+      const data: { message?: string; loggedIn?: boolean } = await res
+        .json()
+        .catch(() => ({}));
+      if (res.status === 429) {
+        const message = data?.message || t("resetPassword.toast.errorRetry");
+        const retryAfter = parseRetryAfter(res, message);
+        setLock({ until: Date.now() + retryAfter * 1000, message });
+        setNow(Date.now());
+        return;
+      }
       if (!res.ok) {
         toast({ title: t("resetPassword.toast.errorTitle"), description: data.message || t("resetPassword.toast.errorRetry"), variant: "destructive" });
         return;
@@ -84,7 +112,16 @@ export default function ResetPasswordPage() {
             </p>
           </div>
 
-          {!token ? (
+          {lock ? (
+            <LockedPanel
+              title={t("auth.locked.reset.title")}
+              lock={lock}
+              remainingSec={lockRemaining}
+              onDismiss={() => setLock(null)}
+              testIdPrefix="reset"
+              t={t}
+            />
+          ) : !token ? (
             <div className="space-y-4 text-center" data-testid="state-no-token">
               <div className="mx-auto w-14 h-14 rounded-full bg-amber-500/15 flex items-center justify-center">
                 <AlertTriangle className="w-7 h-7 text-amber-500" />
