@@ -1,62 +1,32 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
 import { useLanguage } from "@/hooks/use-language";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SiGoogle, SiGithub, SiTiktok } from "react-icons/si";
+import { SiGoogle, SiGithub } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
-const RECAPTCHA_SITE_KEY = "6LfqDbksAAAAAEI2i4kTfitA7oBhbiR9lCW3q6of";
-
-function loadEnterpriseScript() {
-  const scriptId = "recaptcha-enterprise-script";
-  if (document.getElementById(scriptId)) return;
-  const script = document.createElement("script");
-  script.id = scriptId;
-  script.src = `https://www.google.com/recaptcha/enterprise.js?render=${RECAPTCHA_SITE_KEY}`;
-  script.async = true;
-  script.defer = true;
-  document.head.appendChild(script);
-}
-
-async function getEnterpriseToken(action: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const tryExecute = () => {
-      const gr = (window as any).grecaptcha?.enterprise;
-      if (!gr) { setTimeout(tryExecute, 300); return; }
-      gr.ready(async () => {
-        try {
-          const token = await gr.execute(RECAPTCHA_SITE_KEY, { action });
-          resolve(token);
-        } catch (e) { reject(e); }
-      });
-    };
-    tryExecute();
-  });
-}
-
-function useEnterpriseRecaptcha() {
-  useEffect(() => { loadEnterpriseScript(); }, []);
-
-  const getToken = (action: string) => getEnterpriseToken(action);
-  return { getToken };
-}
+const AUTH_BASE = "/cf-auth";
 
 export default function LoginPage() {
-  const { t } = useLanguage();
+  useLanguage();
   const { toast } = useToast();
   const params = new URLSearchParams(window.location.search);
   const refCode = params.get("ref");
   const [isLoading, setIsLoading] = useState(false);
-  const { getToken } = useEnterpriseRecaptcha();
 
-  const authUrl = (base: string) => refCode ? `${base}?ref=${encodeURIComponent(refCode)}` : base;
+  // Two separate widgets so a successful login doesn't burn the signup token
+  const [loginToken, setLoginToken] = useState("");
+  const [signupToken, setSignupToken] = useState("");
+  const [loginResetSignal, setLoginResetSignal] = useState(0);
+  const [signupResetSignal, setSignupResetSignal] = useState(0);
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -65,26 +35,59 @@ export default function LoginPage() {
   const [registerFirstName, setRegisterFirstName] = useState("");
   const [registerLastName, setRegisterLastName] = useState("");
 
+  function preserveRef() {
+    if (refCode) sessionStorage.setItem("ref_code", refCode);
+  }
+
+  function redirectAfterAuth() {
+    const stored = sessionStorage.getItem("after_login_redirect");
+    if (stored) sessionStorage.removeItem("after_login_redirect");
+    window.location.href = stored && stored.startsWith("/") ? stored : "/";
+  }
+
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
+    if (!loginToken) {
+      toast({
+        title: "One quick check",
+        description: "Wait a moment for the security check to finish, then try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsLoading(true);
     try {
-      const recaptchaToken = await getToken("login");
-      const res = await fetch("/api/auth/login/email", {
+      const res = await fetch(`${AUTH_BASE}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword, recaptchaToken }),
+        credentials: "include",
+        body: JSON.stringify({
+          email: loginEmail.trim(),
+          password: loginPassword,
+          turnstileToken: loginToken,
+        }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast({ title: "Login failed", description: data.message, variant: "destructive" });
-      } else {
-        const stored = sessionStorage.getItem("after_login_redirect");
-        if (stored) sessionStorage.removeItem("after_login_redirect");
-        window.location.href = stored && stored.startsWith("/") ? stored : "/";
+        toast({
+          title: "Login failed",
+          description: data?.message || "Check your email and password and try again.",
+          variant: "destructive",
+        });
+        setLoginResetSignal((n) => n + 1);
+        setLoginToken("");
+        return;
       }
+      preserveRef();
+      redirectAfterAuth();
     } catch {
-      toast({ title: "Login failed", description: "An error occurred. Please try again.", variant: "destructive" });
+      toast({
+        title: "Login failed",
+        description: "Check your internet and try again.",
+        variant: "destructive",
+      });
+      setLoginResetSignal((n) => n + 1);
+      setLoginToken("");
     } finally {
       setIsLoading(false);
     }
@@ -92,33 +95,65 @@ export default function LoginPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (!signupToken) {
+      toast({
+        title: "One quick check",
+        description: "Wait a moment for the security check to finish, then try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsLoading(true);
     try {
-      const recaptchaToken = await getToken("register");
-      const res = await fetch("/api/auth/register", {
+      const res = await fetch(`${AUTH_BASE}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
-          email: registerEmail,
+          email: registerEmail.trim(),
           password: registerPassword,
-          firstName: registerFirstName,
-          lastName: registerLastName,
-          recaptchaToken,
+          firstName: registerFirstName.trim() || undefined,
+          lastName: registerLastName.trim() || undefined,
+          turnstileToken: signupToken,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast({ title: "Registration failed", description: data.message, variant: "destructive" });
-      } else {
-        const stored = sessionStorage.getItem("after_login_redirect");
-        if (stored) sessionStorage.removeItem("after_login_redirect");
-        window.location.href = stored && stored.startsWith("/") ? stored : "/";
+        toast({
+          title: "Registration failed",
+          description: data?.message || "Please check your details and try again.",
+          variant: "destructive",
+        });
+        setSignupResetSignal((n) => n + 1);
+        setSignupToken("");
+        return;
       }
+      preserveRef();
+      redirectAfterAuth();
     } catch {
-      toast({ title: "Registration failed", description: "An error occurred. Please try again.", variant: "destructive" });
+      toast({
+        title: "Registration failed",
+        description: "Check your internet and try again.",
+        variant: "destructive",
+      });
+      setSignupResetSignal((n) => n + 1);
+      setSignupToken("");
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function startOAuth(provider: "google" | "github") {
+    preserveRef();
+    // Forward the post-login destination to the Worker so OAuth lands on the
+    // same page as the email/password flow (sanitized server-side).
+    const stored = sessionStorage.getItem("after_login_redirect");
+    let url = `${AUTH_BASE}/${provider}/start`;
+    if (stored && stored.startsWith("/")) {
+      const target = `${window.location.origin}${stored}`;
+      url += `?redirect=${encodeURIComponent(target)}`;
+    }
+    window.location.href = url;
   }
 
   return (
@@ -198,10 +233,17 @@ export default function LoginPage() {
                     data-testid="input-register-password"
                   />
                 </div>
+                <div className="flex justify-center">
+                  <TurnstileWidget
+                    onToken={setSignupToken}
+                    onExpire={() => setSignupToken("")}
+                    resetSignal={signupResetSignal}
+                  />
+                </div>
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={isLoading}
+                  disabled={isLoading || !signupToken}
                   data-testid="button-register-submit"
                 >
                   {isLoading ? "Creating account..." : "Create Account"}
@@ -222,7 +264,7 @@ export default function LoginPage() {
                   variant="outline"
                   size="sm"
                   className="w-full gap-2"
-                  onClick={() => { window.location.href = authUrl("/api/login"); }}
+                  onClick={() => startOAuth("google")}
                   data-testid="button-google-signup"
                 >
                   <SiGoogle className="w-4 h-4" />
@@ -232,21 +274,11 @@ export default function LoginPage() {
                   variant="outline"
                   size="sm"
                   className="w-full gap-2"
-                  onClick={() => { window.location.href = authUrl("/api/auth/github"); }}
+                  onClick={() => startOAuth("github")}
                   data-testid="button-github-signup"
                 >
                   <SiGithub className="w-4 h-4" />
                   GitHub
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={() => { window.location.href = authUrl("/api/auth/tiktok"); }}
-                  data-testid="button-tiktok-signup"
-                >
-                  <SiTiktok className="w-4 h-4" />
-                  TikTok
                 </Button>
               </div>
             </TabsContent>
@@ -277,10 +309,17 @@ export default function LoginPage() {
                     data-testid="input-login-password"
                   />
                 </div>
+                <div className="flex justify-center">
+                  <TurnstileWidget
+                    onToken={setLoginToken}
+                    onExpire={() => setLoginToken("")}
+                    resetSignal={loginResetSignal}
+                  />
+                </div>
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={isLoading}
+                  disabled={isLoading || !loginToken}
                   data-testid="button-login-submit"
                 >
                   {isLoading ? "Signing in..." : "Sign In"}
@@ -310,7 +349,7 @@ export default function LoginPage() {
                   variant="outline"
                   size="sm"
                   className="w-full gap-2"
-                  onClick={() => { window.location.href = authUrl("/api/login"); }}
+                  onClick={() => startOAuth("google")}
                   data-testid="button-google-login"
                 >
                   <SiGoogle className="w-4 h-4" />
@@ -320,21 +359,11 @@ export default function LoginPage() {
                   variant="outline"
                   size="sm"
                   className="w-full gap-2"
-                  onClick={() => { window.location.href = authUrl("/api/auth/github"); }}
+                  onClick={() => startOAuth("github")}
                   data-testid="button-github-login"
                 >
                   <SiGithub className="w-4 h-4" />
                   GitHub
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={() => { window.location.href = authUrl("/api/auth/tiktok"); }}
-                  data-testid="button-tiktok-login"
-                >
-                  <SiTiktok className="w-4 h-4" />
-                  TikTok
                 </Button>
               </div>
             </TabsContent>

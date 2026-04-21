@@ -34,9 +34,10 @@ export default function ResetPasswordPage() {
     if (!canSubmit) return;
     setIsLoading(true);
     try {
-      const res = await fetch("/api/auth/reset-password", {
+      const res = await fetch("/cf-auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ token, password }),
       });
       const data = await res.json();
