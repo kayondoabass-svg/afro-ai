@@ -9,7 +9,7 @@ Afro AI, a product of KEYO TECHNOLOGIES, is a global AI-powered platform enablin
 - Pesapal for payments across Africa (Mobile Money, Visa, Mastercard, bank transfers)
 
 ## System Architecture
-The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind CSS, and shadcn/ui for the frontend; Express.js and Node.js for the backend; and PostgreSQL with Drizzle ORM for the database. Google OAuth 2.0 handles authentication. AI capabilities are powered by OpenAI, with tiered models aligning with user subscription plans.
+The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind CSS, and shadcn/ui for the frontend; Express.js and Node.js for the backend; and PostgreSQL with Drizzle ORM for the database. Authentication is handled by a dedicated Cloudflare Worker (`cf-auth`) covering email/password, Google, and GitHub sign-in; Express trusts the Worker's session cookie via a small bridge middleware. AI capabilities are powered by OpenAI, with tiered models aligning with user subscription plans.
 
 **Key Architectural Decisions & Features:**
 -   **AI Co-creation:** An AI-powered code generator provides a live preview and supports iterative development through context-aware generation.
@@ -53,7 +53,7 @@ The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind C
 ## External Dependencies
 -   **AI Services:** OpenAI, Google Gemini.
 -   **Payment Gateway:** Pesapal (API 3.0).
--   **Authentication:** Google OAuth 2.0.
+-   **Authentication:** Cloudflare Worker (`cf-auth`) with Google + GitHub OAuth and email/password.
 -   **Database:** PostgreSQL (primary). Cloudflare D1 wired but unused (Phase 2).
 -   **Object Storage:** Cloudflare R2 — published-app HTML mirrored at `sites/{appId}.html` and `sites/{appId}/v{n}.html` for versions. Read path prefers R2 with DB fallback (Phase 1 of off-Replit migration).
 -   **DNS Management:** Cloudflare DNS API.
@@ -61,4 +61,4 @@ The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind C
 -   **Email Sending:** AWS SES.
 -   **SMS:** Africa's Talking (live mode; awaiting production approval for non-sandbox numbers).
 -   **Authentication (External Apps):** Firebase Auth.
--   **Cloudflare Worker (auth):** `cloudflare/` package — Hono Worker deployed as `afro-ai-auth`, mounted at `afroaigroup.com/cf-auth/*` via Worker Route. Owns email/password signup/login/logout/me/forgot/reset and Google + GitHub OAuth. Backed by D1 (`e796b2ab-d062-42c2-8412-7d281e4c0f5d`) with users / oauth_accounts / password_reset_tokens. Bot protection via Cloudflare Turnstile (frontend uses test key `1x00000000000000000000AA` on non-prod hostnames so the widget renders during dev). Frontend pages `client/src/pages/{login,forgot-password,reset-password}.tsx` and `client/src/components/turnstile-widget.tsx` call the Worker. Express OIDC (`server/replit_integrations/auth/replitAuth.ts`) is still live alongside it; full cutover is Phase 2.
+-   **Cloudflare Worker (auth):** `cloudflare/` package — Hono Worker deployed as `afro-ai-auth`, mounted at `afroaigroup.com/cf-auth/*` via Worker Route. Owns email/password signup/login/logout/me/forgot/reset and Google + GitHub OAuth. Backed by D1 (`e796b2ab-d062-42c2-8412-7d281e4c0f5d`) with users / oauth_accounts / password_reset_tokens. Bot protection via Cloudflare Turnstile (frontend uses test key `1x00000000000000000000AA` on non-prod hostnames so the widget renders during dev). Frontend pages `client/src/pages/{login,forgot-password,reset-password}.tsx` and `client/src/components/turnstile-widget.tsx` call the Worker. Express trusts the Worker's `afroai_session` cookie via `server/replit_integrations/auth/cfBridge.ts`, so the existing `isAuthenticated`/`isFounder` middleware keeps working unchanged. The legacy Passport email/password and Google/GitHub strategies have been retired; only the TikTok PKCE flow and `/api/logout` (which clears both Passport and Worker cookies) remain in `replitAuth.ts`.

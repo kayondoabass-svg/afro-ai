@@ -148,7 +148,7 @@ function PricingModal({
     },
   });
 
-  const loginUrl = `/api/login?redirect=/ussd`;
+  const loginUrl = `/login?redirect=/ussd`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -171,7 +171,7 @@ function PricingModal({
               <p className="text-sm text-muted-foreground mb-4">Sign in to subscribe to the USSD Builder</p>
               <a href={loginUrl}>
                 <Button className="w-full bg-amber-500 hover:bg-amber-600 text-black font-semibold" data-testid="button-sign-in-ussd">
-                  Sign In with Google
+                  Sign In to Continue
                 </Button>
               </a>
             </div>
@@ -222,7 +222,7 @@ export default function UssdBuilderPage() {
   const [calcUsers, setCalcUsers] = useState(2000);
   const [calcSessions, setCalcSessions] = useState(4);
 
-  const loginUrl = "/api/login?redirect=/ussd";
+  const loginUrl = "/login?redirect=/ussd";
 
   useEffect(() => {
     if (paymentResult === "success") {
@@ -633,7 +633,7 @@ export default function UssdBuilderPage() {
             <div className="space-y-3">
               <h4 className="font-semibold text-sm">Product</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <a href="/api/login" className="block hover:text-primary transition-colors">AI Website Builder</a>
+                <a href="/login" className="block hover:text-primary transition-colors">AI Website Builder</a>
                 <a href="/ussd" className="block hover:text-primary transition-colors font-medium text-amber-400">USSD Builder</a>
                 <a href="/chatbot-api" className="block hover:text-primary transition-colors">Chatbot API</a>
                 <a href="/templates" className="block hover:text-primary transition-colors">Templates</a>

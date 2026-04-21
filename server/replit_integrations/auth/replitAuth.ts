@@ -1,13 +1,10 @@
 import passport from "passport";
-import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { Strategy as GitHubStrategy } from "passport-github2";
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 import { storage } from "../../storage";
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
@@ -76,6 +73,9 @@ async function handleReferral(req: any, user: any) {
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
+  // Passport is still initialised so the TikTok flow below can issue
+  // sessions via req.logIn. Google + GitHub OAuth and email/password auth
+  // now live exclusively in the Cloudflare Worker (`/cf-auth/*`).
   app.use(passport.initialize());
   app.use(passport.session());
 
@@ -86,120 +86,15 @@ export async function setupAuth(app: Express) {
   const { cfAuthBridge } = await import("./cfBridge");
   app.use(cfAuthBridge());
 
-  const baseURL = process.env.BASE_URL || "";
-
-  // ── Google ──────────────────────────────────────────────────
-  const googleCallbackURL = baseURL ? `${baseURL}/api/auth/google/callback` : "/api/auth/google/callback";
-  const clientID = (process.env.GOOGLE_CLIENT_ID || "").trim();
-  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
-  console.log("[Auth] Google OAuth configured, callback:", googleCallbackURL);
-
-  passport.use(
-    new GoogleStrategy(
-      { clientID, clientSecret, callbackURL: googleCallbackURL, proxy: true },
-      async (_accessToken, _refreshToken, profile, done) => {
-        try {
-          const email = profile.emails?.[0]?.value || "";
-          const firstName = profile.name?.givenName || profile.displayName?.split(" ")[0] || "";
-          const lastName = profile.name?.familyName || profile.displayName?.split(" ").slice(1).join(" ") || "";
-          const profileImageUrl = profile.photos?.[0]?.value || "";
-          const dbUser = await authStorage.upsertUser({ id: profile.id, email, firstName, lastName, profileImageUrl });
-          done(null, buildUserClaims(dbUser, { email, firstName, lastName, profileImageUrl }));
-        } catch (error) {
-          console.error("[Auth] Google strategy error:", error);
-          done(error as Error);
-        }
-      }
-    )
-  );
-
-  // ── GitHub ──────────────────────────────────────────────────
-  const githubClientId = (process.env.GITHUB_CLIENT_ID || "").trim();
-  const githubClientSecret = (process.env.GITHUB_CLIENT_SECRET || "").trim();
-  const githubCallbackURL = baseURL ? `${baseURL}/api/auth/github/callback` : "/api/auth/github/callback";
-
-  if (githubClientId && githubClientSecret) {
-    console.log("[Auth] GitHub OAuth configured, callback:", githubCallbackURL);
-    passport.use(
-      new GitHubStrategy(
-        { clientID: githubClientId, clientSecret: githubClientSecret, callbackURL: githubCallbackURL, scope: ["user:email"] },
-        async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
-          try {
-            const email = profile.emails?.[0]?.value || `github_${profile.id}@github.afroai`;
-            const displayName = profile.displayName || profile.username || "";
-            const nameParts = displayName.split(" ");
-            const firstName = nameParts[0] || profile.username || "";
-            const lastName = nameParts.slice(1).join(" ") || "";
-            const profileImageUrl = profile.photos?.[0]?.value || profile._json?.avatar_url || "";
-            const userId = `gh_${profile.id}`;
-            const dbUser = await authStorage.upsertUser({ id: userId, email, firstName, lastName, profileImageUrl });
-            done(null, buildUserClaims(dbUser, { email, firstName, lastName, profileImageUrl }));
-          } catch (error) {
-            console.error("[Auth] GitHub strategy error:", error);
-            done(error as Error);
-          }
-        }
-      )
-    );
-  } else {
-    console.log("[Auth] GitHub OAuth not configured (missing GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET)");
-  }
-
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   const rateLimit = (await import("express-rate-limit")).default;
   const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 
-  // ── Google routes ────────────────────────────────────────────
-  app.get("/api/login", authLimiter, (req: any, res, next) => {
-    if (req.query.ref) req.session.referralCode = req.query.ref;
-    passport.authenticate("google", { scope: ["profile", "email"], prompt: "select_account" })(req, res, next);
-  });
-
-  app.get("/api/auth/google/callback", (req, res, next) => {
-    passport.authenticate("google", (err: any, user: any, info: any) => {
-      if (err) {
-        console.error("[Auth] Google callback error:", err.message, err.code, err.status, JSON.stringify(err));
-        return res.redirect("/?error=auth_failed&reason=" + encodeURIComponent(err.message || "unknown"));
-      }
-      if (!user) {
-        console.error("[Auth] Google no user returned, info:", JSON.stringify(info));
-        return res.redirect("/?error=auth_failed&reason=no_user");
-      }
-      req.logIn(user, async (loginErr) => {
-        if (loginErr) {
-          console.error("[Auth] Google logIn error:", loginErr);
-          return res.redirect("/?error=auth_failed&reason=login_error");
-        }
-        await handleReferral(req, user);
-        return res.redirect("/");
-      });
-    })(req, res, next);
-  });
-
-  // ── GitHub routes ────────────────────────────────────────────
-  app.get("/api/auth/github", authLimiter, (req: any, res, next) => {
-    if (req.query.ref) req.session.referralCode = req.query.ref;
-    if (!githubClientId || !githubClientSecret) {
-      return res.redirect("/?error=auth_failed&reason=github_not_configured");
-    }
-    passport.authenticate("github", { scope: ["user:email"] })(req, res, next);
-  });
-
-  app.get("/api/auth/github/callback", (req, res, next) => {
-    passport.authenticate("github", (err: any, user: any, info: any) => {
-      if (err) return res.redirect("/?error=auth_failed&reason=" + encodeURIComponent(err.message || "unknown"));
-      if (!user) return res.redirect("/?error=auth_failed&reason=no_user");
-      req.logIn(user, async (loginErr) => {
-        if (loginErr) return res.redirect("/?error=auth_failed&reason=login_error");
-        await handleReferral(req, user);
-        return res.redirect("/");
-      });
-    })(req, res, next);
-  });
-
   // ── TikTok routes (PKCE OAuth 2.0) ──────────────────────────
+  // TikTok is not yet supported by the Worker, so it remains here.
+  const baseURL = process.env.BASE_URL || "";
   const tiktokClientKey = (process.env.TIKTOK_CLIENT_KEY || "").trim();
   const tiktokClientSecret = (process.env.TIKTOK_CLIENT_SECRET || "").trim();
   const tiktokCallbackURL = baseURL ? `${baseURL}/api/auth/tiktok/callback` : "/api/auth/tiktok/callback";
@@ -295,209 +190,25 @@ export async function setupAuth(app: Express) {
     }
   });
 
-  // ── reCAPTCHA Enterprise verification helper ─────────────────
-  async function verifyRecaptcha(token: string, action?: string): Promise<boolean> {
-    const apiKey = process.env.RECAPTCHA_API_KEY;
-    if (!apiKey) return true; // skip if not configured
-    try {
-      const r = await fetch(
-        `https://recaptchaenterprise.googleapis.com/v1/projects/avian-catwalk-488220-g4/assessments?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event: {
-              token,
-              expectedAction: action || "submit",
-              siteKey: "6LfqDbksAAAAAEI2i4kTfitA7oBhbiR9lCW3q6of",
-            },
-          }),
-        }
-      );
-      const data = await r.json() as any;
-      const score: number = data?.riskAnalysis?.score ?? data?.score ?? 0;
-      const valid: boolean = data?.tokenProperties?.valid === true;
-      return valid && score >= 0.5;
-    } catch (err) {
-      console.error("[Auth] reCAPTCHA Enterprise verification error:", err);
-      return false;
-    }
-  }
-
-  // ── Email/Password Registration ──────────────────────────────
-  app.post("/api/auth/register", authLimiter, async (req, res) => {
-    try {
-      const { email, password, firstName, lastName, recaptchaToken } = req.body;
-      if (recaptchaToken) {
-        const valid = await verifyRecaptcha(recaptchaToken, "register");
-        if (!valid) return res.status(400).json({ message: "reCAPTCHA verification failed. Please try again." });
-      }
-      if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
-      if (password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
-
-      const { db } = await import("../../db");
-      const { users } = await import("@shared/models/auth");
-      const { eq } = await import("drizzle-orm");
-
-      const [existing] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim()));
-      if (existing) return res.status(409).json({ message: "An account with this email already exists" });
-
-      const passwordHash = await bcrypt.hash(password, 10);
-      const [newUser] = await db.insert(users).values({
-        email: email.toLowerCase().trim(),
-        passwordHash,
-        firstName: firstName || "",
-        lastName: lastName || "",
-      }).returning();
-
-      const userClaims = buildUserClaims(newUser, { email: newUser.email || "", firstName: newUser.firstName || "", lastName: newUser.lastName || "" });
-      req.logIn(userClaims, (err) => {
-        if (err) return res.status(500).json({ message: "Login failed after registration" });
-        res.json({ success: true });
-      });
-    } catch (err) {
-      console.error("[Auth] Register error:", err);
-      res.status(500).json({ message: "Registration failed" });
-    }
-  });
-
-  // ── Email/Password Login ─────────────────────────────────────
-  app.post("/api/auth/login/email", authLimiter, async (req, res) => {
-    try {
-      const { email, password, recaptchaToken } = req.body;
-      if (recaptchaToken) {
-        const valid = await verifyRecaptcha(recaptchaToken, "login");
-        if (!valid) return res.status(400).json({ message: "reCAPTCHA verification failed. Please try again." });
-      }
-      if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
-
-      const { db } = await import("../../db");
-      const { users } = await import("@shared/models/auth");
-      const { eq } = await import("drizzle-orm");
-
-      const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim()));
-      if (!user || !user.passwordHash) return res.status(401).json({ message: "Invalid email or password" });
-
-      const valid = await bcrypt.compare(password, user.passwordHash);
-      if (!valid) return res.status(401).json({ message: "Invalid email or password" });
-
-      const userClaims = buildUserClaims(user, { email: user.email || "", firstName: user.firstName || "", lastName: user.lastName || "" });
-      req.logIn(userClaims, (err) => {
-        if (err) return res.status(500).json({ message: "Login failed" });
-        res.json({ success: true });
-      });
-    } catch (err) {
-      console.error("[Auth] Email login error:", err);
-      res.status(500).json({ message: "Login failed" });
-    }
-  });
-
-  // ── Forgot Password ──────────────────────────────────────────
-  // Always returns 200 — never reveal whether the email exists, to prevent
-  // attackers from enumerating accounts.
-  app.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
-    try {
-      const { email } = req.body || {};
-      if (!email || typeof email !== "string") {
-        return res.status(400).json({ message: "Email is required" });
-      }
-      const emailNorm = email.toLowerCase().trim();
-
-      const { db } = await import("../../db");
-      const { users, passwordResetTokens } = await import("@shared/models/auth");
-      const { eq } = await import("drizzle-orm");
-      const crypto = await import("crypto");
-      const { sendPasswordResetEmail } = await import("../../mailer");
-
-      const [user] = await db.select().from(users).where(eq(users.email, emailNorm));
-
-      if (user && user.passwordHash) {
-        // Token shown to the user (in URL) — keep raw, store only hash
-        const rawToken = crypto.randomBytes(32).toString("base64url");
-        const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-        await db.insert(passwordResetTokens).values({
-          tokenHash,
-          userId: user.id,
-          email: emailNorm,
-          expiresAt,
-        });
-
-        const origin = `${req.protocol}://${req.get("host")}`;
-        const resetUrl = `${origin}/reset-password?token=${rawToken}`;
-        const name = user.firstName || user.email?.split("@")[0] || "";
-
-        // Fire-and-don't-block: any SES error is logged inside mailer
-        sendPasswordResetEmail(emailNorm, { name, resetUrl }).catch(() => {});
-      }
-
-      // Always the same response, regardless of whether we sent anything
-      res.json({ ok: true, message: "If that email is on Afro AI, we just sent a reset link." });
-    } catch (err) {
-      console.error("[Auth] Forgot-password error:", err);
-      // Still return 200 to avoid leaking server state
-      res.json({ ok: true, message: "If that email is on Afro AI, we just sent a reset link." });
-    }
-  });
-
-  // ── Reset Password ───────────────────────────────────────────
-  app.post("/api/auth/reset-password", authLimiter, async (req, res) => {
-    try {
-      const { token, password } = req.body || {};
-      if (!token || typeof token !== "string") {
-        return res.status(400).json({ message: "Reset token is missing." });
-      }
-      if (!password || typeof password !== "string" || password.length < 6) {
-        return res.status(400).json({ message: "Password must be at least 6 characters." });
-      }
-
-      const { db } = await import("../../db");
-      const { users, passwordResetTokens } = await import("@shared/models/auth");
-      const { eq } = await import("drizzle-orm");
-      const crypto = await import("crypto");
-
-      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-      const [record] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash));
-
-      if (!record) return res.status(400).json({ message: "This reset link is invalid or has already been used." });
-      if (record.usedAt) return res.status(400).json({ message: "This reset link has already been used. Request a new one." });
-      if (record.expiresAt.getTime() < Date.now()) {
-        return res.status(400).json({ message: "This reset link has expired. Request a new one." });
-      }
-
-      const passwordHash = await bcrypt.hash(password, 10);
-      await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, record.userId));
-      // Invalidate ALL outstanding reset tokens for this user — not just the one used.
-      // Otherwise a leaked second link would still work after the password is changed.
-      await db.update(passwordResetTokens)
-        .set({ usedAt: new Date() })
-        .where(eq(passwordResetTokens.userId, record.userId));
-
-      // Auto-login the user after a successful reset
-      const [user] = await db.select().from(users).where(eq(users.id, record.userId));
-      if (user) {
-        const userClaims = buildUserClaims(user, { email: user.email || "", firstName: user.firstName || "", lastName: user.lastName || "" });
-        req.logIn(userClaims, (err) => {
-          if (err) return res.json({ ok: true, loggedIn: false });
-          res.json({ ok: true, loggedIn: true });
-        });
-      } else {
-        res.json({ ok: true, loggedIn: false });
-      }
-    } catch (err) {
-      console.error("[Auth] Reset-password error:", err);
-      res.status(500).json({ message: "Something went wrong. Please try again." });
-    }
-  });
-
   // ── Logout ───────────────────────────────────────────────────
+  // Clears both the legacy Passport session and the Cloudflare Worker
+  // session cookie so a single round-trip fully signs the user out, no
+  // matter which system issued their session.
   app.get("/api/logout", (req, res) => {
+    const isProduction = process.env.REPLIT_DEPLOYMENT === "1" || process.env.NODE_ENV === "production";
+    const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
     req.logout((err) => {
       if (err) console.error("Logout error:", err);
-      req.session.destroy((err) => {
-        if (err) console.error("Session destroy error:", err);
+      req.session.destroy((destroyErr) => {
+        if (destroyErr) console.error("Session destroy error:", destroyErr);
         res.clearCookie("connect.sid");
+        res.clearCookie("afroai_session", {
+          domain: cookieDomain,
+          path: "/",
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: isProduction ? "none" : "lax",
+        });
         res.redirect("/");
       });
     });
