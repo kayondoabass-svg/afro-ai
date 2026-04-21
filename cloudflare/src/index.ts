@@ -1048,4 +1048,38 @@ app.get('/github/callback', async (c) => {
   return c.redirect(state.redirect);
 });
 
-export default root;
+/* ------------------------------ Scheduled cleanup ------------------------------
+ *
+ * The auth_throttle table accumulates one row per unique (endpoint, IP|email)
+ * combination that ever hits /login, /signup, or /forgot-password. Rows are
+ * reused while the same key keeps hitting, but a one-off visitor's row sticks
+ * around forever otherwise. Left unchecked this would balloon to millions of
+ * rows in D1 over months.
+ *
+ * The cron below sweeps any row whose rolling window started more than 24h
+ * ago AND that isn't currently inside an active lock. Active throttling is
+ * untouched: a freshly-failed key still has window_start within the last
+ * THROTTLE_WINDOW_SEC (15 min), and a locked key has locked_until > now.
+ */
+const THROTTLE_CLEANUP_AGE_SEC = 24 * 60 * 60;
+
+async function cleanupAuthThrottle(db: D1Database, now: number): Promise<void> {
+  const cutoff = now - THROTTLE_CLEANUP_AGE_SEC;
+  await db
+    .prepare(
+      'DELETE FROM auth_throttle WHERE window_start < ? AND (locked_until IS NULL OR locked_until <= ?)',
+    )
+    .bind(cutoff, now)
+    .run();
+}
+
+export default {
+  fetch: root.fetch.bind(root),
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      cleanupAuthThrottle(env.DB, nowSec()).catch((err) => {
+        console.error('[cron] auth_throttle cleanup failed', err);
+      }),
+    );
+  },
+};
