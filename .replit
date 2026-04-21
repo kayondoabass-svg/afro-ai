@@ -53,3 +53,7 @@ NAMEDOTCOM_TEST_API_URL = "https://api.dev.name.com/v4"
 PESAPAL_ENV = "production"
 VITE_RECAPTCHA_SITE_KEY = "6LeLs7MsAAAAAM9txvhkOvLG9WGBqucpXkkq2_Gm"
 EMAIL_API_DEMO_FROM = "noreply@afroaigroup.com"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
