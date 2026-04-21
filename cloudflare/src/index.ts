@@ -30,7 +30,12 @@ interface Env {
   GITHUB_CLIENT_SECRET?: string;
 }
 
-const app = new Hono<{ Bindings: Env }>();
+// All routes live under /cf-auth/* so the Worker can sit on a Cloudflare Route
+// like `afroaigroup.com/cf-auth/*`, side-by-side with the existing Express app
+// (which keeps owning /api/*). This makes the session cookie a first-party cookie,
+// which works on iOS Safari and avoids every CORS / third-party-cookie problem.
+const root = new Hono<{ Bindings: Env }>();
+const app = root.basePath('/cf-auth');
 const enc = new TextEncoder();
 
 /* ------------------------------ CORS ------------------------------ */
@@ -199,7 +204,7 @@ async function sendPasswordResetEmail(
 
 app.get('/health', (c) => c.json({ ok: true, ts: nowSec() }));
 
-app.post('/api/auth/signup', async (c) => {
+app.post('/signup', async (c) => {
   let body: any = {};
   try {
     body = await c.req.json();
@@ -248,7 +253,7 @@ app.post('/api/auth/signup', async (c) => {
   return c.json({ id, email, firstName, lastName });
 });
 
-app.post('/api/auth/login', async (c) => {
+app.post('/login', async (c) => {
   let body: any = {};
   try {
     body = await c.req.json();
@@ -304,12 +309,12 @@ app.post('/api/auth/login', async (c) => {
   });
 });
 
-app.post('/api/auth/logout', async (c) => {
+app.post('/logout', async (c) => {
   deleteCookie(c, 'afroai_session', { domain: c.env.COOKIE_DOMAIN, path: '/' });
   return c.json({ ok: true });
 });
 
-app.get('/api/auth/me', async (c) => {
+app.get('/me', async (c) => {
   const userId = await getCurrentUserId(c);
   if (!userId) return c.json({ user: null });
   const user = await c.env.DB.prepare(
@@ -320,7 +325,7 @@ app.get('/api/auth/me', async (c) => {
   return c.json({ user });
 });
 
-app.post('/api/auth/forgot-password', async (c) => {
+app.post('/forgot-password', async (c) => {
   let body: any = {};
   try {
     body = await c.req.json();
@@ -368,7 +373,7 @@ app.post('/api/auth/forgot-password', async (c) => {
   return c.json({ ok: true });
 });
 
-app.post('/api/auth/reset-password', async (c) => {
+app.post('/reset-password', async (c) => {
   let body: any = {};
   try {
     body = await c.req.json();
@@ -514,7 +519,7 @@ async function upsertOAuthUser(
 }
 
 function callbackUrl(c: any, provider: string): string {
-  return new URL(c.req.url).origin + `/api/auth/${provider}/callback`;
+  return new URL(c.req.url).origin + `/cf-auth/${provider}/callback`;
 }
 
 function safeRedirect(target: string, appUrl: string): string {
@@ -532,7 +537,7 @@ function safeRedirect(target: string, appUrl: string): string {
 
 /* ----- Google ----- */
 
-app.get('/api/auth/google/start', async (c) => {
+app.get('/google/start', async (c) => {
   if (!c.env.GOOGLE_CLIENT_ID) {
     return c.text('Google login is not configured.', 500);
   }
@@ -556,7 +561,7 @@ app.get('/api/auth/google/start', async (c) => {
   return c.redirect(url.toString());
 });
 
-app.get('/api/auth/google/callback', async (c) => {
+app.get('/google/callback', async (c) => {
   const code = c.req.query('code');
   const stateParam = c.req.query('state');
   const stateCookie = getCookie(c, STATE_COOKIE);
@@ -621,7 +626,7 @@ app.get('/api/auth/google/callback', async (c) => {
 
 /* ----- GitHub ----- */
 
-app.get('/api/auth/github/start', async (c) => {
+app.get('/github/start', async (c) => {
   if (!c.env.GITHUB_CLIENT_ID) {
     return c.text('GitHub login is not configured.', 500);
   }
@@ -643,7 +648,7 @@ app.get('/api/auth/github/start', async (c) => {
   return c.redirect(url.toString());
 });
 
-app.get('/api/auth/github/callback', async (c) => {
+app.get('/github/callback', async (c) => {
   const code = c.req.query('code');
   const stateParam = c.req.query('state');
   const stateCookie = getCookie(c, STATE_COOKIE);
@@ -737,4 +742,4 @@ app.get('/api/auth/github/callback', async (c) => {
   return c.redirect(state.redirect);
 });
 
-export default app;
+export default root;
