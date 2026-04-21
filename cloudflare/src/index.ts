@@ -169,8 +169,11 @@ async function issueSession(c: any, userId: string) {
     .setIssuedAt()
     .setExpirationTime('30d')
     .sign(secret);
+  // Intentionally host-only (no `domain` attribute). A broad `.afroaigroup.com`
+  // cookie would be sent to ANY subdomain — including untrusted or future
+  // user-published subdomains — which is a session-hijack vector. The cookie
+  // is only valid on the exact origin that issued it (afroaigroup.com).
   setCookie(c, 'afroai_session', token, {
-    domain: c.env.COOKIE_DOMAIN,
     path: '/',
     secure: true,
     httpOnly: true,
@@ -329,7 +332,7 @@ app.post('/login', async (c) => {
 });
 
 app.post('/logout', async (c) => {
-  deleteCookie(c, 'afroai_session', { domain: c.env.COOKIE_DOMAIN, path: '/' });
+  deleteCookie(c, 'afroai_session', { path: '/' });
   return c.json({ ok: true });
 });
 
@@ -445,7 +448,9 @@ app.post('/reset-password', async (c) => {
   ]);
 
   await issueSession(c, row.user_id);
-  return c.json({ ok: true });
+  // `loggedIn: true` tells the reset-password page that the cookie is now
+  // set and it can route the user straight into the dashboard.
+  return c.json({ ok: true, loggedIn: true });
 });
 
 /* ------------------------------ OAuth ------------------------------ */
@@ -541,11 +546,24 @@ function callbackUrl(c: any, provider: string): string {
   return new URL(c.req.url).origin + `/cf-auth/${provider}/callback`;
 }
 
+/**
+ * Strict redirect-target validator for OAuth `redirect=` parameters.
+ *
+ * Allows ONLY exact, hard-coded canonical hosts — never wildcard subdomains.
+ * Subdomain wildcards are dangerous here because user-published apps live on
+ * subdomains of afroaigroup.com; a bad actor could craft a redirect that
+ * forwards a freshly-authenticated user (and any auth-related URL fragments)
+ * to a subdomain they control.
+ */
 function safeRedirect(target: string, appUrl: string): string {
+  const ALLOWED_HOSTS = new Set([
+    'afroaigroup.com',
+    'www.afroaigroup.com',
+  ]);
   try {
-    const u = new URL(target);
-    const allowedHost = new URL(appUrl).host;
-    if (u.host === allowedHost || u.host.endsWith('.' + allowedHost)) {
+    const u = new URL(target, appUrl);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return appUrl;
+    if (ALLOWED_HOSTS.has(u.host)) {
       return u.toString();
     }
   } catch {
