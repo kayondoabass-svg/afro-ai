@@ -46,13 +46,17 @@ class AuthStorage implements IAuthStorage {
     const insertData: any = { ...userData };
     if (isFounderEmail) insertData.plan = "business";
 
+    // Conflict target = email (the dedup key). Switching from `users.id` to
+    // `users.email` closes a race: two concurrent first-time logins for the
+    // same email used to both pass the SELECT-by-email check and then both
+    // attempt INSERT, with the second one violating the email-unique
+    // constraint. Targeting email makes the second one a safe upsert.
     const [user] = await db
       .insert(users)
       .values(insertData)
       .onConflictDoUpdate({
-        target: users.id,
+        target: users.email,
         set: {
-          email: userData.email,
           firstName: userData.firstName,
           lastName: userData.lastName,
           profileImageUrl: userData.profileImageUrl,

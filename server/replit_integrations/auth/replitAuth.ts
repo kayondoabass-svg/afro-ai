@@ -79,6 +79,13 @@ export async function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Bridge: trust session cookies issued by the Cloudflare Worker (cf-auth).
+  // Runs after Passport so existing logged-in users are unaffected; only
+  // requests that aren't already authenticated get checked against the
+  // Worker-signed JWT cookie.
+  const { cfAuthBridge } = await import("./cfBridge");
+  app.use(cfAuthBridge());
+
   const baseURL = process.env.BASE_URL || "";
 
   // ── Google ──────────────────────────────────────────────────
