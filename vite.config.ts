@@ -30,6 +30,33 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("recharts") || id.includes("d3-")) return "charts";
+          if (id.includes("embla-carousel")) return "carousel";
+          if (id.includes("@radix-ui")) return "radix";
+          if (id.includes("lucide-react") || id.includes("react-icons")) return "icons";
+          if (
+            id.includes("react-hook-form") ||
+            id.includes("@hookform") ||
+            id.includes("zod") ||
+            id.includes("drizzle-zod")
+          )
+            return "forms";
+          if (id.includes("@tanstack")) return "tanstack";
+          if (id.includes("framer-motion")) return "motion";
+          if (
+            id.includes("date-fns") ||
+            id.includes("react-day-picker")
+          )
+            return "dates";
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     fs: {

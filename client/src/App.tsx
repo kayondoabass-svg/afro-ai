@@ -1,5 +1,5 @@
 import { Switch, Route, useLocation } from "wouter";
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -14,65 +14,77 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import LandingPage from "@/pages/landing";
 import LoginPage from "@/pages/login";
-import ForgotPasswordPage from "@/pages/forgot-password";
-import ResetPasswordPage from "@/pages/reset-password";
-import DashboardPage from "@/pages/dashboard";
-import AIChatPage from "@/pages/ai-chat";
-import AgentPage from "@/pages/agent";
-import PreviewPage from "@/pages/preview";
-import PricingPage from "@/pages/pricing";
-import DeploymentsPage from "@/pages/deployments";
-import FounderDashboardPage from "@/pages/founder-dashboard";
-import AdminCommandPage from "@/pages/admin-command";
-import ReferralsPage from "@/pages/referrals";
-import AboutPage from "@/pages/about";
-import ContactPage from "@/pages/contact";
-import PrivacyPage from "@/pages/privacy";
-import TermsPage from "@/pages/terms";
-import CookiePolicyPage from "@/pages/cookies";
-import RefundPolicyPage from "@/pages/refund-policy";
-import TemplatesPage from "@/pages/templates";
-import SettingsPage from "@/pages/settings";
-import BillingPage from "@/pages/billing";
-import FormsPage from "@/pages/forms";
-import BlockBuilderPage from "@/pages/block-builder";
-import BlogPage from "@/pages/blog";
-import EmailMarketingPage from "@/pages/email-marketing";
-import AnalyticsPage from "@/pages/analytics";
-import MarketplacePage from "@/pages/marketplace";
-import PwaBuilderPage from "@/pages/pwa-builder";
-import CollaborationPage from "@/pages/collaboration";
-import DomainsPage from "@/pages/domains";
-import AffiliatePage from "@/pages/affiliate";
-import ApiIntegrationsPage from "@/pages/api-integrations";
-import SeoToolsPage from "@/pages/seo-tools";
-import WebhooksPage from "@/pages/webhooks";
-import ChatbotsPage from "@/pages/chatbots";
-import ChatbotLandingPage from "@/pages/chatbot-landing";
-import ChatbotCheckoutPage from "@/pages/chatbot-checkout";
-import ArticlesPage from "@/pages/articles";
-import ArticlePage from "@/pages/article";
-import FilesPage from "@/pages/files";
-import UssdBuilderPage from "@/pages/ussd-builder";
-import UssdDashboardPage from "@/pages/ussd-dashboard";
-import OverviewPage from "@/pages/overview";
-import AppSecretsPage from "@/pages/app-secrets";
-import D1ConsolePage from "@/pages/d1-console";
-import ActivityLogsPage from "@/pages/activity-logs";
-import ConsolePage from "@/pages/console";
-import ShellPage from "@/pages/shell";
-import EmailApiPage from "@/pages/email-api";
-import EmailApiLandingPage from "@/pages/email-api-landing";
-import EmailAuditPage from "@/pages/email-audit";
-import EmailApiDocsPage from "@/pages/docs-email-api";
-import UssdLandingPage from "@/pages/ussd-landing";
-import PartnersPage from "@/pages/partners";
-import BusinessServicesPage from "@/pages/business-services";
-import DomainsLandingPage from "@/pages/domains-landing";
-import DomainsCheckoutPage from "@/pages/domains-checkout";
-import WebsiteBuilderLandingPage from "@/pages/website-builder-landing";
-import AppDesignerLandingPage from "@/pages/app-designer-landing";
 import NotFound from "@/pages/not-found";
+
+const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"));
+const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
+const DashboardPage = lazy(() => import("@/pages/dashboard"));
+const AIChatPage = lazy(() => import("@/pages/ai-chat"));
+const AgentPage = lazy(() => import("@/pages/agent"));
+const PreviewPage = lazy(() => import("@/pages/preview"));
+const PricingPage = lazy(() => import("@/pages/pricing"));
+const DeploymentsPage = lazy(() => import("@/pages/deployments"));
+const FounderDashboardPage = lazy(() => import("@/pages/founder-dashboard"));
+const AdminCommandPage = lazy(() => import("@/pages/admin-command"));
+const ReferralsPage = lazy(() => import("@/pages/referrals"));
+const AboutPage = lazy(() => import("@/pages/about"));
+const ContactPage = lazy(() => import("@/pages/contact"));
+const PrivacyPage = lazy(() => import("@/pages/privacy"));
+const TermsPage = lazy(() => import("@/pages/terms"));
+const CookiePolicyPage = lazy(() => import("@/pages/cookies"));
+const RefundPolicyPage = lazy(() => import("@/pages/refund-policy"));
+const TemplatesPage = lazy(() => import("@/pages/templates"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
+const BillingPage = lazy(() => import("@/pages/billing"));
+const FormsPage = lazy(() => import("@/pages/forms"));
+const BlockBuilderPage = lazy(() => import("@/pages/block-builder"));
+const BlogPage = lazy(() => import("@/pages/blog"));
+const EmailMarketingPage = lazy(() => import("@/pages/email-marketing"));
+const AnalyticsPage = lazy(() => import("@/pages/analytics"));
+const MarketplacePage = lazy(() => import("@/pages/marketplace"));
+const PwaBuilderPage = lazy(() => import("@/pages/pwa-builder"));
+const CollaborationPage = lazy(() => import("@/pages/collaboration"));
+const DomainsPage = lazy(() => import("@/pages/domains"));
+const AffiliatePage = lazy(() => import("@/pages/affiliate"));
+const ApiIntegrationsPage = lazy(() => import("@/pages/api-integrations"));
+const SeoToolsPage = lazy(() => import("@/pages/seo-tools"));
+const WebhooksPage = lazy(() => import("@/pages/webhooks"));
+const ChatbotsPage = lazy(() => import("@/pages/chatbots"));
+const ChatbotLandingPage = lazy(() => import("@/pages/chatbot-landing"));
+const ChatbotCheckoutPage = lazy(() => import("@/pages/chatbot-checkout"));
+const ArticlesPage = lazy(() => import("@/pages/articles"));
+const ArticlePage = lazy(() => import("@/pages/article"));
+const FilesPage = lazy(() => import("@/pages/files"));
+const UssdBuilderPage = lazy(() => import("@/pages/ussd-builder"));
+const UssdDashboardPage = lazy(() => import("@/pages/ussd-dashboard"));
+const OverviewPage = lazy(() => import("@/pages/overview"));
+const AppSecretsPage = lazy(() => import("@/pages/app-secrets"));
+const D1ConsolePage = lazy(() => import("@/pages/d1-console"));
+const ActivityLogsPage = lazy(() => import("@/pages/activity-logs"));
+const ConsolePage = lazy(() => import("@/pages/console"));
+const ShellPage = lazy(() => import("@/pages/shell"));
+const EmailApiPage = lazy(() => import("@/pages/email-api"));
+const EmailApiLandingPage = lazy(() => import("@/pages/email-api-landing"));
+const EmailAuditPage = lazy(() => import("@/pages/email-audit"));
+const EmailApiDocsPage = lazy(() => import("@/pages/docs-email-api"));
+const UssdLandingPage = lazy(() => import("@/pages/ussd-landing"));
+const PartnersPage = lazy(() => import("@/pages/partners"));
+const BusinessServicesPage = lazy(() => import("@/pages/business-services"));
+const DomainsLandingPage = lazy(() => import("@/pages/domains-landing"));
+const DomainsCheckoutPage = lazy(() => import("@/pages/domains-checkout"));
+const WebsiteBuilderLandingPage = lazy(() => import("@/pages/website-builder-landing"));
+const AppDesignerLandingPage = lazy(() => import("@/pages/app-designer-landing"));
+
+function RouteFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="space-y-4 text-center">
+        <Skeleton className="w-12 h-12 rounded-full mx-auto" />
+        <Skeleton className="h-4 w-32 mx-auto" />
+      </div>
+    </div>
+  );
+}
 
 function AuthenticatedLayout() {
   const style = {
@@ -93,64 +105,66 @@ function AuthenticatedLayout() {
             </div>
           </header>
           <main className="flex-1 flex flex-col overflow-y-auto min-h-0">
-            <Switch>
-              <Route path="/dashboard" component={DashboardPage} />
-              <Route path="/chat" component={AgentPage} />
-              <Route path="/agent" component={AgentPage} />
-              <Route path="/preview/:id" component={PreviewPage} />
-              <Route path="/chat-classic" component={AIChatPage} />
-              <Route path="/deployments" component={DeploymentsPage} />
-              <Route path="/pricing" component={PricingPage} />
-              <Route path="/founder" component={FounderDashboardPage} />
-              <Route path="/admin-command" component={AdminCommandPage} />
-              <Route path="/referrals" component={ReferralsPage} />
-              <Route path="/templates" component={TemplatesPage} />
-              <Route path="/settings" component={SettingsPage} />
-              <Route path="/billing" component={BillingPage} />
-              <Route path="/forms" component={FormsPage} />
-              <Route path="/builder" component={BlockBuilderPage} />
-              <Route path="/blog" component={BlogPage} />
-              <Route path="/email" component={EmailMarketingPage} />
-              <Route path="/analytics" component={AnalyticsPage} />
-              <Route path="/marketplace" component={MarketplacePage} />
-              <Route path="/pwa" component={PwaBuilderPage} />
-              <Route path="/collaborate" component={CollaborationPage} />
-              <Route path="/domains" component={DomainsPage} />
-              <Route path="/affiliate" component={AffiliatePage} />
-              <Route path="/integrations" component={ApiIntegrationsPage} />
-              <Route path="/seo" component={SeoToolsPage} />
-              <Route path="/webhooks" component={WebhooksPage} />
-              <Route path="/chatbots" component={ChatbotsPage} />
-              <Route path="/files" component={FilesPage} />
-              <Route path="/ussd" component={UssdBuilderPage} />
-              <Route path="/ussd/apps" component={UssdDashboardPage} />
-              <Route path="/overview" component={OverviewPage} />
-              <Route path="/secrets" component={AppSecretsPage} />
-              <Route path="/d1" component={D1ConsolePage} />
-              <Route path="/logs" component={ActivityLogsPage} />
-              <Route path="/console" component={ConsolePage} />
-              <Route path="/shell" component={ShellPage} />
-              <Route path="/email-api" component={EmailApiPage} />
-              <Route path="/email-audit" component={EmailAuditPage} />
-              <Route path="/partners" component={PartnersPage} />
-              <Route path="/business-services" component={BusinessServicesPage} />
-              <Route path="/website-builder" component={WebsiteBuilderLandingPage} />
-              <Route path="/app-designer" component={AppDesignerLandingPage} />
-              <Route path="/domain-names/checkout" component={DomainsCheckoutPage} />
-              <Route path="/domain-names" component={DomainsLandingPage} />
-              <Route path="/chatbot-api" component={ChatbotLandingPage} />
-              <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
-              <Route path="/articles/:slug" component={ArticlePage} />
-              <Route path="/articles" component={ArticlesPage} />
-              <Route path="/about" component={AboutPage} />
-              <Route path="/contact" component={ContactPage} />
-              <Route path="/privacy" component={PrivacyPage} />
-              <Route path="/terms" component={TermsPage} />
-              <Route path="/cookies" component={CookiePolicyPage} />
-              <Route path="/refund-policy" component={RefundPolicyPage} />
-              <Route path="/" component={DashboardPage} />
-              <Route component={NotFound} />
-            </Switch>
+            <Suspense fallback={<RouteFallback />}>
+              <Switch>
+                <Route path="/dashboard" component={DashboardPage} />
+                <Route path="/chat" component={AgentPage} />
+                <Route path="/agent" component={AgentPage} />
+                <Route path="/preview/:id" component={PreviewPage} />
+                <Route path="/chat-classic" component={AIChatPage} />
+                <Route path="/deployments" component={DeploymentsPage} />
+                <Route path="/pricing" component={PricingPage} />
+                <Route path="/founder" component={FounderDashboardPage} />
+                <Route path="/admin-command" component={AdminCommandPage} />
+                <Route path="/referrals" component={ReferralsPage} />
+                <Route path="/templates" component={TemplatesPage} />
+                <Route path="/settings" component={SettingsPage} />
+                <Route path="/billing" component={BillingPage} />
+                <Route path="/forms" component={FormsPage} />
+                <Route path="/builder" component={BlockBuilderPage} />
+                <Route path="/blog" component={BlogPage} />
+                <Route path="/email" component={EmailMarketingPage} />
+                <Route path="/analytics" component={AnalyticsPage} />
+                <Route path="/marketplace" component={MarketplacePage} />
+                <Route path="/pwa" component={PwaBuilderPage} />
+                <Route path="/collaborate" component={CollaborationPage} />
+                <Route path="/domains" component={DomainsPage} />
+                <Route path="/affiliate" component={AffiliatePage} />
+                <Route path="/integrations" component={ApiIntegrationsPage} />
+                <Route path="/seo" component={SeoToolsPage} />
+                <Route path="/webhooks" component={WebhooksPage} />
+                <Route path="/chatbots" component={ChatbotsPage} />
+                <Route path="/files" component={FilesPage} />
+                <Route path="/ussd" component={UssdBuilderPage} />
+                <Route path="/ussd/apps" component={UssdDashboardPage} />
+                <Route path="/overview" component={OverviewPage} />
+                <Route path="/secrets" component={AppSecretsPage} />
+                <Route path="/d1" component={D1ConsolePage} />
+                <Route path="/logs" component={ActivityLogsPage} />
+                <Route path="/console" component={ConsolePage} />
+                <Route path="/shell" component={ShellPage} />
+                <Route path="/email-api" component={EmailApiPage} />
+                <Route path="/email-audit" component={EmailAuditPage} />
+                <Route path="/partners" component={PartnersPage} />
+                <Route path="/business-services" component={BusinessServicesPage} />
+                <Route path="/website-builder" component={WebsiteBuilderLandingPage} />
+                <Route path="/app-designer" component={AppDesignerLandingPage} />
+                <Route path="/domain-names/checkout" component={DomainsCheckoutPage} />
+                <Route path="/domain-names" component={DomainsLandingPage} />
+                <Route path="/chatbot-api" component={ChatbotLandingPage} />
+                <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
+                <Route path="/articles/:slug" component={ArticlePage} />
+                <Route path="/articles" component={ArticlesPage} />
+                <Route path="/about" component={AboutPage} />
+                <Route path="/contact" component={ContactPage} />
+                <Route path="/privacy" component={PrivacyPage} />
+                <Route path="/terms" component={TermsPage} />
+                <Route path="/cookies" component={CookiePolicyPage} />
+                <Route path="/refund-policy" component={RefundPolicyPage} />
+                <Route path="/" component={DashboardPage} />
+                <Route component={NotFound} />
+              </Switch>
+            </Suspense>
           </main>
         </div>
       </div>
@@ -241,36 +255,38 @@ function AppRouter() {
 
   if (!user) {
     return (
-      <Switch>
-        <Route path="/login" component={LoginPage} />
-        <Route path="/forgot-password" component={ForgotPasswordPage} />
-        <Route path="/reset-password" component={ResetPasswordPage} />
-        <Route path="/about" component={AboutPage} />
-        <Route path="/contact" component={ContactPage} />
-        <Route path="/privacy" component={PrivacyPage} />
-        <Route path="/terms" component={TermsPage} />
-        <Route path="/cookies" component={CookiePolicyPage} />
-        <Route path="/refund-policy" component={RefundPolicyPage} />
-        <Route path="/pricing" component={PricingPage} />
-        <Route path="/templates" component={TemplatesPage} />
-        <Route path="/marketplace" component={MarketplacePage} />
-        <Route path="/blog" component={BlogPage} />
-        <Route path="/affiliate" component={AffiliatePage} />
-        <Route path="/chatbot-api" component={ChatbotLandingPage} />
-        <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
-        <Route path="/developer-email" component={EmailApiLandingPage} />
-        <Route path="/docs/email-api" component={EmailApiDocsPage} />
-        <Route path="/ussd-builder" component={UssdLandingPage} />
-        <Route path="/partners" component={PartnersPage} />
-        <Route path="/business-services" component={BusinessServicesPage} />
-        <Route path="/website-builder" component={WebsiteBuilderLandingPage} />
-        <Route path="/app-designer" component={AppDesignerLandingPage} />
-        <Route path="/domain-names/checkout" component={DomainsCheckoutPage} />
-        <Route path="/domain-names" component={DomainsLandingPage} />
-        <Route path="/articles/:slug" component={ArticlePage} />
-        <Route path="/articles" component={ArticlesPage} />
-        <Route component={LandingPage} />
-      </Switch>
+      <Suspense fallback={<RouteFallback />}>
+        <Switch>
+          <Route path="/login" component={LoginPage} />
+          <Route path="/forgot-password" component={ForgotPasswordPage} />
+          <Route path="/reset-password" component={ResetPasswordPage} />
+          <Route path="/about" component={AboutPage} />
+          <Route path="/contact" component={ContactPage} />
+          <Route path="/privacy" component={PrivacyPage} />
+          <Route path="/terms" component={TermsPage} />
+          <Route path="/cookies" component={CookiePolicyPage} />
+          <Route path="/refund-policy" component={RefundPolicyPage} />
+          <Route path="/pricing" component={PricingPage} />
+          <Route path="/templates" component={TemplatesPage} />
+          <Route path="/marketplace" component={MarketplacePage} />
+          <Route path="/blog" component={BlogPage} />
+          <Route path="/affiliate" component={AffiliatePage} />
+          <Route path="/chatbot-api" component={ChatbotLandingPage} />
+          <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
+          <Route path="/developer-email" component={EmailApiLandingPage} />
+          <Route path="/docs/email-api" component={EmailApiDocsPage} />
+          <Route path="/ussd-builder" component={UssdLandingPage} />
+          <Route path="/partners" component={PartnersPage} />
+          <Route path="/business-services" component={BusinessServicesPage} />
+          <Route path="/website-builder" component={WebsiteBuilderLandingPage} />
+          <Route path="/app-designer" component={AppDesignerLandingPage} />
+          <Route path="/domain-names/checkout" component={DomainsCheckoutPage} />
+          <Route path="/domain-names" component={DomainsLandingPage} />
+          <Route path="/articles/:slug" component={ArticlePage} />
+          <Route path="/articles" component={ArticlesPage} />
+          <Route component={LandingPage} />
+        </Switch>
+      </Suspense>
     );
   }
 
