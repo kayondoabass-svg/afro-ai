@@ -29,9 +29,10 @@ interface Env {
   // longer used for mail — kept optional for backwards compat.
   INTERNAL_EMAIL_SECRET?: string;
   EXPRESS_BASE_URL?: string;
-  // Outbound transactional mail now goes through MailChannels directly from
-  // the Worker (free tier, no API key needed — auth is via the SPF + the
-  // _mailchannels TXT lockdown record on the sending domain).
+  // Outbound transactional mail goes through Resend (https://resend.com)
+  // directly from the Worker. RESEND_API_KEY is the Bearer token; MAIL_FROM
+  // is the verified sender address.
+  RESEND_API_KEY?: string;
   MAIL_FROM?: string; // e.g. "Afro AI <noreply@afroaigroup.com>"
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -224,15 +225,11 @@ async function getCurrentUserId(c: any): Promise<string | null> {
 /* ------------------------------ Outbound email ------------------------------
  *
  * Transactional mail (password reset, set-password) is sent directly from
- * the Worker via MailChannels (https://api.mailchannels.net/tx/v1/send).
+ * the Worker via Resend (https://api.resend.com/emails).
  *
- * No API key is required — MailChannels authorises Workers based on:
- *   1. an SPF record on the sending domain that includes
- *      `relay.mailchannels.net`, AND
- *   2. a `_mailchannels` TXT lockdown record listing this Worker's
- *      `*.workers.dev` hostname (`v=mc1 cfid=<worker>.workers.dev`).
- *
- * Both DNS records are configured on `afroaigroup.com`.
+ * Auth is a Bearer API key set as a Worker secret (RESEND_API_KEY). The
+ * sending domain (afroaigroup.com) must be verified in Resend with the
+ * SPF/DKIM/DMARC DNS records they provide.
  *
  * Templates live inline here (small, transactional, rarely change). If we
  * ever need richer templates we can lift them into a templates module.
@@ -289,28 +286,25 @@ async function sendViaBridge(
   to: string,
   vars: Record<string, string>,
 ): Promise<void> {
-  const fromRaw = env.MAIL_FROM || FALLBACK_FROM;
-  const from = parseFrom(fromRaw);
+  if (!env.RESEND_API_KEY) {
+    console.error('[resend] RESEND_API_KEY not set — cannot send', template, 'to', to);
+    return;
+  }
+  const from = env.MAIL_FROM || FALLBACK_FROM;
   const { subject, html, text } = renderTemplate(template, vars);
 
-  const payload = {
-    personalizations: [{ to: [{ email: to }] }],
-    from,
-    subject,
-    content: [
-      { type: 'text/plain', value: text },
-      { type: 'text/html', value: html },
-    ],
-  };
-
-  const res = await fetch('https://api.mailchannels.net/tx/v1/send', {
+  const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from, to, subject, html, text }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    console.error('[mailchannels] send failed', res.status, body.slice(0, 500));
+    console.error('[resend] send failed', res.status, body.slice(0, 500));
+    return;
   }
 }
 
