@@ -576,16 +576,20 @@ app.post('/forgot-password', async (c) => {
   // Always respond ok — never reveal whether the email exists
   if (!isValidEmail(email)) return c.json({ ok: true });
 
-  // Per-IP and per-email throttling. We deliberately keep the response shape
-  // identical (always 200 { ok: true }) so the throttle can't be used as an
-  // email-enumeration oracle — when we're locked we just silently skip the
-  // DB lookup and the email send.
+  // Per-IP and per-email throttling. The IP throttle hits a 429 with the
+  // stable `rate_limited_reset` code so the frontend can render a translated
+  // lock-out panel (matches the login/signup UX). The per-email throttle
+  // stays silent (still returns 200 { ok: true }) so it can't be used as an
+  // email-enumeration oracle — only the requester's own IP-bound abuse
+  // produces the visible lock screen.
   const ip = c.req.header('CF-Connecting-IP') || 'unknown';
   const now = nowSec();
   const ipKey = `forgot:ip:${ip}`;
   const emailKey = `forgot:email:${email}`;
-  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
-  if (lockedFor > 0) return c.json({ ok: true });
+  const ipLockedFor = await checkThrottles(c.env.DB, [ipKey], now);
+  if (ipLockedFor > 0) return tooManyAttempts(c, ipLockedFor, 'rate_limited_reset');
+  const emailLockedFor = await checkThrottles(c.env.DB, [emailKey], now);
+  if (emailLockedFor > 0) return c.json({ ok: true });
 
   // Every well-formed request counts toward the throttle (regardless of
   // whether the email exists), so an attacker can't blast reset emails.

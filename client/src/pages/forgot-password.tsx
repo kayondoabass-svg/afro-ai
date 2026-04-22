@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,6 +9,12 @@ import { LanguageSelector } from "@/components/language-selector";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { ArrowLeft, Mail, CheckCircle2 } from "lucide-react";
+import {
+  LockedPanel,
+  parseRetryAfter,
+  translateLockMessage,
+  type LockState,
+} from "@/components/locked-panel";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function ForgotPasswordPage() {
@@ -17,6 +23,23 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  // Mirrors the login/signup lock flow: the Worker returns a 429 with
+  // `code: "rate_limited_reset"` once the per-IP forgot-password throttle
+  // trips, and we render the same shared lock-out panel here.
+  const [lock, setLock] = useState<LockState | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!lock) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [lock]);
+
+  useEffect(() => {
+    if (lock && now >= lock.until) setLock(null);
+  }, [now, lock]);
+
+  const lockRemaining = lock ? Math.max(0, Math.ceil((lock.until - now) / 1000)) : 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,7 +51,18 @@ export default function ForgotPasswordPage() {
         credentials: "include",
         body: JSON.stringify({ email: email.trim() }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        const message = translateLockMessage(
+          t,
+          data,
+          "Too many password reset attempts. Please wait a few minutes and try again.",
+        );
+        const retryAfter = parseRetryAfter(res, data?.message || message);
+        setLock({ until: Date.now() + retryAfter * 1000, message });
+        setNow(Date.now());
+        return;
+      }
       if (!res.ok) {
         toast({
           title: t("forgotPassword.toast.errorTitle"),
@@ -79,7 +113,16 @@ export default function ForgotPasswordPage() {
             </p>
           </div>
 
-          {sent ? (
+          {lock ? (
+            <LockedPanel
+              title={t("auth.locked.reset.title")}
+              lock={lock}
+              remainingSec={lockRemaining}
+              onDismiss={() => setLock(null)}
+              testIdPrefix="forgot"
+              t={t}
+            />
+          ) : sent ? (
             <div className="space-y-4 text-center" data-testid="state-sent">
               <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 flex items-center justify-center">
                 <CheckCircle2 className="w-7 h-7 text-emerald-500" />

@@ -9,7 +9,12 @@ import { LanguageSelector } from "@/components/language-selector";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { Lock, CheckCircle2, AlertTriangle, Eye, EyeOff } from "lucide-react";
-import { LockedPanel, parseRetryAfter, type LockState } from "@/components/locked-panel";
+import {
+  LockedPanel,
+  parseRetryAfter,
+  translateLockMessage,
+  type LockState,
+} from "@/components/locked-panel";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 export default function ResetPasswordPage() {
@@ -69,8 +74,12 @@ export default function ResetPasswordPage() {
         .json()
         .catch(() => ({}));
       if (res.status === 429) {
-        const message = data?.message || t("resetPassword.toast.errorRetry");
-        const retryAfter = parseRetryAfter(res, message);
+        const message = translateLockMessage(
+          t,
+          data,
+          t("resetPassword.toast.errorRetry"),
+        );
+        const retryAfter = parseRetryAfter(res, data?.message || message);
         setLock({ until: Date.now() + retryAfter * 1000, message });
         setNow(Date.now());
         return;

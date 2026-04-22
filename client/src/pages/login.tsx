@@ -11,36 +11,15 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SiGoogle, SiGithub } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
-import { LockedPanel, parseRetryAfter, type LockState } from "@/components/locked-panel";
+import {
+  LockedPanel,
+  parseRetryAfter,
+  translateLockMessage,
+  type LockState,
+} from "@/components/locked-panel";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 const AUTH_BASE = "/cf-auth";
-
-/**
- * Map the Worker's stable error codes to translation keys for the lock-out
- * panel body. The Worker also returns an English `message` we use as a
- * fallback whenever an unrecognized code (or no code) comes back.
- */
-const LOCK_BODY_KEYS: Record<string, string> = {
-  rate_limited_login: "auth.locked.body.login",
-  rate_limited_signup: "auth.locked.body.signup",
-};
-
-function translateLockMessage(
-  t: (key: string, params?: Record<string, string | number>) => string,
-  data: any,
-  fallback: string,
-): string {
-  const code = typeof data?.code === "string" ? data.code : "";
-  const key = LOCK_BODY_KEYS[code];
-  if (key) {
-    const translated = t(key);
-    // `t` returns the key itself when no translation exists for it; only use
-    // the translation when we got something different back.
-    if (translated && translated !== key) return translated;
-  }
-  return data?.message || fallback;
-}
 
 export default function LoginPage() {
   const { t } = useLanguage();
