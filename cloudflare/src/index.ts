@@ -361,14 +361,16 @@ async function clearThrottle(db: D1Database, key: string): Promise<void> {
 function tooManyAttempts(
   c: any,
   retryAfter: number,
-  code: 'rate_limited_login' | 'rate_limited_signup',
+  code: 'rate_limited_login' | 'rate_limited_signup' | 'rate_limited_reset',
 ) {
   c.header('Retry-After', String(Math.max(1, retryAfter)));
   const minutes = Math.max(1, Math.ceil(retryAfter / 60));
   const englishBody =
     code === 'rate_limited_login'
       ? 'Too many sign-in attempts. Please wait a few minutes and try again.'
-      : 'Too many signup attempts. Please wait a few minutes and try again.';
+      : code === 'rate_limited_signup'
+        ? 'Too many signup attempts. Please wait a few minutes and try again.'
+        : 'Too many password reset attempts. Please wait a few minutes and try again.';
   return c.json(
     {
       code,
@@ -694,6 +696,20 @@ app.post('/reset-password', async (c) => {
     );
   }
 
+  // Throttle by IP and by token-prefix so an attacker can't brute-force reset
+  // tokens by hammering this endpoint. We only count *invalid* token attempts
+  // toward the throttle (a legit user with a valid link won't ever bump it).
+  // The token-prefix bucket adds defence-in-depth across IPs while keeping
+  // the key-space large enough that a single user retrying their own link
+  // doesn't poison reset attempts for unrelated tokens.
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const tokenPrefix = token.slice(0, 8);
+  const ipKey = `reset:ip:${ip}`;
+  const tokenKey = `reset:token:${tokenPrefix}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, tokenKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_reset');
+
   const tokenHash = await sha256Hex(token);
   const row = await c.env.DB.prepare(
     'SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ?',
@@ -702,6 +718,8 @@ app.post('/reset-password', async (c) => {
     .first<{ id: string; user_id: string; expires_at: number; used_at: number | null }>();
 
   if (!row || row.used_at || row.expires_at < nowSec()) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, tokenKey, now);
     return c.json(
       { message: 'This reset link has expired or already been used. Please request a new one.' },
       400,
