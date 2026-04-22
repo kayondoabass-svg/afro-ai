@@ -35,7 +35,6 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
-          if (id.includes("recharts") || id.includes("d3-")) return "charts";
           if (id.includes("embla-carousel")) return "carousel";
           if (id.includes("@radix-ui")) {
             const match = id.match(/@radix-ui\/([^/]+)/);
