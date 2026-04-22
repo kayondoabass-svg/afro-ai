@@ -17,6 +17,8 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
+import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 interface Env {
   DB: D1Database;
@@ -123,30 +125,17 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
   if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
   const iterations = parseInt(parts[1], 10);
   if (!Number.isFinite(iterations) || iterations < 1000) return false;
-  // Cloudflare Workers' Web Crypto caps PBKDF2 iterations at 100,000. Any
-  // legacy hash above that ceiling can never be verified here — return false
-  // cleanly so the caller surfaces "wrong password" instead of a 500, and
-  // the user can recover via the password-reset flow (which writes a
-  // compatible 100k hash).
-  if (iterations > 100_000) {
-    console.warn('[verifyPassword] stored hash exceeds Workers PBKDF2 limit', iterations);
-    return false;
-  }
   const salt = Uint8Array.from(atob(parts[2]), (c) => c.charCodeAt(0));
   const expectedB64 = parts[3];
-  const km = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits'],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
-    km,
-    256,
-  );
-  const actualB64 = btoa(String.fromCharCode(...new Uint8Array(bits)));
+  // Use the pure-JS @noble/hashes implementation instead of crypto.subtle so
+  // we can handle ANY iteration count — including legacy 200,000-iteration
+  // hashes from accounts created before the Cloudflare Workers 100k cap was
+  // discovered. Pure JS is slower but well within the Paid-plan CPU budget.
+  const derived = await pbkdf2Async(sha256, enc.encode(password), salt, {
+    c: iterations,
+    dkLen: 32,
+  });
+  const actualB64 = btoa(String.fromCharCode(...derived));
   // Fixed-length constant-time compare. Both values are PBKDF2-SHA256 base64
   // outputs, so they're always 44 chars; we still iterate a fixed length to
   // avoid leaking timing information if `stored` is malformed.

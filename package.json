@@ -15,6 +15,7 @@
     "@aws-sdk/client-s3": "^3.1020.0",
     "@aws-sdk/client-ses": "^3.1020.0",
     "@google/generative-ai": "^0.24.1",
+    "@noble/hashes": "^2.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.7",
     "@radix-ui/react-avatar": "^1.1.4",
     "@radix-ui/react-checkbox": "^1.1.5",
