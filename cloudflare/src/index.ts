@@ -123,6 +123,15 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
   if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
   const iterations = parseInt(parts[1], 10);
   if (!Number.isFinite(iterations) || iterations < 1000) return false;
+  // Cloudflare Workers' Web Crypto caps PBKDF2 iterations at 100,000. Any
+  // legacy hash above that ceiling can never be verified here — return false
+  // cleanly so the caller surfaces "wrong password" instead of a 500, and
+  // the user can recover via the password-reset flow (which writes a
+  // compatible 100k hash).
+  if (iterations > 100_000) {
+    console.warn('[verifyPassword] stored hash exceeds Workers PBKDF2 limit', iterations);
+    return false;
+  }
   const salt = Uint8Array.from(atob(parts[2]), (c) => c.charCodeAt(0));
   const expectedB64 = parts[3];
   const km = await crypto.subtle.importKey(
