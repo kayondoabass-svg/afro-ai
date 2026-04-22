@@ -353,15 +353,28 @@ async function clearThrottle(db: D1Database, key: string): Promise<void> {
   await db.prepare('DELETE FROM auth_throttle WHERE key = ?').bind(key).run();
 }
 
-/** Standard 429 response for a throttle hit. */
-function tooManyAttempts(c: any, retryAfter: number) {
+/**
+ * Standard 429 response for a throttle hit. Sends a stable `code` so the
+ * frontend can render a translated body string per locale, plus an English
+ * `message` fallback for clients that don't recognize the code yet.
+ */
+function tooManyAttempts(
+  c: any,
+  retryAfter: number,
+  code: 'rate_limited_login' | 'rate_limited_signup',
+) {
   c.header('Retry-After', String(Math.max(1, retryAfter)));
   const minutes = Math.max(1, Math.ceil(retryAfter / 60));
+  const englishBody =
+    code === 'rate_limited_login'
+      ? 'Too many sign-in attempts. Please wait a few minutes and try again.'
+      : 'Too many signup attempts. Please wait a few minutes and try again.';
   return c.json(
     {
-      message: `Too many attempts. Please try again in about ${minutes} minute${
-        minutes === 1 ? '' : 's'
-      }.`,
+      code,
+      message: englishBody,
+      retryAfterSec: Math.max(1, retryAfter),
+      retryAfterMinutes: minutes,
     },
     429,
   );
@@ -406,7 +419,7 @@ app.post('/signup', async (c) => {
   const ipKey = `signup:ip:${ip}`;
   const emailKey = `signup:email:${email}`;
   const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
-  if (lockedFor > 0) return tooManyAttempts(c, lockedFor);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_signup');
 
   const captchaOk = await verifyTurnstile(
     String(body.turnstileToken || ''),
@@ -460,7 +473,7 @@ app.post('/login', async (c) => {
   const ipKey = `login:ip:${ip}`;
   const emailKey = `login:email:${email}`;
   const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
-  if (lockedFor > 0) return tooManyAttempts(c, lockedFor);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_login');
 
   const captchaOk = await verifyTurnstile(
     String(body.turnstileToken || ''),

@@ -16,6 +16,32 @@ import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 const AUTH_BASE = "/cf-auth";
 
+/**
+ * Map the Worker's stable error codes to translation keys for the lock-out
+ * panel body. The Worker also returns an English `message` we use as a
+ * fallback whenever an unrecognized code (or no code) comes back.
+ */
+const LOCK_BODY_KEYS: Record<string, string> = {
+  rate_limited_login: "auth.locked.body.login",
+  rate_limited_signup: "auth.locked.body.signup",
+};
+
+function translateLockMessage(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  data: any,
+  fallback: string,
+): string {
+  const code = typeof data?.code === "string" ? data.code : "";
+  const key = LOCK_BODY_KEYS[code];
+  if (key) {
+    const translated = t(key);
+    // `t` returns the key itself when no translation exists for it; only use
+    // the translation when we got something different back.
+    if (translated && translated !== key) return translated;
+  }
+  return data?.message || fallback;
+}
+
 export default function LoginPage() {
   const { t } = useLanguage();
   const { toast } = useToast();
@@ -92,9 +118,12 @@ export default function LoginPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 429) {
-        const message =
-          data?.message || "Too many sign-in attempts. Please wait a few minutes and try again.";
-        const retryAfter = parseRetryAfter(res, message);
+        const message = translateLockMessage(
+          t,
+          data,
+          "Too many sign-in attempts. Please wait a few minutes and try again.",
+        );
+        const retryAfter = parseRetryAfter(res, data?.message || message);
         setLoginLock({ until: Date.now() + retryAfter * 1000, message });
         setNow(Date.now());
         setLoginResetSignal((n) => n + 1);
@@ -152,9 +181,12 @@ export default function LoginPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 429) {
-        const message =
-          data?.message || "Too many signup attempts. Please wait a few minutes and try again.";
-        const retryAfter = parseRetryAfter(res, message);
+        const message = translateLockMessage(
+          t,
+          data,
+          "Too many signup attempts. Please wait a few minutes and try again.",
+        );
+        const retryAfter = parseRetryAfter(res, data?.message || message);
         setSignupLock({ until: Date.now() + retryAfter * 1000, message });
         setNow(Date.now());
         setSignupResetSignal((n) => n + 1);
