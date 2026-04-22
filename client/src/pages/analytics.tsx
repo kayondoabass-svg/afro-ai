@@ -1,9 +1,20 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Eye, TrendingUp, Globe, Calendar, ArrowUpRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+const MiniBarChart = lazy(() => import("@/components/mini-bar-chart"));
+
+function MiniBarChartSkeleton() {
+  return (
+    <div className="flex items-end gap-0.5 h-16 mt-2" data-testid="skeleton-mini-chart">
+      {Array.from({ length: 14 }).map((_, i) => (
+        <div key={i} className="flex-1 bg-white/5 rounded-sm min-h-[4px] animate-pulse" />
+      ))}
+    </div>
+  );
+}
 
 interface ViewData {
   app: {
@@ -14,38 +25,6 @@ interface ViewData {
     createdAt: string;
   };
   views: { viewDate: string; views: number }[];
-}
-
-function MiniBarChart({ data }: { data: { date: string; views: number }[] }) {
-  if (!data || data.length === 0) {
-    return (
-      <div className="flex items-end gap-0.5 h-16 mt-2">
-        {Array.from({ length: 14 }).map((_, i) => (
-          <div key={i} className="flex-1 bg-white/5 rounded-sm min-h-[4px]" />
-        ))}
-      </div>
-    );
-  }
-  const last14 = [...data].slice(-14);
-  const maxViews = Math.max(...last14.map(d => d.views), 1);
-  return (
-    <div className="flex items-end gap-0.5 h-16 mt-2">
-      {last14.map((d, i) => {
-        const pct = (d.views / maxViews) * 100;
-        return (
-          <div
-            key={i}
-            className="flex-1 rounded-sm transition-all duration-300 relative group"
-            style={{ height: `${Math.max(pct, 4)}%`, background: "linear-gradient(to top, #d4af37, #f0d060)" }}
-          >
-            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-black border border-white/10 rounded px-1.5 py-0.5 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-              {d.views} views<br />{d.date}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 export default function AnalyticsPage() {
@@ -175,7 +154,9 @@ export default function AnalyticsPage() {
                       <span className="text-xl font-bold text-yellow-400">{totalAppViews.toLocaleString()}</span>
                       <span className="text-sm text-muted-foreground">total views</span>
                     </div>
-                    <MiniBarChart data={views.map(v => ({ date: v.viewDate, views: v.views }))} />
+                    <Suspense fallback={<MiniBarChartSkeleton />}>
+                      <MiniBarChart data={views.map(v => ({ date: v.viewDate, views: v.views }))} />
+                    </Suspense>
                     <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                       <Calendar className="w-3 h-3" /> Last 14 days
                     </p>
