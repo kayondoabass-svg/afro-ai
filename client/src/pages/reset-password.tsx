@@ -28,10 +28,10 @@ export default function ResetPasswordPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [done, setDone] = useState(false);
-  // Mirrors the login/signup lock flow. The Worker doesn't currently throttle
-  // /reset-password, but if/when it starts returning 429 (e.g. to slow down
-  // token-guessing) the page reuses the same shared lock UI so the experience
-  // stays consistent across login, signup, and reset.
+  // Mirrors the login/signup lock flow. /cf-auth/reset-password returns 429
+  // with `code: "rate_limited_reset"` when someone hammers an invalid token;
+  // we render the same shared LockedPanel + translateLockMessage helper so the
+  // body, countdown, and CTA stay localized like login, signup, and forgot.
   const [lock, setLock] = useState<LockState | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
