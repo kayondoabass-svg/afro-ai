@@ -24,11 +24,15 @@ interface Env {
   COOKIE_DOMAIN: string;
   JWT_SECRET: string;
   TURNSTILE_SECRET_KEY: string;
-  // Shared secret + base URL for the Express mail bridge
-  // (Express route: POST /api/internal/send-email).
-  // All transactional mail now goes through AWS SES on the Express side.
+  // INTERNAL_EMAIL_SECRET still gates the admin /mint-reset-token endpoint
+  // (shared secret with the migration blast script). EXPRESS_BASE_URL is no
+  // longer used for mail — kept optional for backwards compat.
   INTERNAL_EMAIL_SECRET?: string;
   EXPRESS_BASE_URL?: string;
+  // Outbound transactional mail now goes through MailChannels directly from
+  // the Worker (free tier, no API key needed — auth is via the SPF + the
+  // _mailchannels TXT lockdown record on the sending domain).
+  MAIL_FROM?: string; // e.g. "Afro AI <noreply@afroaigroup.com>"
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
@@ -217,52 +221,96 @@ async function getCurrentUserId(c: any): Promise<string | null> {
   }
 }
 
-/**
- * Send transactional mail by forwarding to the Express SES bridge.
+/* ------------------------------ Outbound email ------------------------------
  *
- * We deliberately do NOT keep a separate Resend integration here — every
- * transactional email in the platform must go through one provider (AWS SES,
- * via Express) so deliverability, DKIM, suppression lists, and audit logs
- * stay in one place.
+ * Transactional mail (password reset, set-password) is sent directly from
+ * the Worker via MailChannels (https://api.mailchannels.net/tx/v1/send).
  *
- * Supersedes the earlier HMAC-signed `/api/internal/cf-mail` proxy: the
- * Bearer + template path is simpler, lets Express own the email templates
- * (so all transactional copy lives in one place), and shares its secret
- * with the admin /mint-reset-token endpoint below.
+ * No API key is required — MailChannels authorises Workers based on:
+ *   1. an SPF record on the sending domain that includes
+ *      `relay.mailchannels.net`, AND
+ *   2. a `_mailchannels` TXT lockdown record listing this Worker's
+ *      `*.workers.dev` hostname (`v=mc1 cfid=<worker>.workers.dev`).
+ *
+ * Both DNS records are configured on `afroaigroup.com`.
+ *
+ * Templates live inline here (small, transactional, rarely change). If we
+ * ever need richer templates we can lift them into a templates module.
  */
+const BRAND_COLOR = '#facc15';
+const FALLBACK_FROM = 'Afro AI <noreply@afroaigroup.com>';
+
+function emailShell(title: string, bodyHtml: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head>
+<body style="margin:0;padding:0;background:#0a0a0a;color:#e5e5e5;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
+<div style="max-width:560px;margin:0 auto;padding:32px 24px;">
+<h1 style="color:${BRAND_COLOR};font-size:22px;margin:0 0 18px;">Afro AI</h1>
+${bodyHtml}
+<p style="font-size:12px;color:#71717a;margin-top:32px;border-top:1px solid #27272a;padding-top:16px;">
+Afro AI · Built for Africa · <a href="https://afroaigroup.com" style="color:${BRAND_COLOR};">afroaigroup.com</a>
+</p></div></body></html>`;
+}
+
+function renderTemplate(
+  template: 'password_reset' | 'set_password',
+  vars: Record<string, string>,
+): { subject: string; html: string; text: string } {
+  const name = vars.name || 'there';
+  const resetUrl = vars.resetUrl || '';
+  if (template === 'set_password') {
+    const subject = 'Set your Afro AI password';
+    const body = `<p>Hi ${name},</p>
+<p>We've upgraded the way you sign in to Afro AI. Your existing account is still here — just choose a password to keep using it. Tap the button below to set one. The link works for the next <strong>60 minutes</strong> and can only be used once.</p>
+<p style="margin:24px 0;text-align:center;"><a href="${resetUrl}" style="background:${BRAND_COLOR};color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Set my password →</a></p>
+<p style="font-size:13px;color:#a1a1aa;">If the button doesn't work, copy this link into your browser:<br/><span style="word-break:break-all;color:${BRAND_COLOR};">${resetUrl}</span></p>
+<p style="font-size:13px;color:#a1a1aa;margin-top:18px;">If you don't recognise this account, you can safely ignore this email.</p>`;
+    const text = `Hi ${name},\n\nSet your Afro AI password using this one-time link (works for 60 minutes):\n${resetUrl}\n\nIf you don't recognise this account, just ignore the email.`;
+    return { subject, html: emailShell(subject, body), text };
+  }
+  const subject = 'Reset your Afro AI password';
+  const body = `<p>Hi ${name},</p>
+<p>We got a request to reset the password on your Afro AI account. Tap the button below to set a new one. The link works for the next <strong>60 minutes</strong> and can only be used once.</p>
+<p style="margin:24px 0;text-align:center;"><a href="${resetUrl}" style="background:${BRAND_COLOR};color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Reset my password →</a></p>
+<p style="font-size:13px;color:#a1a1aa;">If the button doesn't work, copy this link into your browser:<br/><span style="word-break:break-all;color:${BRAND_COLOR};">${resetUrl}</span></p>
+<p style="font-size:13px;color:#a1a1aa;margin-top:18px;">Didn't ask to reset your password? You can safely ignore this email — your account stays the same.</p>`;
+  const text = `Hi ${name},\n\nReset your Afro AI password using this link (works for 60 minutes):\n${resetUrl}\n\nIf you didn't ask for this, just ignore the email.`;
+  return { subject, html: emailShell(subject, body), text };
+}
+
+function parseFrom(raw: string): { email: string; name?: string } {
+  const m = raw.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (m) return { name: m[1] || undefined, email: m[2] };
+  return { email: raw.trim() };
+}
+
 async function sendViaBridge(
   env: Env,
   template: 'password_reset' | 'set_password',
   to: string,
   vars: Record<string, string>,
 ): Promise<void> {
-  if (!env.INTERNAL_EMAIL_SECRET) {
-    console.error('[mail-bridge] INTERNAL_EMAIL_SECRET not set — cannot send', template, 'to', to);
-    return;
-  }
-  const base = env.EXPRESS_BASE_URL || env.APP_URL;
-  const res = await fetch(`${base}/api/internal/send-email`, {
+  const fromRaw = env.MAIL_FROM || FALLBACK_FROM;
+  const from = parseFrom(fromRaw);
+  const { subject, html, text } = renderTemplate(template, vars);
+
+  const payload = {
+    personalizations: [{ to: [{ email: to }] }],
+    from,
+    subject,
+    content: [
+      { type: 'text/plain', value: text },
+      { type: 'text/html', value: html },
+    ],
+  };
+
+  const res = await fetch('https://api.mailchannels.net/tx/v1/send', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.INTERNAL_EMAIL_SECRET}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ template, to, vars }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
-  // Express returns 200 { ok: false } when SES rejects the message, so we
-  // need to inspect the body — not just res.ok — for full visibility.
-  const text = await res.text().catch(() => '');
   if (!res.ok) {
-    console.error('[mail-bridge] send failed', res.status, text);
-    return;
-  }
-  try {
-    const body = JSON.parse(text || '{}') as { ok?: boolean; message?: string };
-    if (body.ok === false) {
-      console.error('[mail-bridge] SES rejected', template, 'to', to, body.message || '');
-    }
-  } catch {
-    /* non-JSON body — already 2xx, treat as success */
+    const body = await res.text().catch(() => '');
+    console.error('[mailchannels] send failed', res.status, body.slice(0, 500));
   }
 }
 
@@ -615,19 +663,15 @@ app.post('/forgot-password', async (c) => {
     .run();
 
   const resetUrl = `${c.env.APP_URL}/reset-password?token=${rawToken}`;
-  if (c.env.INTERNAL_EMAIL_SECRET) {
-    try {
-      await sendViaBridge(c.env, 'password_reset', email, {
-        name: user.first_name || 'there',
-        resetUrl,
-      });
-    } catch (err) {
-      // Email failures are intentionally silent to the caller (we never want
-      // to reveal whether the email exists), but logged for ops.
-      console.error('[forgot-password] send failed', err);
-    }
-  } else {
-    console.log('Password reset URL (no email provider configured):', resetUrl);
+  try {
+    await sendViaBridge(c.env, 'password_reset', email, {
+      name: user.first_name || 'there',
+      resetUrl,
+    });
+  } catch (err) {
+    // Email failures are intentionally silent to the caller (we never want
+    // to reveal whether the email exists), but logged for ops.
+    console.error('[forgot-password] send failed', err);
   }
   return c.json({ ok: true });
 });
