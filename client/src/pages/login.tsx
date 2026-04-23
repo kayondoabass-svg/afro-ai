@@ -70,7 +70,10 @@ export default function LoginPage() {
   function redirectAfterAuth() {
     const stored = sessionStorage.getItem("after_login_redirect");
     if (stored) sessionStorage.removeItem("after_login_redirect");
-    window.location.href = stored && stored.startsWith("/") ? stored : "/";
+    // Default to /chat (the main product surface) rather than "/" so users
+    // see proof of being logged in instead of bouncing back to the marketing
+    // landing page.
+    window.location.href = stored && stored.startsWith("/") ? stored : "/chat";
   }
 
   async function handleEmailLogin(e: React.FormEvent) {

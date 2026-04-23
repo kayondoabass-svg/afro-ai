@@ -526,7 +526,7 @@ export default function AgentPage() {
               <DropdownMenuItem onClick={() => setLocation("/dashboard")} data-testid="menu-settings">
                 <Settings className="w-4 h-4 mr-2" /> Settings
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.location.href = "/api/logout"} data-testid="menu-logout">
+              <DropdownMenuItem onClick={async () => { try { await fetch("/cf-auth/logout", { method: "POST", credentials: "include" }); } catch {} window.location.href = "/"; }} data-testid="menu-logout">
                 <LogOut className="w-4 h-4 mr-2" /> Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>
