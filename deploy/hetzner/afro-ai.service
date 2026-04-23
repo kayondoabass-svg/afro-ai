@@ -1,0 +1,42 @@
+# =============================================================================
+# systemd unit for the Afro AI Express server on Hetzner.
+#
+# Install: sudo cp deploy/hetzner/afro-ai.service /etc/systemd/system/
+# Enable:  sudo systemctl enable --now afro-ai
+# Logs:    journalctl -u afro-ai -f
+# =============================================================================
+[Unit]
+Description=Afro AI API server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=afro
+Group=afro
+WorkingDirectory=/srv/afro-ai/current
+EnvironmentFile=/srv/afro-ai/shared/.env
+ExecStart=/usr/bin/node dist/index.cjs
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/srv/afro-ai/logs/app.log
+StandardError=append:/srv/afro-ai/logs/app.err.log
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/afro-ai/logs /tmp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+# Resource caps (tune to your Hetzner plan)
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
