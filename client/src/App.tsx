@@ -57,6 +57,7 @@ const ArticlePage = lazy(() => import("@/pages/article"));
 const FilesPage = lazy(() => import("@/pages/files"));
 const UssdBuilderPage = lazy(() => import("@/pages/ussd-builder"));
 const UssdDashboardPage = lazy(() => import("@/pages/ussd-dashboard"));
+const PlaygroundPage = lazy(() => import("@/pages/playground"));
 const OverviewPage = lazy(() => import("@/pages/overview"));
 const AppSecretsPage = lazy(() => import("@/pages/app-secrets"));
 const D1ConsolePage = lazy(() => import("@/pages/d1-console"));
@@ -137,6 +138,7 @@ function AuthenticatedLayout() {
                 <Route path="/files" component={FilesPage} />
                 <Route path="/ussd" component={UssdBuilderPage} />
                 <Route path="/ussd/apps" component={UssdDashboardPage} />
+                <Route path="/playground" component={PlaygroundPage} />
                 <Route path="/overview" component={OverviewPage} />
                 <Route path="/secrets" component={AppSecretsPage} />
                 <Route path="/d1" component={D1ConsolePage} />

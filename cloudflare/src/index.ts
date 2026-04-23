@@ -593,6 +593,73 @@ app.post('/logout', async (c) => {
   return c.json({ ok: true });
 });
 
+// =============================================================================
+// /run-code — Cloud sandbox proxy
+// =============================================================================
+// Thin proxy to E2B's /sandboxes/code-interpreter endpoint. We keep the API key
+// server-side and meter per-user so a single account can't blow the bill.
+//
+// Auth: requires a valid afroai_session cookie (any logged-in user).
+// Throttle: 10 runs / minute / user, enforced via auth_throttle table.
+// Limits: code is hard-capped at 20 KB; runtime capped at 15s on E2B's side.
+//
+// To enable, set the worker secret:
+//   npx wrangler secret put E2B_API_KEY
+// (Sign up at https://e2b.dev — free tier is fine for early users.)
+// =============================================================================
+app.post('/run-code', async (c) => {
+  const userId = await getCurrentUserId(c);
+  if (!userId) return c.json({ ok: false, code: 'unauthorized', message: 'Sign in to run code.' }, 401);
+
+  const apiKey = (c.env as any).E2B_API_KEY as string | undefined;
+  if (!apiKey) {
+    return c.json({ ok: false, code: 'not_configured', message: 'Cloud sandbox not configured.' }, 503);
+  }
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, code: 'bad_request' }, 400); }
+  const language = String(body.language || 'node').toLowerCase();
+  const code = String(body.code || '');
+  if (!code) return c.json({ ok: false, code: 'empty' }, 400);
+  if (code.length > 20_000) return c.json({ ok: false, code: 'too_large', message: 'Code is too long (max 20 KB).' }, 413);
+  if (!['node', 'javascript', 'python', 'bash'].includes(language)) {
+    return c.json({ ok: false, code: 'unsupported_language' }, 400);
+  }
+
+  const now = nowSec();
+  const throttleKey = `runcode:${userId}`;
+  const lockedFor = await checkThrottles(c.env.DB, [throttleKey], now);
+  if (lockedFor > 0) {
+    return c.json({ ok: false, code: 'rate_limited', retryAfter: lockedFor, message: 'Slow down — too many runs.' }, 429);
+  }
+  await recordThrottleFailure(c.env.DB, throttleKey, now);
+
+  try {
+    const e2bRes = await fetch('https://api.e2b.dev/v1/sandboxes/code-interpreter/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+      },
+      body: JSON.stringify({ language: language === 'javascript' ? 'node' : language, code, timeout_ms: 15_000 }),
+    });
+    const text = await e2bRes.text();
+    let data: any;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (!e2bRes.ok) {
+      return c.json({ ok: false, code: 'sandbox_error', message: data?.message || 'Sandbox error', status: e2bRes.status }, 502);
+    }
+    return c.json({
+      ok: true,
+      stdout: data.stdout || data.output || '',
+      stderr: data.stderr || data.error || '',
+      exitCode: data.exit_code ?? data.exitCode ?? 0,
+    });
+  } catch (e: any) {
+    return c.json({ ok: false, code: 'network_error', message: e?.message || 'Network error' }, 502);
+  }
+});
+
 // Mirror of FOUNDER_EMAILS in server/replit_integrations/auth/storage.ts.
 // Keep these two lists in sync. Used to surface the `isFounder` flag on /me
 // so the React sidebar can render the Founder Dashboard entry without

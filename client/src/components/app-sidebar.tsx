@@ -50,6 +50,7 @@ import {
   Activity,
   DatabaseZap,
   SquareTerminal,
+  Play,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -58,6 +59,7 @@ const ALL_MENU_ITEMS = [
   { title: "Overview", url: "/overview", icon: LayoutGrid },
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "AI Builder", url: "/chat", icon: MessageSquare },
+  { title: "Run Code", url: "/playground", icon: Play },
   { title: "Block Builder", url: "/builder", icon: Layers },
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
   { title: "Deployments", url: "/deployments", icon: Rocket },
