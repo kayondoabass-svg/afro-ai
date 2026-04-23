@@ -593,6 +593,12 @@ app.post('/logout', async (c) => {
   return c.json({ ok: true });
 });
 
+// Mirror of FOUNDER_EMAILS in server/replit_integrations/auth/storage.ts.
+// Keep these two lists in sync. Used to surface the `isFounder` flag on /me
+// so the React sidebar can render the Founder Dashboard entry without
+// round-tripping to Express.
+const FOUNDER_EMAILS = ['kayondoabass@gmail.com'];
+
 app.get('/me', async (c) => {
   const userId = await getCurrentUserId(c);
   if (!userId) return c.json({ user: null });
@@ -600,8 +606,10 @@ app.get('/me', async (c) => {
     'SELECT id, email, first_name AS firstName, last_name AS lastName, profile_image_url AS profileImageUrl, plan FROM users WHERE id = ?',
   )
     .bind(userId)
-    .first();
-  return c.json({ user });
+    .first<{ id: string; email: string; firstName?: string; lastName?: string; profileImageUrl?: string; plan?: string }>();
+  if (!user) return c.json({ user: null });
+  const isFounder = FOUNDER_EMAILS.includes((user.email || '').toLowerCase());
+  return c.json({ user: { ...user, isFounder } });
 });
 
 app.post('/forgot-password', async (c) => {
