@@ -15,6 +15,7 @@ vi.mock("@assets/IMG_5719_1771852498362.png", () => ({ default: "logo.png" }));
 
 import ResetPasswordPage from "@/pages/reset-password";
 import LoginPage from "@/pages/login";
+import ForgotPasswordPage from "@/pages/forgot-password";
 
 type LockCode = "rate_limited_login" | "rate_limited_signup" | "rate_limited_reset";
 
@@ -214,6 +215,37 @@ describe("Lock screen translations — LoginPage (login tab)", () => {
         titleKey: "auth.locked.login.title",
         bodyKey: "auth.locked.body.login",
         testIdPrefix: "login",
+      });
+    },
+  );
+});
+
+describe("Lock screen translations — ForgotPasswordPage", () => {
+  it.each(ALL_LOCALES)(
+    "renders translated 429 lock panel for locale %s",
+    async (lang) => {
+      vi.stubGlobal("fetch", mockLockedFetch("rate_limited_reset"));
+
+      renderWithLanguage(<ForgotPasswordPage />, lang);
+
+      const emailInput = await screen.findByTestId("input-email");
+      fireEvent.change(emailInput, { target: { value: "ada@example.com" } });
+
+      const submit = screen.getByTestId("button-submit");
+      await waitFor(() => expect(submit).not.toBeDisabled());
+
+      await act(async () => {
+        fireEvent.click(submit);
+      });
+
+      await waitFor(() =>
+        expect(screen.getByTestId("forgot-locked-panel")).toBeInTheDocument(),
+      );
+
+      await assertLocalizedLockPanel(lang, {
+        titleKey: "auth.locked.reset.title",
+        bodyKey: "auth.locked.body.reset",
+        testIdPrefix: "forgot",
       });
     },
   );
