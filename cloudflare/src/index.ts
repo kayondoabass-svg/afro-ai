@@ -40,6 +40,9 @@ interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  // E2B cloud sandbox API key for /run-code. Set via:
+  //   npx wrangler secret put E2B_API_KEY
+  E2B_API_KEY?: string;
 }
 
 // All routes live under /cf-auth/* so the Worker can sit on a Cloudflare Route
@@ -99,7 +102,7 @@ async function hashPassword(password: string): Promise<string> {
   );
   const saltB64 = btoa(String.fromCharCode(...salt));
   const hashB64 = btoa(String.fromCharCode(...new Uint8Array(bits)));
-  return `pbkdf2$200000$${saltB64}$${hashB64}`;
+  return `pbkdf2$100000$${saltB64}$${hashB64}`;
 }
 
 /**
@@ -611,7 +614,7 @@ app.post('/run-code', async (c) => {
   const userId = await getCurrentUserId(c);
   if (!userId) return c.json({ ok: false, code: 'unauthorized', message: 'Sign in to run code.' }, 401);
 
-  const apiKey = (c.env as any).E2B_API_KEY as string | undefined;
+  const apiKey = c.env.E2B_API_KEY;
   if (!apiKey) {
     return c.json({ ok: false, code: 'not_configured', message: 'Cloud sandbox not configured.' }, 503);
   }
