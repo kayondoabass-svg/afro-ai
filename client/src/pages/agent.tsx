@@ -80,6 +80,15 @@ export default function AgentPage() {
   const qc = useQueryClient();
   const { data: user } = useQuery<any>({ queryKey: ["/api/auth/user"] });
 
+  const handleLogout = async () => {
+    try {
+      await fetch("/cf-auth/logout", { method: "POST", credentials: "include" });
+    } catch (err) {
+      console.error("Logout request failed", err);
+    }
+    window.location.href = "/";
+  };
+
   const projectIdParam = getQueryParam("projectId");
   const projectName = getQueryParam("project");
   const initialDescription = getQueryParam("description");
@@ -526,7 +535,7 @@ export default function AgentPage() {
               <DropdownMenuItem onClick={() => setLocation("/dashboard")} data-testid="menu-settings">
                 <Settings className="w-4 h-4 mr-2" /> Settings
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={async () => { try { await fetch("/cf-auth/logout", { method: "POST", credentials: "include" }); } catch {} window.location.href = "/"; }} data-testid="menu-logout">
+              <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">
                 <LogOut className="w-4 h-4 mr-2" /> Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>
