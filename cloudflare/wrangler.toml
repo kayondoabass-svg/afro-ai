@@ -14,6 +14,12 @@ database_id = "e796b2ab-d062-42c2-8412-7d281e4c0f5d"
 APP_URL = "https://afroaigroup.com"
 COOKIE_DOMAIN = ".afroaigroup.com"
 
+# Enable Workers Logs so request history (including errors) shows up in the
+# Cloudflare dashboard's Observability tab without needing `wrangler tail`.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 # Hourly sweep of stale auth_throttle rows (see cleanupAuthThrottle in src/index.ts).
 # Hourly is plenty — rows are only removed once they're >24h old and not locked,
 # so the worst-case backlog between runs is ~1h of one-off visitors.
