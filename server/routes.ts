@@ -16,7 +16,8 @@ import {
   checkAndBumpPublicIpCap,
 } from "./replit_integrations/quota";
 import { storage } from "./storage";
-import { insertProjectSchema, appViews, emailApiKeys, emailApiDomains, emailApiLogs } from "@shared/schema";
+import { insertProjectSchema, appViews, emailApiKeys, emailApiDomains, emailApiLogs, emailSuppressions } from "@shared/schema";
+import { handleSnsRequest, isSuppressed, addSuppression, removeSuppression, getReputationStats } from "./ses-webhook";
 import { conversations } from "@shared/models/chat";
 import { db } from "./db";
 import { eq as dbEq, sql as dbSql, and as dbAnd, desc as dbDesc } from "drizzle-orm";
@@ -4342,10 +4343,32 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       return res.status(400).json({ error: "from, to, subject, and html or text are required" });
     }
 
+    // Filter out suppressed recipients (hard bounces and complaints) before hitting SES.
+    // Sending to known-bad addresses is the fastest way to wreck your sender reputation.
+    const recipientsRaw = Array.isArray(to) ? to : [to];
+    const allowed: string[] = [];
+    const suppressedSkipped: string[] = [];
+    for (const r of recipientsRaw) {
+      if (await isSuppressed(r)) suppressedSkipped.push(r); else allowed.push(r);
+    }
+    if (allowed.length === 0) {
+      // Log the skip so the user can see it in their dashboard
+      await db.insert(emailApiLogs).values({
+        userId: apiKey.userId,
+        apiKeyId: apiKey.id,
+        fromAddress: from,
+        toAddress: recipientsRaw.join(", "),
+        subject,
+        status: "failed",
+        error: `All recipients are on the suppression list: ${suppressedSkipped.join(", ")}`,
+      });
+      return res.status(400).json({ error: "All recipients are on the suppression list", suppressed: suppressedSkipped });
+    }
+
     try {
       const cmd = new SendEmailCommand({
         Source: from,
-        Destination: { ToAddresses: Array.isArray(to) ? to : [to] },
+        Destination: { ToAddresses: allowed },
         Message: {
           Subject: { Data: subject, Charset: "UTF-8" },
           Body: html
@@ -4362,7 +4385,7 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
         userId: apiKey.userId,
         apiKeyId: apiKey.id,
         fromAddress: from,
-        toAddress: Array.isArray(to) ? to.join(", ") : to,
+        toAddress: allowed.join(", "),
         subject,
         status: "sent",
         messageId,
@@ -4373,18 +4396,86 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
         lastUsedAt: new Date(),
       }).where(dbEq(emailApiKeys.id, apiKey.id));
 
-      res.json({ success: true, messageId });
+      res.json({ success: true, messageId, suppressed: suppressedSkipped });
     } catch (e: any) {
       await db.insert(emailApiLogs).values({
         userId: apiKey.userId,
         apiKeyId: apiKey.id,
         fromAddress: from,
-        toAddress: Array.isArray(to) ? to.join(", ") : to,
+        toAddress: allowed.join(", "),
         subject,
         status: "failed",
         error: e.message,
       });
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─────────── SES bounce/complaint webhook (SNS notifications) ───────────
+  // Configure your SES Configuration Set to publish Bounce, Complaint, and
+  // Delivery events to an SNS topic, then point that topic's HTTPS subscription at:
+  //   https://afroaigroup.com/api/ses/sns
+  // We auto-confirm the subscription handshake and verify every signature.
+  app.post("/api/ses/sns", express.text({ type: "*/*", limit: "256kb" }), async (req, res) => {
+    try {
+      const result = await handleSnsRequest(typeof req.body === "string" ? req.body : "");
+      res.status(result.status).json(result.body);
+    } catch (e: any) {
+      console.error("[ses-webhook] Handler error:", e?.message || e);
+      res.status(500).json({ error: "Webhook handler error" });
+    }
+  });
+
+  // ─────────── Suppression list management ───────────
+
+  // List the current user's suppressed addresses (filtered to those they sent to).
+  // We split the comma-separated to_address column into an array and exact-match
+  // each entry, so "bob@gmail.com" never matches "rob@gmail.com".
+  app.get("/api/email-api/suppressions", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const result: any = await db.execute(dbSql`
+      SELECT s.* FROM email_suppressions s
+      WHERE EXISTS (
+        SELECT 1 FROM email_api_logs l
+        WHERE l.user_id = ${userId}
+          AND s.email = ANY(
+            SELECT trim(lower(addr))
+            FROM unnest(string_to_array(l.to_address, ',')) AS addr
+          )
+      )
+      ORDER BY s.created_at DESC
+      LIMIT 500
+    `);
+    res.json(result?.rows ?? result ?? []);
+  });
+
+  // Founder-only: list everything
+  app.get("/api/admin/email-suppressions", isFounder, async (_req, res) => {
+    const rows = await db.select().from(emailSuppressions).orderBy(dbDesc(emailSuppressions.createdAt)).limit(1000);
+    res.json(rows);
+  });
+
+  // Founder-only: manually add a suppression
+  app.post("/api/admin/email-suppressions", isFounder, async (req, res) => {
+    const { email, notes } = req.body || {};
+    if (!email || typeof email !== "string") return res.status(400).json({ error: "email required" });
+    await addSuppression({ email, reason: "manual", source: "manual", notes });
+    res.json({ success: true });
+  });
+
+  // Founder-only: remove a suppression (use sparingly — only when you know the address is good now)
+  app.delete("/api/admin/email-suppressions/:email", isFounder, async (req, res) => {
+    await removeSuppression(req.params.email);
+    res.json({ success: true });
+  });
+
+  // Founder-only: reputation snapshot (sent / delivered / bounce rate / complaint rate)
+  app.get("/api/admin/email-reputation", isFounder, async (_req, res) => {
+    try {
+      const stats = await getReputationStats();
+      res.json(stats);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "Failed to compute stats" });
     }
   });
 
@@ -4419,6 +4510,10 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       const lastEmail = demoEmailCooldown.get(toKey) || 0;
       if (now - lastEmail < EMAIL_COOLDOWN_MS) {
         return res.status(429).json({ error: "A test email was already sent to this address recently. Please try again later." });
+      }
+
+      if (await isSuppressed(to)) {
+        return res.status(400).json({ error: "This address is on our suppression list (previous bounce or complaint) and cannot receive mail." });
       }
 
       // Global daily cap (resets each UTC day)

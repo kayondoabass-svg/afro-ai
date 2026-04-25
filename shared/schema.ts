@@ -578,11 +578,35 @@ export const emailApiLogs = pgTable("email_api_logs", {
   fromAddress: text("from_address").notNull(),
   toAddress: text("to_address").notNull(),
   subject: text("subject").notNull(),
-  status: varchar("status").notNull().default("sent"), // sent | failed | bounced
+  status: varchar("status").notNull().default("sent"), // sent | failed | delivered | bounced | complained
   messageId: text("message_id"),
   error: text("error"),
+  deliveredAt: timestamp("delivered_at"),
+  bouncedAt: timestamp("bounced_at"),
+  bounceType: varchar("bounce_type"), // Permanent | Transient | Undetermined
+  bounceSubType: varchar("bounce_sub_type"),
+  complainedAt: timestamp("complained_at"),
+  complaintFeedbackType: varchar("complaint_feedback_type"),
   sentAt: timestamp("sent_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 export const insertEmailApiLogSchema = createInsertSchema(emailApiLogs).omit({ id: true, sentAt: true });
 export type EmailApiLog = typeof emailApiLogs.$inferSelect;
 export type InsertEmailApiLog = z.infer<typeof insertEmailApiLogSchema>;
+
+// Permanent suppression list — never email these recipients again.
+// Populated automatically from SES bounce/complaint webhooks (and optionally by hand).
+export const emailSuppressions = pgTable("email_suppressions", {
+  id: serial("id").primaryKey(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  reason: varchar("reason").notNull(), // hard_bounce | complaint | manual
+  bounceType: varchar("bounce_type"),
+  bounceSubType: varchar("bounce_sub_type"),
+  complaintFeedbackType: varchar("complaint_feedback_type"),
+  source: varchar("source").notNull().default("ses"), // ses | manual
+  diagnosticCode: text("diagnostic_code"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertEmailSuppressionSchema = createInsertSchema(emailSuppressions).omit({ id: true, createdAt: true });
+export type EmailSuppression = typeof emailSuppressions.$inferSelect;
+export type InsertEmailSuppression = z.infer<typeof insertEmailSuppressionSchema>;

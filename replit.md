@@ -48,6 +48,7 @@ The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind C
 -   **Interactive Shell:** Real-time interactive bash terminal inside the Dev Console Terminal tab, powered by node-pty and Socket.io. Protected by SHELL_SECRET admin key.
 -   **Sidebar Search:** Filters navigation items in real time.
 -   **Email API:** A transactional email sending service powered by AWS SES, offering API keys, domain verification, and sending logs.
+-   **SES Bounce/Complaint Pipeline:** Public webhook at `/api/ses/sns` receives SNS notifications from SES (Bounce, Complaint, Delivery). Every message is signature-verified against the SNS signing cert (host whitelisted to `sns.*.amazonaws.com`), `SubscribeURL` handshake is auto-confirmed, and the `SES_SNS_TOPIC_ARN` env var optionally pins the allowed topic. Hard bounces and all complaints are added to a permanent `email_suppressions` table; soft bounces are logged but not suppressed. Both the public `/api/email-api/send` route and the platform `mailer.ts` filter recipients against the suppression list before calling SES, protecting sender reputation. Founder-only admin endpoints under `/api/admin/email-suppressions` and `/api/admin/email-reputation` expose the list and overall reputation stats (sent / delivered / bounce rate / complaint rate).
 -   **Chatbot API:** Enables users to create embeddable AI chatbots for external websites with a knowledge base and brand customization.
 
 ## External Dependencies

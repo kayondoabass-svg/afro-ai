@@ -1,4 +1,5 @@
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import { isSuppressed } from "./ses-webhook";
 
 const sesClient = new SESClient({
   region: process.env.AWS_REGION || "us-east-1",
@@ -28,6 +29,11 @@ async function send(to: string, subject: string, html: string, text: string): Pr
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return false;
   if (!FROM) {
     console.warn("[mailer] EMAIL_API_DEMO_FROM not set — skipping send to", to);
+    return false;
+  }
+  // Honor the suppression list — never email an address that hard-bounced or complained.
+  if (await isSuppressed(to)) {
+    console.warn(`[mailer] Skipped "${subject}" to ${to} — recipient is on suppression list`);
     return false;
   }
   try {
