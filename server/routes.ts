@@ -125,6 +125,7 @@ export async function registerRoutes(
 
       const fromAddress = process.env.EMAIL_API_DEMO_FROM || "noreply@afroaigroup.com";
       const ses = new SESClient({ region: process.env.AWS_REGION || "us-east-1" });
+      const sesConfigSet = process.env.SES_CONFIGURATION_SET;
       await ses.send(new SendEmailCommand({
         Source: fromAddress,
         Destination: { ToAddresses: [to] },
@@ -135,6 +136,7 @@ export async function registerRoutes(
             ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}),
           },
         },
+        ...(sesConfigSet ? { ConfigurationSetName: sesConfigSet } : {}),
       }));
       res.json({ ok: true });
     } catch (err: any) {
@@ -2464,6 +2466,7 @@ export async function registerRoutes(
               Subject: { Data: campaign.subject, Charset: "UTF-8" },
               Body: { Html: { Data: campaign.htmlContent, Charset: "UTF-8" } },
             },
+            ...(process.env.SES_CONFIGURATION_SET ? { ConfigurationSetName: process.env.SES_CONFIGURATION_SET } : {}),
           }));
           sent++;
         } catch (err: any) {
@@ -4375,6 +4378,7 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
             ? { Html: { Data: html, Charset: "UTF-8" }, ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}) }
             : { Text: { Data: text, Charset: "UTF-8" } },
         },
+        ...(process.env.SES_CONFIGURATION_SET ? { ConfigurationSetName: process.env.SES_CONFIGURATION_SET } : {}),
       });
 
       const result = await sesClient.send(cmd);
@@ -4553,6 +4557,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
             Text: { Data: text, Charset: "UTF-8" },
           },
         },
+        ...(process.env.SES_CONFIGURATION_SET ? { ConfigurationSetName: process.env.SES_CONFIGURATION_SET } : {}),
       }));
 
       demoIpCooldown.set(ipKey, now);

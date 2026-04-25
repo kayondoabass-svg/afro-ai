@@ -6,6 +6,7 @@ const sesClient = new SESClient({
 });
 
 const FROM = process.env.EMAIL_API_DEMO_FROM || "noreply@afroaigroup.com";
+const SES_CONFIG_SET = process.env.SES_CONFIGURATION_SET;
 const PLATFORM = "Afro AI";
 const BRAND_COLOR = "#f5b400";
 
@@ -47,6 +48,7 @@ async function send(to: string, subject: string, html: string, text: string): Pr
           Text: { Data: text, Charset: "UTF-8" },
         },
       },
+      ...(SES_CONFIG_SET ? { ConfigurationSetName: SES_CONFIG_SET } : {}),
     }));
     console.log(`[mailer] Sent "${subject}" to ${to}`);
     return true;
