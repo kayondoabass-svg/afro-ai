@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, teamMembers, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog, type TeamMember, type InsertTeamMember } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -751,8 +751,12 @@ class DatabaseStorage implements IStorage {
     return db.select().from(formSubmissions).where(eq(formSubmissions.formId, formId)).orderBy(desc(formSubmissions.createdAt));
   }
 
-  async deleteFormSubmission(id: number): Promise<void> {
-    await db.delete(formSubmissions).where(eq(formSubmissions.id, id));
+  async deleteFormSubmission(id: number, formId?: number): Promise<boolean> {
+    const where = formId
+      ? and(eq(formSubmissions.id, id), eq(formSubmissions.formId, formId))
+      : eq(formSubmissions.id, id);
+    const rows = await db.delete(formSubmissions).where(where).returning({ id: formSubmissions.id });
+    return rows.length > 0;
   }
 
   async getFormSubmissionCount(formId: number): Promise<number> {
@@ -875,12 +879,20 @@ class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateEmailSubscriberStatus(id: number, status: string): Promise<void> {
-    await db.update(emailSubscribers).set({ status }).where(eq(emailSubscribers.id, id));
+  async updateEmailSubscriberStatus(id: number, status: string, userId?: string): Promise<boolean> {
+    const where = userId
+      ? and(eq(emailSubscribers.id, id), eq(emailSubscribers.userId, userId))
+      : eq(emailSubscribers.id, id);
+    const rows = await db.update(emailSubscribers).set({ status }).where(where).returning({ id: emailSubscribers.id });
+    return rows.length > 0;
   }
 
-  async deleteEmailSubscriber(id: number): Promise<void> {
-    await db.delete(emailSubscribers).where(eq(emailSubscribers.id, id));
+  async deleteEmailSubscriber(id: number, userId?: string): Promise<boolean> {
+    const where = userId
+      ? and(eq(emailSubscribers.id, id), eq(emailSubscribers.userId, userId))
+      : eq(emailSubscribers.id, id);
+    const rows = await db.delete(emailSubscribers).where(where).returning({ id: emailSubscribers.id });
+    return rows.length > 0;
   }
 
   // ============ EMAIL CAMPAIGNS ============
@@ -1276,13 +1288,20 @@ class DatabaseStorage implements IStorage {
     return secret;
   }
 
-  async updateAppSecret(id: number, value: string): Promise<AppSecret> {
-    const [secret] = await db.update(appSecrets).set({ value }).where(eq(appSecrets.id, id)).returning();
+  async updateAppSecret(id: number, value: string, userId?: string): Promise<AppSecret | undefined> {
+    const where = userId
+      ? and(eq(appSecrets.id, id), eq(appSecrets.userId, userId))
+      : eq(appSecrets.id, id);
+    const [secret] = await db.update(appSecrets).set({ value }).where(where).returning();
     return secret;
   }
 
-  async deleteAppSecret(id: number): Promise<void> {
-    await db.delete(appSecrets).where(eq(appSecrets.id, id));
+  async deleteAppSecret(id: number, userId?: string): Promise<boolean> {
+    const where = userId
+      ? and(eq(appSecrets.id, id), eq(appSecrets.userId, userId))
+      : eq(appSecrets.id, id);
+    const rows = await db.delete(appSecrets).where(where).returning({ id: appSecrets.id });
+    return rows.length > 0;
   }
 
   async getActivityLogs(userId: string, limit = 100): Promise<ActivityLog[]> {
@@ -1296,6 +1315,66 @@ class DatabaseStorage implements IStorage {
 
   async deleteActivityLog(id: number): Promise<void> {
     await db.delete(activityLogs).where(eq(activityLogs.id, id));
+  }
+
+  // ============ TEAM MEMBERS ============
+  async listTeamMembers(country?: string): Promise<TeamMember[]> {
+    const where = country ? eq(teamMembers.country, country) : undefined;
+    if (where) {
+      return db.select().from(teamMembers).where(where).orderBy(desc(teamMembers.createdAt));
+    }
+    return db.select().from(teamMembers).orderBy(desc(teamMembers.createdAt));
+  }
+
+  async getTeamMemberById(id: number): Promise<TeamMember | undefined> {
+    const [member] = await db.select().from(teamMembers).where(eq(teamMembers.id, id));
+    return member;
+  }
+
+  async getTeamMemberByUserId(userId: string): Promise<TeamMember | undefined> {
+    // Returns the most recent active team membership for a given user (a user
+    // could in theory be on multiple country teams; we return the active one).
+    const [member] = await db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.userId, userId), eq(teamMembers.status, "active")))
+      .orderBy(desc(teamMembers.createdAt))
+      .limit(1);
+    return member;
+  }
+
+  async createTeamMember(data: InsertTeamMember): Promise<TeamMember> {
+    const [created] = await db.insert(teamMembers).values(data).returning();
+    return created;
+  }
+
+  async updateTeamMember(id: number, data: Partial<InsertTeamMember>): Promise<TeamMember | undefined> {
+    const [updated] = await db
+      .update(teamMembers)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(teamMembers.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTeamMember(id: number): Promise<boolean> {
+    const rows = await db.delete(teamMembers).where(eq(teamMembers.id, id)).returning({ id: teamMembers.id });
+    return rows.length > 0;
+  }
+
+  async searchUsersForTeam(query: string, limit = 20): Promise<Array<{ id: string; email: string | null; firstName: string | null; lastName: string | null }>> {
+    const q = `%${query.toLowerCase()}%`;
+    const rows = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+      })
+      .from(users)
+      .where(sql`LOWER(${users.email}) LIKE ${q} OR LOWER(${users.firstName}) LIKE ${q} OR LOWER(${users.lastName}) LIKE ${q}`)
+      .limit(limit);
+    return rows;
   }
 }
 

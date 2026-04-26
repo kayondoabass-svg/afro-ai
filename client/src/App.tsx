@@ -26,6 +26,7 @@ const PricingPage = lazy(() => import("@/pages/pricing"));
 const DeploymentsPage = lazy(() => import("@/pages/deployments"));
 const FounderDashboardPage = lazy(() => import("@/pages/founder-dashboard"));
 const AdminCommandPage = lazy(() => import("@/pages/admin-command"));
+const TeamManagementPage = lazy(() => import("@/pages/team-management"));
 const ReferralsPage = lazy(() => import("@/pages/referrals"));
 const AboutPage = lazy(() => import("@/pages/about"));
 const ContactPage = lazy(() => import("@/pages/contact"));
@@ -116,6 +117,7 @@ function AuthenticatedLayout() {
                 <Route path="/deployments" component={DeploymentsPage} />
                 <Route path="/pricing" component={PricingPage} />
                 <Route path="/founder" component={FounderDashboardPage} />
+                <Route path="/team" component={TeamManagementPage} />
                 <Route path="/admin-command" component={AdminCommandPage} />
                 <Route path="/referrals" component={ReferralsPage} />
                 <Route path="/templates" component={TemplatesPage} />

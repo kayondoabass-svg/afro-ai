@@ -1094,8 +1094,14 @@ export default function FounderDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Admin command centre link */}
-        <div className="text-center pb-4">
+        {/* Admin command centre + Team management links */}
+        <div className="text-center pb-4 flex flex-wrap items-center justify-center gap-3">
+          <a href="/team">
+            <Button variant="outline" className="gap-2" data-testid="button-team-management">
+              <Users className="w-4 h-4 text-primary" />
+              Team Management
+            </Button>
+          </a>
           <a href="/admin-command">
             <Button variant="outline" className="gap-2" data-testid="button-admin-command">
               <Crown className="w-4 h-4 text-primary" />

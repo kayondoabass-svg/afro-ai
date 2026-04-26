@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import rateLimit from "express-rate-limit";
 import fs from "fs";
 import path from "path";
-import { isAuthenticated } from "../auth/replitAuth";
+import { isAuthenticated, FOUNDER_EMAIL } from "../auth/replitAuth";
 import { aiQuotaGuard } from "../quota";
 
 const chatLimiter = rateLimit({
@@ -1764,10 +1764,23 @@ When users ask about platform status, reliability, or recent changes — confide
 
 
 
+// Helper: returns true if user owns the conversation, OR is the founder
+function canAccessConversation(conversation: any, req: any): boolean {
+  const userId = req.user?.claims?.sub || req.user?.claims?.id;
+  const email = req.user?.claims?.email;
+  if (email === FOUNDER_EMAIL) return true; // Founder sees all
+  return !!userId && conversation?.userId === userId;
+}
+
 export function registerChatRoutes(app: Express): void {
-  app.get("/api/conversations", async (req: Request, res: Response) => {
+  app.get("/api/conversations", isAuthenticated, async (req: any, res: Response) => {
     try {
-      const conversations = await chatStorage.getAllConversations();
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const email = req.user?.claims?.email;
+      // Founder sees all conversations; everyone else sees only their own
+      const conversations = email === FOUNDER_EMAIL
+        ? await chatStorage.getAllConversations()
+        : await chatStorage.getConversationsByUser(userId);
       res.json(conversations);
     } catch (error) {
       console.error("Error fetching conversations:", error);
@@ -1775,11 +1788,14 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.get("/api/conversations/:id", isAuthenticated, async (req: any, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const conversation = await chatStorage.getConversation(id);
       if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      if (!canAccessConversation(conversation, req)) {
         return res.status(404).json({ error: "Conversation not found" });
       }
       const messages = await chatStorage.getMessagesByConversation(id);
@@ -1790,10 +1806,15 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/conversations", async (req: Request, res: Response) => {
+  app.post("/api/conversations", isAuthenticated, async (req: any, res: Response) => {
     try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { title, projectId } = req.body;
-      const conversation = await chatStorage.createConversation(title || "New Chat", projectId ? parseInt(projectId) : undefined);
+      const conversation = await chatStorage.createConversation(
+        title || "New Chat",
+        projectId ? parseInt(projectId) : undefined,
+        userId
+      );
       res.status(201).json(conversation);
     } catch (error) {
       console.error("Error creating conversation:", error);
@@ -1801,20 +1822,31 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/conversations/project/:projectId", async (req: Request, res: Response) => {
+  app.get("/api/conversations/project/:projectId", isAuthenticated, async (req: any, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId as string);
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const email = req.user?.claims?.email;
       const convos = await chatStorage.getConversationsByProject(projectId);
-      res.json(convos);
+      // Filter to only conversations owned by this user (founder sees all)
+      const filtered = email === FOUNDER_EMAIL ? convos : convos.filter((c: any) => c.userId === userId);
+      res.json(filtered);
     } catch (error) {
       console.error("Error fetching project conversations:", error);
       res.status(500).json({ error: "Failed to fetch project conversations" });
     }
   });
 
-  app.delete("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.delete("/api/conversations/:id", isAuthenticated, async (req: any, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
+      const conversation = await chatStorage.getConversation(id);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      if (!canAccessConversation(conversation, req)) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
       await chatStorage.deleteConversation(id);
       res.status(204).send();
     } catch (error) {

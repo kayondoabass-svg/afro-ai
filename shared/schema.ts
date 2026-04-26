@@ -1,7 +1,7 @@
 export * from "./models/auth";
 export * from "./models/chat";
 
-import { pgTable, serial, text, timestamp, varchar, boolean, integer, numeric, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -610,3 +610,43 @@ export const emailSuppressions = pgTable("email_suppressions", {
 export const insertEmailSuppressionSchema = createInsertSchema(emailSuppressions).omit({ id: true, createdAt: true });
 export type EmailSuppression = typeof emailSuppressions.$inferSelect;
 export type InsertEmailSuppression = z.infer<typeof insertEmailSuppressionSchema>;
+
+// ============ TEAM MEMBERS (Founder admin/staff with roles) ============
+// A team member is an existing client (user) promoted to a staff role for a
+// specific country. The country is the primary scope: each African country
+// has its own team. The role + tier together determine access.
+export const teamMembers = pgTable("team_members", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  country: varchar("country", { length: 2 }).notNull(), // ISO-2 (UG, KE, NG, ...)
+  role: varchar("role").notNull(), // see TEAM_ROLES in shared/team-constants.ts
+  tier: varchar("tier").notNull().default("read_only"), // read_only | editor | full_admin
+  name: text("name").notNull(),
+  email: varchar("email").notNull(),
+  phone: varchar("phone"),
+  address: text("address"),
+  city: varchar("city"),
+  photoUrl: text("photo_url"),
+  // ID document — sensitive. Served only via permission-gated endpoint.
+  idDocumentUrl: text("id_document_url"),
+  status: varchar("status").notNull().default("active"), // active | suspended | removed
+  addedBy: varchar("added_by").notNull().references(() => users.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => ({
+  // Atomic guarantee: at most one non-removed membership per (user, country).
+  // Prevents duplicate active/suspended rows even under concurrent inserts
+  // or PATCH→active transitions.
+  uniqueActiveMembership: uniqueIndex("team_members_unique_active_per_country")
+    .on(table.userId, table.country)
+    .where(sql`status <> 'removed'`),
+}));
+
+export const insertTeamMemberSchema = createInsertSchema(teamMembers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type TeamMember = typeof teamMembers.$inferSelect;
+export type InsertTeamMember = z.infer<typeof insertTeamMemberSchema>;

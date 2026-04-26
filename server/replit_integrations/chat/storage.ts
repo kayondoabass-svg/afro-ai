@@ -1,11 +1,12 @@
 import { db } from "../../db";
 import { conversations, messages } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IChatStorage {
   getConversation(id: number): Promise<typeof conversations.$inferSelect | undefined>;
   getAllConversations(): Promise<(typeof conversations.$inferSelect)[]>;
-  createConversation(title: string, projectId?: number): Promise<typeof conversations.$inferSelect>;
+  getConversationsByUser(userId: string): Promise<(typeof conversations.$inferSelect)[]>;
+  createConversation(title: string, projectId?: number, userId?: string): Promise<typeof conversations.$inferSelect>;
   getConversationsByProject(projectId: number): Promise<(typeof conversations.$inferSelect)[]>;
   deleteConversation(id: number): Promise<void>;
   updateConversationTitle(id: number, title: string): Promise<void>;
@@ -23,9 +24,14 @@ export const chatStorage: IChatStorage = {
     return db.select().from(conversations).orderBy(desc(conversations.createdAt));
   },
 
-  async createConversation(title: string, projectId?: number) {
+  async getConversationsByUser(userId: string) {
+    return db.select().from(conversations).where(eq(conversations.userId, userId)).orderBy(desc(conversations.createdAt));
+  },
+
+  async createConversation(title: string, projectId?: number, userId?: string) {
     const values: any = { title };
     if (projectId) values.projectId = projectId;
+    if (userId) values.userId = userId;
     const [conversation] = await db.insert(conversations).values(values).returning();
     return conversation;
   },

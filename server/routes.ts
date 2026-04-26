@@ -451,8 +451,10 @@ export async function registerRoutes(
 
   app.patch("/api/secrets/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { value } = req.body;
-      const secret = await storage.updateAppSecret(parseInt(req.params.id), value);
+      const secret = await storage.updateAppSecret(parseInt(req.params.id), value, userId);
+      if (!secret) return res.status(404).json({ message: "Secret not found" });
       res.json(secret);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -461,20 +463,24 @@ export async function registerRoutes(
 
   app.delete("/api/secrets/:id", isAuthenticated, async (req: any, res) => {
     try {
-      await storage.deleteAppSecret(parseInt(req.params.id));
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const ok = await storage.deleteAppSecret(parseInt(req.params.id), userId);
+      if (!ok) return res.status(404).json({ message: "Secret not found" });
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
   });
 
-  // ============ CLOUDFLARE D1 ============
+  // ============ CLOUDFLARE D1 (Admin Console — Founder only) ============
+  // The raw D1 console exposes the full database. Restrict to founder to
+  // prevent any logged-in user from reading other users' rows or schema.
   app.get("/api/d1/status", isAuthenticated, async (_req, res) => {
     const { isD1Configured } = await import("./d1");
     res.json({ configured: isD1Configured() });
   });
 
-  app.get("/api/d1/tables", isAuthenticated, async (_req, res) => {
+  app.get("/api/d1/tables", isFounder, async (_req, res) => {
     try {
       const { d1ListTables } = await import("./d1");
       const tables = await d1ListTables();
@@ -484,7 +490,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/d1/query", isAuthenticated, async (req: any, res) => {
+  app.post("/api/d1/query", isFounder, async (req: any, res) => {
     try {
       const { sql, params } = req.body;
       if (!sql) return res.status(400).json({ message: "SQL is required" });
@@ -510,7 +516,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/d1/tables/:name/info", isAuthenticated, async (req, res) => {
+  app.get("/api/d1/tables/:name/info", isFounder, async (req, res) => {
     try {
       const { d1GetTableInfo } = await import("./d1");
       const info = await d1GetTableInfo(req.params.name);
@@ -520,7 +526,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/d1/tables/:name/rows", isAuthenticated, async (req, res) => {
+  app.get("/api/d1/tables/:name/rows", isFounder, async (req, res) => {
     try {
       const limit = parseInt((req.query.limit as string) || "100");
       const offset = parseInt((req.query.offset as string) || "0");
@@ -1533,7 +1539,9 @@ export async function registerRoutes(
       const userId = req.user?.claims?.sub;
       const form = await storage.getForm(formId);
       if (!form || form.userId !== userId) return res.status(404).json({ message: "Form not found" });
-      await storage.deleteFormSubmission(subId);
+      // Scope the delete by formId so a submission from another form cannot be deleted
+      const ok = await storage.deleteFormSubmission(subId, formId);
+      if (!ok) return res.status(404).json({ message: "Submission not found" });
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete submission" });
@@ -2371,14 +2379,18 @@ export async function registerRoutes(
 
   app.patch("/api/email/subscribers/:id/status", isAuthenticated, async (req: any, res) => {
     try {
-      await storage.updateEmailSubscriberStatus(parseInt(req.params.id), req.body.status);
+      const userId = req.user?.id || req.user?.claims?.sub;
+      const ok = await storage.updateEmailSubscriberStatus(parseInt(req.params.id), req.body.status, userId);
+      if (!ok) return res.status(404).json({ message: "Subscriber not found" });
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.delete("/api/email/subscribers/:id", isAuthenticated, async (req: any, res) => {
     try {
-      await storage.deleteEmailSubscriber(parseInt(req.params.id));
+      const userId = req.user?.id || req.user?.claims?.sub;
+      const ok = await storage.deleteEmailSubscriber(parseInt(req.params.id), userId);
+      if (!ok) return res.status(404).json({ message: "Subscriber not found" });
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -4590,6 +4602,319 @@ Authorization: Bearer YOUR_API_KEY</pre>
     const verifiedDomains = domains.filter(d => d.status === "verified").length;
 
     res.json({ totalSent, totalFailed, totalKeys, verifiedDomains, emailsSentThisMonth: keys.reduce((s, k) => s + k.emailsSentMonth, 0) });
+  });
+
+  // ============================================================
+  // TEAM MANAGEMENT (founder-only)
+  // ============================================================
+  // Separate multer instance — accepts photos AND PDFs (for ID docs).
+  const teamUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
+    fileFilter: (_req, file, cb) => {
+      const ok = /^(image\/(png|jpe?g|webp)|application\/pdf)$/i.test(file.mimetype);
+      ok ? cb(null, true) : cb(new Error("Only JPG, PNG, WEBP photos or PDF documents are allowed"));
+    },
+  });
+
+  const { TEAM_ROLE_VALUES, TEAM_TIER_VALUES, COUNTRY_CODES, isManagerRole, canViewConfidentialDocs } = await import("@shared/team-constants");
+  const { insertTeamMemberSchema } = await import("@shared/schema");
+
+  // List team members (optionally filter by country)
+  app.get("/api/admin/team", isFounder, async (req: any, res) => {
+    try {
+      const country = typeof req.query.country === "string" ? req.query.country.toUpperCase() : undefined;
+      const members = await storage.listTeamMembers(country);
+      // Strip ID document URL from list view — it's only revealed to authorised viewers via a separate endpoint.
+      const sanitized = members.map(m => ({ ...m, idDocumentUrl: m.idDocumentUrl ? "__redacted__" : null }));
+      res.json(sanitized);
+    } catch (e: any) {
+      console.error("[admin/team:list]", e?.message || e);
+      res.status(500).json({ error: "Failed to load team" });
+    }
+  });
+
+  // Search existing clients to add as staff
+  app.get("/api/admin/team/search-users", isFounder, async (req: any, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      if (q.length < 2) return res.json([]);
+      const rows = await storage.searchUsersForTeam(q, 20);
+      res.json(rows);
+    } catch (e: any) {
+      console.error("[admin/team:search]", e?.message || e);
+      res.status(500).json({ error: "Search failed" });
+    }
+  });
+
+  // Create a new team member (with optional photo + ID upload)
+  app.post(
+    "/api/admin/team",
+    isFounder,
+    teamUpload.fields([
+      { name: "photo", maxCount: 1 },
+      { name: "idDocument", maxCount: 1 },
+    ]),
+    async (req: any, res) => {
+      try {
+        const founderId = req.user?.claims?.sub || req.user?.claims?.id;
+        const body = req.body || {};
+        const files = (req.files || {}) as { photo?: Express.Multer.File[]; idDocument?: Express.Multer.File[] };
+
+        // Coerce + validate scalars
+        const country = String(body.country || "").toUpperCase();
+        if (!COUNTRY_CODES.includes(country as any)) {
+          return res.status(400).json({ error: "Pick a valid country" });
+        }
+        if (!TEAM_ROLE_VALUES.includes(body.role)) {
+          return res.status(400).json({ error: "Pick a valid role" });
+        }
+        const tier = body.tier || "read_only";
+        if (!TEAM_TIER_VALUES.includes(tier)) {
+          return res.status(400).json({ error: "Pick a valid access tier" });
+        }
+        if (!body.userId) return res.status(400).json({ error: "Select an existing client" });
+        if (!body.name || !body.email) return res.status(400).json({ error: "Name and email are required" });
+
+        // Verify selected user exists
+        const targetUser = await storage.getUser(body.userId);
+        if (!targetUser) return res.status(404).json({ error: "User not found" });
+
+        // Magic-byte sniff — verify the actual file content matches the claimed type.
+        // Defends against MIME-spoofed uploads (e.g. exe renamed to .jpg).
+        const sniff = (buf: Buffer): "jpg" | "png" | "webp" | "pdf" | null => {
+          if (!buf || buf.length < 12) return null;
+          // JPEG: FF D8 FF
+          if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "jpg";
+          // PNG: 89 50 4E 47 0D 0A 1A 0A
+          if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "png";
+          // WEBP: "RIFF" .... "WEBP"
+          if (buf.slice(0, 4).toString() === "RIFF" && buf.slice(8, 12).toString() === "WEBP") return "webp";
+          // PDF: "%PDF-"
+          if (buf.slice(0, 5).toString() === "%PDF-") return "pdf";
+          return null;
+        };
+
+        // Upload files to R2 (if configured + provided), with content validation
+        let photoUrl: string | null = null;
+        let idDocumentUrl: string | null = null;
+        if (files.photo?.[0] && isR2Configured()) {
+          const f = files.photo[0];
+          const kind = sniff(f.buffer);
+          if (!kind || kind === "pdf") {
+            return res.status(400).json({ error: "Photo must be a real JPG, PNG or WEBP image" });
+          }
+          photoUrl = await uploadToR2(f.buffer, `team/photos/${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${kind}`, f.mimetype);
+        }
+        if (files.idDocument?.[0] && isR2Configured()) {
+          const f = files.idDocument[0];
+          const kind = sniff(f.buffer);
+          if (!kind) {
+            return res.status(400).json({ error: "ID document must be a real PDF, JPG or PNG" });
+          }
+          idDocumentUrl = await uploadToR2(f.buffer, `team/ids/${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${kind}`, f.mimetype);
+        }
+
+        // Prevent duplicate active membership for the same user in the same country.
+        // Belt-and-braces: app-level pre-check + DB-level partial unique index
+        // (team_members_unique_active_per_country) catches concurrent races.
+        const existing = await storage.listTeamMembers(country);
+        if (existing.some(m => m.userId === body.userId && m.status !== "removed")) {
+          return res.status(409).json({ error: "This client is already on the team for this country" });
+        }
+
+        const data = insertTeamMemberSchema.parse({
+          userId: body.userId,
+          country,
+          role: body.role,
+          tier,
+          name: String(body.name).trim(),
+          email: String(body.email).trim().toLowerCase(),
+          phone: body.phone ? String(body.phone).trim() : null,
+          address: body.address ? String(body.address).trim() : null,
+          city: body.city ? String(body.city).trim() : null,
+          notes: body.notes ? String(body.notes).trim() : null,
+          photoUrl,
+          idDocumentUrl,
+          status: "active",
+          addedBy: founderId,
+        });
+
+        try {
+          const member = await storage.createTeamMember(data);
+          res.status(201).json({ ...member, idDocumentUrl: member.idDocumentUrl ? "__redacted__" : null });
+        } catch (insertErr: any) {
+          // Catches DB unique-violation race (Postgres code 23505)
+          if (insertErr?.code === "23505") {
+            return res.status(409).json({ error: "This client is already on the team for this country" });
+          }
+          throw insertErr;
+        }
+      } catch (e: any) {
+        console.error("[admin/team:create]", e?.message || e);
+        res.status(400).json({ error: e?.message || "Could not save team member" });
+      }
+    }
+  );
+
+  // Update a team member (role / tier / status / personal details)
+  app.patch("/api/admin/team/:id", isFounder, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+      const body = req.body || {};
+      const patch: any = {};
+      if (body.role !== undefined) {
+        if (!TEAM_ROLE_VALUES.includes(body.role)) return res.status(400).json({ error: "Invalid role" });
+        patch.role = body.role;
+      }
+      if (body.tier !== undefined) {
+        if (!TEAM_TIER_VALUES.includes(body.tier)) return res.status(400).json({ error: "Invalid tier" });
+        patch.tier = body.tier;
+      }
+      if (body.status !== undefined) {
+        if (!["active", "suspended", "removed"].includes(body.status)) return res.status(400).json({ error: "Invalid status" });
+        patch.status = body.status;
+      }
+      ["name", "email", "phone", "address", "city", "notes"].forEach(k => {
+        if (body[k] !== undefined) patch[k] = body[k] === null ? null : String(body[k]);
+      });
+
+      // If we're activating (or unsuspending) a member, make sure that doesn't create
+      // a duplicate active membership for the same user in the same country.
+      if (patch.status && patch.status !== "removed") {
+        const current = await storage.getTeamMemberById(id);
+        if (current) {
+          const peers = await storage.listTeamMembers(current.country);
+          const conflict = peers.find(m =>
+            m.id !== id && m.userId === current.userId && m.status !== "removed"
+          );
+          if (conflict) {
+            return res.status(409).json({ error: "Another active membership already exists for this user in this country" });
+          }
+        }
+      }
+
+      try {
+        const updated = await storage.updateTeamMember(id, patch);
+        if (!updated) return res.status(404).json({ error: "Team member not found" });
+        res.json({ ...updated, idDocumentUrl: updated.idDocumentUrl ? "__redacted__" : null });
+      } catch (updErr: any) {
+        if (updErr?.code === "23505") {
+          return res.status(409).json({ error: "Another active membership already exists for this user in this country" });
+        }
+        throw updErr;
+      }
+    } catch (e: any) {
+      console.error("[admin/team:update]", e?.message || e);
+      res.status(400).json({ error: e?.message || "Update failed" });
+    }
+  });
+
+  // Delete a team member (and their R2-stored files)
+  app.delete("/api/admin/team/:id", isFounder, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+      const member = await storage.getTeamMemberById(id);
+      if (!member) return res.status(404).json({ error: "Not found" });
+      // Best-effort cleanup of R2 objects
+      if (member.photoUrl) { try { await deleteFromR2(member.photoUrl); } catch {} }
+      if (member.idDocumentUrl) { try { await deleteFromR2(member.idDocumentUrl); } catch {} }
+      const ok = await storage.deleteTeamMember(id);
+      res.json({ success: ok });
+    } catch (e: any) {
+      console.error("[admin/team:delete]", e?.message || e);
+      res.status(500).json({ error: "Delete failed" });
+    }
+  });
+
+  // Stream the confidential ID document — only for founders + HR (same country as target).
+  // Streamed (not URL) so the file never bypasses our auth check, regardless of bucket
+  // visibility. Country-scoped for HR users to prevent cross-country snooping.
+  app.get("/api/admin/team/:id/id-document", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const userEmail = (req.user?.claims?.email || "").toLowerCase();
+
+      const member = await storage.getTeamMemberById(id);
+      if (!member || !member.idDocumentUrl) return res.status(404).json({ error: "No document on file" });
+
+      // Founder bypass
+      const isFounderUser = FOUNDER_EMAILS.includes(userEmail);
+      let allowed = isFounderUser;
+
+      if (!allowed) {
+        // HR caller — must be active AND in the same country as the target
+        const callerMembership = await storage.getTeamMemberByUserId(userId);
+        if (
+          callerMembership &&
+          callerMembership.status === "active" &&
+          canViewConfidentialDocs(callerMembership.role) &&
+          callerMembership.country === member.country
+        ) {
+          allowed = true;
+        }
+      }
+
+      if (!allowed) return res.status(403).json({ error: "You do not have permission to view this document" });
+
+      // Stream the file from R2 through this backend (preserves auth gating, hides URL).
+      try {
+        const url = new URL(member.idDocumentUrl);
+        const bucket = process.env.R2_BUCKET_NAME!;
+        const key = url.pathname.replace(`/${bucket}/`, "").replace(/^\//, "");
+        const { S3Client, GetObjectCommand } = await import("@aws-sdk/client-s3");
+        const accountId = process.env.R2_ACCOUNT_ID!;
+        const client = new S3Client({
+          endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+          region: "auto",
+          credentials: {
+            accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+            secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+          },
+          forcePathStyle: true,
+        });
+        const obj = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+        const contentType = obj.ContentType || "application/octet-stream";
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Content-Disposition", `inline; filename="id-${id}"`);
+        res.setHeader("Cache-Control", "private, no-store");
+        // @ts-ignore — Body is a Node Readable in the Node SDK
+        obj.Body.pipe(res);
+      } catch (streamErr: any) {
+        console.error("[admin/team:id-doc:stream]", streamErr?.message || streamErr);
+        res.status(500).json({ error: "Could not load document" });
+      }
+    } catch (e: any) {
+      console.error("[admin/team:id-doc]", e?.message || e);
+      res.status(500).json({ error: "Failed to load document" });
+    }
+  });
+
+  // Returns the calling user's own team-membership (or null if not a team member).
+  // Powers the future staff dashboard's gating logic.
+  app.get("/api/team/me", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const me = await storage.getTeamMemberByUserId(userId);
+      if (!me) return res.json(null);
+      res.json({
+        id: me.id,
+        country: me.country,
+        role: me.role,
+        tier: me.tier,
+        name: me.name,
+        status: me.status,
+        isManager: isManagerRole(me.role),
+        canViewConfidentialDocs: canViewConfidentialDocs(me.role),
+      });
+    } catch (e: any) {
+      console.error("[team/me]", e?.message || e);
+      res.status(500).json({ error: "Failed" });
+    }
   });
 
   return httpServer;
