@@ -219,7 +219,7 @@ export async function registerRoutes(
 
     if (host !== baseDomain && host.endsWith("." + baseDomain)) {
       const subdomain = host.replace("." + baseDomain, "");
-      if (subdomain && subdomain !== "www") {
+      if (subdomain && subdomain !== "www" && subdomain !== "api") {
         try {
           const publishedApp = await storage.getPublishedAppBySubdomain(subdomain);
           if (publishedApp) {
