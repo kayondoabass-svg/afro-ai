@@ -159,21 +159,51 @@ export default function AgentPage() {
     }
   };
 
-  // Try to create a conversation on mount (best-effort; will retry on send if it fails)
+  // On mount: if this project already has a conversation, RESUME the latest one
+  // (don't start over and don't pre-fill the original description). Only create
+  // a fresh conversation when nothing exists yet.
+  const resumedExistingRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (cancelled) return;
-      await ensureConversation();
+      try {
+        if (projectIdParam) {
+          const pid = parseInt(projectIdParam);
+          const res = await fetch(`/api/conversations/project/${pid}`, { credentials: "include" });
+          if (!cancelled && res.ok) {
+            const list: any[] = await res.json();
+            if (Array.isArray(list) && list.length > 0) {
+              // Newest first if backend already sorts; otherwise pick by createdAt desc
+              const sorted = [...list].sort((a, b) =>
+                new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+              );
+              const latest = sorted[0];
+              if (latest?.id) {
+                resumedExistingRef.current = true;
+                // Mark initial-description as already handled so it never repopulates
+                initialDescriptionSentRef.current = true;
+                await loadConversation(latest.id);
+                return;
+              }
+            }
+          }
+        }
+        if (cancelled) return;
+        await ensureConversation();
+      } catch {
+        if (!cancelled) await ensureConversation();
+      }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [projectIdParam]);
 
   // Pre-fill (don't auto-send) the initial description from URL so the user
-  // can review/edit it before pressing Send. They wanted to give instructions first.
+  // can review/edit it before pressing Send. Skipped when an existing
+  // conversation was resumed — the user is continuing, not starting over.
   useEffect(() => {
     if (initialDescriptionSentRef.current) return;
+    if (resumedExistingRef.current) return;
     if (initialDescription && initialDescription.trim().length > 0) {
       initialDescriptionSentRef.current = true;
       setInput(initialDescription.trim());
