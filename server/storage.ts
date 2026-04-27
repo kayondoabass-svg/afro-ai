@@ -342,51 +342,99 @@ class DatabaseStorage implements IStorage {
   }
 
   async getPlatformStats() {
-    const [userCount] = await db.select({ value: count() }).from(users);
-    const [projectCount] = await db.select({ value: count() }).from(projects);
-    const [publishedCount] = await db.select({ value: count() }).from(publishedApps);
-    const [convoCount] = await db.select({ value: count() }).from(conversations);
-    const [msgCount] = await db.select({ value: count() }).from(messages);
-    const [suspendedCount] = await db.select({ value: count() }).from(publishedApps).where(eq(publishedApps.appStatus, "suspended"));
-    const [domainOrderCount] = await db.select({ value: count() }).from(domainOrders);
+    // Each query is run independently and protected so that a single
+    // missing/renamed column on a particular table cannot zero out the
+    // entire dashboard. Failures are logged with the section name so
+    // they're easy to fix.
+    const safe = async <T>(name: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try {
+        return await fn();
+      } catch (err: any) {
+        console.error(`[stats] ${name} failed:`, err?.message || err);
+        return fallback;
+      }
+    };
+    const safeCount = (name: string, fn: () => Promise<{ value: number }[]>): Promise<number> =>
+      safe(name, async () => (await fn())[0]?.value ?? 0, 0);
 
-    // New feature stats
-    const [ussdTotalCount] = await db.select({ value: count() }).from(ussdSubscriptions);
-    const [ussdActiveCount] = await db.select({ value: count() }).from(ussdSubscriptions).where(eq(ussdSubscriptions.status, "active"));
-    const allUssdSubs = await db.select({ plan: ussdSubscriptions.plan }).from(ussdSubscriptions).where(eq(ussdSubscriptions.status, "active"));
+    const [
+      totalUsers,
+      totalProjects,
+      totalPublishedApps,
+      totalConversations,
+      totalMessages,
+      suspendedApps,
+      totalDomainOrders,
+      totalUssdSubscriptions,
+      activeUssdSubscriptions,
+      activeUssdSubs,
+      totalChatbots,
+      activeChatbots,
+      totalChatbotConversations,
+      totalMarketplaceListings,
+      marketplaceDownloadsValue,
+      totalBlogPosts,
+      publishedBlogPosts,
+      totalEmailSubscribers,
+      activeEmailSubscribers,
+      totalEmailCampaigns,
+      totalUserFiles,
+      totalZipExports,
+      totalWebhooks,
+      activeWebhooks,
+      totalForms,
+      totalFormSubmissions,
+      allUsers,
+      recentUsers,
+      recentProjects,
+      recentPublishedApps,
+      recentDomainOrders,
+      recentUssdSubs,
+      recentChatbots,
+    ] = await Promise.all([
+      safeCount("users", () => db.select({ value: count() }).from(users)),
+      safeCount("projects", () => db.select({ value: count() }).from(projects)),
+      safeCount("publishedApps", () => db.select({ value: count() }).from(publishedApps)),
+      safeCount("conversations", () => db.select({ value: count() }).from(conversations)),
+      safeCount("messages", () => db.select({ value: count() }).from(messages)),
+      safeCount("suspendedApps", () => db.select({ value: count() }).from(publishedApps).where(eq(publishedApps.appStatus, "suspended"))),
+      safeCount("domainOrders", () => db.select({ value: count() }).from(domainOrders)),
+      safeCount("ussdSubsTotal", () => db.select({ value: count() }).from(ussdSubscriptions)),
+      safeCount("ussdSubsActive", () => db.select({ value: count() }).from(ussdSubscriptions).where(eq(ussdSubscriptions.status, "active"))),
+      safe("ussdPlans", () => db.select({ plan: ussdSubscriptions.plan }).from(ussdSubscriptions).where(eq(ussdSubscriptions.status, "active")), [] as { plan: string | null }[]),
+      safeCount("chatbots", () => db.select({ value: count() }).from(chatbotWidgets)),
+      safeCount("activeChatbots", () => db.select({ value: count() }).from(chatbotWidgets).where(eq(chatbotWidgets.isActive, true))),
+      safeCount("chatbotConvos", () => db.select({ value: count() }).from(widgetConversations)),
+      safeCount("marketplace", () => db.select({ value: count() }).from(marketplaceListings)),
+      safe("marketplaceDownloads", async () => (await db.select({ value: sql<number>`coalesce(sum(downloads), 0)` }).from(marketplaceListings))[0]?.value ?? 0, 0),
+      safeCount("blogTotal", () => db.select({ value: count() }).from(blogPosts)),
+      safeCount("blogPublished", () => db.select({ value: count() }).from(blogPosts).where(eq(blogPosts.status, "published"))),
+      safeCount("emailSubs", () => db.select({ value: count() }).from(emailSubscribers)),
+      safeCount("emailSubsActive", () => db.select({ value: count() }).from(emailSubscribers).where(eq(emailSubscribers.status, "active"))),
+      safeCount("emailCampaigns", () => db.select({ value: count() }).from(emailCampaigns)),
+      safeCount("userFiles", () => db.select({ value: count() }).from(userFiles)),
+      safeCount("zipExports", () => db.select({ value: count() }).from(zipExports)),
+      safeCount("webhooks", () => db.select({ value: count() }).from(webhooks)),
+      safeCount("activeWebhooks", () => db.select({ value: count() }).from(webhooks).where(eq(webhooks.isActive, true))),
+      safeCount("forms", () => db.select({ value: count() }).from(forms)),
+      safeCount("formSubmissions", () => db.select({ value: count() }).from(formSubmissions)),
+      safe("allUsersForPlans", () => db.select({ plan: users.plan, paygBalance: users.paygBalance, paygSpent: users.paygSpent }).from(users), [] as { plan: string | null; paygBalance: number | null; paygSpent: number | null }[]),
+      safe("recentUsers", () => db.select().from(users).orderBy(desc(users.createdAt)).limit(15), [] as any[]),
+      safe("recentProjects", () => db.select().from(projects).orderBy(desc(projects.createdAt)).limit(10), [] as any[]),
+      safe("recentPublishedApps", () => db.select().from(publishedApps).orderBy(desc(publishedApps.createdAt)).limit(15), [] as any[]),
+      safe("recentDomainOrders", () => db.select().from(domainOrders).orderBy(desc(domainOrders.createdAt)).limit(10), [] as any[]),
+      safe("recentUssdSubs", () => db.select().from(ussdSubscriptions).orderBy(desc(ussdSubscriptions.createdAt)).limit(10), [] as any[]),
+      safe("recentChatbots", () => db.select().from(chatbotWidgets).orderBy(desc(chatbotWidgets.createdAt)).limit(10), [] as any[]),
+    ]);
+
     const ussdPlanBreakdown = { starter: 0, growth: 0, enterprise: 0 };
-    for (const s of allUssdSubs) {
+    for (const s of activeUssdSubs) {
       const p = s.plan?.toLowerCase() || "";
       if (p === "starter") ussdPlanBreakdown.starter++;
       else if (p === "growth") ussdPlanBreakdown.growth++;
       else if (p === "enterprise") ussdPlanBreakdown.enterprise++;
     }
 
-    const [chatbotCount] = await db.select({ value: count() }).from(chatbotWidgets);
-    const [activeChatbotCount] = await db.select({ value: count() }).from(chatbotWidgets).where(eq(chatbotWidgets.isActive, true));
-    const [chatbotConvoCount] = await db.select({ value: count() }).from(widgetConversations);
-
-    const [marketplaceCount] = await db.select({ value: count() }).from(marketplaceListings);
-    const [marketplaceDownloads] = await db.select({ value: sql<number>`coalesce(sum(downloads), 0)` }).from(marketplaceListings);
-
-    const [blogTotalCount] = await db.select({ value: count() }).from(blogPosts);
-    const [blogPublishedCount] = await db.select({ value: count() }).from(blogPosts).where(eq(blogPosts.status, "published"));
-
-    const [emailSubCount] = await db.select({ value: count() }).from(emailSubscribers);
-    const [emailSubActiveCount] = await db.select({ value: count() }).from(emailSubscribers).where(eq(emailSubscribers.isActive, true));
-    const [emailCampaignCount] = await db.select({ value: count() }).from(emailCampaigns);
-
-    const [fileCount] = await db.select({ value: count() }).from(userFiles);
-    const [zipExportCount] = await db.select({ value: count() }).from(zipExports);
-
-    const [webhookCount] = await db.select({ value: count() }).from(webhooks);
-    const [activeWebhookCount] = await db.select({ value: count() }).from(webhooks).where(eq(webhooks.isActive, true));
-
-    const [formCount] = await db.select({ value: count() }).from(forms);
-    const [formSubCount] = await db.select({ value: count() }).from(formSubmissions);
-
-    // Plan breakdown
-    const allUsers = await db.select({ plan: users.plan, paygBalance: users.paygBalance, paygSpent: users.paygSpent }).from(users);
     const planBreakdown = { starter: 0, pro: 0, business: 0, payg: 0, other: 0 };
     let totalPaygBalanceCents = 0, totalPaygSpentCents = 0;
     for (const u of allUsers) {
@@ -400,56 +448,48 @@ class DatabaseStorage implements IStorage {
       totalPaygSpentCents += u.paygSpent ?? 0;
     }
 
-    // Estimated MRR (monthly recurring revenue in USD)
     const ussdMRR = ussdPlanBreakdown.starter * 29 + ussdPlanBreakdown.growth * 79 + ussdPlanBreakdown.enterprise * 199;
     const estimatedMRR = (planBreakdown.pro * 1500 + planBreakdown.business * 2990) / 100 + ussdMRR;
 
-    const recentUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(15);
-    const recentProjects = await db.select().from(projects).orderBy(desc(projects.createdAt)).limit(10);
-    const recentPublishedApps = await db.select().from(publishedApps).orderBy(desc(publishedApps.createdAt)).limit(15);
-    const recentDomainOrders = await db.select().from(domainOrders).orderBy(desc(domainOrders.createdAt)).limit(10);
-    const recentUssdSubs = await db.select().from(ussdSubscriptions).orderBy(desc(ussdSubscriptions.createdAt)).limit(10);
-    const recentChatbots = await db.select().from(chatbotWidgets).orderBy(desc(chatbotWidgets.createdAt)).limit(10);
-
     return {
-      totalUsers: userCount.value,
-      totalProjects: projectCount.value,
-      totalPublishedApps: publishedCount.value,
-      totalConversations: convoCount.value,
-      totalMessages: msgCount.value,
-      suspendedApps: suspendedCount.value,
-      totalDomainOrders: domainOrderCount.value,
+      totalUsers,
+      totalProjects,
+      totalPublishedApps,
+      totalConversations,
+      totalMessages,
+      suspendedApps,
+      totalDomainOrders,
       planBreakdown,
       estimatedMRR,
       totalPaygBalanceCents,
       totalPaygSpentCents,
       // USSD
-      totalUssdSubscriptions: ussdTotalCount.value,
-      activeUssdSubscriptions: ussdActiveCount.value,
+      totalUssdSubscriptions,
+      activeUssdSubscriptions,
       ussdPlanBreakdown,
       // Chatbot API
-      totalChatbots: chatbotCount.value,
-      activeChatbots: activeChatbotCount.value,
-      totalChatbotConversations: chatbotConvoCount.value,
+      totalChatbots,
+      activeChatbots,
+      totalChatbotConversations,
       // Marketplace
-      totalMarketplaceListings: marketplaceCount.value,
-      totalMarketplaceDownloads: Number(marketplaceDownloads.value) || 0,
+      totalMarketplaceListings,
+      totalMarketplaceDownloads: Number(marketplaceDownloadsValue) || 0,
       // Blog
-      totalBlogPosts: blogTotalCount.value,
-      publishedBlogPosts: blogPublishedCount.value,
+      totalBlogPosts,
+      publishedBlogPosts,
       // Email
-      totalEmailSubscribers: emailSubCount.value,
-      activeEmailSubscribers: emailSubActiveCount.value,
-      totalEmailCampaigns: emailCampaignCount.value,
+      totalEmailSubscribers,
+      activeEmailSubscribers,
+      totalEmailCampaigns,
       // Files
-      totalUserFiles: fileCount.value,
-      totalZipExports: zipExportCount.value,
+      totalUserFiles,
+      totalZipExports,
       // Webhooks
-      totalWebhooks: webhookCount.value,
-      activeWebhooks: activeWebhookCount.value,
+      totalWebhooks,
+      activeWebhooks,
       // Forms
-      totalForms: formCount.value,
-      totalFormSubmissions: formSubCount.value,
+      totalForms,
+      totalFormSubmissions,
       // Recent lists
       recentUsers,
       recentProjects,
