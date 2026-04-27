@@ -3256,10 +3256,9 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
             return res.send("END This service has reached today's question limit. Please try again tomorrow.");
           }
         }
-        // Call OpenAI
+        // Call AI provider (OpenAI primary, Gemini fallback)
         try {
-          const OpenAI = (await import("openai")).default;
-          const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
+          const { aiChatComplete } = await import("./ai-chat-provider");
           const systemPrompt = `You are a helpful USSD assistant for "${app.name}". ${app.description || ""}
 Answer questions using ONLY the knowledge base below. Be very brief and clear — USSD has a 182-character limit per screen.
 If you don't know, say: "I don't have that info. Call us directly."
@@ -3267,23 +3266,23 @@ Do NOT use markdown, bullet points or symbols.
 
 KNOWLEDGE BASE:
 ${app.knowledgeBase || "Provide helpful, concise answers to general questions."}`;
-          const completion = await client.chat.completions.create({
-            model: "gpt-4.1-mini",
+          const result = await aiChatComplete({
             messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userQuestion }],
-            max_tokens: 120,
+            maxTokens: 120,
           });
-          const reply = (completion.choices[0].message.content || "Unable to process your request.").slice(0, 160);
+          const reply = (result.text || "Unable to process your request.").slice(0, 160);
           // Bill the USSD app owner for this AI call so daily caps actually advance.
           if (app.userId) {
             await recordAiUsage({
               userId: app.userId,
               kind: "chat",
-              model: "gpt-4.1-mini",
-              tokensUsed: completion.usage?.total_tokens ?? Math.ceil((systemPrompt.length + userQuestion.length) / 4),
+              model: result.model,
+              tokensUsed: Math.ceil((systemPrompt.length + userQuestion.length) / 4),
             }).catch((e) => console.error("[ussd] recordAiUsage failed:", e));
           }
           return res.send(`END ${reply}`);
-        } catch {
+        } catch (e: any) {
+          console.error("[ussd] AI call failed:", e?.message || e);
           return res.send("END AI service is temporarily unavailable. Please try again.");
         }
       }
@@ -3429,8 +3428,7 @@ ${app.knowledgeBase || "Provide helpful, concise answers to general questions."}
         return res.status(503).json({ reply: "The demo is taking a quick break — please try again tomorrow or sign up for a free trial." });
       }
 
-      const OpenAI = (await import("openai")).default;
-      const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
+      const { aiChatComplete } = await import("./ai-chat-provider");
 
       const systemPrompt = `You are the live demo assistant for Afro AI Chatbot, a product that lets African businesses add an AI chatbot to any website in 2 minutes.
 
@@ -3465,16 +3463,15 @@ Never invent features or pricing not listed above.`;
         { role: "user", content: message.slice(0, 1000) },
       ];
 
-      const completion = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
+      const result = await aiChatComplete({
         messages,
-        max_tokens: 250,
+        maxTokens: 250,
         temperature: 0.4,
       });
-      const reply = completion.choices[0].message.content?.trim() || "I'm sorry, could you rephrase that?";
+      const reply = result.text || "I'm sorry, could you rephrase that?";
       res.json({ reply });
     } catch (e: any) {
-      console.error("[demo-chat] error:", e.message);
+      console.error("[demo-chat] error:", e?.message || e);
       res.status(500).json({ reply: "The demo is temporarily unavailable. Please try again in a moment." });
     }
   });
@@ -3521,8 +3518,7 @@ Never invent features or pricing not listed above.`;
         });
       }
 
-      const OpenAI = (await import("openai")).default;
-      const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
+      const { aiChatComplete } = await import("./ai-chat-provider");
 
       // Prefer Auto-Scan Q&A knowledge if present; fall back to legacy text knowledge base
       const includedQas = await storage.getChatbotQasByWidget(widget.id, { includedOnly: true });
@@ -3575,13 +3571,12 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
         { role: "user", content: message },
       ];
 
-      const completion = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
+      const completion = await aiChatComplete({
         messages,
-        max_tokens: 600,
-        ...(useStructured ? { response_format: { type: "json_object" as const } } : {}),
+        maxTokens: 600,
+        ...(useStructured ? { responseFormat: { type: "json_object" as const } } : {}),
       });
-      const raw = completion.choices[0].message.content || "";
+      const raw = completion.text || "";
 
       let reply = raw;
       let confidence: number | undefined;
@@ -3671,19 +3666,17 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       req.body = { message, sessionId: sessionId || `api-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, history };
       // Delegate by invoking the same handler logic via a fetch to ourselves would be heavier;
       // instead we duplicate the minimal call here:
-      const OpenAI = (await import("openai")).default;
-      const client = new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
+      const { aiChatComplete } = await import("./ai-chat-provider");
       const sysPrompt = `You are the AI assistant for ${widget.name}. ${widget.knowledgeBase ? `Knowledge:\n${widget.knowledgeBase}` : ""}`;
-      const completion = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
+      const completion = await aiChatComplete({
         messages: [
           { role: "system", content: sysPrompt },
           ...history.slice(-8).map((m: any) => ({ role: m.role, content: m.content })),
           { role: "user", content: message },
         ],
-        max_tokens: 600,
+        maxTokens: 600,
       });
-      const reply = completion.choices[0].message.content || "";
+      const reply = completion.text || "";
       if (!enforcement.founder) await storage.incrementChatbotRepliesUsed(widget.userId).catch(() => {});
       res.json({ reply, sessionId: req.body.sessionId });
     } catch (e: any) {
