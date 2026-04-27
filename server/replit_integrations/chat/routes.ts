@@ -9,6 +9,7 @@ import fs from "fs";
 import path from "path";
 import { isAuthenticated, FOUNDER_EMAIL } from "../auth/replitAuth";
 import { aiQuotaGuard } from "../quota";
+import { aiChatCompleteStream } from "../../ai-chat-provider";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -2055,30 +2056,16 @@ You are now in EDITOR MODE. Your workflow:
         content: contextPrompt,
       };
 
-      const stream = await openai.chat.completions.create({
-        model,
+      const streamResult = await aiChatCompleteStream({
         messages: [systemMessage, ...chatMessages],
-        stream: true,
-        max_completion_tokens: maxTokens,
+        maxTokens,
+        onChunk: (content) => {
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        },
       });
 
-      let fullResponse = "";
-      let completionTokens = 0;
-
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          fullResponse += content;
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
-        }
-        if (chunk.usage?.completion_tokens) {
-          completionTokens = chunk.usage.completion_tokens;
-        }
-      }
-
-      if (!completionTokens) {
-        completionTokens = Math.ceil(fullResponse.length / 4);
-      }
+      const fullResponse = streamResult.fullText;
+      const completionTokens = streamResult.completionTokens;
 
       await chatStorage.createMessage(conversationId, "assistant", fullResponse);
 

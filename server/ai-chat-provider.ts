@@ -116,3 +116,79 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
 export function hasAnyAiProvider(): boolean {
   return getProviderOrder().length > 0;
 }
+
+export interface ChatStreamOptions {
+  messages: any[]; // allows rich content (vision parts, etc.)
+  maxTokens?: number;
+  temperature?: number;
+  onChunk: (text: string) => void;
+}
+
+export interface ChatStreamResult {
+  fullText: string;
+  provider: Provider;
+  model: string;
+  completionTokens: number;
+}
+
+/**
+ * Streaming chat completion with automatic OpenAI <-> Gemini fallback.
+ * - Tries the primary provider first (configured via AI_PRIMARY_PROVIDER).
+ * - If the primary fails BEFORE sending any chunks (auth/quota/network),
+ *   transparently falls back to the secondary provider.
+ * - If the primary fails AFTER sending chunks, the error is re-thrown
+ *   (we cannot safely splice two providers' output mid-stream).
+ */
+export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<ChatStreamResult> {
+  const order = getProviderOrder();
+  if (order.length === 0) {
+    throw new Error("No AI provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY.");
+  }
+
+  let lastErr: any = null;
+  for (let i = 0; i < order.length; i++) {
+    const provider = order[i];
+    let receivedAnyChunk = false;
+    try {
+      const { client, model } = makeClient(provider);
+      const stream = await client.chat.completions.create({
+        model,
+        messages: opts.messages,
+        stream: true,
+        max_tokens: opts.maxTokens,
+        temperature: opts.temperature ?? 0.4,
+      } as any);
+
+      let fullText = "";
+      let completionTokens = 0;
+      for await (const chunk of stream as any) {
+        const content = chunk.choices?.[0]?.delta?.content || "";
+        if (content) {
+          fullText += content;
+          receivedAnyChunk = true;
+          opts.onChunk(content);
+        }
+        if (chunk.usage?.completion_tokens) {
+          completionTokens = chunk.usage.completion_tokens;
+        }
+      }
+      if (!completionTokens) completionTokens = Math.ceil(fullText.length / 4);
+      return { fullText, provider, model, completionTokens };
+    } catch (err: any) {
+      lastErr = err;
+      // If we already streamed bytes to the client, we can't fall back cleanly.
+      if (receivedAnyChunk) throw err;
+
+      const fatal = isFatalAuthOrQuotaError(err);
+      const hasFallback = i < order.length - 1;
+      console.warn(
+        `[ai-chat-stream] ${provider} failed (${err?.status || err?.code || "?"}): ${err?.message || err}. ${
+          fatal && hasFallback ? "Falling back to next provider." : hasFallback ? "Trying next provider." : "No more providers."
+        }`,
+      );
+      if (!fatal && !hasFallback) break;
+      continue;
+    }
+  }
+  throw lastErr || new Error("AI streaming request failed across all providers.");
+}
