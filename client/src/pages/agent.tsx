@@ -119,27 +119,48 @@ export default function AgentPage() {
     enabled: !!user,
   });
 
-  // Create or load a conversation on mount
+  // Lazily create a conversation. Called on mount AND on first send (retry).
+  const ensureConversation = async (): Promise<number | null> => {
+    if (conversationId) return conversationId;
+    try {
+      const res = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: projectName ? `${projectName} session` : "Agent Session",
+          projectId: projectIdParam ? parseInt(projectIdParam) : undefined,
+        }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        toast({
+          title: "Couldn't start chat",
+          description: errBody?.slice(0, 200) || `Server returned ${res.status}. Try refreshing or sign in again.`,
+          variant: "destructive",
+        });
+        return null;
+      }
+      const conv = await res.json();
+      setConversationId(conv.id);
+      qc.invalidateQueries({ queryKey: ["/api/conversations"] });
+      return conv.id;
+    } catch (e: any) {
+      toast({
+        title: "Couldn't start chat",
+        description: e?.message || "Network error. Check your connection and try again.",
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
+  // Try to create a conversation on mount (best-effort; will retry on send if it fails)
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch("/api/conversations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: projectName ? `${projectName} session` : "Agent Session",
-            projectId: projectIdParam ? parseInt(projectIdParam) : undefined,
-          }),
-          credentials: "include",
-        });
-        if (!res.ok) return;
-        const conv = await res.json();
-        if (!cancelled) {
-          setConversationId(conv.id);
-          qc.invalidateQueries({ queryKey: ["/api/conversations"] });
-        }
-      } catch {}
+      if (cancelled) return;
+      await ensureConversation();
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,7 +192,11 @@ export default function AgentPage() {
   // ---------- Send message ----------
 
   const sendMessage = async (text: string, attachments: Attachment[] = []) => {
-    if ((!text.trim() && attachments.length === 0) || !conversationId || working) return;
+    if ((!text.trim() && attachments.length === 0) || working) return;
+
+    // Make sure we have a conversation; if mount-time creation failed, retry now.
+    const convoId = await ensureConversation();
+    if (!convoId) return;
 
     const userMsg: AgentMessage = {
       id: `u-${Date.now()}`,
@@ -229,7 +254,7 @@ export default function AgentPage() {
       const body: any = { content: planMode ? `[PLAN MODE] ${text}` : text };
       if (attachments.length > 0) body.attachments = attachments;
 
-      const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+      const res = await fetch(`/api/conversations/${convoId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -690,7 +715,7 @@ export default function AgentPage() {
               <Square className="w-3.5 h-3.5 fill-white" />
             </Button>
           ) : (
-            <Button size="icon" aria-label="Send message" className="h-9 w-9 rounded-lg bg-blue-500 hover:bg-blue-600 text-white disabled:bg-zinc-800 disabled:text-zinc-500" onClick={handleSend} disabled={(!input.trim() && pendingAttachments.length === 0) || !conversationId} data-testid="button-send">
+            <Button size="icon" aria-label="Send message" className="h-9 w-9 rounded-lg bg-blue-500 hover:bg-blue-600 text-white disabled:bg-zinc-800 disabled:text-zinc-500" onClick={handleSend} disabled={!input.trim() && pendingAttachments.length === 0} data-testid="button-send">
               <ArrowUp className="w-4 h-4" />
             </Button>
           )}
