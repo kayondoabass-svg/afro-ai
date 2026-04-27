@@ -599,7 +599,9 @@ export default function AgentPage() {
         {messages.map(msg => <MessageBlock key={msg.id} msg={msg} />)}
 
         {working && streamingContent && (
-          <p className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed" data-testid="text-streaming">{streamingContent}</p>
+          <div data-testid="text-streaming">
+            <MarkdownText text={streamingContent} />
+          </div>
         )}
 
         {working && (
@@ -608,7 +610,7 @@ export default function AgentPage() {
       </div>
 
       {/* Queue panel */}
-      {(queue.length > 0 || queueOpen) && (
+      {queue.length > 0 && (
         <div className="border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0">
           <button
             onClick={() => setQueueOpen(!queueOpen)}
@@ -754,6 +756,44 @@ export default function AgentPage() {
 
 // ---------- Sub-components ----------
 
+function renderInline(text: string): React.ReactNode {
+  const regex = /(\*\*[^*\n]+\*\*|`[^`\n]+`)/g;
+  const parts = text.split(regex);
+  return parts.map((p, i) => {
+    if (p.startsWith("**") && p.endsWith("**")) {
+      return <strong key={i} className="text-zinc-100 font-semibold">{p.slice(2, -2)}</strong>;
+    }
+    if (p.startsWith("`") && p.endsWith("`")) {
+      return <code key={i} className="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[0.8em] font-mono text-violet-300">{p.slice(1, -1)}</code>;
+    }
+    return p;
+  });
+}
+
+function MarkdownText({ text, className }: { text: string; className?: string }) {
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  return (
+    <div className={className ?? "text-sm text-zinc-200 leading-relaxed space-y-2"}>
+      {parts.map((part, i) => {
+        if (part.startsWith("```") && part.endsWith("```") && part.length >= 6) {
+          const inner = part.slice(3, -3);
+          const firstNl = inner.indexOf("\n");
+          const code = firstNl > 0 ? inner.slice(firstNl + 1) : inner;
+          return (
+            <pre key={i} className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 overflow-x-auto text-xs font-mono text-zinc-200 whitespace-pre" data-testid={`code-block-${i}`}>
+              <code>{code.replace(/\n+$/, "")}</code>
+            </pre>
+          );
+        }
+        if (!part) return null;
+        return part.split(/\n{2,}/).map((para, j) => (
+          <p key={`${i}-${j}`} className="whitespace-pre-wrap">{renderInline(para)}</p>
+        ));
+      })}
+    </div>
+  );
+}
+
 function MessageBlock({ msg }: { msg: AgentMessage }) {
   if (msg.role === "user") {
     return (
@@ -780,7 +820,7 @@ function MessageBlock({ msg }: { msg: AgentMessage }) {
   return (
     <div className="space-y-2" data-testid={`message-assistant-${msg.id}`}>
       {msg.actions && msg.actions.length > 0 && <ActionChipsRow actions={msg.actions} />}
-      <p className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed">{msg.content}</p>
+      <MarkdownText text={msg.content} />
     </div>
   );
 }
