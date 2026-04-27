@@ -589,7 +589,7 @@ function FeedbackPanel({ appId, publishedUrl, feedbackCopied, setFeedbackCopied,
   );
 }
 
-function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
+export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
   code: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;

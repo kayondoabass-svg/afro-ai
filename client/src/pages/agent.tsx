@@ -16,7 +16,9 @@ import {
   Trash2, ArrowUp, Pencil, X, Plus, ChevronDown, Square,
   Monitor, Sparkles, Globe, ListChecks, PanelRightOpen,
   Copy, Download, LogOut, Settings, Paperclip, Image as ImageIcon,
+  Rocket,
 } from "lucide-react";
+import { PublishDialog } from "@/pages/ai-chat";
 
 // ---------- Types ----------
 
@@ -107,6 +109,8 @@ export default function AgentPage() {
   const [queueDrainTrigger, setQueueDrainTrigger] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [progressStep, setProgressStep] = useState(0); // 0..4
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishCode, setPublishCode] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -307,13 +311,38 @@ export default function AgentPage() {
 
   const handleSend = () => {
     if (!input.trim() && pendingAttachments.length === 0) return;
+    const text = input.trim();
+
+    // Detect publish/deploy intent → open the publish dialog directly
+    // instead of asking the AI for instructions.
+    if (text && pendingAttachments.length === 0 && isPublishIntent(text)) {
+      const html = latestAssistantHtml();
+      if (html) {
+        setPublishCode(html);
+        setPublishOpen(true);
+        setInput("");
+        return;
+      }
+      // No website yet — let the AI handle it normally so it can build one.
+    }
+
     if (working) {
-      setQueue(q => [...q, { id: `q-${Date.now()}`, text: input.trim() }]);
+      setQueue(q => [...q, { id: `q-${Date.now()}`, text }]);
       setInput("");
       toast({ title: "Added to queue", description: "Will run after the current task." });
       return;
     }
-    sendMessage(input.trim(), pendingAttachments);
+    sendMessage(text, pendingAttachments);
+  };
+
+  const latestAssistantHtml = (): string | null => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role !== "assistant") continue;
+      const html = extractHtml(m.content);
+      if (html) return html;
+    }
+    return null;
   };
 
   const stopAgent = () => {
@@ -487,6 +516,40 @@ export default function AgentPage() {
   };
   const goToCode = () => setLocation("/chat-classic");
 
+  // ---------- Publish ----------
+
+  const openPublishFromLatest = () => {
+    // Find the most recent assistant message that contains a website
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role !== "assistant") continue;
+      const html = extractHtml(m.content);
+      if (html) {
+        setPublishCode(html);
+        setPublishOpen(true);
+        return;
+      }
+    }
+    toast({
+      title: "Build something first",
+      description: "Ask me to create a website, then press Publish to put it online.",
+    });
+  };
+
+  const openPublishFor = (content: string) => {
+    const html = extractHtml(content);
+    if (!html) {
+      toast({
+        title: "No website to publish",
+        description: "This message doesn't contain a complete website yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setPublishCode(html);
+    setPublishOpen(true);
+  };
+
   // ---------- Render ----------
 
   return (
@@ -537,6 +600,15 @@ export default function AgentPage() {
         </div>
 
         <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            className="h-9 px-3 bg-violet-600 hover:bg-violet-500 text-white gap-1.5"
+            onClick={openPublishFromLatest}
+            data-testid="button-publish"
+          >
+            <Rocket className="w-4 h-4" />
+            <span className="hidden sm:inline">Publish</span>
+          </Button>
           <Button variant="ghost" size="icon" aria-label="New chat" className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-testid="button-new-chat" onClick={startNewChat}>
             <MessageSquarePlus className="w-4 h-4" />
           </Button>
@@ -596,7 +668,7 @@ export default function AgentPage() {
           </div>
         )}
 
-        {messages.map(msg => <MessageBlock key={msg.id} msg={msg} />)}
+        {messages.map(msg => <MessageBlock key={msg.id} msg={msg} onPublish={openPublishFor} />)}
 
         {working && streamingContent && (
           <div data-testid="text-streaming">
@@ -750,8 +822,44 @@ export default function AgentPage() {
           </button>
         ))}
       </nav>
+
+      <PublishDialog
+        code={publishCode}
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+      />
     </div>
   );
+}
+
+// ---------- Helpers ----------
+
+function extractHtml(content: string): string | null {
+  // Look for triple-backtick code blocks; prefer html/htm fenced
+  const fenceRe = /```(\w+)?\n([\s\S]*?)```/g;
+  const candidates: { lang: string; code: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = fenceRe.exec(content)) !== null) {
+    candidates.push({ lang: (m[1] || "").toLowerCase(), code: m[2] });
+  }
+  // Prefer explicit html block
+  const htmlBlock = candidates.find(c => c.lang === "html" || c.lang === "htm");
+  if (htmlBlock) return htmlBlock.code.trim();
+  // Otherwise any block whose body looks like HTML (contains <html or <!doctype)
+  const looksHtml = candidates.find(c => /<!doctype html|<html\b/i.test(c.code));
+  if (looksHtml) return looksHtml.code.trim();
+  // No fence: maybe the message itself is raw HTML
+  if (/<!doctype html|<html\b/i.test(content)) return content.trim();
+  return null;
+}
+
+function messageHasWebsite(content: string): boolean {
+  return extractHtml(content) !== null;
+}
+
+const PUBLISH_INTENT_RE = /^\s*(please\s+)?(publish|deploy|go\s*live|make\s+(it|this)\s+live|put\s+(it|this)\s+(online|live|on\s+the\s+web)|launch\s+(it|this|the\s+(site|website|app))|ship\s+(it|this))\s*[!.?]*\s*$/i;
+function isPublishIntent(text: string): boolean {
+  return PUBLISH_INTENT_RE.test(text);
 }
 
 // ---------- Sub-components ----------
@@ -794,7 +902,7 @@ function MarkdownText({ text, className }: { text: string; className?: string })
   );
 }
 
-function MessageBlock({ msg }: { msg: AgentMessage }) {
+function MessageBlock({ msg, onPublish }: { msg: AgentMessage; onPublish?: (content: string) => void }) {
   if (msg.role === "user") {
     return (
       <div className="flex flex-col items-end gap-1" data-testid={`message-user-${msg.id}`}>
@@ -817,10 +925,24 @@ function MessageBlock({ msg }: { msg: AgentMessage }) {
     );
   }
 
+  const showPublish = onPublish && messageHasWebsite(msg.content);
   return (
     <div className="space-y-2" data-testid={`message-assistant-${msg.id}`}>
       {msg.actions && msg.actions.length > 0 && <ActionChipsRow actions={msg.actions} />}
       <MarkdownText text={msg.content} />
+      {showPublish && (
+        <div className="pt-1">
+          <Button
+            size="sm"
+            className="h-8 px-3 bg-violet-600 hover:bg-violet-500 text-white gap-1.5"
+            onClick={() => onPublish!(msg.content)}
+            data-testid={`button-publish-message-${msg.id}`}
+          >
+            <Rocket className="w-3.5 h-3.5" />
+            Publish this site
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
