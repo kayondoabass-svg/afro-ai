@@ -996,7 +996,14 @@ app.get('/google/start', async (c) => {
   if (!c.env.GOOGLE_CLIENT_ID) {
     return c.text('Google login is not configured.', 500);
   }
-  const redirectTo = safeRedirect(c.req.query('redirect') || c.env.APP_URL, c.env.APP_URL);
+  // Default the post-login redirect to the SAME origin the user came in on
+  // (e.g. www.afroaigroup.com vs afroaigroup.com). The session cookie is
+  // host-only, so if we always redirected back to the bare apex APP_URL the
+  // user would land on a different host than the cookie was set for and
+  // appear logged out. Mobile Safari typically autocompletes www.* and is
+  // the most common victim of this. APP_URL is still the absolute fallback.
+  const currentOrigin = new URL(c.req.url).origin;
+  const redirectTo = safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin);
   const state = await makeStateToken(c, 'google', redirectTo);
   setCookie(c, STATE_COOKIE, state, {
     path: '/',
@@ -1085,7 +1092,10 @@ app.get('/github/start', async (c) => {
   if (!c.env.GITHUB_CLIENT_ID) {
     return c.text('GitHub login is not configured.', 500);
   }
-  const redirectTo = safeRedirect(c.req.query('redirect') || c.env.APP_URL, c.env.APP_URL);
+  // See note in /google/start — preserve the user's current host so the
+  // host-only session cookie stays valid after the OAuth round-trip.
+  const currentOrigin = new URL(c.req.url).origin;
+  const redirectTo = safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin);
   const state = await makeStateToken(c, 'github', redirectTo);
   setCookie(c, STATE_COOKIE, state, {
     path: '/',
