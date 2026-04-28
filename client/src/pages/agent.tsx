@@ -469,10 +469,28 @@ export default function AgentPage() {
           attachments,
         };
       });
+      // Abort any in-flight generation from the previous conversation so its
+      // streaming chunks don't bleed into the one we're loading.
+      abortRef.current?.abort();
       setMessages(msgs);
       setConversationId(id);
       setHistoryOpen(false);
-      toast({ title: "Loaded conversation" });
+      // Reset composer + queue when switching conversations so the previous
+      // chat's typed-but-unsent prompt (often the URL-based project
+      // description) and queued prompts don't leak into the new context.
+      setInput("");
+      setStreamingContent("");
+      setPendingAttachments([]);
+      setQueue([]);
+      initialDescriptionSentRef.current = true;
+      if (msgs.length === 0) {
+        toast({
+          title: "Empty conversation",
+          description: "No messages yet — type below to start.",
+        });
+      } else {
+        toast({ title: "Loaded conversation", description: `${msgs.length} message${msgs.length === 1 ? "" : "s"}` });
+      }
     } catch (e: any) {
       toast({ title: "Error loading conversation", description: e.message, variant: "destructive" });
     }
@@ -488,9 +506,18 @@ export default function AgentPage() {
       });
       if (res.ok) {
         const conv = await res.json();
+        // Abort any in-flight generation from the prior chat first.
+        abortRef.current?.abort();
         setConversationId(conv.id);
         setMessages([]);
         setQueue([]);
+        // Clear the composer and any in-flight UI so the user gets a truly
+        // blank slate. Without this the previous project description
+        // (set from the URL ?description= param) sticks in the textarea.
+        setInput("");
+        setStreamingContent("");
+        setPendingAttachments([]);
+        initialDescriptionSentRef.current = true;
         refetchConvos();
         toast({ title: "Started new chat" });
       }
