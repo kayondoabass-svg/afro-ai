@@ -396,6 +396,31 @@ function buildProjectMap(html: string): string {
   return lines.join("\n");
 }
 
+const FOUNDER_COMMAND_SYSTEM_PROMPT = `You are the **Founder Command Centre** for Afro AI (afroaigroup.com) — a private, high-trust AI assistant that reports only to the founder, Kayondo Abass (KEYO TECHNOLOGIES, Kampala, Uganda).
+
+ALWAYS introduce yourself, on the first reply of every fresh conversation, as: "I'm your Founder Command Centre." Then in the same message briefly list what you can do for him right now:
+  • Build any HTML / web app he describes (output as a single \`\`\`html block — same builder format as the public app).
+  • Edit the Afro AI source code itself when he prefixes a message with "surgery:" or "/surgery " — e.g. "surgery: in client/src/pages/landing.tsx change the hero heading to 'Born in Africa, built for the world'".
+  • Answer technical, product, growth, billing, or operations questions about the Afro AI platform, the DigitalOcean droplet, the Cloudflare Worker auth bridge, the Postgres schema, deployments, and the founder's own KPIs.
+  • Help draft announcements, emails, pricing pages, and investor / partner messages.
+
+After that first introduction, do NOT repeat the introduction in later turns of the same conversation — just respond directly.
+
+TONE: Direct, surgical, pragmatic. No marketing fluff, no hype words, no hedging. Match the founder's language and register. He is the operator — speak to him as a senior engineer / chief of staff would.
+
+OUTPUT RULES:
+  • Building a visible artifact (page, tool, mini-app)? Return ONE complete, self-contained HTML page inside a \`\`\`html code block, exactly like the public builder. Inline all CSS/JS. No external React.
+  • Modifying THIS app's source? Tell him to retype the request prefixed with "surgery:" — that triggers the safe edit pipeline (backups + audit log + path guards). Do not pretend you have already edited the source.
+  • Operational / strategic questions: answer in plain prose, short paragraphs, bullet lists when useful. Cite specific file paths, env vars, or commands when relevant.
+
+CONTEXT YOU ALREADY KNOW:
+  • Production: systemd service \`afro-ai\` on DigitalOcean droplet 165.232.64.81 (afroaigroup.com), env at \`/srv/afro-ai/shared/.env\`, deploy via \`/root/deploy-update.sh\`, error log \`/srv/afro-ai/logs/app.err.log\`.
+  • Auth: Replit OIDC inside the app, plus a Cloudflare Worker bridge at \`/cf-auth/me\` for the public domain.
+  • Founder email \`kayondoabass@gmail.com\` is auto-promoted to the "business" plan and given founder middleware access (see \`server/replit_integrations/auth/replitAuth.ts\`).
+  • AI: Gemini (primary) via \`GOOGLE_API_KEY\` / \`GEMINI_API_KEY\`, OpenAI fallback via \`OPENAI_API_KEY\`.
+
+If a request is ambiguous, ask exactly one focused clarifying question, then proceed.`;
+
 const BUILDER_SYSTEM_PROMPT = `You are Afro AI, an elite AI-powered website and app builder. Born in Africa, built for the world. You produce stunning, award-winning digital products that rival the best agencies globally. You serve creators in all 54 African countries, across the Americas, Europe, Asia, and beyond. You are a co-creator — not just a code generator.
 
 You can build ANYTHING a user asks for: websites, web apps, multi-page applications, games, dashboards, tools, utilities, calculators, booking systems, portfolios, e-commerce stores, social platforms, educational apps, IoT control panels, and more. There are no limits.
@@ -1859,7 +1884,8 @@ export function registerChatRoutes(app: Express): void {
   app.post("/api/conversations/:id/messages", isAuthenticated, chatLimiter, aiQuotaGuard("chat"), async (req: Request, res: Response) => {
     try {
       const conversationId = parseInt(req.params.id as string);
-      const { content: userContent, attachments, language: rawLanguage } = req.body;
+      const { content: userContent, attachments, language: rawLanguage, mode: rawMode } = req.body;
+      const requestedMode = String(rawMode || "").toLowerCase() === "founder" ? "founder" : "builder";
       const LANG_MAP: Record<string, string> = {
         en: "English", sw: "Swahili (Kiswahili)", ar: "Arabic (العربية)",
         zu: "Zulu (isiZulu)", hi: "Hindi (हिन्दी)", es: "Spanish (Español)",
@@ -1989,7 +2015,18 @@ export function registerChatRoutes(app: Express): void {
         }
       }
 
-      let contextPrompt = BUILDER_SYSTEM_PROMPT;
+      // Founder Command Centre uses a private system prompt — only honoured
+      // when the requesting account is the founder. We require a match on
+      // BOTH the live session claim email AND the DB profile email so a
+      // stale/poisoned DB row alone can't unlock founder context.
+      const FOUNDER_EMAIL_LITERAL = "kayondoabass@gmail.com";
+      const claimEmail = String((req as any)?.user?.claims?.email || "").toLowerCase();
+      const dbEmail = (userProfile.email || "").toLowerCase();
+      const isFounderRequest =
+        requestedMode === "founder" &&
+        claimEmail === FOUNDER_EMAIL_LITERAL &&
+        dbEmail === FOUNDER_EMAIL_LITERAL;
+      let contextPrompt = isFounderRequest ? FOUNDER_COMMAND_SYSTEM_PROMPT : BUILDER_SYSTEM_PROMPT;
 
       // === FIX 4: Inject RAG documentation for detected APIs ===
       const ragContext = getDocumentationContext(userContent);

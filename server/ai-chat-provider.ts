@@ -20,12 +20,19 @@ export interface ChatCompleteResult {
 
 type Provider = "openai" | "gemini";
 
+function geminiKey(): string | undefined {
+  // Accept either env name. GOOGLE_API_KEY is the modern name in
+  // Google AI Studio; GEMINI_API_KEY is the legacy alias still used
+  // throughout the codebase.
+  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+}
+
 function isAvailable(provider: Provider): boolean {
   if (provider === "openai") {
     const key = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
     return Boolean(key && !key.includes("_DUMMY_") && !key.includes("dummy"));
   }
-  return Boolean(process.env.GEMINI_API_KEY);
+  return Boolean(geminiKey());
 }
 
 function makeClient(provider: Provider): { client: OpenAI; model: string } {
@@ -39,7 +46,7 @@ function makeClient(provider: Provider): { client: OpenAI; model: string } {
   }
   return {
     client: new OpenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKey: geminiKey(),
       baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
     }),
     model: process.env.GEMINI_MODEL || "gemini-2.0-flash",

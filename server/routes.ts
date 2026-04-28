@@ -822,7 +822,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "imageBase64 and mimeType are required" });
       }
 
-      if (!process.env.GEMINI_API_KEY) {
+      if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
         return res.status(500).json({ message: "Image analysis service is not configured. Please contact support." });
       }
 
@@ -1760,6 +1760,45 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching admin stats:", error);
       res.status(500).json({ message: "Failed to fetch stats" });
+    }
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Founder Command Center: AI-driven source code surgery.
+  // Two-step flow: propose (AI generates patch plan, returns planId)
+  // then apply (founder confirms by sending planId, server writes files).
+  // Hard guardrails enforced in server/founder-surgery.ts:
+  //   - Only files inside client/src/, client/public/, server/, shared/
+  //   - Auth files, env, package.json, vite/drizzle/tsconfig configs blocked
+  //   - Every replaced file is backed up to .surgery-backups/<ts>/
+  //   - Audit log appended to .surgery-log.jsonl
+  // ────────────────────────────────────────────────────────────────────────
+  app.post("/api/founder/surgery/propose", isFounder, express.json({ limit: "256kb" }), async (req: any, res) => {
+    try {
+      const { proposeSurgery } = await import("./founder-surgery");
+      const instruction = String(req.body?.instruction || "").trim();
+      if (!instruction) return res.status(400).json({ error: "instruction is required" });
+      if (instruction.length > 4000) return res.status(400).json({ error: "instruction too long (max 4000 chars)" });
+      const founderId = req.user?.claims?.sub || req.user?.claims?.id || "founder";
+      const result = await proposeSurgery({ instruction, founderId });
+      res.json(result);
+    } catch (err: any) {
+      console.error("[surgery/propose] error:", err);
+      res.status(500).json({ error: err?.message || "Failed to plan surgery." });
+    }
+  });
+
+  app.post("/api/founder/surgery/apply", isFounder, express.json({ limit: "32kb" }), async (req: any, res) => {
+    try {
+      const { applySurgery } = await import("./founder-surgery");
+      const planId = String(req.body?.planId || "").trim();
+      if (!planId) return res.status(400).json({ error: "planId is required" });
+      const founderId = req.user?.claims?.sub || req.user?.claims?.id || "founder";
+      const result = await applySurgery({ planId, founderId });
+      res.json(result);
+    } catch (err: any) {
+      console.error("[surgery/apply] error:", err);
+      res.status(400).json({ error: err?.message || "Failed to apply surgery." });
     }
   });
 

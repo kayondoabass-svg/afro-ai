@@ -30,6 +30,11 @@ import {
   Smartphone,
   Tablet,
   Monitor,
+  Wrench,
+  FilePlus,
+  FileMinus,
+  FileEdit,
+  ShieldAlert,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -60,6 +65,27 @@ interface CommandMessage {
 }
 
 type PreviewDevice = "desktop" | "tablet" | "phone";
+
+type SurgeryAction = "replace" | "create" | "delete";
+interface SurgeryPlanFile {
+  path: string;
+  action: SurgeryAction;
+  newContent?: string;
+  reason?: string;
+}
+interface SurgeryProposal {
+  planId: string;
+  plan: { summary: string; files: SurgeryPlanFile[] };
+  diffs: { path: string; action: SurgeryAction; before: string; after: string }[];
+  warnings: string[];
+}
+
+const SURGERY_PREFIX_RE = /^\s*(?:\/surgery|surgery\s*:)\s*/i;
+function extractSurgeryInstruction(text: string): string | null {
+  if (!SURGERY_PREFIX_RE.test(text)) return null;
+  const stripped = text.replace(SURGERY_PREFIX_RE, "").trim();
+  return stripped.length > 0 ? stripped : null;
+}
 
 function extractHtmlCode(text: string): string | null {
   const htmlMatch = text.match(/```html\s*\n([\s\S]*?)```/);
@@ -244,6 +270,12 @@ export default function AdminCommandPage() {
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
+  const [surgeryProposal, setSurgeryProposal] = useState<SurgeryProposal | null>(null);
+  const [showSurgeryDialog, setShowSurgeryDialog] = useState(false);
+  const [isSurgeryLoading, setIsSurgeryLoading] = useState(false);
+  const [isApplyingSurgery, setIsApplyingSurgery] = useState(false);
+  const [surgeryResult, setSurgeryResult] = useState<{ applied: any[]; failed: any[]; backupDir: string } | null>(null);
+  const [openDiffPath, setOpenDiffPath] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isFounder = (user as any)?.isFounder === true;
@@ -314,9 +346,88 @@ export default function AdminCommandPage() {
     setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const runSurgery = async (instruction: string, displayMessage: string) => {
+    const userMsg: CommandMessage = {
+      id: Date.now(),
+      role: "user",
+      content: displayMessage,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setIsSurgeryLoading(true);
+    setSurgeryResult(null);
+    try {
+      const res = await fetch("/api/founder/surgery/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ instruction }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Surgery planning failed");
+      const proposal = data as SurgeryProposal;
+      setSurgeryProposal(proposal);
+      setShowSurgeryDialog(true);
+
+      const planMsg: CommandMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: `__SURGERY_PROPOSAL__:${proposal.planId}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, planMsg]);
+    } catch (err: any) {
+      toast({ title: "Surgery failed", description: err.message || "Could not plan the change.", variant: "destructive" });
+      const errMsg: CommandMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: `Sorry — I couldn't plan that change. ${err.message || ""}`.trim(),
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errMsg]);
+    } finally {
+      setIsSurgeryLoading(false);
+    }
+  };
+
+  const handleApplySurgery = async () => {
+    if (!surgeryProposal) return;
+    setIsApplyingSurgery(true);
+    try {
+      const res = await fetch("/api/founder/surgery/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ planId: surgeryProposal.planId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Apply failed");
+      setSurgeryResult(data);
+      const okCount = data.applied?.length || 0;
+      const failCount = data.failed?.length || 0;
+      toast({
+        title: failCount === 0 ? "Surgery applied" : "Applied with warnings",
+        description: `${okCount} file(s) updated${failCount > 0 ? `, ${failCount} failed` : ""}. Backups saved.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Apply failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsApplyingSurgery(false);
+    }
+  };
+
   const handleSend = async () => {
-    if ((!input.trim() && pendingAttachments.length === 0) || isStreaming) return;
-    const userMessage = input.trim() || "Check these attachments";
+    if ((!input.trim() && pendingAttachments.length === 0) || isStreaming || isSurgeryLoading) return;
+
+    const trimmed = input.trim();
+    const surgeryInstruction = extractSurgeryInstruction(trimmed);
+    if (surgeryInstruction) {
+      setInput("");
+      await runSurgery(surgeryInstruction, trimmed);
+      return;
+    }
+
+    const userMessage = trimmed || "Check these attachments";
     const currentAttachments = [...pendingAttachments];
     setInput("");
     setPendingAttachments([]);
@@ -341,6 +452,7 @@ export default function AdminCommandPage() {
         body: JSON.stringify({
           content: userMessage,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+          mode: "founder",
         }),
       });
 
@@ -413,7 +525,33 @@ export default function AdminCommandPage() {
     toast({ title: "Downloaded!" });
   };
 
+  const renderSurgeryCard = () => {
+    if (!surgeryProposal) return null;
+    const fileCount = surgeryProposal.plan.files.length;
+    return (
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <Wrench className="w-4 h-4 text-amber-500" />
+          <span className="text-sm font-semibold text-amber-500">Surgery plan ready</span>
+        </div>
+        <p className="text-sm">{surgeryProposal.plan.summary}</p>
+        {fileCount === 0 ? (
+          <p className="text-xs text-muted-foreground">No editable changes proposed.</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">{fileCount} file(s) will change.</p>
+        )}
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowSurgeryDialog(true)} data-testid="button-review-surgery">
+          <FileEdit className="w-3.5 h-3.5" />
+          Review &amp; apply
+        </Button>
+      </div>
+    );
+  };
+
   const renderMessageContent = (content: string, role: string, attachments?: Attachment[]) => {
+    if (role === "assistant" && content.startsWith("__SURGERY_PROPOSAL__:")) {
+      return renderSurgeryCard();
+    }
     if (role !== "assistant") {
       return (
         <div className="space-y-2">
@@ -740,6 +878,105 @@ export default function AdminCommandPage() {
       {previewCode && (
         <PublishDialog code={previewCode} open={showPublish} onOpenChange={setShowPublish} />
       )}
+
+      <Dialog open={showSurgeryDialog} onOpenChange={(o) => { setShowSurgeryDialog(o); if (!o) setOpenDiffPath(null); }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" data-testid="dialog-surgery-review">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wrench className="w-5 h-5 text-amber-500" />
+              Surgery — review proposed code changes
+            </DialogTitle>
+          </DialogHeader>
+
+          {!surgeryProposal ? (
+            <p className="text-sm text-muted-foreground">No plan loaded.</p>
+          ) : (
+            <div className="flex-1 overflow-auto space-y-3 pr-1">
+              <div className="rounded-md bg-muted p-3 text-sm">
+                <p className="font-medium mb-1">Summary</p>
+                <p className="whitespace-pre-wrap text-muted-foreground">{surgeryProposal.plan.summary}</p>
+              </div>
+
+              {surgeryProposal.warnings.length > 0 && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm space-y-1">
+                  <div className="flex items-center gap-2 text-destructive font-medium">
+                    <ShieldAlert className="w-4 h-4" /> Warnings
+                  </div>
+                  <ul className="list-disc pl-5 text-destructive/90">
+                    {surgeryProposal.warnings.map((w, i) => <li key={i} data-testid={`text-surgery-warning-${i}`}>{w}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Files ({surgeryProposal.plan.files.length})</p>
+                {surgeryProposal.plan.files.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No file changes were proposed.</p>
+                )}
+                {surgeryProposal.plan.files.map((f) => {
+                  const Icon = f.action === "create" ? FilePlus : f.action === "delete" ? FileMinus : FileEdit;
+                  const color = f.action === "create" ? "text-emerald-500" : f.action === "delete" ? "text-red-500" : "text-amber-500";
+                  const isOpen = openDiffPath === f.path;
+                  const diff = surgeryProposal.diffs.find(d => d.path === f.path);
+                  return (
+                    <div key={f.path} className="rounded-md border" data-testid={`row-surgery-file-${f.path}`}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenDiffPath(isOpen ? null : f.path)}
+                        className="w-full flex items-center gap-2 p-2 text-left hover:bg-muted/50"
+                        data-testid={`button-toggle-diff-${f.path}`}
+                      >
+                        <Icon className={`w-4 h-4 ${color}`} />
+                        <span className="text-xs font-mono flex-1 truncate">{f.path}</span>
+                        <span className={`text-[10px] uppercase font-semibold ${color}`}>{f.action}</span>
+                      </button>
+                      {f.reason && <p className="px-2 pb-2 text-xs text-muted-foreground">{f.reason}</p>}
+                      {isOpen && diff && (
+                        <div className="border-t bg-muted/30 p-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono">
+                          <div>
+                            <p className="text-muted-foreground mb-1">Before</p>
+                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all bg-background p-2 rounded border">{diff.before || "(empty / new file)"}</pre>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground mb-1">After</p>
+                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all bg-background p-2 rounded border">{diff.after || "(file will be deleted)"}</pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {surgeryResult && (
+                <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm space-y-1">
+                  <p className="font-medium text-emerald-600 dark:text-emerald-400">Applied</p>
+                  <p className="text-xs text-muted-foreground">Backups saved at <code>{surgeryResult.backupDir}</code></p>
+                  <p className="text-xs">{surgeryResult.applied.length} succeeded, {surgeryResult.failed.length} failed.</p>
+                  <p className="text-xs text-muted-foreground">Redeploy to push these changes to production: <code>git push</code> then run <code>/root/deploy-update.sh</code> on the droplet.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t">
+            <Button variant="outline" onClick={() => setShowSurgeryDialog(false)} data-testid="button-surgery-cancel">
+              {surgeryResult ? "Close" : "Cancel"}
+            </Button>
+            {!surgeryResult && (
+              <Button
+                variant="default"
+                disabled={isApplyingSurgery || !surgeryProposal || surgeryProposal.plan.files.length === 0}
+                onClick={handleApplySurgery}
+                className="gap-1.5"
+                data-testid="button-surgery-apply"
+              >
+                {isApplyingSurgery ? (<><Loader2 className="w-3.5 h-3.5 animate-spin" /> Applying…</>) : (<><Wrench className="w-3.5 h-3.5" /> Apply changes</>)}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
