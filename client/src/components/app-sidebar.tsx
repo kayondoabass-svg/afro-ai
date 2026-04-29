@@ -75,6 +75,7 @@ const ALL_MENU_ITEMS = [
   { title: "SEO Tools", url: "/seo", icon: Search },
   { title: "Webhooks", url: "/webhooks", icon: Zap },
   { title: "Email API", url: "/email-api", icon: Send },
+  { title: "Afro Auth", url: "/dashboard/auth", icon: KeyRound },
   { title: "Chatbot API", url: "/chatbots", icon: Bot },
   { title: "USSD Builder", url: "/ussd", icon: PhoneCall },
   { title: "My USSD Apps", url: "/ussd/apps", icon: Smartphone },

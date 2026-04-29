@@ -76,6 +76,9 @@ const DomainsLandingPage = lazy(() => import("@/pages/domains-landing"));
 const DomainsCheckoutPage = lazy(() => import("@/pages/domains-checkout"));
 const WebsiteBuilderLandingPage = lazy(() => import("@/pages/website-builder-landing"));
 const AppDesignerLandingPage = lazy(() => import("@/pages/app-designer-landing"));
+const AfroAuthLandingPage = lazy(() => import("@/pages/afro-auth-landing"));
+const AfroAuthDashboardPage = lazy(() => import("@/pages/afro-auth-dashboard"));
+const AfroAuthProjectPage = lazy(() => import("@/pages/afro-auth-project"));
 
 function RouteFallback() {
   return (
@@ -147,6 +150,9 @@ function AuthenticatedLayout() {
                 <Route path="/logs" component={ActivityLogsPage} />
                 <Route path="/console" component={ConsolePage} />
                 <Route path="/shell" component={ShellPage} />
+                <Route path="/afro-auth" component={AfroAuthLandingPage} />
+                <Route path="/dashboard/auth/:id" component={AfroAuthProjectPage} />
+                <Route path="/dashboard/auth" component={AfroAuthDashboardPage} />
                 <Route path="/email-api" component={EmailApiPage} />
                 <Route path="/email-audit" component={EmailAuditPage} />
                 <Route path="/partners" component={PartnersPage} />
@@ -208,6 +214,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/ussd-builder": "USSD Builder — Afro AI | Build USSD Apps for African Mobile Networks",
   "/domain-names": "Domain Names — Afro AI | .africa, .co.ke, .ng, .co.za & More",
   "/articles": "Articles — Afro AI",
+  "/afro-auth": "Afro Auth — Login-as-a-Service for African builders | from $5/mo",
+  "/dashboard/auth": "Afro Auth Projects — Afro AI",
 };
 
 function PageTitleUpdater() {
@@ -284,6 +292,7 @@ function AppRouter() {
           <Route path="/business-services" component={BusinessServicesPage} />
           <Route path="/website-builder" component={WebsiteBuilderLandingPage} />
           <Route path="/app-designer" component={AppDesignerLandingPage} />
+          <Route path="/afro-auth" component={AfroAuthLandingPage} />
           <Route path="/domain-names/checkout" component={DomainsCheckoutPage} />
           <Route path="/domain-names" component={DomainsLandingPage} />
           <Route path="/articles/:slug" component={ArticlePage} />

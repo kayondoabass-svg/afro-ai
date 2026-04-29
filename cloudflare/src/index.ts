@@ -56,18 +56,73 @@ const enc = new TextEncoder();
 /* ------------------------------ CORS ------------------------------ */
 app.use('/*', async (c, next) => {
   const origin = c.req.header('Origin');
-  const host = c.env.APP_URL.replace(/^https?:\/\//, '');
-  const allowed = new Set([
-    c.env.APP_URL,
-    `https://www.${host}`,
-    `https://${host}`,
-  ]);
-  if (origin && allowed.has(origin)) {
-    c.header('Access-Control-Allow-Origin', origin);
-    c.header('Access-Control-Allow-Credentials', 'true');
-    c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    c.header('Access-Control-Allow-Headers', 'Content-Type');
-    c.header('Vary', 'Origin');
+  const path = c.req.path;
+  // Afro Auth product surfaces (tenant end-user auth + Management API non-admin
+  // calls) are called from ARBITRARY customer domains, so we mirror the
+  // request Origin and explicitly opt OUT of credentials (no cookies — clients
+  // pass the JWT as `Authorization: Bearer <token>` instead, which is safe to
+  // share across origins).
+  const isTenantSlugApi = path.startsWith('/cf-auth/t/');
+  const isV1PublicApi =
+    path.startsWith('/cf-auth/v1/') && !path.startsWith('/cf-auth/v1/admin');
+  if (isTenantSlugApi) {
+    // Extract slug from /cf-auth/t/:slug/...
+    const slugMatch = path.match(/^\/cf-auth\/t\/([^/]+)/);
+    const slug = slugMatch ? slugMatch[1] : null;
+    let allowOrigin = false;
+    if (slug && origin) {
+      try {
+        const t = await c.env.DB.prepare(
+          'SELECT allowed_origins FROM tenants WHERE slug = ?',
+        )
+          .bind(slug)
+          .first<{ allowed_origins: string | null }>();
+        if (t) {
+          const list = (t.allowed_origins || '')
+            .split(/[\s,]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          // If no origins configured, allow any (dev-friendly default).
+          // If configured, strict allowlist match required.
+          if (list.length === 0 || list.includes(origin)) {
+            allowOrigin = true;
+          }
+        }
+      } catch {
+        // On lookup failure, be conservative and skip origin header.
+      }
+    }
+    if (allowOrigin && origin) {
+      c.header('Access-Control-Allow-Origin', origin);
+      c.header('Access-Control-Allow-Credentials', 'false');
+      c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      c.header('Vary', 'Origin');
+    }
+  } else if (isV1PublicApi) {
+    // Server-to-server Bearer API. Mirror Origin permissively (auth is via
+    // sk_live_ key, not cookies).
+    if (origin) {
+      c.header('Access-Control-Allow-Origin', origin);
+      c.header('Access-Control-Allow-Credentials', 'false');
+      c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      c.header('Vary', 'Origin');
+    }
+  } else {
+    const host = c.env.APP_URL.replace(/^https?:\/\//, '');
+    const allowed = new Set([
+      c.env.APP_URL,
+      `https://www.${host}`,
+      `https://${host}`,
+    ]);
+    if (origin && allowed.has(origin)) {
+      c.header('Access-Control-Allow-Origin', origin);
+      c.header('Access-Control-Allow-Credentials', 'true');
+      c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'Content-Type');
+      c.header('Vary', 'Origin');
+    }
   }
   if (c.req.method === 'OPTIONS') return c.body(null, 204);
   await next();
@@ -477,7 +532,9 @@ app.post('/signup', async (c) => {
     return c.json({ message: 'Captcha check failed. Please try again.' }, 400);
   }
 
-  const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE tenant_id = 'platform' AND email = ?",
+  )
     .bind(email)
     .first();
   if (existing) {
@@ -490,7 +547,7 @@ app.post('/signup', async (c) => {
   const hash = await hashPassword(password);
   const ts = nowSec();
   await c.env.DB.prepare(
-    'INSERT INTO users (id, email, password_hash, first_name, last_name, email_verified, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)',
+    "INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, email_verified, plan, created_at, updated_at) VALUES (?, 'platform', ?, ?, ?, ?, 0, ?, ?, ?)",
   )
     .bind(id, email, hash, firstName || null, lastName || null, 'free', ts, ts)
     .run();
@@ -532,7 +589,7 @@ app.post('/login', async (c) => {
   }
 
   const user = await c.env.DB.prepare(
-    'SELECT id, password_hash, first_name, last_name, profile_image_url, plan FROM users WHERE email = ?',
+    "SELECT id, password_hash, first_name, last_name, profile_image_url, plan FROM users WHERE tenant_id = 'platform' AND email = ?",
   )
     .bind(email)
     .first<{
@@ -714,7 +771,9 @@ app.post('/forgot-password', async (c) => {
   await recordThrottleFailure(c.env.DB, ipKey, now);
   await recordThrottleFailure(c.env.DB, emailKey, now);
 
-  const user = await c.env.DB.prepare('SELECT id, first_name FROM users WHERE email = ?')
+  const user = await c.env.DB.prepare(
+    "SELECT id, first_name FROM users WHERE tenant_id = 'platform' AND email = ?",
+  )
     .bind(email)
     .first<{ id: string; first_name: string | null }>();
   if (!user) return c.json({ ok: true });
@@ -772,7 +831,7 @@ app.post('/admin/mint-reset-token', async (c) => {
   if (!isValidEmail(email)) return c.json({ message: 'Invalid email.' }, 400);
 
   const user = await c.env.DB.prepare(
-    'SELECT id, first_name FROM users WHERE email = ?',
+    "SELECT id, first_name FROM users WHERE tenant_id = 'platform' AND email = ?",
   )
     .bind(email)
     .first<{ id: string; first_name: string | null }>();
@@ -925,7 +984,7 @@ async function upsertOAuthUser(
   const ts = nowSec();
   const normalisedEmail = email.toLowerCase();
   const existing = await db
-    .prepare('SELECT id FROM users WHERE email = ?')
+    .prepare("SELECT id FROM users WHERE tenant_id = 'platform' AND email = ?")
     .bind(normalisedEmail)
     .first<{ id: string }>();
 
@@ -936,7 +995,7 @@ async function upsertOAuthUser(
     userId = uuid();
     await db
       .prepare(
-        'INSERT INTO users (id, email, first_name, last_name, profile_image_url, email_verified, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)',
+        "INSERT INTO users (id, tenant_id, email, first_name, last_name, profile_image_url, email_verified, plan, created_at, updated_at) VALUES (?, 'platform', ?, ?, ?, ?, 1, ?, ?, ?)",
       )
       .bind(
         userId,
@@ -1205,6 +1264,521 @@ app.get('/github/callback', async (c) => {
   );
   await issueSession(c, userId);
   return c.redirect(state.redirect);
+});
+
+/* ============================================================================
+ * AFRO AUTH — Multi-tenant Login-as-a-Service
+ * ============================================================================
+ *
+ * Three surfaces:
+ *
+ *   1. Admin API   /cf-auth/v1/admin/*
+ *      Same-origin only. Authenticated by the platform user's afroai_session
+ *      cookie. Used by the React dashboard at afroaigroup.com/dashboard/auth
+ *      to manage the customer's own tenants, API keys, and users.
+ *
+ *   2. Management API   /cf-auth/v1/*
+ *      CORS-permissive. Authenticated by the customer's secret API key
+ *      (`Authorization: Bearer sk_live_...`). Called from the customer's
+ *      backend to verify session tokens and read user data.
+ *
+ *   3. Public tenant API   /cf-auth/t/:slug/*
+ *      CORS-permissive. Unauthenticated (the slug identifies the tenant).
+ *      Called from the customer's frontend to sign users up and log them in.
+ *      Returns short-lived JWTs that the customer's app then verifies via
+ *      the Management API (or by sharing the JWT with their own backend).
+ * ========================================================================= */
+
+interface TenantRow {
+  id: string;
+  slug: string;
+  name: string;
+  owner_user_id: string | null;
+  plan: string;
+  allowed_origins: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+const PLAN_MAU_LIMITS: Record<string, number> = {
+  free: 5_000,
+  builder: 25_000,
+  business: 100_000,
+  scale: 500_000,
+};
+
+function genId(prefix: string): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  const b64 = btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '')
+    .replace(/\//g, '')
+    .replace(/=/g, '');
+  return `${prefix}${b64}`;
+}
+
+function genSlug(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  const suffix = genId('').slice(0, 6).toLowerCase();
+  return base ? `${base}-${suffix}` : `app-${suffix}`;
+}
+
+function periodKey(now: number): string {
+  const d = new Date(now * 1000);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+async function findTenantBySlug(db: D1Database, slug: string): Promise<TenantRow | null> {
+  return db
+    .prepare('SELECT * FROM tenants WHERE slug = ?')
+    .bind(slug)
+    .first<TenantRow>();
+}
+
+async function findTenantById(db: D1Database, id: string): Promise<TenantRow | null> {
+  return db.prepare('SELECT * FROM tenants WHERE id = ?').bind(id).first<TenantRow>();
+}
+
+/** Authenticate via `Authorization: Bearer sk_live_...` and return the
+ *  owning tenant. Updates `last_used_at` (best effort). */
+async function authenticateBySecretKey(c: any): Promise<TenantRow | null> {
+  const auth = c.req.header('authorization') || '';
+  const raw = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!raw.startsWith('sk_live_')) return null;
+  // Look up all keys for this secret format. Secrets aren't queryable directly
+  // (we only store the hash), so we hash the input and compare. Since we
+  // always use the same PBKDF2 params and a deterministic-ish KDF for keys
+  // (no per-row salt — keys are 144 bits of entropy, brute force not viable),
+  // a single SHA-256 lookup is enough.
+  const hash = await sha256Hex(raw);
+  const row = await c.env.DB.prepare(
+    'SELECT id, tenant_id FROM api_keys WHERE secret_hash = ? AND revoked_at IS NULL',
+  )
+    .bind(hash)
+    .first<{ id: string; tenant_id: string }>();
+  if (!row) return null;
+  c.executionCtx?.waitUntil(
+    c.env.DB.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?')
+      .bind(nowSec(), row.id)
+      .run()
+      .catch(() => {}),
+  );
+  return findTenantById(c.env.DB, row.tenant_id);
+}
+
+/** Authenticate the platform user (afroaigroup.com signed-in user). */
+async function authenticatePlatformUser(c: any): Promise<{ id: string; email: string } | null> {
+  const userId = await getCurrentUserId(c);
+  if (!userId) return null;
+  const row = await c.env.DB.prepare(
+    "SELECT id, email FROM users WHERE id = ? AND tenant_id = 'platform'",
+  )
+    .bind(userId)
+    .first<{ id: string; email: string }>();
+  return row || null;
+}
+
+/** Issue a JWT for a tenant end-user. No cookie — token is returned in body. */
+async function issueTenantSession(c: any, tenantId: string, userId: string): Promise<string> {
+  const secret = enc.encode(c.env.JWT_SECRET);
+  return await new SignJWT({ sub: userId, tid: tenantId, kind: 'afro_auth' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('30d')
+    .sign(secret);
+}
+
+async function verifyTenantSession(
+  c: any,
+  token: string,
+): Promise<{ userId: string; tenantId: string } | null> {
+  try {
+    const { payload } = await jwtVerify(token, enc.encode(c.env.JWT_SECRET));
+    if (payload.kind !== 'afro_auth') return null;
+    return { userId: String(payload.sub), tenantId: String(payload.tid) };
+  } catch {
+    return null;
+  }
+}
+
+/** Best-effort MAU tracking. Inserts (or no-ops) into tenant_user_activity
+ *  and increments the per-tenant counter atomically the first time we see
+ *  this user in this period. */
+async function recordTenantMau(
+  db: D1Database,
+  tenantId: string,
+  userId: string,
+  now: number,
+): Promise<void> {
+  const period = periodKey(now);
+  const inserted = await db
+    .prepare(
+      'INSERT OR IGNORE INTO tenant_user_activity (tenant_id, user_id, period, seen_at) VALUES (?, ?, ?, ?)',
+    )
+    .bind(tenantId, userId, period, now)
+    .run();
+  if (inserted.meta && inserted.meta.changes && inserted.meta.changes > 0) {
+    await db
+      .prepare(
+        'INSERT INTO tenant_usage (tenant_id, period, mau_count) VALUES (?, ?, 1) ' +
+          'ON CONFLICT (tenant_id, period) DO UPDATE SET mau_count = mau_count + 1',
+      )
+      .bind(tenantId, period)
+      .run();
+  }
+}
+
+async function getTenantMauThisMonth(db: D1Database, tenantId: string, now: number): Promise<number> {
+  const row = await db
+    .prepare('SELECT mau_count FROM tenant_usage WHERE tenant_id = ? AND period = ?')
+    .bind(tenantId, periodKey(now))
+    .first<{ mau_count: number }>();
+  return row?.mau_count || 0;
+}
+
+/* --------------------------- Admin API (dashboard) --------------------------- */
+
+// All /v1/admin/* routes require the caller to be a logged-in platform user
+// AND own the tenant they're acting on (except create + list).
+
+app.post('/v1/admin/tenants', async (c) => {
+  const platformUser = await authenticatePlatformUser(c);
+  if (!platformUser) return c.json({ message: 'Sign in first.' }, 401);
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const name = String(body.name || '').trim().slice(0, 80);
+  if (!name) return c.json({ message: 'Project name is required.' }, 400);
+
+  const id = genId('tnt_');
+  const slug = genSlug(name);
+  const ts = nowSec();
+  await c.env.DB.prepare(
+    'INSERT INTO tenants (id, slug, name, owner_user_id, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  )
+    .bind(id, slug, name, platformUser.id, 'free', ts, ts)
+    .run();
+  return c.json({ id, slug, name, plan: 'free', created_at: ts });
+});
+
+app.get('/v1/admin/tenants', async (c) => {
+  const platformUser = await authenticatePlatformUser(c);
+  if (!platformUser) return c.json({ message: 'Sign in first.' }, 401);
+  const rows = await c.env.DB.prepare(
+    'SELECT id, slug, name, plan, created_at FROM tenants WHERE owner_user_id = ? ORDER BY created_at DESC',
+  )
+    .bind(platformUser.id)
+    .all<{ id: string; slug: string; name: string; plan: string; created_at: number }>();
+  return c.json({ tenants: rows.results || [] });
+});
+
+/** Helper used by all per-tenant admin routes to enforce ownership. */
+async function ownedTenantOr401(
+  c: any,
+  tenantId: string,
+): Promise<TenantRow | Response> {
+  const platformUser = await authenticatePlatformUser(c);
+  if (!platformUser) return c.json({ message: 'Sign in first.' }, 401);
+  const tenant = await findTenantById(c.env.DB, tenantId);
+  if (!tenant || tenant.owner_user_id !== platformUser.id) {
+    return c.json({ message: 'Project not found.' }, 404);
+  }
+  return tenant;
+}
+
+app.get('/v1/admin/tenants/:id', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  const now = nowSec();
+  const mau = await getTenantMauThisMonth(c.env.DB, r.id, now);
+  const userCount = await c.env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM users WHERE tenant_id = ?',
+  )
+    .bind(r.id)
+    .first<{ n: number }>();
+  const keys = await c.env.DB.prepare(
+    'SELECT id, public_key, secret_preview, label, last_used_at, revoked_at, created_at FROM api_keys WHERE tenant_id = ? ORDER BY created_at DESC',
+  )
+    .bind(r.id)
+    .all();
+  return c.json({
+    tenant: r,
+    stats: {
+      mau,
+      mauLimit: PLAN_MAU_LIMITS[r.plan] || PLAN_MAU_LIMITS.free,
+      totalUsers: userCount?.n || 0,
+    },
+    keys: keys.results || [],
+  });
+});
+
+app.patch('/v1/admin/tenants/:id', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const updates: string[] = [];
+  const values: any[] = [];
+  if (typeof body.name === 'string') {
+    updates.push('name = ?');
+    values.push(body.name.slice(0, 80));
+  }
+  if (Array.isArray(body.allowed_origins)) {
+    updates.push('allowed_origins = ?');
+    values.push(JSON.stringify(body.allowed_origins.slice(0, 10).map(String)));
+  }
+  if (!updates.length) return c.json({ ok: true });
+  updates.push('updated_at = ?');
+  values.push(nowSec());
+  values.push(r.id);
+  await c.env.DB.prepare(`UPDATE tenants SET ${updates.join(', ')} WHERE id = ?`)
+    .bind(...values)
+    .run();
+  return c.json({ ok: true });
+});
+
+app.post('/v1/admin/tenants/:id/keys', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* label optional */ }
+  const label = String(body?.label || 'production').slice(0, 40);
+
+  const publicKey = genId('pub_live_');
+  const secretKey = genId('sk_live_');
+  const secretHash = await sha256Hex(secretKey);
+  const secretPreview = secretKey.slice(0, 14) + '…';
+  const id = genId('key_');
+  const ts = nowSec();
+
+  await c.env.DB.prepare(
+    'INSERT INTO api_keys (id, tenant_id, public_key, secret_hash, secret_preview, label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  )
+    .bind(id, r.id, publicKey, secretHash, secretPreview, label, ts)
+    .run();
+
+  // The plaintext secret is returned EXACTLY ONCE. The frontend must show it
+  // in a "copy now" modal — we never see it again.
+  return c.json({
+    id,
+    public_key: publicKey,
+    secret_key: secretKey,
+    secret_preview: secretPreview,
+    label,
+    created_at: ts,
+  });
+});
+
+app.delete('/v1/admin/tenants/:id/keys/:keyId', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  await c.env.DB.prepare(
+    'UPDATE api_keys SET revoked_at = ? WHERE id = ? AND tenant_id = ?',
+  )
+    .bind(nowSec(), c.req.param('keyId'), r.id)
+    .run();
+  return c.json({ ok: true });
+});
+
+app.get('/v1/admin/tenants/:id/users', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  const limit = Math.min(parseInt(c.req.query('limit') || '50', 10) || 50, 200);
+  const rows = await c.env.DB.prepare(
+    'SELECT id, email, first_name, last_name, email_verified, created_at FROM users WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?',
+  )
+    .bind(r.id, limit)
+    .all();
+  return c.json({ users: rows.results || [] });
+});
+
+/* --------------------------- Management API (sk_live_) --------------------------- */
+
+app.post('/v1/sessions/verify', async (c) => {
+  const tenant = await authenticateBySecretKey(c);
+  if (!tenant) return c.json({ message: 'Invalid or missing API key.' }, 401);
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const token = String(body.token || '');
+  const session = await verifyTenantSession(c, token);
+  if (!session) return c.json({ valid: false }, 200);
+  if (session.tenantId !== tenant.id) return c.json({ valid: false }, 200);
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, first_name, last_name, profile_image_url, email_verified, created_at FROM users WHERE id = ? AND tenant_id = ?',
+  )
+    .bind(session.userId, tenant.id)
+    .first();
+  if (!user) return c.json({ valid: false }, 200);
+  return c.json({ valid: true, user });
+});
+
+app.get('/v1/users', async (c) => {
+  const tenant = await authenticateBySecretKey(c);
+  if (!tenant) return c.json({ message: 'Invalid or missing API key.' }, 401);
+  const limit = Math.min(parseInt(c.req.query('limit') || '50', 10) || 50, 200);
+  const rows = await c.env.DB.prepare(
+    'SELECT id, email, first_name, last_name, email_verified, created_at FROM users WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?',
+  )
+    .bind(tenant.id, limit)
+    .all();
+  return c.json({ users: rows.results || [] });
+});
+
+app.get('/v1/users/:id', async (c) => {
+  const tenant = await authenticateBySecretKey(c);
+  if (!tenant) return c.json({ message: 'Invalid or missing API key.' }, 401);
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, first_name, last_name, profile_image_url, email_verified, created_at FROM users WHERE id = ? AND tenant_id = ?',
+  )
+    .bind(c.req.param('id'), tenant.id)
+    .first();
+  if (!user) return c.json({ message: 'User not found.' }, 404);
+  return c.json({ user });
+});
+
+/* --------------------------- Public tenant API (slug) --------------------------- */
+
+app.post('/t/:slug/signup', async (c) => {
+  const tenant = await findTenantBySlug(c.env.DB, c.req.param('slug'));
+  if (!tenant || tenant.id === 'platform') {
+    return c.json({ message: 'Project not found.' }, 404);
+  }
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  const firstName = String(body.firstName || '').trim().slice(0, 60);
+  const lastName = String(body.lastName || '').trim().slice(0, 60);
+
+  if (!isValidEmail(email)) return c.json({ message: 'Please enter a valid email.' }, 400);
+  if (password.length < 6) return c.json({ message: 'Password must be at least 6 characters.' }, 400);
+
+  // Per-tenant + per-IP throttle
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `tsignup:${tenant.id}:ip:${ip}`;
+  const emailKey = `tsignup:${tenant.id}:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_signup');
+
+  // MAU enforcement before creating new accounts
+  const mauLimit = PLAN_MAU_LIMITS[tenant.plan] || PLAN_MAU_LIMITS.free;
+  const currentMau = await getTenantMauThisMonth(c.env.DB, tenant.id, now);
+  if (currentMau >= mauLimit) {
+    return c.json(
+      { message: 'This app has reached its monthly active-user limit. Contact the project owner.', code: 'mau_limit' },
+      402,
+    );
+  }
+
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE tenant_id = ? AND email = ?',
+  )
+    .bind(tenant.id, email)
+    .first();
+  if (existing) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    return c.json({ message: 'An account with this email already exists.' }, 409);
+  }
+
+  const id = genId('usr_');
+  const hash = await hashPassword(password);
+  const ts = nowSec();
+  await c.env.DB.prepare(
+    'INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, email_verified, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)',
+  )
+    .bind(id, tenant.id, email, hash, firstName || null, lastName || null, 'free', ts, ts)
+    .run();
+  await recordTenantMau(c.env.DB, tenant.id, id, now);
+
+  const token = await issueTenantSession(c, tenant.id, id);
+  return c.json({
+    token,
+    user: { id, email, firstName, lastName, email_verified: 0 },
+  });
+});
+
+app.post('/t/:slug/login', async (c) => {
+  const tenant = await findTenantBySlug(c.env.DB, c.req.param('slug'));
+  if (!tenant || tenant.id === 'platform') {
+    return c.json({ message: 'Project not found.' }, 404);
+  }
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (!isValidEmail(email) || !password) {
+    return c.json({ message: 'Please enter your email and password.' }, 400);
+  }
+
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `tlogin:${tenant.id}:ip:${ip}`;
+  const emailKey = `tlogin:${tenant.id}:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_login');
+
+  const user = await c.env.DB.prepare(
+    'SELECT id, password_hash, first_name, last_name, profile_image_url FROM users WHERE tenant_id = ? AND email = ?',
+  )
+    .bind(tenant.id, email)
+    .first<{
+      id: string;
+      password_hash: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      profile_image_url: string | null;
+    }>();
+  if (!user || !user.password_hash) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'Wrong email or password.' }, 401);
+  }
+  const ok = await verifyPassword(password, user.password_hash);
+  if (!ok) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'Wrong email or password.' }, 401);
+  }
+  await clearThrottle(c.env.DB, ipKey);
+  await clearThrottle(c.env.DB, emailKey);
+  await recordTenantMau(c.env.DB, tenant.id, user.id, now);
+
+  const token = await issueTenantSession(c, tenant.id, user.id);
+  return c.json({
+    token,
+    user: {
+      id: user.id,
+      email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      profileImageUrl: user.profile_image_url,
+    },
+  });
+});
+
+app.get('/t/:slug/me', async (c) => {
+  const tenant = await findTenantBySlug(c.env.DB, c.req.param('slug'));
+  if (!tenant || tenant.id === 'platform') {
+    return c.json({ message: 'Project not found.' }, 404);
+  }
+  const auth = c.req.header('authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token) return c.json({ user: null });
+  const session = await verifyTenantSession(c, token);
+  if (!session || session.tenantId !== tenant.id) return c.json({ user: null });
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, first_name AS firstName, last_name AS lastName, profile_image_url AS profileImageUrl, email_verified FROM users WHERE id = ? AND tenant_id = ?',
+  )
+    .bind(session.userId, tenant.id)
+    .first();
+  return c.json({ user: user || null });
 });
 
 /* ------------------------------ Scheduled cleanup ------------------------------
