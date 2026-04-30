@@ -1,4 +1,4 @@
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { useEffect, lazy, Suspense } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -238,9 +238,84 @@ function PageTitleUpdater() {
   return null;
 }
 
+// Paths that ONLY make sense for a signed-in user. If a logged-out visitor
+// lands on one of these (typically because their session cookie was lost in
+// transit on a mobile browser, or because they hit a deep link cold), we
+// must NOT silently render the marketing landing page — that's the "ends at
+// /chat but shows the homepage" bug. Instead we send them to /login with
+// the original destination preserved so they bounce back into the right
+// page after signing in.
+const AUTH_REQUIRED_EXACT = new Set<string>([
+  "/dashboard",
+  "/chat",
+  "/agent",
+  "/chat-classic",
+  "/deployments",
+  "/founder",
+  "/team",
+  "/admin-command",
+  "/referrals",
+  "/settings",
+  "/billing",
+  "/forms",
+  "/builder",
+  "/email",
+  "/analytics",
+  "/pwa",
+  "/collaborate",
+  "/domains",
+  "/integrations",
+  "/seo",
+  "/webhooks",
+  "/chatbots",
+  "/files",
+  "/ussd",
+  "/ussd/apps",
+  "/playground",
+  "/overview",
+  "/secrets",
+  "/d1",
+  "/logs",
+  "/console",
+  "/shell",
+  "/email-api",
+  "/email-audit",
+]);
+// Normalised prefixes (no trailing slash). A path matches if it equals the
+// prefix exactly OR sits inside the prefix as a child segment — never as an
+// unrelated namespace like `/dashboard/authentication`.
+const AUTH_REQUIRED_PREFIXES = ["/preview", "/dashboard/auth"];
+
+function isAuthRequiredPath(p: string): boolean {
+  if (AUTH_REQUIRED_EXACT.has(p)) return true;
+  return AUTH_REQUIRED_PREFIXES.some(
+    (pref) => p === pref || p.startsWith(pref + "/"),
+  );
+}
+
+/**
+ * Renders <Redirect to="/login" /> after persisting the original destination
+ * in sessionStorage. Doing the write inside an effect (instead of inline
+ * during render) keeps things clean under React StrictMode / concurrent
+ * rendering, where the render fn can run more than once for a single commit.
+ */
+function LoginRedirectGuard({ from }: { from: string }) {
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        "after_login_redirect",
+        from + (typeof window !== "undefined" ? window.location.search : ""),
+      );
+    } catch {
+      /* sessionStorage unavailable (private mode etc.) — proceed anyway */
+    }
+  }, [from]);
+  return <Redirect to="/login" />;
+}
+
 function AppRouter() {
   const { user, isLoading } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { toast } = useToast();
 
   // After login, redirect back to chatbot checkout if a plan was pending
@@ -342,6 +417,15 @@ function AppRouter() {
   }
 
   if (!user) {
+    // Hard guard for protected routes: a logged-out visitor on /chat,
+    // /dashboard, /settings, etc. used to silently fall through to the
+    // marketing LandingPage below — that's the "ends at /chat but shows the
+    // homepage" bug on mobile when the session cookie was lost in transit.
+    // Send them to /login and remember where they were trying to go so they
+    // bounce back into the right page after signing in.
+    if (isAuthRequiredPath(location)) {
+      return <LoginRedirectGuard from={location} />;
+    }
     return (
       <Suspense fallback={<RouteFallback />}>
         <Switch>
