@@ -253,11 +253,22 @@ async function issueSession(c: any, userId: string) {
     .setIssuedAt()
     .setExpirationTime('30d')
     .sign(secret);
-  // Intentionally host-only (no `domain` attribute). A broad `.afroaigroup.com`
-  // cookie would be sent to ANY subdomain — including untrusted or future
-  // user-published subdomains — which is a session-hijack vector. The cookie
-  // is only valid on the exact origin that issued it (afroaigroup.com).
+  // Cookie is scoped to the whole afroaigroup.com domain (apex + every
+  // subdomain). This is required because mobile browsers and some upstream
+  // CDN/DNS rules can flip a user between `afroaigroup.com` and
+  // `www.afroaigroup.com` mid-session — a host-only cookie set on one host
+  // would be invisible on the other and the user would silently appear
+  // logged-out (the "mobile login bounce" bug). The Worker reads the scope
+  // from `COOKIE_DOMAIN` (set in wrangler.toml) so it can be tightened
+  // without a code change.
+  //
+  // SECURITY NOTE: this cookie is now sent to every *.afroaigroup.com
+  // subdomain. Do NOT host untrusted user content on a subdomain of
+  // afroaigroup.com without first revisiting this scoping (use a separate
+  // domain like *.afroai.app instead, or scope the cookie back to host-only
+  // and fix the host-flip at the edge).
   setCookie(c, 'afroai_session', token, {
+    domain: c.env.COOKIE_DOMAIN || 'afroaigroup.com',
     path: '/',
     secure: true,
     httpOnly: true,
@@ -649,7 +660,13 @@ app.post('/login', async (c) => {
 });
 
 app.post('/logout', async (c) => {
-  deleteCookie(c, 'afroai_session', { path: '/' });
+  // Must match the domain/path used when the cookie was issued — otherwise
+  // the browser keeps the cookie and the user stays "logged in" after they
+  // tap Sign out. See setSessionCookie above for the matching scope.
+  deleteCookie(c, 'afroai_session', {
+    domain: c.env.COOKIE_DOMAIN || 'afroaigroup.com',
+    path: '/',
+  });
   return c.json({ ok: true });
 });
 
