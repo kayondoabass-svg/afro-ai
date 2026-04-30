@@ -8,6 +8,30 @@ import { securityHeaders } from "./security";
 import { storage } from "./storage";
 
 const app = express();
+
+// Required so `req.hostname` reflects the original Host header / X-Forwarded-Host
+// when Express is behind Cloudflare (or any other reverse proxy). Without this,
+// Express only sees the upstream proxy's Host and the www-detection below would
+// silently no-op in production.
+app.set("trust proxy", true);
+
+// ── www → apex 301 redirect ──────────────────────────────────────────────────
+// Mobile browsers, DNS auto-completion, and various CDN canonicalisation rules
+// can send a user to `www.afroaigroup.com` instead of the canonical apex
+// `afroaigroup.com`. Even though our session cookie is now scoped to the whole
+// domain, having two valid hosts causes secondary problems (duplicate cookies
+// from older sessions, OAuth callback URL mismatches, SEO duplicate-content
+// signals). Force everyone to apex at the very edge of the request pipeline so
+// downstream middleware never has to think about it. This runs BEFORE any other
+// middleware so we don't waste cycles setting security headers / CORS / etc on
+// what's about to be a 301.
+app.use((req, res, next) => {
+  if (req.hostname === "www.afroaigroup.com") {
+    return res.redirect(301, `https://afroaigroup.com${req.originalUrl}`);
+  }
+  next();
+});
+
 const httpServer = createServer(app);
 
 app.use(compression());
