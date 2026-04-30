@@ -73,7 +73,21 @@ export default function LoginPage() {
     // Default to /chat (the main product surface) rather than "/" so users
     // see proof of being logged in instead of bouncing back to the marketing
     // landing page.
-    window.location.href = stored && stored.startsWith("/") ? stored : "/chat";
+    const dest = stored && stored.startsWith("/") ? stored : "/chat";
+    // Drop a short-lived marker so the next page load can tell the difference
+    // between "user never logged in" and "user logged in but the cookie didn't
+    // survive the redirect" (the bug where mobile users get bounced back to
+    // the home page). AppRouter reads this on boot and shows a friendly
+    // banner + reports it to the server so we can monitor it.
+    try {
+      sessionStorage.setItem(
+        "auth_just_succeeded",
+        JSON.stringify({ at: Date.now(), to: dest }),
+      );
+    } catch {
+      /* sessionStorage unavailable (private mode etc.) — proceed anyway */
+    }
+    window.location.href = dest;
   }
 
   async function handleEmailLogin(e: React.FormEvent) {
@@ -206,9 +220,21 @@ export default function LoginPage() {
     // same page as the email/password flow (sanitized server-side).
     const stored = sessionStorage.getItem("after_login_redirect");
     let url = `${AUTH_BASE}/${provider}/start`;
+    const dest = stored && stored.startsWith("/") ? stored : "/chat";
     if (stored && stored.startsWith("/")) {
       const target = `${window.location.origin}${stored}`;
       url += `?redirect=${encodeURIComponent(target)}`;
+    }
+    // Same "login didn't stick" marker as the email/password flow — sessionStorage
+    // is per-tab so it survives the round-trip to Google/GitHub and back, letting
+    // AppRouter detect a dropped cookie on the way home from OAuth too.
+    try {
+      sessionStorage.setItem(
+        "auth_just_succeeded",
+        JSON.stringify({ at: Date.now(), to: dest }),
+      );
+    } catch {
+      /* sessionStorage unavailable — proceed anyway */
     }
     window.location.href = url;
   }

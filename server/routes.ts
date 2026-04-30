@@ -98,6 +98,32 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use("/uploads", express.static(uploadDir));
 
+  // ── Login-bounce diagnostics ───────────────────────────────────────────────
+  // Fired by the React app when it boots up with NO active session despite
+  // having a fresh "I just logged in" marker. That means the session cookie
+  // was lost between the login response and the next page load — typically
+  // a host-only cookie dropped by an apex/www canonical redirect on certain
+  // mobile browsers. Surfaces in server logs so the team can monitor the
+  // rate of these events after the canonical-host fix in client/src/main.tsx.
+  // No DB write, no PII beyond the user-agent the browser already sends.
+  app.post("/api/_diagnostics/login-bounce", express.json({ limit: "4kb" }), (req, res) => {
+    try {
+      const body = (req.body || {}) as Record<string, unknown>;
+      const at = typeof body.at === "number" ? new Date(body.at).toISOString() : "unknown";
+      const host = String(body.host || "unknown").slice(0, 80);
+      const path = String(body.path || "unknown").slice(0, 120);
+      const to = body.to ? String(body.to).slice(0, 120) : "(none)";
+      const ua = String(body.ua || req.headers["user-agent"] || "unknown").slice(0, 200);
+      const referrer = body.referrer ? String(body.referrer).slice(0, 200) : "(none)";
+      console.warn(
+        `[login-bounce] cookie lost after login — host=${host} landed=${path} intended=${to} at=${at} ref=${referrer} ua="${ua}"`,
+      );
+    } catch {
+      /* never throw — diagnostics must not break the page */
+    }
+    res.status(204).end();
+  });
+
   // ── Internal SES proxy for the Cloudflare Worker (cf-auth) ──────────────
   // The Worker forwards transactional mail (password resets, etc.) here so
   // every outgoing message goes through the same SES domain identity. Auth

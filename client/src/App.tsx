@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageProvider } from "@/hooks/use-language";
 import { LanguageSelector } from "@/components/language-selector";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -240,6 +241,7 @@ function PageTitleUpdater() {
 function AppRouter() {
   const { user, isLoading } = useAuth();
   const [, navigate] = useLocation();
+  const { toast } = useToast();
 
   // After login, redirect back to chatbot checkout if a plan was pending
   useEffect(() => {
@@ -253,6 +255,80 @@ function AppRouter() {
       }
     }
   }, [user]);
+
+  // ── "Login didn't stick" safety net ─────────────────────────────────────────
+  // The login page drops a short-lived `auth_just_succeeded` marker right
+  // before the post-login redirect. If we then boot up here with NO user
+  // session, that means the cookie was lost between the login response and
+  // this page load (typically a host-only cookie dropped by an apex/www
+  // canonical redirect on certain mobile browsers). Surface a friendly toast
+  // so the user understands what to do, and report it to the server so we
+  // can monitor whether this still happens to anyone after the canonical-host
+  // fix in main.tsx.
+  useEffect(() => {
+    if (isLoading) return;
+    if (typeof window === "undefined") return;
+
+    let raw: string | null = null;
+    try {
+      raw = sessionStorage.getItem("auth_just_succeeded");
+    } catch {
+      return;
+    }
+    if (!raw) return;
+
+    let payload: { at?: number; to?: string } | null = null;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      // Corrupted marker — clear and bail.
+      try { sessionStorage.removeItem("auth_just_succeeded"); } catch { /* ignore */ }
+      return;
+    }
+
+    // Stale markers (>5 min) are ignored — they probably belong to a previous
+    // session and clearing prevents them lingering forever. 5 min is generous
+    // enough to cover slow mobile OAuth round-trips (Google/GitHub) without
+    // risking false positives from week-old sessionStorage entries.
+    if (!payload?.at || Date.now() - payload.at > 5 * 60_000) {
+      try { sessionStorage.removeItem("auth_just_succeeded"); } catch { /* ignore */ }
+      return;
+    }
+
+    if (user) {
+      // Login DID stick — clear the marker quietly.
+      try { sessionStorage.removeItem("auth_just_succeeded"); } catch { /* ignore */ }
+      return;
+    }
+
+    // User is null but we have a fresh "just logged in" marker → the session
+    // cookie was lost in transit. Tell the user and report it.
+    try { sessionStorage.removeItem("auth_just_succeeded"); } catch { /* ignore */ }
+
+    toast({
+      title: "Sign-in didn't carry over",
+      description:
+        "Your password worked, but the session was lost on the way to the next page. This sometimes happens on certain mobile browsers. Please tap Sign In once more.",
+      variant: "destructive",
+      duration: 12000,
+    });
+
+    // Best-effort report to the server so the team can see the rate of these
+    // events in production logs. Never blocks the UI.
+    fetch("/api/_diagnostics/login-bounce", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        at: payload.at,
+        to: payload.to || null,
+        host: window.location.host,
+        path: window.location.pathname,
+        ua: navigator.userAgent,
+        referrer: document.referrer || null,
+      }),
+    }).catch(() => { /* best-effort */ });
+  }, [isLoading, user, toast]);
 
   if (isLoading) {
     return (
