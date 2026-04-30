@@ -727,6 +727,14 @@ app.post('/run-code', async (c) => {
 const FOUNDER_EMAILS = ['kayondoabass@gmail.com'];
 
 app.get('/me', async (c) => {
+  // Auth status MUST never be cached. Mobile carrier networks frequently route
+  // traffic through transparent HTTP proxies that aggressively cache GET
+  // responses; without an explicit no-store directive, a proxy can serve back
+  // a stale `{ user: null }` response even after a successful login, bouncing
+  // the user back to the marketing landing page. This was reproducible on
+  // mobile cellular but not on desktop Wi-Fi.
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  c.header('Pragma', 'no-cache');
   const userId = await getCurrentUserId(c);
   if (!userId) return c.json({ user: null });
   const user = await c.env.DB.prepare(
