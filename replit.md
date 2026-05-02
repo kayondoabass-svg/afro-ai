@@ -54,7 +54,7 @@ The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind C
 
 ## Production Deployment
 
-Production runs on a DigitalOcean droplet (`root@165.232.64.81`) behind Caddy + Cloudflare, on the `afroaigroup.com` domain. The Node service is managed by systemd as `afro-ai.service` with `WorkingDirectory=/opt/afro-ai` and `EnvironmentFile=/srv/afro-ai/shared/.env` (so prod secrets live outside the git checkout and survive any redeploy).
+Production runs on a DigitalOcean droplet behind Caddy + Cloudflare, on the `afroaigroup.com` domain. (Droplet SSH details are kept out of source — see Replit Secrets / your password manager.) The Node service is managed by systemd as `afro-ai.service` with `WorkingDirectory=/opt/afro-ai` and `EnvironmentFile=/srv/afro-ai/shared/.env` (so prod secrets live outside the git checkout and survive any redeploy).
 
 **Standard deploy** — push to `origin/main`, then on the droplet run:
 
