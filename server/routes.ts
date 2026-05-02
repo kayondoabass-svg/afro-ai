@@ -2941,6 +2941,277 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ============ COUNTRY/RESELLER PARTNER PROGRAM ============
+  // Public: submit application
+  app.post("/api/reseller/apply", async (req, res) => {
+    try {
+      const { companyName, contactName, email, country, countryName } = req.body;
+      if (!companyName || !contactName || !email || !country) {
+        return res.status(400).json({ message: "Company name, contact name, email, and country are required" });
+      }
+      const existing = await storage.getPartnerApplicationByEmail(email);
+      if (existing && existing.status === "pending") {
+        return res.status(409).json({ message: "An application for this email is already under review", applicationId: existing.id });
+      }
+      const application = await storage.createPartnerApplication({
+        companyName, contactName, email,
+        country, countryName: countryName || country,
+        phone: req.body.phone || null,
+        city: req.body.city || null,
+        website: req.body.website || null,
+        currentCustomers: req.body.currentCustomers || 0,
+        teamSize: req.body.teamSize || 1,
+        yearsInBusiness: req.body.yearsInBusiness || 0,
+        servicesOffered: req.body.servicesOffered || null,
+        whyPartner: req.body.whyPartner || null,
+        desiredTier: req.body.desiredTier || "authorized",
+        status: "pending",
+      });
+      res.json({ success: true, applicationId: application.id });
+    } catch (e: any) {
+      console.error("[reseller/apply]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Public: directory of approved partners
+  app.get("/api/reseller/directory", async (_req, res) => {
+    try {
+      const list = await storage.getAllPartners({ onlyPublic: true });
+      res.json(list);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Public: capture lead, route to country partner if exists
+  app.post("/api/reseller/lead", async (req, res) => {
+    try {
+      const { name, email, country } = req.body;
+      if (!name || !email) return res.status(400).json({ message: "Name and email required" });
+      let partnerId = null;
+      if (country) {
+        const partner = await storage.getPartnerByCountry(country);
+        if (partner) partnerId = partner.id;
+      }
+      const lead = await storage.createPartnerLead({
+        partnerId, name, email,
+        phone: req.body.phone || null,
+        company: req.body.company || null,
+        country: country || null,
+        message: req.body.message || null,
+        source: req.body.source || "contact_form",
+        status: "new",
+      });
+      res.json({ success: true, leadId: lead.id, routedToPartner: !!partnerId });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Authenticated partner: get their portal data
+  app.get("/api/partner/me", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const partner = await storage.getPartnerByUserId(userId);
+      if (!partner) {
+        const u = await storage.getUser(userId);
+        // Allow founder to view a sample/preview if no partner record exists
+        if (u?.isFounder) {
+          return res.json({ partner: null, customers: [], commissions: [], leads: [], payouts: [], stats: { totalCustomers: 0, activeCustomers: 0, pendingCommissionCents: 0, paidCommissionCents: 0, leadsThisMonth: 0, conversionRate: 0 } });
+        }
+        return res.json({ partner: null });
+      }
+      const [customers, commissions, leads, payouts] = await Promise.all([
+        storage.getPartnerCustomers(partner.id),
+        storage.getPartnerCommissions(partner.id),
+        storage.getPartnerLeads(partner.id),
+        storage.getPartnerPayouts(partner.id),
+      ]);
+      const now = new Date();
+      const leadsThisMonth = leads.filter(l => {
+        const d = new Date(l.createdAt);
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      }).length;
+      const converted = leads.filter(l => l.status === "converted").length;
+      const conversionRate = leads.length > 0 ? Math.round((converted / leads.length) * 100) : 0;
+      res.json({
+        partner,
+        customers,
+        commissions,
+        leads,
+        payouts,
+        stats: {
+          totalCustomers: customers.length,
+          activeCustomers: customers.filter((c: any) => c.firstPaidAt).length,
+          pendingCommissionCents: commissions.filter((c: any) => c.status === "pending" || c.status === "approved").reduce((s: number, c: any) => s + c.amountCents, 0),
+          paidCommissionCents: commissions.filter((c: any) => c.status === "paid").reduce((s: number, c: any) => s + c.amountCents, 0),
+          leadsThisMonth,
+          conversionRate,
+        },
+      });
+    } catch (e: any) {
+      console.error("[partner/me]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Founder admin endpoints
+  app.get("/api/founder/partners/stats", isFounder, async (_req, res) => {
+    try {
+      const stats = await storage.getAllPartnerStats();
+      res.json(stats);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.get("/api/founder/partners/applications", isFounder, async (_req, res) => {
+    try { res.json(await storage.getAllPartnerApplications()); }
+    catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.get("/api/founder/partners", isFounder, async (_req, res) => {
+    try { res.json(await storage.getAllPartners()); }
+    catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.get("/api/founder/partners/commissions", isFounder, async (_req, res) => {
+    try { res.json(await storage.getAllPartnerCommissions()); }
+    catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.get("/api/founder/partners/leads", isFounder, async (_req, res) => {
+    try { res.json(await storage.getAllPartnerLeads()); }
+    catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.get("/api/founder/partners/payouts", isFounder, async (_req, res) => {
+    try { res.json(await storage.getAllPartnerPayouts()); }
+    catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Founder: approve application -> creates partner
+  app.post("/api/founder/partners/applications/:id/approve", isFounder, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const app = await storage.getPartnerApplication(id);
+      if (!app) return res.status(404).json({ message: "Application not found" });
+      if (app.status === "approved") return res.status(400).json({ message: "Already approved" });
+      const tier = req.body.tier || app.desiredTier || "authorized";
+      const commissionPercent = req.body.commissionPercent ?? (tier === "premier" ? 40 : tier === "premium" ? 30 : 20);
+      // Country exclusivity: block a second active partner if existing one is exclusive (premier).
+      const existingInCountry = await storage.getPartnerByCountry(app.country);
+      if (existingInCountry && existingInCountry.exclusiveCountry) {
+        return res.status(409).json({ message: `${app.country} already has an exclusive premier partner: ${existingInCountry.companyName}` });
+      }
+      const baseSlug = (app.companyName || "partner").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
+      const countrySlug = (app.country || "xx").toLowerCase();
+      // Generate unique slug with retry-on-collision (handles concurrent approvals).
+      const tryCreate = async (): Promise<any> => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const slug = attempt === 0 ? `${baseSlug}-${countrySlug}` : `${baseSlug}-${countrySlug}-${attempt}`;
+          const existing = await storage.getPartnerBySlug(slug);
+          if (existing) continue;
+          try {
+            return await storage.createPartner({ slug, ...partnerPayload });
+          } catch (e: any) {
+            if (!String(e.message || "").includes("unique") && !String(e.code || "") .includes("23505")) throw e;
+          }
+        }
+        // Final fallback with timestamp
+        return await storage.createPartner({ slug: `${baseSlug}-${countrySlug}-${Date.now()}`, ...partnerPayload });
+      };
+      const partnerPayload: any = {
+        applicationId: app.id,
+        companyName: app.companyName,
+        country: app.country,
+        countryName: app.countryName,
+        city: app.city,
+        contactName: app.contactName,
+        contactEmail: app.email,
+        contactPhone: app.phone,
+        website: app.website,
+        description: app.servicesOffered,
+        services: req.body.services || [],
+        tier,
+        commissionPercent,
+        exclusiveCountry: tier === "premier",
+        status: "active",
+        publicListed: true,
+      };
+      const partner = await tryCreate();
+      await storage.updatePartnerApplication(id, {
+        status: "approved",
+        reviewedAt: new Date(),
+        reviewedBy: req.user.id,
+        reviewNotes: req.body.notes || null,
+      });
+      res.json({ success: true, partner });
+    } catch (e: any) {
+      console.error("[founder/partners/approve]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/founder/partners/applications/:id/reject", isFounder, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.updatePartnerApplication(id, {
+        status: "rejected",
+        reviewedAt: new Date(),
+        reviewedBy: req.user.id,
+        reviewNotes: req.body.notes || null,
+      });
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Founder: link a partner to a user account so they can access the portal
+  app.patch("/api/founder/partners/:id", isFounder, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = await storage.updatePartner(id, req.body);
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Founder: record a manual commission (e.g. when reconciling subscriptions)
+  app.post("/api/founder/partners/:id/commissions", isFounder, async (req, res) => {
+    try {
+      const partnerId = parseInt(req.params.id);
+      const partner = await storage.getPartnerById(partnerId);
+      if (!partner) return res.status(404).json({ message: "Partner not found" });
+      const baseAmountCents = parseInt(req.body.baseAmountCents) || 0;
+      const commissionPercent = req.body.commissionPercent ?? partner.commissionPercent;
+      const amountCents = Math.round(baseAmountCents * commissionPercent / 100);
+      const commission = await storage.createPartnerCommission({
+        partnerId,
+        userId: req.body.userId || null,
+        amountCents,
+        baseAmountCents,
+        commissionPercent,
+        currency: req.body.currency || "USD",
+        description: req.body.description || null,
+        periodMonth: req.body.periodMonth || new Date().toISOString().slice(0, 7),
+        status: "pending",
+      });
+      res.json(commission);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Founder: create a payout
+  app.post("/api/founder/partners/:id/payouts", isFounder, async (req, res) => {
+    try {
+      const partnerId = parseInt(req.params.id);
+      const payout = await storage.createPartnerPayout({
+        partnerId,
+        amountCents: parseInt(req.body.amountCents) || 0,
+        currency: req.body.currency || "USD",
+        method: req.body.method || "bank",
+        reference: req.body.reference || null,
+        status: req.body.status || "pending",
+        notes: req.body.notes || null,
+      });
+      res.json(payout);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+  app.patch("/api/founder/partners/payouts/:id/status", isFounder, async (req, res) => {
+    try {
+      await storage.updatePartnerPayoutStatus(parseInt(req.params.id), req.body.status, req.body.reference);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   // ============ WEBHOOK DELIVERY HELPER ============
   async function fireWebhooks(userId: string, event: string, payload: any, publishedAppId?: number) {
     try {

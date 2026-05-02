@@ -48,6 +48,7 @@ import {
   RefreshCw,
   Network,
   Smartphone,
+  Handshake,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -262,6 +263,45 @@ export default function FounderDashboardPage() {
   const { data: affiliateApps } = useQuery<any[]>({
     queryKey: ["/api/affiliate/applications"],
     enabled: isFounder,
+  });
+
+  const { data: partnerStats } = useQuery<any>({
+    queryKey: ["/api/founder/partners/stats"],
+    enabled: isFounder,
+  });
+  const { data: partnerApps } = useQuery<any[]>({
+    queryKey: ["/api/founder/partners/applications"],
+    enabled: isFounder,
+  });
+  const { data: partnersList } = useQuery<any[]>({
+    queryKey: ["/api/founder/partners"],
+    enabled: isFounder,
+  });
+
+  const approvePartnerMutation = useMutation({
+    mutationFn: async ({ id, tier }: { id: number; tier: string }) => {
+      const res = await apiRequest("POST", `/api/founder/partners/applications/${id}/approve`, { tier });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners/applications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners/stats"] });
+      toast({ title: "Partner approved", description: "Country partner is now active." });
+    },
+    onError: (err: any) => toast({ title: "Approval failed", description: err.message, variant: "destructive" }),
+  });
+
+  const rejectPartnerMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("POST", `/api/founder/partners/applications/${id}/reject`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners/applications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners/stats"] });
+      toast({ title: "Application rejected" });
+    },
   });
 
   const { data: allPayments = [] } = useQuery<any[]>({
@@ -857,6 +897,94 @@ export default function FounderDashboardPage() {
                 )}
               </div>
             </ScrollArea>
+          </CardContent>
+        </Card>
+
+        {/* Country/Reseller Partner Program */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="flex items-center gap-2 p-4 border-b">
+              <Globe className="w-4 h-4 text-primary" />
+              <h3 className="font-semibold text-sm">Country Partner Program</h3>
+              <Badge variant="secondary" className="ml-auto text-xs">
+                {partnerStats?.totalPartners ?? 0} active · {partnerStats?.countriesCovered ?? 0} countries
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-4 border-b">
+              {[
+                { label: "Active Partners", value: partnerStats?.totalPartners ?? 0, color: "text-primary" },
+                { label: "Pending Apps", value: partnerStats?.pendingApplications ?? 0, color: "text-yellow-400" },
+                { label: "Owed Commissions", value: `$${((partnerStats?.pendingCommissionCents ?? 0) / 100).toFixed(0)}`, color: "text-amber-400" },
+                { label: "Paid Out", value: `$${((partnerStats?.paidCommissionCents ?? 0) / 100).toFixed(0)}`, color: "text-green-400" },
+              ].map((s) => (
+                <div key={s.label} className="rounded-md border p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                  <p className={`text-lg font-semibold ${s.color}`} data-testid={`partner-stat-${s.label.toLowerCase().replace(/\s/g, "-")}`}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x">
+              <div>
+                <div className="px-4 py-2 border-b bg-muted/30 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Pending Applications
+                </div>
+                <ScrollArea className="h-[260px]">
+                  <div className="p-2 space-y-1">
+                    {partnerApps && partnerApps.filter((a: any) => a.status === "pending").length > 0 ? (
+                      partnerApps.filter((a: any) => a.status === "pending").map((a: any) => (
+                        <div key={a.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`partner-app-${a.id}`}>
+                          <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Globe className="w-3.5 h-3.5 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{a.companyName}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">{a.countryName} · {a.contactName} · {a.email}</p>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Badge variant="outline" className="text-[10px] px-1.5">{a.desiredTier}</Badge>
+                            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-green-400 hover:text-green-300" onClick={() => approvePartnerMutation.mutate({ id: a.id, tier: a.desiredTier || "authorized" })} data-testid={`button-approve-partner-${a.id}`}>
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-400 hover:text-red-300" onClick={() => rejectPartnerMutation.mutate(a.id)} data-testid={`button-reject-partner-${a.id}`}>
+                              <Ban className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-8">No pending applications</p>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+              <div>
+                <div className="px-4 py-2 border-b bg-muted/30 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Active Country Partners
+                </div>
+                <ScrollArea className="h-[260px]">
+                  <div className="p-2 space-y-1">
+                    {partnersList && partnersList.length > 0 ? (
+                      partnersList.map((p: any) => (
+                        <div key={p.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`partner-row-${p.id}`}>
+                          <div className="w-7 h-7 rounded-md bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                            <Handshake className="w-3.5 h-3.5 text-green-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{p.companyName}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">{p.countryName} · {p.commissionPercent}% · {p.tier}</p>
+                          </div>
+                          <Badge variant="outline" className={`text-[10px] px-1.5 ${p.status === "active" ? "text-green-400 border-green-500/30" : "text-yellow-400 border-yellow-500/30"}`}>
+                            {p.status}
+                          </Badge>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-8">No active partners yet</p>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

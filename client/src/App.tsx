@@ -72,6 +72,9 @@ const EmailAuditPage = lazy(() => import("@/pages/email-audit"));
 const EmailApiDocsPage = lazy(() => import("@/pages/docs-email-api"));
 const UssdLandingPage = lazy(() => import("@/pages/ussd-landing"));
 const PartnersPage = lazy(() => import("@/pages/partners"));
+const BecomePartnerPage = lazy(() => import("@/pages/become-partner"));
+const PartnerDirectoryPage = lazy(() => import("@/pages/partner-directory"));
+const PartnerPortalPage = lazy(() => import("@/pages/partner-portal"));
 const BusinessServicesPage = lazy(() => import("@/pages/business-services"));
 const DomainsLandingPage = lazy(() => import("@/pages/domains-landing"));
 const DomainsCheckoutPage = lazy(() => import("@/pages/domains-checkout"));
@@ -157,6 +160,9 @@ function AuthenticatedLayout() {
                 <Route path="/email-api" component={EmailApiPage} />
                 <Route path="/email-audit" component={EmailAuditPage} />
                 <Route path="/partners" component={PartnersPage} />
+                <Route path="/become-partner" component={BecomePartnerPage} />
+                <Route path="/partners/directory" component={PartnerDirectoryPage} />
+                <Route path="/partner-portal" component={PartnerPortalPage} />
                 <Route path="/business-services" component={BusinessServicesPage} />
                 <Route path="/website-builder" component={WebsiteBuilderLandingPage} />
                 <Route path="/app-designer" component={AppDesignerLandingPage} />
@@ -449,6 +455,8 @@ function AppRouter() {
           <Route path="/docs/email-api" component={EmailApiDocsPage} />
           <Route path="/ussd-builder" component={UssdLandingPage} />
           <Route path="/partners" component={PartnersPage} />
+          <Route path="/become-partner" component={BecomePartnerPage} />
+          <Route path="/partners/directory" component={PartnerDirectoryPage} />
           <Route path="/business-services" component={BusinessServicesPage} />
           <Route path="/website-builder" component={WebsiteBuilderLandingPage} />
           <Route path="/app-designer" component={AppDesignerLandingPage} />

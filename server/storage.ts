@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, teamMembers, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog, type TeamMember, type InsertTeamMember } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, teamMembers, partnerApplications, partners, partnerCustomers, partnerCommissions, partnerLeads, partnerPayouts, partnerCertifications, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog, type TeamMember, type InsertTeamMember } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -195,6 +195,42 @@ export interface IStorage {
   createUssdApp(data: InsertUssdApp): Promise<UssdApp>;
   updateUssdApp(id: number, data: Partial<InsertUssdApp & { sessionsUsed?: number }>): Promise<UssdApp>;
   deleteUssdApp(id: number): Promise<void>;
+
+  // ============ COUNTRY/RESELLER PARTNER PROGRAM ============
+  createPartnerApplication(data: any): Promise<any>;
+  getPartnerApplicationByEmail(email: string): Promise<any | undefined>;
+  getAllPartnerApplications(): Promise<any[]>;
+  getPartnerApplication(id: number): Promise<any | undefined>;
+  updatePartnerApplication(id: number, data: any): Promise<any>;
+
+  createPartner(data: any): Promise<any>;
+  getPartnerById(id: number): Promise<any | undefined>;
+  getPartnerBySlug(slug: string): Promise<any | undefined>;
+  getPartnerByUserId(userId: string): Promise<any | undefined>;
+  getPartnerByCountry(country: string): Promise<any | undefined>;
+  getAllPartners(opts?: { onlyPublic?: boolean }): Promise<any[]>;
+  updatePartner(id: number, data: any): Promise<any>;
+
+  attributePartnerCustomer(partnerId: number, userId: string): Promise<any>;
+  getPartnerCustomers(partnerId: number): Promise<any[]>;
+  getPartnerCustomerByUserId(userId: string): Promise<any | undefined>;
+
+  createPartnerCommission(data: any): Promise<any>;
+  getPartnerCommissions(partnerId: number): Promise<any[]>;
+  updatePartnerCommissionStatus(id: number, status: string, payoutId?: number): Promise<void>;
+
+  createPartnerLead(data: any): Promise<any>;
+  getPartnerLeads(partnerId: number): Promise<any[]>;
+  updatePartnerLeadStatus(id: number, status: string, notes?: string): Promise<void>;
+
+  createPartnerPayout(data: any): Promise<any>;
+  getPartnerPayouts(partnerId: number): Promise<any[]>;
+  updatePartnerPayoutStatus(id: number, status: string, reference?: string): Promise<void>;
+
+  getAllPartnerStats(): Promise<any>;
+  getAllPartnerCommissions(): Promise<any[]>;
+  getAllPartnerLeads(): Promise<any[]>;
+  getAllPartnerPayouts(): Promise<any[]>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -1400,6 +1436,187 @@ class DatabaseStorage implements IStorage {
   async deleteTeamMember(id: number): Promise<boolean> {
     const rows = await db.delete(teamMembers).where(eq(teamMembers.id, id)).returning({ id: teamMembers.id });
     return rows.length > 0;
+  }
+
+  // ============ COUNTRY/RESELLER PARTNER PROGRAM ============
+  async createPartnerApplication(data: any): Promise<any> {
+    const [created] = await db.insert(partnerApplications).values(data).returning();
+    return created;
+  }
+  async getPartnerApplicationByEmail(email: string): Promise<any | undefined> {
+    const [app] = await db.select().from(partnerApplications).where(eq(partnerApplications.email, email)).orderBy(desc(partnerApplications.createdAt)).limit(1);
+    return app;
+  }
+  async getAllPartnerApplications(): Promise<any[]> {
+    return db.select().from(partnerApplications).orderBy(desc(partnerApplications.createdAt));
+  }
+  async getPartnerApplication(id: number): Promise<any | undefined> {
+    const [app] = await db.select().from(partnerApplications).where(eq(partnerApplications.id, id));
+    return app;
+  }
+  async updatePartnerApplication(id: number, data: any): Promise<any> {
+    const [updated] = await db.update(partnerApplications).set(data).where(eq(partnerApplications.id, id)).returning();
+    return updated;
+  }
+
+  async createPartner(data: any): Promise<any> {
+    const [created] = await db.insert(partners).values(data).returning();
+    return created;
+  }
+  async getPartnerById(id: number): Promise<any | undefined> {
+    const [p] = await db.select().from(partners).where(eq(partners.id, id));
+    return p;
+  }
+  async getPartnerBySlug(slug: string): Promise<any | undefined> {
+    const [p] = await db.select().from(partners).where(eq(partners.slug, slug));
+    return p;
+  }
+  async getPartnerByUserId(userId: string): Promise<any | undefined> {
+    const [p] = await db.select().from(partners).where(eq(partners.userId, userId)).limit(1);
+    return p;
+  }
+  async getPartnerByCountry(country: string): Promise<any | undefined> {
+    // Deterministic: prefer exclusive (premier) partner, then earliest approved.
+    const [p] = await db.select().from(partners)
+      .where(and(eq(partners.country, country), eq(partners.status, "active")))
+      .orderBy(desc(partners.exclusiveCountry), partners.approvedAt)
+      .limit(1);
+    return p;
+  }
+  async getAllPartners(opts: { onlyPublic?: boolean } = {}): Promise<any[]> {
+    if (opts.onlyPublic) {
+      return db.select().from(partners).where(and(eq(partners.status, "active"), eq(partners.publicListed, true))).orderBy(desc(partners.approvedAt));
+    }
+    return db.select().from(partners).orderBy(desc(partners.approvedAt));
+  }
+  async updatePartner(id: number, data: any): Promise<any> {
+    const [updated] = await db.update(partners).set(data).where(eq(partners.id, id)).returning();
+    return updated;
+  }
+
+  async attributePartnerCustomer(partnerId: number, userId: string): Promise<any> {
+    // Idempotent — if user already attributed (even to a different partner), skip
+    const existing = await this.getPartnerCustomerByUserId(userId);
+    if (existing) return existing;
+    const [created] = await db.insert(partnerCustomers).values({ partnerId, userId }).returning();
+    // Bump partner stats
+    await db.update(partners).set({ totalCustomers: sql`${partners.totalCustomers} + 1` }).where(eq(partners.id, partnerId));
+    return created;
+  }
+  async getPartnerCustomers(partnerId: number): Promise<any[]> {
+    return db.select().from(partnerCustomers).where(eq(partnerCustomers.partnerId, partnerId)).orderBy(desc(partnerCustomers.attributedAt));
+  }
+  async getPartnerCustomerByUserId(userId: string): Promise<any | undefined> {
+    const [pc] = await db.select().from(partnerCustomers).where(eq(partnerCustomers.userId, userId)).limit(1);
+    return pc;
+  }
+
+  async createPartnerCommission(data: any): Promise<any> {
+    // Don't touch partner aggregates here — totals are derived from commission status transitions
+    // (approved/paid increment totalEarnedCents; paid increments totalPaidCents via payout).
+    const [created] = await db.insert(partnerCommissions).values(data).returning();
+    if (data.status === "approved" || data.status === "paid") {
+      await db.update(partners).set({ totalEarnedCents: sql`${partners.totalEarnedCents} + ${data.amountCents}` }).where(eq(partners.id, data.partnerId));
+    }
+    return created;
+  }
+  async getPartnerCommissions(partnerId: number): Promise<any[]> {
+    return db.select().from(partnerCommissions).where(eq(partnerCommissions.partnerId, partnerId)).orderBy(desc(partnerCommissions.createdAt));
+  }
+  async updatePartnerCommissionStatus(id: number, status: string, payoutId?: number): Promise<void> {
+    const [current] = await db.select().from(partnerCommissions).where(eq(partnerCommissions.id, id));
+    if (!current) return;
+    const data: any = { status };
+    if (payoutId !== undefined) data.payoutId = payoutId;
+    await db.update(partnerCommissions).set(data).where(eq(partnerCommissions.id, id));
+    // Reconcile partner.totalEarnedCents on transitions in/out of {approved|paid}
+    const wasEarned = current.status === "approved" || current.status === "paid";
+    const isEarned = status === "approved" || status === "paid";
+    if (!wasEarned && isEarned) {
+      await db.update(partners).set({ totalEarnedCents: sql`${partners.totalEarnedCents} + ${current.amountCents}` }).where(eq(partners.id, current.partnerId));
+    } else if (wasEarned && !isEarned) {
+      await db.update(partners).set({ totalEarnedCents: sql`${partners.totalEarnedCents} - ${current.amountCents}` }).where(eq(partners.id, current.partnerId));
+    }
+  }
+
+  async createPartnerLead(data: any): Promise<any> {
+    const [created] = await db.insert(partnerLeads).values(data).returning();
+    return created;
+  }
+  async getPartnerLeads(partnerId: number): Promise<any[]> {
+    return db.select().from(partnerLeads).where(eq(partnerLeads.partnerId, partnerId)).orderBy(desc(partnerLeads.createdAt));
+  }
+  async updatePartnerLeadStatus(id: number, status: string, notes?: string): Promise<void> {
+    const data: any = { status };
+    if (notes !== undefined) data.notes = notes;
+    await db.update(partnerLeads).set(data).where(eq(partnerLeads.id, id));
+  }
+
+  async createPartnerPayout(data: any): Promise<any> {
+    const [created] = await db.insert(partnerPayouts).values(data).returning();
+    return created;
+  }
+  async getPartnerPayouts(partnerId: number): Promise<any[]> {
+    return db.select().from(partnerPayouts).where(eq(partnerPayouts.partnerId, partnerId)).orderBy(desc(partnerPayouts.createdAt));
+  }
+  async updatePartnerPayoutStatus(id: number, status: string, reference?: string): Promise<void> {
+    const [payout] = await db.select().from(partnerPayouts).where(eq(partnerPayouts.id, id));
+    if (!payout) return;
+    const data: any = { status };
+    if (reference !== undefined) data.reference = reference;
+    if (status === "paid" && payout.status !== "paid") {
+      data.paidAt = new Date();
+      // Roll up partner totals + flip linked commissions to paid atomically (best-effort).
+      await db.update(partners).set({ totalPaidCents: sql`${partners.totalPaidCents} + ${payout.amountCents}` }).where(eq(partners.id, payout.partnerId));
+      await db.update(partnerCommissions)
+        .set({ status: "paid" })
+        .where(and(eq(partnerCommissions.payoutId, id), sql`${partnerCommissions.status} <> 'paid'`));
+    }
+    await db.update(partnerPayouts).set(data).where(eq(partnerPayouts.id, id));
+  }
+
+  async getAllPartnerStats(): Promise<any> {
+    const allPartners = await db.select().from(partners);
+    const allApps = await db.select().from(partnerApplications);
+    const allCustomers = await db.select().from(partnerCustomers);
+    const allCommissions = await db.select().from(partnerCommissions);
+    const allLeads = await db.select().from(partnerLeads);
+    const allPayouts = await db.select().from(partnerPayouts);
+    const totalEarned = allCommissions.reduce((s, c) => s + (c.amountCents || 0), 0);
+    const totalPaid = allPayouts.filter(p => p.status === "paid").reduce((s, p) => s + (p.amountCents || 0), 0);
+    const pendingCommissions = allCommissions.filter(c => c.status === "pending" || c.status === "approved").reduce((s, c) => s + (c.amountCents || 0), 0);
+    const byCountry: Record<string, number> = {};
+    allPartners.forEach(p => { byCountry[p.countryName || p.country] = (byCountry[p.countryName || p.country] || 0) + 1; });
+    const byTier = { authorized: 0, premium: 0, premier: 0 };
+    allPartners.forEach(p => { (byTier as any)[p.tier] = ((byTier as any)[p.tier] || 0) + 1; });
+    return {
+      totalPartners: allPartners.length,
+      activePartners: allPartners.filter(p => p.status === "active").length,
+      pendingApplications: allApps.filter(a => a.status === "pending").length,
+      totalApplications: allApps.length,
+      totalAttributedCustomers: allCustomers.length,
+      totalLeads: allLeads.length,
+      newLeadsThisMonth: allLeads.filter(l => {
+        const d = new Date(l.createdAt);
+        const now = new Date();
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      }).length,
+      totalEarnedCents: totalEarned,
+      totalPaidCents: totalPaid,
+      pendingCommissionCents: pendingCommissions,
+      countriesCovered: Object.keys(byCountry).length,
+      partnersByCountry: byCountry,
+      partnersByTier: byTier,
+    };
+  }
+  async getAllPartnerCommissions(): Promise<any[]> {
+    return db.select().from(partnerCommissions).orderBy(desc(partnerCommissions.createdAt));
+  }
+  async getAllPartnerLeads(): Promise<any[]> {
+    return db.select().from(partnerLeads).orderBy(desc(partnerLeads.createdAt));
+  }
+  async getAllPartnerPayouts(): Promise<any[]> {
+    return db.select().from(partnerPayouts).orderBy(desc(partnerPayouts.createdAt));
   }
 
   async searchUsersForTeam(query: string, limit = 20): Promise<Array<{ id: string; email: string | null; firstName: string | null; lastName: string | null }>> {

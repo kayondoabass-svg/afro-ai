@@ -650,3 +650,145 @@ export const insertTeamMemberSchema = createInsertSchema(teamMembers).omit({
 });
 export type TeamMember = typeof teamMembers.$inferSelect;
 export type InsertTeamMember = z.infer<typeof insertTeamMemberSchema>;
+
+// ============ COUNTRY/RESELLER PARTNER PROGRAM ============
+// Inspired by Zoho's authorized partner program: licensed local companies
+// resell Afro AI in their country, earn recurring commissions, route leads.
+
+export const partnerApplications = pgTable("partner_applications", {
+  id: serial("id").primaryKey(),
+  companyName: text("company_name").notNull(),
+  contactName: text("contact_name").notNull(),
+  email: varchar("email").notNull(),
+  phone: varchar("phone"),
+  country: varchar("country").notNull(), // ISO country code (UG, KE, NG)
+  countryName: varchar("country_name").notNull(),
+  city: varchar("city"),
+  website: text("website"),
+  currentCustomers: integer("current_customers").default(0),
+  teamSize: integer("team_size").default(1),
+  yearsInBusiness: integer("years_in_business").default(0),
+  servicesOffered: text("services_offered"),
+  whyPartner: text("why_partner"),
+  desiredTier: varchar("desired_tier").notNull().default("authorized"), // authorized | premium | premier
+  status: varchar("status").notNull().default("pending"), // pending | approved | rejected
+  reviewNotes: text("review_notes"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertPartnerApplicationSchema = createInsertSchema(partnerApplications).omit({ id: true, createdAt: true, reviewedAt: true, reviewedBy: true });
+export type PartnerApplication = typeof partnerApplications.$inferSelect;
+export type InsertPartnerApplication = z.infer<typeof insertPartnerApplicationSchema>;
+
+export const partners = pgTable("partners", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id), // optional link to user account
+  applicationId: integer("application_id").references(() => partnerApplications.id),
+  slug: varchar("slug").notNull().unique(), // e.g. "othware-ug" — used in ?ref=
+  companyName: text("company_name").notNull(),
+  country: varchar("country").notNull(),
+  countryName: varchar("country_name").notNull(),
+  city: varchar("city"),
+  contactName: text("contact_name").notNull(),
+  contactEmail: varchar("contact_email").notNull(),
+  contactPhone: varchar("contact_phone"),
+  website: text("website"),
+  logoUrl: text("logo_url"),
+  description: text("description"),
+  services: text("services").array(),
+  tier: varchar("tier").notNull().default("authorized"), // authorized | premium | premier
+  commissionPercent: integer("commission_percent").notNull().default(20), // 20 | 30 | 40
+  exclusiveCountry: boolean("exclusive_country").notNull().default(false),
+  status: varchar("status").notNull().default("active"), // active | suspended | terminated
+  approvedAt: timestamp("approved_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  publicListed: boolean("public_listed").notNull().default(true),
+  totalCustomers: integer("total_customers").notNull().default(0),
+  totalEarnedCents: integer("total_earned_cents").notNull().default(0),
+  totalPaidCents: integer("total_paid_cents").notNull().default(0),
+});
+export const insertPartnerSchema = createInsertSchema(partners).omit({ id: true, approvedAt: true, totalCustomers: true, totalEarnedCents: true, totalPaidCents: true });
+export type Partner = typeof partners.$inferSelect;
+export type InsertPartner = z.infer<typeof insertPartnerSchema>;
+
+// Attribution: tracks which user was referred by which partner
+export const partnerCustomers = pgTable("partner_customers", {
+  id: serial("id").primaryKey(),
+  partnerId: integer("partner_id").notNull().references(() => partners.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
+  attributedAt: timestamp("attributed_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  firstPaidAt: timestamp("first_paid_at"),
+  lifetimeValueCents: integer("lifetime_value_cents").notNull().default(0),
+});
+export const insertPartnerCustomerSchema = createInsertSchema(partnerCustomers).omit({ id: true, attributedAt: true, firstPaidAt: true, lifetimeValueCents: true });
+export type PartnerCustomer = typeof partnerCustomers.$inferSelect;
+export type InsertPartnerCustomer = z.infer<typeof insertPartnerCustomerSchema>;
+
+export const partnerCommissions = pgTable("partner_commissions", {
+  id: serial("id").primaryKey(),
+  partnerId: integer("partner_id").notNull().references(() => partners.id, { onDelete: "cascade" }),
+  partnerCustomerId: integer("partner_customer_id").references(() => partnerCustomers.id, { onDelete: "set null" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  amountCents: integer("amount_cents").notNull(),
+  baseAmountCents: integer("base_amount_cents").notNull(),
+  commissionPercent: integer("commission_percent").notNull(),
+  currency: varchar("currency").notNull().default("USD"),
+  description: text("description"),
+  periodMonth: varchar("period_month").notNull(), // YYYY-MM
+  status: varchar("status").notNull().default("pending"), // pending | approved | paid | reversed
+  payoutId: integer("payout_id"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertPartnerCommissionSchema = createInsertSchema(partnerCommissions).omit({ id: true, createdAt: true, payoutId: true });
+export type PartnerCommission = typeof partnerCommissions.$inferSelect;
+export type InsertPartnerCommission = z.infer<typeof insertPartnerCommissionSchema>;
+
+export const partnerLeads = pgTable("partner_leads", {
+  id: serial("id").primaryKey(),
+  partnerId: integer("partner_id").references(() => partners.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  email: varchar("email").notNull(),
+  phone: varchar("phone"),
+  company: text("company"),
+  country: varchar("country"),
+  message: text("message"),
+  source: varchar("source").default("contact_form"), // contact_form | partner_directory | geo_routing
+  status: varchar("status").notNull().default("new"), // new | contacted | qualified | converted | lost
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertPartnerLeadSchema = createInsertSchema(partnerLeads).omit({ id: true, createdAt: true });
+export type PartnerLead = typeof partnerLeads.$inferSelect;
+export type InsertPartnerLead = z.infer<typeof insertPartnerLeadSchema>;
+
+export const partnerPayouts = pgTable("partner_payouts", {
+  id: serial("id").primaryKey(),
+  partnerId: integer("partner_id").notNull().references(() => partners.id, { onDelete: "cascade" }),
+  amountCents: integer("amount_cents").notNull(),
+  currency: varchar("currency").notNull().default("USD"),
+  method: varchar("method").notNull().default("bank"), // bank | mobile_money | stripe
+  reference: text("reference"),
+  status: varchar("status").notNull().default("pending"), // pending | processing | paid | failed
+  notes: text("notes"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertPartnerPayoutSchema = createInsertSchema(partnerPayouts).omit({ id: true, createdAt: true, paidAt: true });
+export type PartnerPayout = typeof partnerPayouts.$inferSelect;
+export type InsertPartnerPayout = z.infer<typeof insertPartnerPayoutSchema>;
+
+export const partnerCertifications = pgTable("partner_certifications", {
+  id: serial("id").primaryKey(),
+  partnerId: integer("partner_id").notNull().references(() => partners.id, { onDelete: "cascade" }),
+  staffName: text("staff_name").notNull(),
+  staffEmail: varchar("staff_email").notNull(),
+  certificationName: varchar("certification_name").notNull(), // sales | technical | implementation
+  score: integer("score").notNull().default(0),
+  passed: boolean("passed").notNull().default(false),
+  certificateUrl: text("certificate_url"),
+  passedAt: timestamp("passed_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export const insertPartnerCertificationSchema = createInsertSchema(partnerCertifications).omit({ id: true, createdAt: true, passedAt: true });
+export type PartnerCertification = typeof partnerCertifications.$inferSelect;
+export type InsertPartnerCertification = z.infer<typeof insertPartnerCertificationSchema>;
