@@ -125,8 +125,8 @@ function extractHtmlCode(text: string): string | null {
 function looksLikeSecret(text: string): boolean {
   if (text.length < 16) return false;
   const patterns = [
-    /\bsk[-_][A-Za-z0-9]{20,}/,                        // OpenAI / Stripe secret key
-    /\bpk[-_][A-Za-z0-9]{20,}/,                        // Stripe publishable key
+    /\bsk[-_][A-Za-z0-9]{20,}/,                        // OpenAI secret key
+    /\bpk[-_][A-Za-z0-9]{20,}/,                        // Generic publishable key
     /\bAIza[A-Za-z0-9_-]{20,}/,                        // Google API key
     /\bAKIA[A-Z0-9]{16}/,                              // AWS Access Key
     /\bghp_[A-Za-z0-9]{36}/,                           // GitHub personal access token

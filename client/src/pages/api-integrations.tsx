@@ -345,7 +345,7 @@ export default function ApiIntegrationsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2 space-y-1">
                   <Label>Name *</Label>
-                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Stripe Payments" data-testid="input-integration-name" />
+                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Pesapal Payments" data-testid="input-integration-name" />
                 </div>
                 <div className="col-span-2 space-y-1">
                   <Label>Base URL *</Label>

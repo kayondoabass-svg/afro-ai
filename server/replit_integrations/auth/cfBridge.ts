@@ -64,6 +64,23 @@ export function cfAuthBridge(): RequestHandler {
         profileImageUrl: claims.profile_image_url || undefined,
       });
 
+      // First-time accounts: send verification email (best-effort, non-blocking).
+      // Fires only on truly fresh rows (created in the last 30s) and skips users
+      // already marked verified (e.g. founder, or returning OAuth users we trust).
+      try {
+        if (dbUser.email && !dbUser.emailVerified && dbUser.createdAt) {
+          const ageMs = Date.now() - new Date(dbUser.createdAt).getTime();
+          if (ageMs < 30_000) {
+            const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || "https";
+            const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.headers.host;
+            const origin = `${proto}://${host}`;
+            const name = dbUser.firstName || dbUser.email.split("@")[0];
+            const { sendVerificationEmailFor } = await import("./routes");
+            sendVerificationEmailFor(dbUser.id, dbUser.email, name, origin).catch(() => {});
+          }
+        }
+      } catch {}
+
       // Shape req.user identically to what Passport produces in this codebase.
       (req as any).user = {
         claims: {

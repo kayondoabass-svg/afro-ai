@@ -574,13 +574,20 @@ export default function LoginPage() {
           </Tabs>
 
           <p className="text-center text-xs text-muted-foreground">
-            By continuing, you agree to our Terms of Service and Privacy Policy
+            By continuing, you agree to our{" "}
+            <a href="/terms" className="underline hover:text-primary" data-testid="link-login-terms">Terms of Service</a>
+            {" "}and{" "}
+            <a href="/privacy" className="underline hover:text-primary" data-testid="link-login-privacy">Privacy Policy</a>
           </p>
         </Card>
       </div>
 
-      <footer className="text-center py-4 text-xs text-muted-foreground">
-        Building the Future We Want
+      <footer className="text-center py-4 text-xs text-muted-foreground space-x-3">
+        <span>Building the Future We Want</span>
+        <span aria-hidden>·</span>
+        <a href="/privacy" className="hover:text-primary" data-testid="link-footer-privacy">Privacy</a>
+        <a href="/terms" className="hover:text-primary" data-testid="link-footer-terms">Terms</a>
+        <a href="/.well-known/security.txt" className="hover:text-primary" data-testid="link-footer-security">Security</a>
       </footer>
     </div>
   );

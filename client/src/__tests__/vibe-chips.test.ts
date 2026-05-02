@@ -18,7 +18,7 @@ describe("parseVibeMarkers", () => {
   });
 
   it("extracts secret hints", () => {
-    const r = parseVibeMarkers("Need [[needs-secret:OPENAI_API_KEY:for chat]] and [[needs-secret:STRIPE_SECRET_KEY]].");
+    const r = parseVibeMarkers("Need [[needs-secret:OPENAI_API_KEY:for chat]] and [[needs-secret:PESAPAL_CONSUMER_KEY]].");
     expect(r.secrets).toHaveLength(2);
     expect(r.secrets[0]).toEqual({ name: "OPENAI_API_KEY", reason: "for chat" });
     expect(r.secrets[1].reason).toBeUndefined();

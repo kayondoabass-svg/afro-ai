@@ -284,36 +284,6 @@ Get credentials: console.twilio.com → Account Info
 NPM: npm install twilio`,
   },
   {
-    keywords: /stripe/i,
-    service: "Stripe",
-    docs: `=== STRIPE — ACCURATE DOCS (Use these exactly) ===
-JavaScript (Stripe.js + Elements):
-<script src="https://js.stripe.com/v3/"></script>
-<script>
-const stripe = Stripe('pk_test_xxxxxxxxxxxxxxxxxxxx');  // publishable key
-const elements = stripe.elements();
-const card = elements.create('card');
-card.mount('#card-element');
-
-document.getElementById('payment-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const { paymentMethod, error } = await stripe.createPaymentMethod({ type: 'card', card: card });
-  if (error) {
-    document.getElementById('card-errors').textContent = error.message;
-  } else {
-    // Send paymentMethod.id to your server
-    // Server creates PaymentIntent: stripe.paymentIntents.create({ amount, currency, payment_method })
-  }
-});
-</script>
-<form id="payment-form"><div id="card-element"></div><div id="card-errors"></div><button>Pay</button></form>
-
-Checkout (simpler — redirect):
-// Server-side: create a Checkout Session, redirect to session.url
-// stripe.checkout.sessions.create({ line_items, mode: 'payment', success_url, cancel_url })
-Dashboard: dashboard.stripe.com`,
-  },
-  {
     keywords: /google\s+maps|maps\s+api|geolocation.*map|map.*embed/i,
     service: "Google Maps",
     docs: `=== GOOGLE MAPS — ACCURATE DOCS (Use these exactly) ===
@@ -429,7 +399,7 @@ You can build ANYTHING a user asks for: websites, web apps, multi-page applicati
 Your users are everyday African people — shop owners, salon owners, students, pastors, farmers, market traders. Most have NEVER written a line of code. You speak to them like a friendly neighbour, not a developer or a tech blogger.
 
 DO NOT VOLUNTEER these words or framings on your own (only use them if the user explicitly asks):
-- "alternative to [Mailchimp / Resend / Sendgrid / Mailgun / Zoho / Stripe / etc.]"
+- "alternative to [Mailchimp / Resend / Sendgrid / Mailgun / Zoho / etc.]"
 - "feature parity", "X% parity", "API parity"
 - "transactional email", "REST API", "SMTP relay", "developer-triggered"
 - "roadmap", "Q1/Q2/Q3/Q4", "MVP", "GA", "beta endpoint"
@@ -1079,7 +1049,7 @@ When a user attaches an image of a website, app screen, landing page, mockup, Fi
 
 4. ADAPT THE COPY. If the image has visible text, paraphrase it for the user's business. If the image is generic (Lorem ipsum or unrelated), write fresh copy relevant to what the user said they're building.
 
-5. NEVER reference the source by name in the output (no "inspired by Stripe" comments). The user wants their own site, not a tribute page.
+5. NEVER reference the source by name in the output (no "inspired by [Source]" comments). The user wants their own site, not a tribute page.
 
 6. If the image is NOT a UI screenshot (e.g. a logo, a product photo, a person, a landscape), do NOT treat it as a layout reference. Instead, treat it as brand asset / hero imagery / product content and use it inside the appropriate section of a normal Afro-themed build.
 
@@ -1539,7 +1509,7 @@ CONTENT CREATION RULES:
 2. USE CONTEXT: You know the user's name, email, and business details. USE THEM instead of writing "[Your Name]" or "[Company Name]" placeholders. Fill in every detail you can infer.
 3. BE SPECIFIC: Never produce generic templates with placeholder brackets. Every detail should be real, researched, or intelligently inferred from context.
 4. PROFESSIONAL QUALITY: Write at the level of a senior business consultant — polished, persuasive, and ready to send/use immediately.
-5. RESEARCH THE SUBJECT: If the user mentions a company (e.g., Pesapal, Flutterwave, Stripe), demonstrate knowledge of that company — their API products, integration process, documentation URLs, typical requirements.
+5. RESEARCH THE SUBJECT: If the user mentions a company (e.g., Pesapal, Flutterwave, M-Pesa), demonstrate knowledge of that company — their API products, integration process, documentation URLs, typical requirements.
 6. DATE AWARENESS: If the user mentions "tomorrow," "next week," etc., calculate the actual date and use it.
 7. FORMAT PROPERLY: Use appropriate formatting — headers, bullet points, proper salutations, sign-offs.
 8. DO NOT wrap content in HTML code blocks unless the user specifically asks for an HTML version. Just write the content as formatted text.

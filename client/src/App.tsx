@@ -33,6 +33,7 @@ const AboutPage = lazy(() => import("@/pages/about"));
 const ContactPage = lazy(() => import("@/pages/contact"));
 const PrivacyPage = lazy(() => import("@/pages/privacy"));
 const TermsPage = lazy(() => import("@/pages/terms"));
+const VerifyEmailPage = lazy(() => import("@/pages/verify-email"));
 const CookiePolicyPage = lazy(() => import("@/pages/cookies"));
 const RefundPolicyPage = lazy(() => import("@/pages/refund-policy"));
 const TemplatesPage = lazy(() => import("@/pages/templates"));
@@ -176,6 +177,7 @@ function AuthenticatedLayout() {
                 <Route path="/contact" component={ContactPage} />
                 <Route path="/privacy" component={PrivacyPage} />
                 <Route path="/terms" component={TermsPage} />
+                <Route path="/verify-email" component={VerifyEmailPage} />
                 <Route path="/cookies" component={CookiePolicyPage} />
                 <Route path="/refund-policy" component={RefundPolicyPage} />
                 <Route path="/" component={DashboardPage} />
@@ -442,6 +444,7 @@ function AppRouter() {
           <Route path="/contact" component={ContactPage} />
           <Route path="/privacy" component={PrivacyPage} />
           <Route path="/terms" component={TermsPage} />
+          <Route path="/verify-email" component={VerifyEmailPage} />
           <Route path="/cookies" component={CookiePolicyPage} />
           <Route path="/refund-policy" component={RefundPolicyPage} />
           <Route path="/pricing" component={PricingPage} />

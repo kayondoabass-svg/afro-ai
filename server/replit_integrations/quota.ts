@@ -18,7 +18,7 @@ const DAILY_REQUEST_LIMITS: Record<AiKind, Record<UserPlan, number>> = {
 };
 
 // PAYG charge per generation. Must clear OpenAI cost + payment processor fees
-// (~3.5% Pesapal / 3% + 30c Stripe). gpt-4.1-mini chat ~0.2c, gpt-image-1
+// (~3.5% Pesapal). gpt-4.1-mini chat ~0.2c, gpt-image-1
 // standard ~4c (HD ~8c), gpt-4o-mini-tts ~1-2c per short clip.
 const COST_CENTS: Record<AiKind, number> = {
   chat: 2,

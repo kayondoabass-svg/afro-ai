@@ -41,7 +41,7 @@ const PLANS = [
 const FAQS = [
   { q: "Do I need to publish to the App Store or Google Play?", a: "No. Your app installs directly from the browser as a Progressive Web App (PWA). No store fees, no review delays. If you want native store distribution later, you can export the code." },
   { q: "Will it work on iPhone?", a: "Yes — both iOS and Android. iOS users install via Safari's Share menu, Android users get a one-tap install banner." },
-  { q: "Can the app accept payments?", a: "Yes. Pesapal, Stripe, mobile money — all integrate with a few clicks. No coding needed." },
+  { q: "Can the app accept payments?", a: "Yes. Pesapal, mobile money (M-Pesa, MTN, Airtel) — all integrate with a few clicks. No coding needed." },
   { q: "What about offline use?", a: "All apps work offline by default. Data syncs when the user comes back online." },
   { q: "Can I use my own domain for the install URL?", a: "Yes — on Pro and above. Buy a domain in our Domain Store or bring your own." },
 ];

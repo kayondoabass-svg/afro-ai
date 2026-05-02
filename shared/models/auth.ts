@@ -36,9 +36,26 @@ export const users = pgTable("users", {
   experienceLevel: varchar("experience_level"), // 'beginner' | 'intermediate' | 'expert'
   // Preferred UI language code (en, sw, ar, fr, etc.) — synced from client localStorage
   preferredLanguage: varchar("preferred_language", { length: 8 }),
+  // Email verification — true if user confirmed via verification link, OR if account
+  // came from an OAuth provider (Google/GitHub/Replit) which already verifies email.
+  emailVerified: timestamp("email_verified"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Single-use email-verification tokens. Hash stored, not the raw token.
+export const emailVerificationTokens = pgTable(
+  "email_verification_tokens",
+  {
+    tokenHash: varchar("token_hash").primaryKey(),
+    userId: varchar("user_id").notNull(),
+    email: varchar("email").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [index("IDX_email_verify_user").on(table.userId)]
+);
 
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { useLanguage } from "@/hooks/use-language";
+import { EmailVerifyBanner } from "@/components/email-verify-banner";
 import {
   Globe, Eye, FolderOpen, FileImage, ClipboardList, Users,
   TrendingUp, Activity, ExternalLink, Rocket, ArrowRight,
@@ -61,6 +62,7 @@ export default function OverviewPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
+      <EmailVerifyBanner />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">

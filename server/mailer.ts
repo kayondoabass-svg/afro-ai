@@ -162,6 +162,19 @@ export async function sendSetPasswordEmail(to: string, opts: { name: string; res
   return send(to, subject, wrapped.html, wrapped.text);
 }
 
+export async function sendEmailVerification(to: string, opts: { name: string; verifyUrl: string }): Promise<boolean> {
+  const subject = "Confirm your email to finish setting up Afro AI";
+  const html = `
+    <p>Hi ${opts.name || "there"},</p>
+    <p>Welcome to Afro AI! To finish setting up your account, please confirm this is your email address. Just tap the button below — the link works for the next <strong>24 hours</strong>.</p>
+    <p style="margin:24px 0;text-align:center;"><a href="${opts.verifyUrl}" style="background:${BRAND_COLOR};color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Confirm my email →</a></p>
+    <p style="font-size:13px;color:#a1a1aa;">If the button doesn't work, copy this link into your browser:<br/><span style="word-break:break-all;color:${BRAND_COLOR};">${opts.verifyUrl}</span></p>
+    <p style="font-size:13px;color:#a1a1aa;margin-top:18px;">If you didn't sign up for Afro AI, you can safely ignore this email — no account will be activated.</p>`;
+  const text = `Hi ${opts.name || "there"},\n\nConfirm your Afro AI email using this link (works for 24 hours):\n${opts.verifyUrl}\n\nIf you didn't sign up, just ignore this email.`;
+  const wrapped = shell("Confirm your email", html, text);
+  return send(to, subject, wrapped.html, wrapped.text);
+}
+
 export async function sendWelcomeEmail(to: string, name: string): Promise<boolean> {
   const subject = "Welcome to Afro AI 🎉";
   const html = `

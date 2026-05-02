@@ -766,7 +766,7 @@ export const partnerPayouts = pgTable("partner_payouts", {
   partnerId: integer("partner_id").notNull().references(() => partners.id, { onDelete: "cascade" }),
   amountCents: integer("amount_cents").notNull(),
   currency: varchar("currency").notNull().default("USD"),
-  method: varchar("method").notNull().default("bank"), // bank | mobile_money | stripe
+  method: varchar("method").notNull().default("bank"), // bank | mobile_money | pesapal
   reference: text("reference"),
   status: varchar("status").notNull().default("pending"), // pending | processing | paid | failed
   notes: text("notes"),

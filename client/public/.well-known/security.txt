@@ -1,0 +1,30 @@
+Contact: mailto:security@afroaigroup.com
+Contact: mailto:support@afroaigroup.com
+Expires: 2027-12-31T23:59:59.000Z
+Preferred-Languages: en, sw, fr
+Canonical: https://afroaigroup.com/.well-known/security.txt
+Policy: https://afroaigroup.com/privacy
+
+# Afro AI — Security Disclosure Policy
+#
+# If you have discovered a security vulnerability in Afro AI, please email
+# security@afroaigroup.com with a description of the issue, the steps to
+# reproduce it, and (if possible) a suggested fix.
+#
+# Please do not disclose the issue publicly until we have had a chance to
+# address it. We aim to respond within 72 hours.
+#
+# Out of scope:
+#   - Reports from automated scanners with no proof of exploitability
+#   - Social engineering of Afro AI staff or customers
+#   - Denial-of-service attacks
+#   - Issues in third-party services we depend on (report those to the vendor)
+#
+# In scope:
+#   - Authentication and authorisation bypass
+#   - SQL injection, XSS, CSRF, SSRF
+#   - Sensitive data exposure
+#   - Server-side code execution
+#   - Account-takeover vectors
+#
+# Thank you for helping keep Afro AI and its users safe.
