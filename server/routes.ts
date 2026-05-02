@@ -4307,7 +4307,7 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       secretKeyHash,
       secretKeyPreview,
       plan: "starter",
-      monthlyLimit: 1,
+      monthlyLimit: 1000,
       isActive: true,
     }).returning();
 
@@ -4425,6 +4425,25 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
     const { from, to, subject, html, text } = req.body;
     if (!from || !to || !subject || (!html && !text)) {
       return res.status(400).json({ error: "from, to, subject, and html or text are required" });
+    }
+
+    // Verify the From-address domain belongs to a domain this user has verified.
+    // Extract domain from "Name <user@domain.com>" or plain "user@domain.com".
+    const fromAddrMatch = String(from).match(/<([^>]+)>|([^\s<>]+@[^\s<>]+)/);
+    const fromAddr = (fromAddrMatch?.[1] || fromAddrMatch?.[2] || "").trim().toLowerCase();
+    const fromDomain = fromAddr.split("@")[1];
+    if (!fromDomain) {
+      return res.status(400).json({ error: "Invalid from address — must be a valid email" });
+    }
+    const [verifiedDomain] = await db.select().from(emailApiDomains).where(dbAnd(
+      dbEq(emailApiDomains.userId, apiKey.userId),
+      dbEq(emailApiDomains.domain, fromDomain),
+      dbEq(emailApiDomains.status, "verified"),
+    ));
+    if (!verifiedDomain) {
+      return res.status(403).json({
+        error: `Domain "${fromDomain}" is not verified on your account. Add and verify it at /email-api before sending.`,
+      });
     }
 
     // Filter out suppressed recipients (hard bounces and complaints) before hitting SES.
