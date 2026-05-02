@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SiGoogle, SiGithub } from "react-icons/si";
+import { Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   LockedPanel,
@@ -38,8 +39,12 @@ export default function LoginPage() {
   const [loginPassword, setLoginPassword] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState("");
   const [registerFirstName, setRegisterFirstName] = useState("");
   const [registerLastName, setRegisterLastName] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Per-form lock state. We keep them separate so a signup throttle doesn't
   // hide the login form (and vice-versa) — the Worker tracks them as
@@ -153,6 +158,14 @@ export default function LoginPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (registerPassword !== registerConfirmPassword) {
+      toast({
+        title: "Passwords don't match",
+        description: "Please make sure both password fields are identical.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!signupToken) {
       toast({
         title: "One quick check",
@@ -324,15 +337,71 @@ export default function LoginPage() {
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="reg-password">Password</Label>
-                      <Input
-                        id="reg-password"
-                        type="password"
-                        placeholder="At least 6 characters"
-                        required
-                        value={registerPassword}
-                        onChange={(e) => setRegisterPassword(e.target.value)}
-                        data-testid="input-register-password"
-                      />
+                      <div className="relative">
+                        <Input
+                          id="reg-password"
+                          type={showRegisterPassword ? "text" : "password"}
+                          placeholder="At least 6 characters"
+                          required
+                          value={registerPassword}
+                          onChange={(e) => setRegisterPassword(e.target.value)}
+                          className="pr-10"
+                          autoComplete="new-password"
+                          data-testid="input-register-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRegisterPassword((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          aria-label={showRegisterPassword ? "Hide signup password" : "Show signup password"}
+                          aria-pressed={showRegisterPassword}
+                          data-testid="button-toggle-register-password"
+                        >
+                          {showRegisterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="reg-confirm-password">Confirm Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="reg-confirm-password"
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="Re-enter password"
+                          required
+                          value={registerConfirmPassword}
+                          onChange={(e) => setRegisterConfirmPassword(e.target.value)}
+                          className="pr-10"
+                          autoComplete="new-password"
+                          aria-invalid={
+                            registerConfirmPassword.length > 0 &&
+                            registerPassword !== registerConfirmPassword
+                          }
+                          aria-describedby="reg-confirm-password-error"
+                          data-testid="input-register-confirm-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                          aria-pressed={showConfirmPassword}
+                          data-testid="button-toggle-confirm-password"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      {registerConfirmPassword.length > 0 && registerPassword !== registerConfirmPassword && (
+                        <p
+                          id="reg-confirm-password-error"
+                          role="alert"
+                          aria-live="polite"
+                          className="text-xs text-destructive"
+                          data-testid="text-password-mismatch"
+                        >
+                          Passwords don't match
+                        </p>
+                      )}
                     </div>
                     <div className="flex justify-center">
                       <TurnstileWidget
@@ -344,7 +413,12 @@ export default function LoginPage() {
                     <Button
                       type="submit"
                       className="w-full"
-                      disabled={isLoading || !signupToken}
+                      disabled={
+                        isLoading ||
+                        !signupToken ||
+                        registerPassword.length === 0 ||
+                        registerPassword !== registerConfirmPassword
+                      }
                       data-testid="button-register-submit"
                     >
                       {isLoading ? "Creating account..." : "Create Account"}
@@ -413,15 +487,29 @@ export default function LoginPage() {
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="login-password">Password</Label>
-                      <Input
-                        id="login-password"
-                        type="password"
-                        placeholder="Your password"
-                        required
-                        value={loginPassword}
-                        onChange={(e) => setLoginPassword(e.target.value)}
-                        data-testid="input-login-password"
-                      />
+                      <div className="relative">
+                        <Input
+                          id="login-password"
+                          type={showLoginPassword ? "text" : "password"}
+                          placeholder="Your password"
+                          required
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="pr-10"
+                          autoComplete="current-password"
+                          data-testid="input-login-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowLoginPassword((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          aria-label={showLoginPassword ? "Hide login password" : "Show login password"}
+                          aria-pressed={showLoginPassword}
+                          data-testid="button-toggle-login-password"
+                        >
+                          {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
                     <div className="flex justify-center">
                       <TurnstileWidget
