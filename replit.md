@@ -52,6 +52,45 @@ The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind C
 -   **Chatbot API:** Enables users to create embeddable AI chatbots for external websites with a knowledge base and brand customization.
 -   **Team Management (Founder):** Country-first staff promotion at `/team` (founder-only). Founder picks one of 25 African countries, searches existing clients, then assigns one of 20 predefined roles and one of three access tiers (read-only / editor / full-admin). Personal details (phone, city, address), photo (JPG/PNG/WEBP) and ID document (PDF/JPG/PNG) optional, all uploaded to R2 with magic-byte content validation. Confidential ID documents are streamed through an authenticated backend endpoint (`/api/admin/team/:id/id-document`) gated to founders + active HR managers in the same country only — the file URL is never returned to the browser. Duplicate active membership for the same user/country is blocked at app + DB level via the partial unique index `team_members_unique_active_per_country (user_id, country) WHERE status <> 'removed'`. The companion `/api/team/me` endpoint exposes the calling user's role/tier/country/manager flag for the future staff dashboard. Constants live in `shared/team-constants.ts` (TEAM_ROLES, MANAGER_ROLES, CONFIDENTIAL_DOC_VIEWER_ROLES, TEAM_TIERS, AFRICAN_COUNTRIES).
 
+## Production Deployment
+
+Production runs on a DigitalOcean droplet (`root@165.232.64.81`) behind Caddy + Cloudflare, on the `afroaigroup.com` domain. The Node service is managed by systemd as `afro-ai.service` with `WorkingDirectory=/opt/afro-ai` and `EnvironmentFile=/srv/afro-ai/shared/.env` (so prod secrets live outside the git checkout and survive any redeploy).
+
+**Standard deploy** — push to `origin/main`, then on the droplet run:
+
+```
+bash /opt/afro-ai/scripts/deploy.sh
+```
+
+`scripts/deploy.sh` pulls from origin, builds client + server, restarts the service, runs a `/api/health` check, and purges the Cloudflare cache. Safety guarantees:
+
+- **Concurrency lock** (`flock` on `/var/lock/afro-ai-deploy.lock`) — refuses to start if another deploy is already running.
+- **Refuses dirty working tree** — won't silently throw away an uncommitted hotfix on the droplet.
+- **Snapshots the live `dist/` as `dist.prev` before building** (cheap hardlink copy). If the build fails, the systemctl restart fails, OR the health check fails, the snapshot is restored and the service runs the old build. The site stays live even if the rollback rebuild itself would fail.
+- **Health check retries** 5× with 2-second backoff before declaring failure.
+- **Build timeout** (`BUILD_TIMEOUT`, default 600s) prevents a runaway build from blocking forever.
+- **Logs every run** to `/var/log/afro-ai-deploy.log` with UTC timestamps.
+
+Tunable env vars: `PORT` (default 5000, used for health check URL), `BUILD_TIMEOUT` (default 600s).
+
+**Manual rollback** — to roll back without a new commit:
+
+```
+bash /opt/afro-ai/scripts/rollback.sh           # one commit back
+bash /opt/afro-ai/scripts/rollback.sh <sha>     # specific commit
+```
+
+(Use `git -C /opt/afro-ai log --oneline -10` first to pick a SHA.)
+
+**One-time bootstrap** — after the very first time these scripts land on the droplet:
+
+```
+chmod +x /opt/afro-ai/scripts/deploy.sh /opt/afro-ai/scripts/rollback.sh
+touch /var/log/afro-ai-deploy.log && chown root:root /var/log/afro-ai-deploy.log
+```
+
+Required env vars in `/srv/afro-ai/shared/.env`: everything the app needs at runtime, plus `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN` (token must have **Zone → Cache Purge → Purge** permission for `afroaigroup.com`) for the auto-purge step.
+
 ## External Dependencies
 -   **AI Services:** OpenAI (primary) with Google Gemini fallback. Unified by `server/ai-chat-provider.ts` which exposes `aiChatComplete()`. Provider order is controlled by `AI_PRIMARY_PROVIDER` (default `openai`); the helper auto-falls-back to the other provider on auth/quota errors (HTTP 401/402/403/429, `insufficient_quota`, `invalid_api_key`, billing). Gemini is reached via its OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`) so the same client code works for both. Used by `/api/demo-chat`, `/api/widget-chat/:apiKey`, `/api/v1/chatbot/message`, and the USSD AI route. `OPENAI_MODEL` and `GEMINI_MODEL` env vars override defaults (`gpt-4.1-mini` and `gemini-2.0-flash`).
 -   **Payment Gateway:** Pesapal (API 3.0).

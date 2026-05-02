@@ -171,6 +171,17 @@ export async function registerRoutes(
     }
   });
 
+  // Lightweight health check used by deploy/rollback scripts and uptime
+  // monitors. Intentionally does NOT touch the DB so a transient DB blip
+  // doesn't trigger an automatic deploy rollback.
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      uptime: Math.round(process.uptime()),
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // Serve SEO files explicitly so crawlers always find them
   app.get("/robots.txt", (_req, res) => {
     res.type("text/plain").send(
