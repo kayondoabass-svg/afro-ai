@@ -261,8 +261,12 @@ describe("Lock screen translations — LoginPage (signup tab)", () => {
 
       const emailInput = await screen.findByTestId("input-register-email");
       const passwordInput = screen.getByTestId("input-register-password");
+      const confirmPasswordInput = screen.getByTestId(
+        "input-register-confirm-password",
+      );
       fireEvent.change(emailInput, { target: { value: "ada@example.com" } });
       fireEvent.change(passwordInput, { target: { value: "password" } });
+      fireEvent.change(confirmPasswordInput, { target: { value: "password" } });
 
       const submit = screen.getByTestId("button-register-submit");
       await waitFor(() => expect(submit).not.toBeDisabled());
