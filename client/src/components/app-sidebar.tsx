@@ -54,48 +54,49 @@ import {
   Handshake,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { LanguageSelector } from "@/components/language-selector";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 const ALL_MENU_ITEMS = [
-  { title: "Overview", url: "/overview", icon: LayoutGrid },
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "AI Builder", url: "/chat", icon: MessageSquare },
-  { title: "Run Code", url: "/playground", icon: Play },
-  { title: "Block Builder", url: "/builder", icon: Layers },
-  { title: "Templates", url: "/templates", icon: LayoutTemplate },
-  { title: "Deployments", url: "/deployments", icon: Rocket },
-  { title: "Forms", url: "/forms", icon: ClipboardList },
-  { title: "Blog & CMS", url: "/blog", icon: BookOpen },
-  { title: "Email Marketing", url: "/email", icon: Mail },
-  { title: "Analytics", url: "/analytics", icon: BarChart3 },
-  { title: "Marketplace", url: "/marketplace", icon: Store },
-  { title: "PWA Builder", url: "/pwa", icon: Smartphone },
-  { title: "Collaborate", url: "/collaborate", icon: Users },
-  { title: "Domain Store", url: "/domains", icon: Globe },
-  { title: "API Integrations", url: "/integrations", icon: Link2 },
-  { title: "SEO Tools", url: "/seo", icon: Search },
-  { title: "Webhooks", url: "/webhooks", icon: Zap },
-  { title: "Email API", url: "/email-api", icon: Send },
-  { title: "Afro Auth", url: "/dashboard/auth", icon: KeyRound },
-  { title: "Chatbot API", url: "/chatbots", icon: Bot },
-  { title: "USSD Builder", url: "/ussd", icon: PhoneCall },
-  { title: "My USSD Apps", url: "/ussd/apps", icon: Smartphone },
-  { title: "Files & Storage", url: "/files", icon: HardDrive },
-  { title: "D1 Database", url: "/d1", icon: DatabaseZap },
-  { title: "Secrets", url: "/secrets", icon: KeyRound },
-  { title: "Activity Logs", url: "/logs", icon: Activity },
-  { title: "Console", url: "/console", icon: SquareTerminal },
-  { title: "Referrals", url: "/referrals", icon: Gift },
-  { title: "Pricing", url: "/pricing", icon: CreditCard },
-  { title: "Billing & Usage", url: "/billing", icon: Receipt },
-  { title: "Partner Portal", url: "/partner-portal", icon: Handshake },
-  { title: "Become a Partner", url: "/become-partner", icon: Globe },
-  { title: "Settings", url: "/settings", icon: Settings },
+  { titleKey: "sidebar.overview", title: "Overview", url: "/overview", icon: LayoutGrid },
+  { titleKey: "sidebar.dashboard", title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+  { titleKey: "sidebar.aiBuilder", title: "AI Builder", url: "/chat", icon: MessageSquare },
+  { titleKey: "sidebar.playground", title: "Run Code", url: "/playground", icon: Play },
+  { titleKey: "sidebar.blockBuilder", title: "Block Builder", url: "/builder", icon: Layers },
+  { titleKey: "sidebar.templates", title: "Templates", url: "/templates", icon: LayoutTemplate },
+  { titleKey: "sidebar.deployments", title: "Deployments", url: "/deployments", icon: Rocket },
+  { titleKey: "sidebar.forms", title: "Forms", url: "/forms", icon: ClipboardList },
+  { titleKey: "sidebar.blog", title: "Blog & CMS", url: "/blog", icon: BookOpen },
+  { titleKey: "sidebar.emailMarketing", title: "Email Marketing", url: "/email", icon: Mail },
+  { titleKey: "sidebar.analytics", title: "Analytics", url: "/analytics", icon: BarChart3 },
+  { titleKey: "sidebar.marketplace", title: "Marketplace", url: "/marketplace", icon: Store },
+  { titleKey: "sidebar.pwa", title: "PWA Builder", url: "/pwa", icon: Smartphone },
+  { titleKey: "sidebar.collaborate", title: "Collaborate", url: "/collaborate", icon: Users },
+  { titleKey: "sidebar.domains", title: "Domain Store", url: "/domains", icon: Globe },
+  { titleKey: "sidebar.integrations", title: "API Integrations", url: "/integrations", icon: Link2 },
+  { titleKey: "sidebar.seo", title: "SEO Tools", url: "/seo", icon: Search },
+  { titleKey: "sidebar.webhooks", title: "Webhooks", url: "/webhooks", icon: Zap },
+  { titleKey: "sidebar.emailApi", title: "Email API", url: "/email-api", icon: Send },
+  { titleKey: "sidebar.afroAuth", title: "Afro Auth", url: "/dashboard/auth", icon: KeyRound },
+  { titleKey: "sidebar.chatbotApi", title: "Chatbot API", url: "/chatbots", icon: Bot },
+  { titleKey: "sidebar.ussd", title: "USSD Builder", url: "/ussd", icon: PhoneCall },
+  { titleKey: "sidebar.myUssd", title: "My USSD Apps", url: "/ussd/apps", icon: Smartphone },
+  { titleKey: "sidebar.files", title: "Files & Storage", url: "/files", icon: HardDrive },
+  { titleKey: "sidebar.d1", title: "D1 Database", url: "/d1", icon: DatabaseZap },
+  { titleKey: "sidebar.secrets", title: "Secrets", url: "/secrets", icon: KeyRound },
+  { titleKey: "sidebar.logs", title: "Activity Logs", url: "/logs", icon: Activity },
+  { titleKey: "sidebar.console", title: "Console", url: "/console", icon: SquareTerminal },
+  { titleKey: "sidebar.referrals", title: "Referrals", url: "/referrals", icon: Gift },
+  { titleKey: "sidebar.pricing", title: "Pricing", url: "/pricing", icon: CreditCard },
+  { titleKey: "sidebar.billing", title: "Billing & Usage", url: "/billing", icon: Receipt },
+  { titleKey: "sidebar.partnerPortal", title: "Partner Portal", url: "/partner-portal", icon: Handshake },
+  { titleKey: "sidebar.becomePartner", title: "Become a Partner", url: "/become-partner", icon: Globe },
+  { titleKey: "sidebar.settings", title: "Settings", url: "/settings", icon: Settings },
 ];
 
 const FOUNDER_ITEMS = [
-  { title: "Founder Dashboard", url: "/founder", icon: Crown },
-  { title: "Command Center", url: "/admin-command", icon: Terminal },
+  { titleKey: "sidebar.founderDashboard", title: "Founder Dashboard", url: "/founder", icon: Crown },
+  { titleKey: "sidebar.commandCenter", title: "Command Center", url: "/admin-command", icon: Terminal },
 ];
 
 export function AppSidebar() {
@@ -107,9 +108,12 @@ export function AppSidebar() {
   const isFounder = (user as any)?.isFounder === true;
 
   const filteredItems = search.trim()
-    ? ALL_MENU_ITEMS.filter(item =>
-        item.title.toLowerCase().includes(search.toLowerCase())
-      )
+    ? ALL_MENU_ITEMS.filter(item => {
+        const localized = t(item.titleKey);
+        const labelToMatch = localized === item.titleKey ? item.title : localized;
+        return labelToMatch.toLowerCase().includes(search.toLowerCase()) ||
+               item.title.toLowerCase().includes(search.toLowerCase());
+      })
     : ALL_MENU_ITEMS;
 
   return (
@@ -149,7 +153,7 @@ export function AppSidebar() {
                     >
                       <Link href={item.url} data-testid={`link-sidebar-${item.url.slice(1)}`}>
                         <item.icon className="w-4 h-4" />
-                        <span>{item.title}</span>
+                        <span>{(() => { const v = t(item.titleKey); return v === item.titleKey ? item.title : v; })()}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -161,7 +165,7 @@ export function AppSidebar() {
 
         {isFounder && !search && (
           <SidebarGroup>
-            <SidebarGroupLabel className="text-primary">Founder</SidebarGroupLabel>
+            <SidebarGroupLabel className="text-primary">{t("sidebar.founder")}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {FOUNDER_ITEMS.map((item) => (
@@ -172,7 +176,7 @@ export function AppSidebar() {
                     >
                       <Link href={item.url} data-testid={`link-sidebar-${item.url.slice(1)}`}>
                         <item.icon className="w-4 h-4" />
-                        <span>{item.title}</span>
+                        <span>{(() => { const v = t(item.titleKey); return v === item.titleKey ? item.title : v; })()}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -184,6 +188,9 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-4 space-y-3">
+        <div className="px-1">
+          <LanguageSelector />
+        </div>
         <div className="flex items-center gap-3">
           <Avatar className="w-8 h-8">
             <AvatarImage src={user?.profileImageUrl || undefined} />

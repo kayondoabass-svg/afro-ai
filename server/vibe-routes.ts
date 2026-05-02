@@ -82,7 +82,7 @@ export function scanForSecrets(code: string): string[] {
 
 export function registerVibeRoutes(app: Express): void {
   // ---- 1. FILE CHIPS: serve a snippet of any project file ----
-  app.get("/api/vibe/file", async (req: Request, res: Response) => {
+  app.get("/api/vibe/file", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const rel = String(req.query.path || "");
       const start = req.query.start ? parseInt(String(req.query.start)) : 1;
@@ -113,7 +113,7 @@ export function registerVibeRoutes(app: Express): void {
   });
 
   // ---- 2. BUILD LEDGER: parse + persist steps for an assistant message ----
-  app.get("/api/vibe/steps/:messageId", async (req: Request, res: Response) => {
+  app.get("/api/vibe/steps/:messageId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.messageId);
       const rows = await db.select().from(vibeSteps).where(eq(vibeSteps.messageId, id)).orderBy(asc(vibeSteps.ord));
@@ -121,7 +121,7 @@ export function registerVibeRoutes(app: Express): void {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  app.get("/api/vibe/refs/:messageId", async (req: Request, res: Response) => {
+  app.get("/api/vibe/refs/:messageId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.messageId);
       const rows = await db.select().from(vibeFileRefs).where(eq(vibeFileRefs.messageId, id));
@@ -130,7 +130,7 @@ export function registerVibeRoutes(app: Express): void {
   });
 
   // Index a freshly-finished message: extract file/step markers and store them.
-  app.post("/api/vibe/index/:messageId", async (req: Request, res: Response) => {
+  app.post("/api/vibe/index/:messageId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.messageId);
       const [msg] = await db.select().from(messages).where(eq(messages.id, id));
@@ -154,7 +154,7 @@ export function registerVibeRoutes(app: Express): void {
   });
 
   // ---- 3. SECRETS DETECTOR: scan code, return needed-vs-set vars ----
-  app.post("/api/vibe/scan-secrets", async (req: Request, res: Response) => {
+  app.post("/api/vibe/scan-secrets", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const code = String(req.body?.code || "");
       if (!code) return res.json({ needed: [], missing: [] });

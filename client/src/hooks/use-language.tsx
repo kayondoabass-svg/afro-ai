@@ -60,15 +60,38 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const saved = localStorage.getItem("africa-ai-lang");
-    if (!saved) {
-      detectCountryLanguage().then((code) => {
-        setLanguageState(code);
-        localStorage.setItem("africa-ai-lang", code);
-        setDetected(true);
+    // Hydrate from server profile if logged-in (overrides localStorage on first load)
+    fetch("/api/auth/user", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((user) => {
+        const serverLang = user?.preferredLanguage as LanguageCode | undefined;
+        if (serverLang && serverLang in translations) {
+          setLanguageState(serverLang);
+          localStorage.setItem("africa-ai-lang", serverLang);
+          setDetected(true);
+          return;
+        }
+        if (!saved) {
+          detectCountryLanguage().then((code) => {
+            setLanguageState(code);
+            localStorage.setItem("africa-ai-lang", code);
+            setDetected(true);
+          });
+        } else {
+          setDetected(true);
+        }
+      })
+      .catch(() => {
+        if (!saved) {
+          detectCountryLanguage().then((code) => {
+            setLanguageState(code);
+            localStorage.setItem("africa-ai-lang", code);
+            setDetected(true);
+          });
+        } else {
+          setDetected(true);
+        }
       });
-    } else {
-      setDetected(true);
-    }
   }, []);
 
   useEffect(() => {
@@ -80,6 +103,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const setLanguage = useCallback((code: LanguageCode) => {
     setLanguageState(code);
     localStorage.setItem("africa-ai-lang", code);
+    // Best-effort persist to server profile (silent on failure / when logged out)
+    fetch("/api/auth/user/language", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ language: code }),
+    }).catch(() => {});
   }, []);
 
   const t = useCallback(

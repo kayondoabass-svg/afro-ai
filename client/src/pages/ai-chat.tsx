@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FileTreeSidebar, saveProjectFiles, type ProjectFile } from "@/components/file-tree-sidebar";
 import { VibePanel, parseVibeMarkers } from "@/components/vibe-chips";
+import { NextStepsCard } from "@/components/next-steps-card";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -939,28 +940,12 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
                     }}
                   />
                 )}
-                <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-primary flex-shrink-0" />
-                    <p className="text-sm font-semibold">Want a custom domain?</p>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Replace <span className="font-mono text-primary">.afroaigroup.com</span> with your own domain like <span className="font-mono">mybusiness.com</span> — free to connect, SSL included.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Buy a domain at <strong>Namecheap</strong> or <strong>Truehost Africa</strong> (accepts mobile money), then connect it in Deployments.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full mt-1 border-primary/30 text-primary hover:bg-primary/10"
-                    onClick={() => { onOpenChange(false); setLocation("/deployments"); }}
-                    data-testid="button-connect-domain-cta"
-                  >
-                    <Globe className="w-3.5 h-3.5 mr-1" />
-                    Connect Custom Domain
-                  </Button>
-                </div>
+                <NextStepsCard
+                  appId={existingApp?.id}
+                  publishedUrl={publishedUrl}
+                  appCode={code}
+                  onClose={() => onOpenChange(false)}
+                />
               </div>
             )}
           </div>
@@ -1632,6 +1617,19 @@ export default function AIChatPage() {
       })();
     }
   }, [projectInitialized]);
+
+  // Resume an existing conversation via ?conversation=ID deep link (from dashboard "Continue" tile)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const resumeId = params.get("conversation");
+    if (resumeId) {
+      const idNum = parseInt(resumeId, 10);
+      if (!isNaN(idNum)) {
+        setActiveConversation(idNum);
+        window.history.replaceState({}, "", "/chat");
+      }
+    }
+  }, []);
 
   const { data: conversations, isLoading: loadingConversations } = useQuery<Conversation[]>({
     queryKey: ["/api/conversations"],

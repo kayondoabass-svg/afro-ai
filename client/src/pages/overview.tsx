@@ -5,19 +5,32 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
+import { useLanguage } from "@/hooks/use-language";
 import {
   Globe, Eye, FolderOpen, FileImage, ClipboardList, Users,
   TrendingUp, Activity, ExternalLink, Rocket, ArrowRight,
-  CheckCircle, XCircle, Clock, Zap,
+  CheckCircle, XCircle, Clock, Zap, MessageSquare, PlayCircle,
 } from "lucide-react";
+
+interface RecentConvo {
+  id: number;
+  title: string;
+  updatedAt: string;
+  projectId?: number | null;
+}
 
 export default function OverviewPage() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const firstName = (user as any)?.firstName || "Creator";
   const plan = (user as any)?.plan || "starter";
 
   const { data: overview, isLoading } = useQuery<any>({
     queryKey: ["/api/overview"],
+  });
+
+  const { data: recentConvos } = useQuery<RecentConvo[]>({
+    queryKey: ["/api/conversations"],
   });
 
   const statCards = [
@@ -68,6 +81,42 @@ export default function OverviewPage() {
           </Link>
         </div>
       </div>
+
+      {/* Resume Building — picks up the user's most recent in-progress chats */}
+      {recentConvos && recentConvos.length > 0 && (
+        <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-transparent" data-testid="card-resume-building">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <PlayCircle className="w-4 h-4 text-primary" />
+              {t("overview.resumeTitle")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-xs text-muted-foreground -mt-1 mb-2">
+              {t("overview.resumeSubtitle")}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {recentConvos.slice(0, 6).map((convo) => (
+                <Link key={convo.id} href={`/chat?conversation=${convo.id}`}>
+                  <div className="p-3 rounded-md border bg-background/60 hover:border-primary/50 hover:bg-primary/5 transition-colors cursor-pointer group" data-testid={`tile-resume-${convo.id}`}>
+                    <div className="flex items-start gap-2">
+                      <MessageSquare className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{convo.title || t("overview.untitledChat")}</p>
+                        <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Clock className="w-2.5 h-2.5" />
+                          {new Date(convo.updatedAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors flex-shrink-0" />
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">

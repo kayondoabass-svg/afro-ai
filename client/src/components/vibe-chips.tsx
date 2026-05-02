@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FileCode2, Key, CheckCircle2, AlertTriangle, Wrench, Search, FilePlus, Pencil, Rocket, Loader2, History, ShieldAlert } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { FileCode2, Key, CheckCircle2, AlertTriangle, Wrench, Search, FilePlus, Pencil, Rocket, Loader2, History, ShieldAlert, Plus } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 
 // --- Marker parsers (mirror the server) ---
 const FILE_RE = /\[\[file:([^:\]]+)(?::(\d+)(?:-(\d+))?)?\]\]/g;
@@ -37,7 +39,6 @@ export function parseVibeMarkers(text: string): ParsedVibe {
   while ((m = SECRET_RE.exec(text)) !== null) {
     secrets.push({ name: m[1], reason: m[2]?.trim() });
   }
-  // Strip markers from rendered text
   const cleanText = text
     .replace(FILE_RE, "")
     .replace(STEP_RE, "")
@@ -48,7 +49,7 @@ export function parseVibeMarkers(text: string): ParsedVibe {
 }
 
 // =================================================================
-// FILE CHIP — clickable badge that opens an inline file viewer modal
+// FILE CHIP
 // =================================================================
 export function FileChip({ path, start, end }: { path: string; start?: number; end?: number }) {
   const [open, setOpen] = useState(false);
@@ -70,6 +71,7 @@ export function FileChip({ path, start, end }: { path: string; start?: number; e
 }
 
 function FileViewerDialog({ path, start, end, onClose }: { path: string; start?: number; end?: number; onClose: () => void }) {
+  const { t } = useLanguage();
   const { data, isLoading, error } = useQuery<any>({
     queryKey: ["/api/vibe/file", path, start ?? 1, end ?? 9999],
     queryFn: async () => {
@@ -77,7 +79,7 @@ function FileViewerDialog({ path, start, end, onClose }: { path: string; start?:
       if (start) params.set("start", String(Math.max(1, start - 5)));
       if (end) params.set("end", String(end + 5));
       const res = await fetch(`/api/vibe/file?${params}`);
-      if (!res.ok) throw new Error((await res.json()).error || "Failed to load");
+      if (!res.ok) throw new Error((await res.json()).error || t("vibe.loadError"));
       return res.json();
     },
   });
@@ -91,7 +93,7 @@ function FileViewerDialog({ path, start, end, onClose }: { path: string; start?:
             {start && <Badge variant="outline" className="text-[10px]">L{start}{end && end !== start ? `-${end}` : ""}</Badge>}
           </DialogTitle>
           <DialogDescription>
-            {data ? `${data.totalLines} lines · showing ${data.startLine}–${data.endLine}` : ""}
+            {data ? t("vibe.fileMeta", { total: data.totalLines, start: data.startLine, end: data.endLine }) : ""}
           </DialogDescription>
         </DialogHeader>
         {isLoading && <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
@@ -118,7 +120,7 @@ function FileViewerDialog({ path, start, end, onClose }: { path: string; start?:
 }
 
 // =================================================================
-// BUILD LEDGER — timeline of steps the agent took
+// BUILD LEDGER
 // =================================================================
 const STEP_ICONS: Record<string, any> = {
   read: Search, search: Search,
@@ -134,12 +136,13 @@ const STEP_COLORS: Record<string, string> = {
 };
 
 export function BuildLedger({ steps }: { steps: { kind: string; label: string }[] }) {
+  const { t } = useLanguage();
   if (!steps.length) return null;
   return (
     <div className="rounded-lg border bg-card/50 p-3 space-y-1.5" data-testid="vibe-build-ledger">
       <div className="flex items-center gap-2 mb-1">
         <History className="w-3.5 h-3.5 text-muted-foreground" />
-        <span className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground">Build Steps</span>
+        <span className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground">{t("vibe.buildSteps")}</span>
         <Badge variant="secondary" className="text-[10px] ml-auto">{steps.length}</Badge>
       </div>
       {steps.map((s, i) => {
@@ -158,9 +161,63 @@ export function BuildLedger({ steps }: { steps: { kind: string; label: string }[
 }
 
 // =================================================================
-// REQUIRED SECRETS — chips for env vars the generated code needs
+// REQUIRED SECRETS — chips + inline "Add" dialog
 // =================================================================
-export function RequiredSecrets({ code, hints = [] }: { code?: string; hints?: { name: string; reason?: string }[] }) {
+function AddSecretDialog({ name, appId, onClose }: { name: string; appId?: number; onClose: () => void }) {
+  const { t } = useLanguage();
+  const { toast } = useToast();
+  const [value, setValue] = useState("");
+  const mut = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/secrets", { key: name, value, appId: appId ?? null });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/secrets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vibe/scan-secrets"] });
+      toast({ title: t("vibe.secretAdded", { name }), description: t("vibe.secretAddedDesc") });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: t("vibe.secretFailed"), description: e.message, variant: "destructive" }),
+  });
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Key className="w-4 h-4 text-primary" /> {t("vibe.addSecretTitle", { name })}</DialogTitle>
+          <DialogDescription>
+            {appId ? t("vibe.addSecretAppDesc") : t("vibe.addSecretGlobalDesc")}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium font-mono">{name}</label>
+            <Input
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={t("vibe.pasteValue")}
+              data-testid={`input-secret-${name}`}
+              autoFocus
+            />
+            <p className="text-[10px] text-muted-foreground">{t("vibe.secretEncrypted")}</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} data-testid="button-cancel-secret">{t("common.cancel")}</Button>
+          <Button onClick={() => mut.mutate()} disabled={!value || mut.isPending} data-testid="button-save-secret">
+            {mut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            {t("vibe.saveSecret")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function RequiredSecrets({ code, hints = [], appId }: { code?: string; hints?: { name: string; reason?: string }[]; appId?: number }) {
+  const { t } = useLanguage();
+  const [adding, setAdding] = useState<string | null>(null);
   const { data } = useQuery<{ needed: string[]; missing: string[] }>({
     queryKey: ["/api/vibe/scan-secrets", code?.slice(0, 100), hints.map(h => h.name).join(",")],
     queryFn: async () => {
@@ -177,35 +234,47 @@ export function RequiredSecrets({ code, hints = [] }: { code?: string; hints?: {
     <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2" data-testid="vibe-secrets-required">
       <div className="flex items-center gap-2">
         <ShieldAlert className="w-3.5 h-3.5 text-yellow-400" />
-        <span className="text-[11px] uppercase tracking-wide font-semibold text-yellow-400">API Keys Required</span>
+        <span className="text-[11px] uppercase tracking-wide font-semibold text-yellow-400">{t("vibe.apiKeysRequired")}</span>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {needed.map((name) => {
           const hint = hints.find(h => h.name === name);
           const isMissing = missing.has(name);
           return (
-            <div key={name} className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-mono ${isMissing ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-green-500/40 bg-green-500/10 text-green-300"}`} data-testid={`vibe-secret-${name}`}>
+            <div key={name} className={`inline-flex items-center gap-1 rounded-md border pl-2 pr-1 py-0.5 text-[11px] font-mono ${isMissing ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-green-500/40 bg-green-500/10 text-green-300"}`} data-testid={`vibe-secret-${name}`}>
               <Key className="w-3 h-3" />
               {name}
               {isMissing ? <AlertTriangle className="w-3 h-3 ml-0.5" /> : <CheckCircle2 className="w-3 h-3 ml-0.5" />}
               {hint?.reason && <span className="opacity-70 ml-1 font-sans normal-case">— {hint.reason}</span>}
+              {isMissing && (
+                <button
+                  onClick={() => setAdding(name)}
+                  className="ml-1 inline-flex items-center gap-0.5 rounded bg-red-500/20 hover:bg-red-500/30 px-1.5 py-0.5 text-[10px] font-sans text-red-100 transition-colors"
+                  data-testid={`button-add-secret-${name}`}
+                  title={t("vibe.addNow")}
+                >
+                  <Plus className="w-2.5 h-2.5" /> {t("vibe.add")}
+                </button>
+              )}
             </div>
           );
         })}
       </div>
       {missing.size > 0 && (
         <p className="text-[11px] text-muted-foreground">
-          Add the missing keys in <span className="font-mono">Replit → Secrets</span> or your hosting provider's environment.
+          {t("vibe.secretsHelp")}
         </p>
       )}
+      {adding && <AddSecretDialog name={adding} appId={appId} onClose={() => setAdding(null)} />}
     </div>
   );
 }
 
 // =================================================================
-// TYPECHECK BADGE — inline TS/TSX validator for code blocks
+// TYPECHECK BADGE
 // =================================================================
 export function TypecheckBadge({ code, lang = "ts" }: { code: string; lang?: string }) {
+  const { t } = useLanguage();
   const [result, setResult] = useState<{ ok: boolean; errors: string[] } | null>(null);
   const { toast } = useToast();
   const mut = useMutation({
@@ -215,9 +284,9 @@ export function TypecheckBadge({ code, lang = "ts" }: { code: string; lang?: str
     },
     onSuccess: (data: any) => {
       setResult(data);
-      if (!data.ok) toast({ title: `${data.errors.length} TypeScript error(s)`, description: data.errors[0] || "", variant: "destructive" });
+      if (!data.ok) toast({ title: t("vibe.typecheckErrors", { count: data.errors.length }), description: data.errors[0] || "", variant: "destructive" });
     },
-    onError: (e: any) => toast({ title: "Typecheck failed", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: t("vibe.typecheckFailed"), description: e.message, variant: "destructive" }),
   });
   return (
     <div className="inline-flex items-center gap-1.5">
@@ -227,12 +296,12 @@ export function TypecheckBadge({ code, lang = "ts" }: { code: string; lang?: str
         disabled={mut.isPending}
         data-testid="vibe-typecheck-button"
       >
-        {mut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-        Typecheck
+        {mut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 mr-0.5" />}
+        {t("vibe.typecheck")}
       </Button>
       {result && (
         <Badge variant={result.ok ? "secondary" : "destructive"} className="text-[10px]" data-testid="vibe-typecheck-result">
-          {result.ok ? "✓ clean" : `${result.errors.length} error${result.errors.length !== 1 ? "s" : ""}`}
+          {result.ok ? t("vibe.clean") : t("vibe.errorsCount", { count: result.errors.length })}
         </Badge>
       )}
     </div>
@@ -240,9 +309,9 @@ export function TypecheckBadge({ code, lang = "ts" }: { code: string; lang?: str
 }
 
 // =================================================================
-// VIBE PANEL — composes everything for a single assistant message
+// VIBE PANEL
 // =================================================================
-export function VibePanel({ text, code }: { text: string; code?: string | null }) {
+export function VibePanel({ text, code, appId }: { text: string; code?: string | null; appId?: number }) {
   const parsed = parseVibeMarkers(text);
   const hasContent = parsed.files.length > 0 || parsed.steps.length > 0 || parsed.secrets.length > 0 || !!code;
   if (!hasContent) return null;
@@ -254,7 +323,7 @@ export function VibePanel({ text, code }: { text: string; code?: string | null }
           {parsed.files.map((f, i) => <FileChip key={i} path={f.path} start={f.start} end={f.end} />)}
         </div>
       )}
-      {(parsed.secrets.length > 0 || code) && <RequiredSecrets code={code || undefined} hints={parsed.secrets} />}
+      {(parsed.secrets.length > 0 || code) && <RequiredSecrets code={code || undefined} hints={parsed.secrets} appId={appId} />}
     </div>
   );
 }

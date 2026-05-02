@@ -480,6 +480,13 @@ export async function registerRoutes(
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { key, value, appId } = req.body;
       if (!key || !value) return res.status(400).json({ message: "Key and value are required" });
+      // Ownership check: if appId is provided, ensure it belongs to this user.
+      if (appId) {
+        const app = await storage.getPublishedAppById(parseInt(appId));
+        if (!app || app.userId !== userId) {
+          return res.status(403).json({ message: "You do not own that app" });
+        }
+      }
       const secret = await storage.createAppSecret({ userId, key, value, appId: appId || null });
       await storage.createActivityLog({ userId, eventType: "secret.created", title: `Secret added: ${key}`, description: appId ? `Added to app #${appId}` : "Global secret", appId: appId || null });
       res.json(secret);

@@ -34,6 +34,8 @@ export const users = pgTable("users", {
   freeTrialStarted: timestamp("free_trial_started"),
   // Experience level — asked once, determines AI behaviour mode
   experienceLevel: varchar("experience_level"), // 'beginner' | 'intermediate' | 'expert'
+  // Preferred UI language code (en, sw, ar, fr, etc.) — synced from client localStorage
+  preferredLanguage: varchar("preferred_language", { length: 8 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
