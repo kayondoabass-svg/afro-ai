@@ -277,7 +277,7 @@ export default function LoginPage() {
                 Afro AI
               </h1>
               <p className="text-sm text-muted-foreground mt-1" data-testid="text-login-subtitle">
-                Built for Africa, by Africans
+                Built by Africans for the world
               </p>
             </div>
           </div>

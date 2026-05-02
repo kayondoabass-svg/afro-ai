@@ -209,7 +209,7 @@ export default function ArticlePage() {
       </main>
 
       <footer className="border-t border-white/10 py-8 text-center text-white/30 text-sm mt-10">
-        <p>© 2025 Afro AI — A product of KEYO TECHNOLOGIES, Uganda. Built for Africa, by Africans.</p>
+        <p>© 2025 Afro AI — A product of KEYO TECHNOLOGIES, Uganda. Built by Africans for the world.</p>
         <div className="flex items-center justify-center gap-4 mt-3">
           <Link href="/articles" className="hover:text-white/60 transition-colors">All Articles</Link>
           <a href="/privacy" className="hover:text-white/60 transition-colors">Privacy</a>

@@ -68,7 +68,7 @@ export default function AboutPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold" data-testid="text-value-africa">Built for Africa, by Africans</h3>
+                    <h3 className="font-semibold" data-testid="text-value-africa">Built by Africans for the world</h3>
                     <p className="text-sm text-muted-foreground">We understand the unique challenges and opportunities of the African market. Our platform is designed with Africa-first thinking.</p>
                   </CardContent>
                 </Card>

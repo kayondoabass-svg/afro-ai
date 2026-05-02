@@ -627,7 +627,7 @@ export default function UssdBuilderPage() {
                 <img src={afroLogo} alt="Afro AI" className="h-8 w-8 object-contain" />
                 <span className="font-bold">Afro AI</span>
               </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">Built for Africa, by Africans.<br />The Africa We Want.</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">Built by Africans for the world.<br />The Africa We Want.</p>
               <p className="text-xs text-muted-foreground mt-2">KEYO TECHNOLOGIES<br />Reg. No. 80030812159711</p>
             </div>
             <div className="space-y-3">
@@ -660,7 +660,7 @@ export default function UssdBuilderPage() {
             </div>
           </div>
           <div className="border-t pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; {new Date().getFullYear()} KEYO TECHNOLOGIES. Afro AI USSD Builder — Built for Africa, by Africans.</p>
+            <p>&copy; {new Date().getFullYear()} KEYO TECHNOLOGIES. Afro AI USSD Builder — Built by Africans for the world.</p>
           </div>
         </div>
       </footer>
