@@ -388,6 +388,12 @@ export const chatbotWidgets = pgTable("chatbot_widgets", {
   showBranding: boolean("show_branding").notNull().default(true),
   whiteLabelName: text("white_label_name"),
   conversationCount: integer("conversation_count").notNull().default(0),
+  // Auto-scan scheduling. "off" | "daily" | "weekly". Cron picks up rows where
+  // scanFrequency != 'off' AND nextScanAt <= NOW().
+  scanFrequency: varchar("scan_frequency", { length: 16 }).notNull().default("off"),
+  nextScanAt: timestamp("next_scan_at"),
+  lastScanAt: timestamp("last_scan_at"),
+  lastScanStats: text("last_scan_stats"), // JSON blob: { pagesScanned, qasInserted, qasSensitive, durationMs }
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 export const insertChatbotWidgetSchema = createInsertSchema(chatbotWidgets).omit({ id: true, apiKey: true, conversationCount: true, createdAt: true });

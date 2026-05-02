@@ -4228,6 +4228,8 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
   });
 
   // ============ AUTO-SCAN: multi-page crawl + Q&A extraction + sensitive flagging ============
+  // Triggers an async scan, returns immediately with 202 + progress URL.
+  // Client polls GET /api/chatbots/:id/auto-scan/status for progress.
   app.post("/api/chatbots/:id/auto-scan", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
@@ -4236,49 +4238,165 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       const widget = await storage.getChatbotWidgetById(id);
       if (!widget || widget.userId !== userId) return res.status(404).json({ message: "Not found" });
 
+      const runtime = await import("./chatbot-autoscan-runtime");
+      if (runtime.isScanRunning(widget.id)) {
+        return res.status(409).json({ message: "Scan already running for this chatbot" });
+      }
+      const quota = runtime.recordScanForUser(userId);
+      if (!quota.allowed) {
+        return res.status(429).json({
+          message: `You've reached the limit of ${runtime.SCAN_HOURLY_LIMIT} scans per hour. Try again at ${new Date(quota.resetAt).toLocaleTimeString()}.`,
+          resetAt: quota.resetAt,
+        });
+      }
+
       const { url: providedUrl, maxPages: providedMax, mode = "incremental" } = req.body || {};
       const startUrl = providedUrl || widget.websiteUrl;
       if (!startUrl) return res.status(400).json({ message: "URL required (set the chatbot's website URL or pass `url`)" });
-      const maxPages = Math.min(Math.max(parseInt(providedMax) || 12, 1), 30);
+      const maxPages = Math.min(Math.max(parseInt(providedMax) || 12, 1), 100);
 
-      const { runAutoScan } = await import("./chatbot-autoscan");
-      const result = await runAutoScan(widget.id, startUrl, maxPages);
+      const controller = new AbortController();
+      runtime.registerScan(widget.id, controller);
 
-      // Diff scan: only insert Q&As from pages whose content changed (or are new)
-      const knownPages = await storage.getChatbotScannedPages(widget.id);
-      const knownByUrl = new Map(knownPages.map((p) => [p.url, p.contentHash]));
+      // Fire and forget — let the client poll status.
+      (async () => {
+        const startedAt = Date.now();
+        try {
+          const { runAutoScan } = await import("./chatbot-autoscan");
+          const result = await runAutoScan(widget.id, startUrl, {
+            maxPages,
+            signal: controller.signal,
+            onProgress: ({ phase, scanned, total, url }) => {
+              runtime.updateProgress(widget.id, { phase, scanned, total, currentUrl: url });
+            },
+          });
 
-      let rowsToInsert = result.rows;
-      if (mode === "incremental" && knownPages.length > 0) {
-        rowsToInsert = result.rows.filter((r) => {
-          if (!r.sourceUrl || !r.sourceHash) return true;
-          return knownByUrl.get(r.sourceUrl) !== r.sourceHash;
-        });
-      } else if (mode === "replace") {
-        // Wipe all existing Q&As and pages for this widget
-        await storage.bulkDeleteChatbotQas(widget.id, {});
-      }
+          if (controller.signal.aborted) {
+            runtime.finishScan(widget.id, { phase: "aborted" });
+            return;
+          }
 
-      const inserted = await storage.bulkInsertChatbotQas(rowsToInsert);
+          const knownPages = await storage.getChatbotScannedPages(widget.id);
+          const knownByUrl = new Map(knownPages.map((p) => [p.url, p.contentHash]));
 
-      // Update page hashes
-      for (const p of result.pageHashes) {
-        await storage.upsertChatbotScannedPage(widget.id, p.url, p.hash);
-      }
+          let rowsToInsert = result.rows;
+          if (mode === "incremental" && knownPages.length > 0) {
+            rowsToInsert = result.rows.filter((r) => {
+              if (!r.sourceUrl || !r.sourceHash) return true;
+              return knownByUrl.get(r.sourceUrl) !== r.sourceHash;
+            });
+          }
 
-      res.json({
-        pagesScanned: result.pagesScanned,
-        qasExtracted: result.qasExtracted,
-        qasDeduped: result.qasDeduped,
-        qasSensitive: result.qasSensitive,
-        qasInserted: inserted.length,
-        qasSkippedUnchanged: result.rows.length - rowsToInsert.length,
-        topics: result.topics,
-        mode,
+          // Transactional replace: wipe + insert atomically. Page hashes
+          // upserted afterwards (idempotent).
+          let inserted: any[] = [];
+          if (mode === "replace") {
+            const { chatbotQas } = await import("@shared/schema");
+            inserted = await (db as any).transaction(async (tx: any) => {
+              await tx.delete(chatbotQas).where(dbEq(chatbotQas.widgetId, widget.id));
+              if (rowsToInsert.length === 0) return [];
+              return tx.insert(chatbotQas).values(rowsToInsert).returning();
+            });
+          } else {
+            inserted = await storage.bulkInsertChatbotQas(rowsToInsert);
+          }
+
+          for (const p of result.pageHashes) {
+            await storage.upsertChatbotScannedPage(widget.id, p.url, p.hash);
+          }
+
+          const summary = {
+            pagesScanned: result.pagesScanned,
+            qasExtracted: result.qasExtracted,
+            qasDeduped: result.qasDeduped,
+            qasSensitive: result.qasSensitive,
+            qasInserted: inserted.length,
+            qasSkippedUnchanged: result.rows.length - rowsToInsert.length,
+            topics: result.topics,
+            mode,
+          };
+
+          await db.execute(dbSql`
+            UPDATE chatbot_widgets
+            SET last_scan_at = NOW(),
+                last_scan_stats = ${JSON.stringify({ ...summary, durationMs: Date.now() - startedAt, ranBy: "manual" })}
+            WHERE id = ${widget.id}
+          `).catch(() => {});
+
+          runtime.finishScan(widget.id, { phase: "done", result: summary });
+        } catch (e: any) {
+          console.error("[auto-scan] error:", e?.message || e);
+          runtime.finishScan(widget.id, { phase: "error", error: e?.message || "Auto-scan failed" });
+        }
+      })().catch(() => {});
+
+      res.status(202).json({
+        started: true,
+        widgetId: widget.id,
+        statusUrl: `/api/chatbots/${widget.id}/auto-scan/status`,
+        scansRemainingThisHour: quota.remaining,
       });
     } catch (e: any) {
-      console.error("[auto-scan] error:", e.message);
-      res.status(500).json({ message: e.message || "Auto-scan failed" });
+      console.error("[auto-scan] trigger error:", e?.message || e);
+      res.status(500).json({ message: e?.message || "Auto-scan failed" });
+    }
+  });
+
+  // Poll progress + final result.
+  app.get("/api/chatbots/:id/auto-scan/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+      const id = parseInt(req.params.id);
+      const widget = await storage.getChatbotWidgetById(id);
+      if (!widget || widget.userId !== userId) return res.status(404).json({ message: "Not found" });
+      const runtime = await import("./chatbot-autoscan-runtime");
+      const p = runtime.getProgress(widget.id);
+      if (!p) return res.json({ phase: "idle" });
+      res.json(p);
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "Failed to get status" });
+    }
+  });
+
+  // Abort an in-flight scan.
+  app.post("/api/chatbots/:id/auto-scan/abort", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+      const id = parseInt(req.params.id);
+      const widget = await storage.getChatbotWidgetById(id);
+      if (!widget || widget.userId !== userId) return res.status(404).json({ message: "Not found" });
+      const runtime = await import("./chatbot-autoscan-runtime");
+      const aborted = runtime.abortScan(widget.id);
+      res.json({ aborted });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "Failed to abort" });
+    }
+  });
+
+  // Update auto-scan schedule for a chatbot.
+  app.patch("/api/chatbots/:id/auto-scan/schedule", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+      const id = parseInt(req.params.id);
+      const widget = await storage.getChatbotWidgetById(id);
+      if (!widget || widget.userId !== userId) return res.status(404).json({ message: "Not found" });
+      const { frequency } = req.body || {};
+      if (!["off", "daily", "weekly"].includes(frequency)) {
+        return res.status(400).json({ message: "frequency must be off | daily | weekly" });
+      }
+      const intervalDays = frequency === "daily" ? 1 : frequency === "weekly" ? 7 : null;
+      await db.execute(dbSql`
+        UPDATE chatbot_widgets
+        SET scan_frequency = ${frequency},
+            next_scan_at = ${intervalDays ? dbSql`NOW() + (${intervalDays} || ' days')::interval` : dbSql`NULL`}
+        WHERE id = ${widget.id}
+      `);
+      res.json({ frequency });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "Failed to update schedule" });
     }
   });
 

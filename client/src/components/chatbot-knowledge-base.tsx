@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -9,11 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   ScanLine, Loader2, AlertTriangle, ShieldAlert, Trash2, Pencil, CheckCircle2, XCircle,
-  Sparkles, RefreshCw, Filter, ExternalLink, Search,
+  Sparkles, RefreshCw, Filter, ExternalLink, Search, Clock, StopCircle, Calendar,
 } from "lucide-react";
 import type { ChatbotQa, ChatbotWidget } from "@shared/schema";
 
@@ -28,20 +29,88 @@ type ScanResult = {
   mode: string;
 };
 
+type ScanProgress = {
+  phase: "idle" | "queued" | "crawl" | "extract" | "done" | "error" | "aborted";
+  scanned: number;
+  total: number;
+  currentUrl?: string;
+  error?: string;
+  result?: ScanResult;
+};
+
+const PHASE_LABEL: Record<string, string> = {
+  idle: "Idle",
+  queued: "Queued",
+  crawl: "Crawling pages",
+  extract: "Extracting Q&As",
+  done: "Done",
+  error: "Failed",
+  aborted: "Aborted",
+};
+
 export function ChatbotKnowledgeBase({ widget }: { widget: ChatbotWidget }) {
   const { toast } = useToast();
-  const [maxPages, setMaxPages] = useState(12);
+  const [maxPages, setMaxPages] = useState(20);
   const [mode, setMode] = useState<"incremental" | "replace">("incremental");
   const [topicFilter, setTopicFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "included" | "excluded" | "sensitive">("all");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<ChatbotQa | null>(null);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [progress, setProgress] = useState<ScanProgress | null>(null);
+  const [polling, setPolling] = useState(false);
 
   const qasQuery = useQuery<ChatbotQa[]>({
     queryKey: ["/api/chatbots", widget.id, "qas"],
   });
   const qas = qasQuery.data || [];
+
+  // Poll progress every 1.2s while a scan is in flight.
+  useEffect(() => {
+    if (!polling) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await apiRequest("GET", `/api/chatbots/${widget.id}/auto-scan/status`);
+        const data: ScanProgress = await r.json();
+        if (cancelled) return;
+        setProgress(data);
+        if (data.phase === "done" || data.phase === "error" || data.phase === "aborted" || data.phase === "idle") {
+          setPolling(false);
+          if (data.phase === "done" && data.result) {
+            setScanResult(data.result);
+            queryClient.invalidateQueries({ queryKey: ["/api/chatbots", widget.id, "qas"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/chatbots"] });
+            toast({ title: "Auto-scan complete", description: `${data.result.qasInserted} new Q&As from ${data.result.pagesScanned} pages` });
+          } else if (data.phase === "error") {
+            toast({ title: "Scan failed", description: data.error || "Unknown error", variant: "destructive" });
+          } else if (data.phase === "aborted") {
+            toast({ title: "Scan stopped" });
+          }
+        }
+      } catch {
+        if (!cancelled) setPolling(false);
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 1200);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [polling, widget.id, toast]);
+
+  // On mount, check if a scan is already running (e.g. user navigated away and back).
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await apiRequest("GET", `/api/chatbots/${widget.id}/auto-scan/status`);
+        const data: ScanProgress = await r.json();
+        if (["queued", "crawl", "extract"].includes(data.phase)) {
+          setProgress(data);
+          setPolling(true);
+        }
+      } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widget.id]);
 
   const topics = useMemo(() => Array.from(new Set(qas.map((q) => q.topic))).sort(), [qas]);
 
@@ -80,15 +149,31 @@ export function ChatbotKnowledgeBase({ widget }: { widget: ChatbotWidget }) {
       const r = await apiRequest("POST", `/api/chatbots/${widget.id}/auto-scan`, { maxPages, mode });
       return await r.json();
     },
-    onSuccess: (data: ScanResult) => {
-      setScanResult(data);
-      queryClient.invalidateQueries({ queryKey: ["/api/chatbots", widget.id, "qas"] });
-      toast({
-        title: "Auto-scan complete",
-        description: `${data.qasInserted} new Q&As from ${data.pagesScanned} pages`,
-      });
+    onSuccess: () => {
+      setScanResult(null);
+      setProgress({ phase: "queued", scanned: 0, total: 0 });
+      setPolling(true);
     },
     onError: (e: any) => toast({ title: "Scan failed", description: e?.message, variant: "destructive" }),
+  });
+
+  const abortMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/chatbots/${widget.id}/auto-scan/abort`);
+    },
+  });
+
+  const scheduleMutation = useMutation({
+    mutationFn: async (frequency: "off" | "daily" | "weekly") => {
+      await apiRequest("PATCH", `/api/chatbots/${widget.id}/auto-scan/schedule`, { frequency });
+    },
+    onSuccess: (_, frequency) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chatbots"] });
+      toast({
+        title: frequency === "off" ? "Auto-rescan disabled" : `Auto-rescan set to ${frequency}`,
+        description: frequency === "off" ? "Scans will only run when you click Run." : `We'll re-crawl your site ${frequency} and add changed Q&As.`,
+      });
+    },
   });
 
   const toggleMutation = useMutation({
@@ -142,12 +227,12 @@ export function ChatbotKnowledgeBase({ widget }: { widget: ChatbotWidget }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
             <div>
               <Label className="text-xs">Max pages</Label>
               <Input
-                type="number" min={1} max={30} value={maxPages}
-                onChange={(e) => setMaxPages(parseInt(e.target.value) || 12)}
+                type="number" min={1} max={100} value={maxPages}
+                onChange={(e) => setMaxPages(parseInt(e.target.value) || 20)}
                 data-testid="input-maxpages"
               />
             </div>
@@ -156,24 +241,51 @@ export function ChatbotKnowledgeBase({ widget }: { widget: ChatbotWidget }) {
               <Select value={mode} onValueChange={(v) => setMode(v as any)}>
                 <SelectTrigger data-testid="select-mode"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="incremental">Incremental (changed pages only)</SelectItem>
+                  <SelectItem value="incremental">Incremental (changed only)</SelectItem>
                   <SelectItem value="replace">Replace (wipe & rescan)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-end">
-              <Button
-                onClick={() => scanMutation.mutate()}
-                disabled={scanMutation.isPending || !widget.websiteUrl}
-                className="w-full"
-                data-testid="button-run-scan"
+            <div>
+              <Label className="text-xs flex items-center gap-1"><Calendar className="w-3 h-3" />Auto-rescan</Label>
+              <Select
+                value={(widget as any).scanFrequency || "off"}
+                onValueChange={(v) => scheduleMutation.mutate(v as any)}
+                disabled={scheduleMutation.isPending}
               >
-                {scanMutation.isPending ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning…</>
-                ) : (
-                  <><ScanLine className="w-4 h-4 mr-2" />Run Auto-Scan</>
-                )}
-              </Button>
+                <SelectTrigger data-testid="select-schedule"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Off (manual only)</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end gap-1">
+              {polling ? (
+                <Button
+                  onClick={() => abortMutation.mutate()}
+                  variant="destructive"
+                  className="w-full"
+                  data-testid="button-abort-scan"
+                  disabled={abortMutation.isPending}
+                >
+                  <StopCircle className="w-4 h-4 mr-2" />Stop
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => scanMutation.mutate()}
+                  disabled={scanMutation.isPending || !widget.websiteUrl}
+                  className="w-full"
+                  data-testid="button-run-scan"
+                >
+                  {scanMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting…</>
+                  ) : (
+                    <><ScanLine className="w-4 h-4 mr-2" />Run Auto-Scan</>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
           {!widget.websiteUrl && (
@@ -182,7 +294,29 @@ export function ChatbotKnowledgeBase({ widget }: { widget: ChatbotWidget }) {
             </p>
           )}
 
-          {scanResult && (
+          {(widget as any).lastScanAt && !polling && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5" data-testid="text-last-scan">
+              <Clock className="w-3 h-3" />
+              Last scan: {new Date((widget as any).lastScanAt).toLocaleString()}
+            </p>
+          )}
+
+          {polling && progress && (
+            <div className="space-y-2 bg-muted/40 rounded-lg p-3" data-testid="scan-progress">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium">{PHASE_LABEL[progress.phase] || progress.phase}</span>
+                <span className="text-muted-foreground">{progress.scanned} / {progress.total || "?"}</span>
+              </div>
+              <Progress value={progress.total > 0 ? (progress.scanned / progress.total) * 100 : 5} />
+              {progress.currentUrl && (
+                <p className="text-xs text-muted-foreground truncate" data-testid="text-current-url">
+                  {progress.currentUrl}
+                </p>
+              )}
+            </div>
+          )}
+
+          {scanResult && !polling && (
             <div className="text-xs bg-muted/40 rounded-lg p-3 space-y-1" data-testid="scan-result">
               <div className="flex justify-between"><span>Pages scanned</span><strong>{scanResult.pagesScanned}</strong></div>
               <div className="flex justify-between"><span>Q&As extracted</span><strong>{scanResult.qasExtracted}</strong></div>

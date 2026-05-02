@@ -184,6 +184,8 @@ httpServer.listen(
   // Start daily cleanup job that trims old chatbot conversations per plan retention
   const { startChatbotRetentionJob } = await import("./chatbot-retention");
   startChatbotRetentionJob();
+  const { startChatbotAutoScanScheduler } = await import("./chatbot-autoscan-scheduler");
+  startChatbotAutoScanScheduler();
 
   // ─── Sandboxed Interactive Shell via Socket.io + node-pty ───────────────────
   // Strategy: Docker first (afro-terminal-box image), ulimit/nice fallback.

@@ -1235,12 +1235,16 @@ class DatabaseStorage implements IStorage {
     return db.select().from(chatbotScannedPages).where(eq(chatbotScannedPages.widgetId, widgetId));
   }
   async upsertChatbotScannedPage(widgetId: number, url: string, contentHash: string): Promise<void> {
-    const existing = await db.select().from(chatbotScannedPages).where(and(eq(chatbotScannedPages.widgetId, widgetId), eq(chatbotScannedPages.url, url)));
-    if (existing.length > 0) {
-      await db.update(chatbotScannedPages).set({ contentHash, scannedAt: new Date() }).where(eq(chatbotScannedPages.id, existing[0].id));
-    } else {
-      await db.insert(chatbotScannedPages).values({ widgetId, url, contentHash });
-    }
+    // Concurrency-safe upsert. A unique index on (widget_id, url) backs the
+    // ON CONFLICT target so a manual scan + scheduler scan racing on the same
+    // page can't throw 23505.
+    await db
+      .insert(chatbotScannedPages)
+      .values({ widgetId, url, contentHash })
+      .onConflictDoUpdate({
+        target: [chatbotScannedPages.widgetId, chatbotScannedPages.url],
+        set: { contentHash, scannedAt: new Date() },
+      });
   }
   async incrementWidgetConversationCount(widgetId: number): Promise<void> {
     await db.update(chatbotWidgets).set({ conversationCount: sql`${chatbotWidgets.conversationCount} + 1` }).where(eq(chatbotWidgets.id, widgetId));

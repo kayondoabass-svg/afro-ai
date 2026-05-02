@@ -1,25 +1,24 @@
 import crypto from "crypto";
 import type { InsertChatbotQa } from "@shared/schema";
 
-const UA = "Mozilla/5.0 (compatible; AfroAIBot/1.0; +https://afroaigroup.com)";
+const UA = "AfroAIBot";
+const FULL_UA = "Mozilla/5.0 (compatible; AfroAIBot/1.0; +https://afroaigroup.com)";
 
 // SSRF protection: reject loopback / private / link-local / metadata IPs
 function isPrivateOrLocalHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
-  // IPv6 loopback / link-local / unique-local
   if (h === "::1" || h.startsWith("fe80:") || h.startsWith("fc") || h.startsWith("fd")) return true;
-  // IPv4 dotted-quad checks
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (m) {
     const [a, b] = [parseInt(m[1]), parseInt(m[2])];
-    if (a === 10) return true;                          // 10.0.0.0/8
-    if (a === 127) return true;                         // loopback
-    if (a === 0) return true;                           // 0.0.0.0/8
-    if (a === 169 && b === 254) return true;            // link-local + AWS metadata
-    if (a === 172 && b >= 16 && b <= 31) return true;   // 172.16.0.0/12
-    if (a === 192 && b === 168) return true;            // 192.168.0.0/16
-    if (a >= 224) return true;                          // multicast / reserved
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 0) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a >= 224) return true;
   }
   return false;
 }
@@ -42,13 +41,28 @@ export type ScannedPage = {
   hash: string;
 };
 
-async function fetchHtml(url: string): Promise<string | null> {
+async function fetchText(url: string, signal?: AbortSignal): Promise<string | null> {
   if (!isSafeUrl(url)) return null;
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
+      headers: { "User-Agent": FULL_UA, Accept: "text/html,application/xhtml+xml,application/xml,text/plain,*/*" },
       redirect: "follow",
-      signal: AbortSignal.timeout(12000),
+      signal: signal ?? AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchHtml(url: string, signal?: AbortSignal): Promise<string | null> {
+  if (!isSafeUrl(url)) return null;
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": FULL_UA, Accept: "text/html,application/xhtml+xml" },
+      redirect: "follow",
+      signal: signal ?? AbortSignal.timeout(12000),
     });
     if (!res.ok) return null;
     const ct = res.headers.get("content-type") || "";
@@ -57,6 +71,99 @@ async function fetchHtml(url: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ============ ROBOTS.TXT ============
+type RobotsRules = { allow: string[]; disallow: string[]; sitemaps: string[] };
+
+export async function fetchRobots(origin: string, signal?: AbortSignal): Promise<RobotsRules> {
+  const empty: RobotsRules = { allow: [], disallow: [], sitemaps: [] };
+  const txt = await fetchText(`${origin}/robots.txt`, signal);
+  if (!txt) return empty;
+  return parseRobots(txt);
+}
+
+export function parseRobots(txt: string): RobotsRules {
+  const out: RobotsRules = { allow: [], disallow: [], sitemaps: [] };
+  // Sitemaps are global, not per-UA
+  for (const line of txt.split(/\r?\n/)) {
+    const m = line.match(/^\s*sitemap\s*:\s*(\S+)/i);
+    if (m) out.sitemaps.push(m[1].trim());
+  }
+  // Pick the most specific UA group: AfroAIBot first, then *.
+  const groups: Record<string, { allow: string[]; disallow: string[] }> = {};
+  let current: string | null = null;
+  for (const raw of txt.split(/\r?\n/)) {
+    const line = raw.replace(/#.*/, "").trim();
+    if (!line) continue;
+    const ua = line.match(/^user-agent\s*:\s*(.+)$/i);
+    if (ua) {
+      const name = ua[1].trim().toLowerCase();
+      current = name;
+      if (!groups[current]) groups[current] = { allow: [], disallow: [] };
+      continue;
+    }
+    if (!current) continue;
+    const dis = line.match(/^disallow\s*:\s*(.*)$/i);
+    if (dis) { groups[current].disallow.push(dis[1].trim()); continue; }
+    const alw = line.match(/^allow\s*:\s*(.*)$/i);
+    if (alw) { groups[current].allow.push(alw[1].trim()); continue; }
+  }
+  const pick = groups[UA.toLowerCase()] || groups["afroaibot"] || groups["*"];
+  if (pick) { out.allow = pick.allow; out.disallow = pick.disallow; }
+  return out;
+}
+
+export function isAllowedByRobots(pathname: string, rules: RobotsRules): boolean {
+  // Longest-match rule wins. Empty Disallow = allow all.
+  let bestLen = -1;
+  let allowed = true;
+  for (const rule of rules.disallow) {
+    if (!rule) continue;
+    if (pathname.startsWith(rule) && rule.length > bestLen) {
+      bestLen = rule.length;
+      allowed = false;
+    }
+  }
+  for (const rule of rules.allow) {
+    if (!rule) continue;
+    if (pathname.startsWith(rule) && rule.length >= bestLen) {
+      bestLen = rule.length;
+      allowed = true;
+    }
+  }
+  return allowed;
+}
+
+// ============ SITEMAP.XML ============
+export async function fetchSitemapUrls(sitemapUrl: string, signal?: AbortSignal, depth = 0): Promise<string[]> {
+  if (depth > 2) return []; // sitemap-index can nest, cap recursion
+  // SSRF guard: validate every sitemap URL (including nested <loc> targets) before fetch.
+  if (!isSafeUrl(sitemapUrl)) return [];
+  const xml = await fetchText(sitemapUrl, signal);
+  if (!xml) return [];
+  const urls: string[] = [];
+
+  // <sitemapindex> → recurse (each child URL re-validated by isSafeUrl above).
+  const indexMatches = Array.from(xml.matchAll(/<sitemap>[\s\S]*?<loc>([^<]+)<\/loc>[\s\S]*?<\/sitemap>/gi));
+  if (indexMatches.length > 0) {
+    for (const m of indexMatches.slice(0, 20)) {
+      const child = m[1].trim();
+      if (!isSafeUrl(child)) continue;
+      const sub = await fetchSitemapUrls(child, signal, depth + 1);
+      urls.push(...sub);
+    }
+    return urls;
+  }
+
+  // <urlset><url><loc>. Page URLs are validated again by normalizeUrl/isSafeUrl
+  // when they enter the crawl queue, so only collect well-formed safe URLs here.
+  const urlMatches = Array.from(xml.matchAll(/<url>[\s\S]*?<loc>([^<]+)<\/loc>[\s\S]*?<\/url>/gi));
+  for (const m of urlMatches) {
+    const u = m[1].trim();
+    if (isSafeUrl(u)) urls.push(u);
+  }
+  return urls;
 }
 
 function htmlToText(html: string): { title: string; text: string; links: string[] } {
@@ -89,7 +196,6 @@ function normalizeUrl(href: string, base: URL): string | null {
     if (u.hostname !== base.hostname) return null; // same-host only
     if (isPrivateOrLocalHost(u.hostname)) return null;
     u.hash = "";
-    // Skip non-content extensions
     if (/\.(pdf|jpg|jpeg|png|gif|webp|svg|ico|css|js|zip|mp4|mp3|woff2?|ttf)(\?|$)/i.test(u.pathname)) return null;
     return u.toString().replace(/\/+$/, "");
   } catch {
@@ -101,29 +207,59 @@ function sha256(s: string): string {
   return crypto.createHash("sha256").update(s).digest("hex");
 }
 
-export async function crawlSite(startUrl: string, maxPages = 12): Promise<ScannedPage[]> {
+export type CrawlOpts = {
+  maxPages?: number;
+  signal?: AbortSignal;
+  onPage?: (info: { scanned: number; total: number; url: string }) => void;
+};
+
+export async function crawlSite(startUrl: string, opts: CrawlOpts = {}): Promise<ScannedPage[]> {
+  const maxPages = opts.maxPages ?? 12;
+  const signal = opts.signal;
   const start = startUrl.startsWith("http") ? startUrl : `https://${startUrl}`;
   if (!isSafeUrl(start)) return [];
   let base: URL;
   try { base = new URL(start); } catch { return []; }
+  const origin = `${base.protocol}//${base.host}`;
+
+  // 1. robots.txt
+  const robots = await fetchRobots(origin, signal);
+
+  // 2. Seed from sitemap (if any)
+  const sitemapSources = robots.sitemaps.length > 0 ? robots.sitemaps : [`${origin}/sitemap.xml`];
+  const seeded: string[] = [];
+  for (const sm of sitemapSources.slice(0, 3)) {
+    const urls = await fetchSitemapUrls(sm, signal);
+    seeded.push(...urls);
+  }
 
   const queue: string[] = [start.replace(/\/+$/, "")];
+  for (const u of seeded) {
+    const norm = normalizeUrl(u, base);
+    if (norm && !queue.includes(norm)) queue.push(norm);
+  }
+
   const seen = new Set<string>();
   const pages: ScannedPage[] = [];
 
   while (queue.length > 0 && pages.length < maxPages) {
+    if (signal?.aborted) break;
     const url = queue.shift()!;
     if (seen.has(url)) continue;
     seen.add(url);
 
-    const html = await fetchHtml(url);
+    let pathname = "/";
+    try { pathname = new URL(url).pathname || "/"; } catch {}
+    if (!isAllowedByRobots(pathname, robots)) continue;
+
+    const html = await fetchHtml(url, signal);
     if (!html) continue;
     const { title, text, links } = htmlToText(html);
     if (text.length < 80) continue;
 
     pages.push({ url, title, text: text.slice(0, 12000), hash: sha256(text) });
+    opts.onPage?.({ scanned: pages.length, total: Math.min(maxPages, pages.length + queue.length), url });
 
-    // Enqueue same-host links
     for (const href of links) {
       const norm = normalizeUrl(href, base);
       if (norm && !seen.has(norm) && queue.length + pages.length < maxPages * 3) {
@@ -158,22 +294,25 @@ export function detectSensitive(text: string): SensitiveHit | null {
 }
 
 // ============ Q&A EXTRACTION (LLM, two-pass: facts -> Q&As) ============
-async function callLLM(systemPrompt: string, userPrompt: string, model = "gpt-4.1-mini"): Promise<string> {
+async function callLLM(systemPrompt: string, userPrompt: string, model = "gpt-4.1-mini", signal?: AbortSignal): Promise<string> {
   const OpenAI = (await import("openai")).default;
   const client = new OpenAI({
     apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
     baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
   });
-  const completion = await client.chat.completions.create({
-    model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 2000,
-    temperature: 0.2,
-  });
+  const completion = await client.chat.completions.create(
+    {
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 2000,
+      temperature: 0.2,
+    },
+    signal ? { signal } : undefined,
+  );
   return completion.choices[0]?.message?.content || "{}";
 }
 
@@ -183,7 +322,7 @@ type ExtractedQa = {
   topic: string;
 };
 
-export async function extractQasFromPage(page: ScannedPage): Promise<ExtractedQa[]> {
+export async function extractQasFromPage(page: ScannedPage, signal?: AbortSignal): Promise<ExtractedQa[]> {
   const sys = `You are a knowledge-base curator. From the provided web page text, extract a list of self-contained question/answer pairs that a customer might realistically ask.
 
 Rules:
@@ -192,7 +331,8 @@ Rules:
 - Group by topic: pick from {About, Products, Pricing, Shipping, Returns, Support, Contact, Policies, Careers, FAQ, Other}.
 - Output JSON: {"qas": [{"question": "...", "answer": "...", "topic": "..."}]}
 - 0 to 8 Q&As per page. Skip if the page has no useful customer info.
-- Keep answers under 80 words.`;
+- Keep answers under 80 words.
+- Use the SAME LANGUAGE as the page text. If the page is in French, write the Q&As in French.`;
 
   const userMsg = `Page URL: ${page.url}
 Page title: ${page.title}
@@ -201,7 +341,7 @@ Page text:
 ${page.text.slice(0, 6000)}`;
 
   try {
-    const json = await callLLM(sys, userMsg);
+    const json = await callLLM(sys, userMsg, "gpt-4.1-mini", signal);
     const parsed = JSON.parse(json);
     const qas: ExtractedQa[] = Array.isArray(parsed.qas) ? parsed.qas : [];
     return qas
@@ -252,15 +392,33 @@ export type ScanResult = {
   pageHashes: { url: string; hash: string }[];
 };
 
-export async function runAutoScan(widgetId: number, startUrl: string, maxPages = 12): Promise<ScanResult> {
-  const pages = await crawlSite(startUrl, maxPages);
+export type RunOpts = {
+  maxPages?: number;
+  signal?: AbortSignal;
+  onProgress?: (info: { phase: "crawl" | "extract" | "done"; scanned: number; total: number; url?: string }) => void;
+};
 
-  // Extract Q&As in parallel (capped concurrency = 3)
+export async function runAutoScan(widgetId: number, startUrl: string, opts: RunOpts = {}): Promise<ScanResult> {
+  const maxPages = opts.maxPages ?? 12;
+  const signal = opts.signal;
+
+  const pages = await crawlSite(startUrl, {
+    maxPages,
+    signal,
+    onPage: ({ scanned, total, url }) => opts.onProgress?.({ phase: "crawl", scanned, total, url }),
+  });
+
+  if (signal?.aborted) {
+    return { pagesScanned: pages.length, qasExtracted: 0, qasSensitive: 0, qasDeduped: 0, topics: [], rows: [], pageHashes: pages.map((p) => ({ url: p.url, hash: p.hash })) };
+  }
+
   const allQas: (InsertChatbotQa & { __rawAnswer: string })[] = [];
   const concurrency = 3;
+  let extracted = 0;
   for (let i = 0; i < pages.length; i += concurrency) {
+    if (signal?.aborted) break;
     const batch = pages.slice(i, i + concurrency);
-    const results = await Promise.all(batch.map((p) => extractQasFromPage(p).then((qas) => ({ page: p, qas }))));
+    const results = await Promise.all(batch.map((p) => extractQasFromPage(p, signal).then((qas) => ({ page: p, qas }))));
     for (const { page, qas } of results) {
       for (const q of qas) {
         const sensitive = detectSensitive(`${q.question}\n${q.answer}`);
@@ -273,10 +431,12 @@ export async function runAutoScan(widgetId: number, startUrl: string, maxPages =
           sourceHash: page.hash,
           sensitive: !!sensitive,
           sensitiveReason: sensitive?.reason || null,
-          included: !sensitive, // default OFF for sensitive (inverts the risk)
+          included: !sensitive,
           __rawAnswer: q.answer,
         } as any);
       }
+      extracted += 1;
+      opts.onProgress?.({ phase: "extract", scanned: extracted, total: pages.length, url: page.url });
     }
   }
 
@@ -284,9 +444,9 @@ export async function runAutoScan(widgetId: number, startUrl: string, maxPages =
   const deduped = dedupeQas(allQas);
   const sensitiveCount = deduped.filter((q) => q.sensitive).length;
   const topics: string[] = Array.from(new Set(deduped.map((q) => q.topic).filter((t): t is string => !!t)));
-
-  // Strip the temporary field
   const rows: InsertChatbotQa[] = deduped.map(({ __rawAnswer, ...rest }: any) => rest);
+
+  opts.onProgress?.({ phase: "done", scanned: pages.length, total: pages.length });
 
   return {
     pagesScanned: pages.length,
