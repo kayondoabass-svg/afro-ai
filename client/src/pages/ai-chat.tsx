@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FileTreeSidebar, saveProjectFiles, type ProjectFile } from "@/components/file-tree-sidebar";
+import { VibePanel, parseVibeMarkers } from "@/components/vibe-chips";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -2667,10 +2668,14 @@ export default function AIChatPage() {
     const reqContent = reqResult.content;
     if (reqContent) textOnly = reqResult.rest;
 
+    const vibeParsed = parseVibeMarkers(textOnly);
+    textOnly = vibeParsed.cleanText;
+
     return (
       <div className="space-y-3">
         {reqContent && <RequirementsCheckCard content={reqContent} />}
         {planContent && <BuildPlanCard content={planContent} />}
+        <VibePanel text={content} code={code} />
         {textOnly && <MarkdownText text={textOnly} />}
         {code && (
           <>

@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder, FOUNDER_EMAIL } from "./replit_integrations/auth";
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { registerChatRoutes } from "./replit_integrations/chat";
+import { registerVibeRoutes } from "./vibe-routes";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { registerAudioRoutes } from "./replit_integrations/audio";
 import {
@@ -298,6 +299,7 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
   registerChatRoutes(app);
+  registerVibeRoutes(app);
   registerImageRoutes(app);
   registerAudioRoutes(app);
 
