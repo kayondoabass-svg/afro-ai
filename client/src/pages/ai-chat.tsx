@@ -1523,6 +1523,7 @@ export default function AIChatPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
   const [showPublishFromChat, setShowPublishFromChat] = useState(false);
   const [projectInitialized, setProjectInitialized] = useState(false);
@@ -1939,15 +1940,13 @@ export default function AIChatPage() {
     }, 2000);
   }, [handleEditorSave]);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const uploadFiles = async (files: File[] | FileList) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
     setIsUploading(true);
     try {
       const formData = new FormData();
-      for (let i = 0; i < files.length; i++) {
-        formData.append("files", files[i]);
-      }
+      for (const f of list) formData.append("files", f);
       const res = await fetch("/api/upload", {
         method: "POST",
         credentials: "include",
@@ -1963,8 +1962,41 @@ export default function AIChatPage() {
       toast({ title: "Upload Error", description: error.message, variant: "destructive" });
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    await uploadFiles(files);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Drag-and-drop into the chat input area. We accept any file the /api/upload
+  // endpoint already accepts (images, video, PDFs etc — server enforces type/size).
+  const dragCounterRef = useRef(0);
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer?.types?.includes("Files")) return;
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    setIsDragOver(true);
+  };
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer?.types?.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setIsDragOver(false);
+  };
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) await uploadFiles(files);
   };
 
   const removePendingAttachment = (index: number) => {
@@ -3001,7 +3033,26 @@ export default function AIChatPage() {
                 </div>
               </ScrollArea>
 
-              <div className="border-t p-3 bg-background">
+              <div
+                className="border-t p-3 bg-background relative"
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                data-testid="dropzone-chat-input"
+              >
+                {isDragOver && (
+                  <div
+                    className="absolute inset-0 z-20 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-sm pointer-events-none"
+                    data-testid="overlay-drop-active"
+                  >
+                    <div className="flex flex-col items-center gap-2 text-primary">
+                      <Paperclip className="w-8 h-8" />
+                      <p className="text-sm font-medium">Drop files to attach</p>
+                      <p className="text-xs text-muted-foreground">Images, video, PDFs and more</p>
+                    </div>
+                  </div>
+                )}
                 <div className="max-w-2xl mx-auto space-y-2">
                   {pendingAttachments.some(a => a.mimetype.startsWith("image/")) && (
                     <div

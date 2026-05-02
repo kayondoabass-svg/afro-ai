@@ -963,9 +963,10 @@ async function makeStateToken(
   c: any,
   provider: string,
   redirectTo: string,
+  tenantId: string = 'platform',
 ): Promise<string> {
   const secret = enc.encode(c.env.JWT_SECRET);
-  return await new SignJWT({ provider, redirect: redirectTo, nonce: uuid() })
+  return await new SignJWT({ provider, redirect: redirectTo, tenantId, nonce: uuid() })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('10m')
@@ -975,17 +976,30 @@ async function makeStateToken(
 async function readStateToken(
   c: any,
   token: string,
-): Promise<{ provider: string; redirect: string } | null> {
+): Promise<{ provider: string; redirect: string; tenantId: string } | null> {
   try {
     const secret = enc.encode(c.env.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
     return {
       provider: String(payload.provider || ''),
       redirect: String(payload.redirect || c.env.APP_URL),
+      tenantId: String(payload.tenantId || 'platform'),
     };
   } catch {
     return null;
   }
+}
+
+/** Resolve an optional `?tenant=<slug>` query into a tenant_id.
+ *  Falls back to 'platform' (afroaigroup.com itself) if missing or unknown. */
+async function resolveTenantIdFromQuery(c: any): Promise<string> {
+  const slug = c.req.query('tenant');
+  if (!slug || slug === 'platform') return 'platform';
+  const row = await c.env.DB
+    .prepare('SELECT id FROM tenants WHERE slug = ?')
+    .bind(slug)
+    .first<{ id: string }>();
+  return row?.id || 'platform';
 }
 
 /** Look up or create a user for an OAuth identity. Links by email if possible. */
@@ -997,7 +1011,11 @@ async function upsertOAuthUser(
   firstName: string | null,
   lastName: string | null,
   profileImageUrl: string | null,
+  tenantId: string = 'platform',
 ): Promise<string> {
+  // oauth_accounts is keyed by (provider, provider_user_id) globally — a single
+  // Google identity maps to a single user row regardless of tenant. If you
+  // need per-tenant linking later, scope this lookup by tenant_id too.
   const linked = await db
     .prepare(
       'SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?',
@@ -1008,9 +1026,10 @@ async function upsertOAuthUser(
 
   const ts = nowSec();
   const normalisedEmail = email.toLowerCase();
+  // Email is unique PER TENANT — same email can exist in multiple tenants.
   const existing = await db
-    .prepare("SELECT id FROM users WHERE tenant_id = 'platform' AND email = ?")
-    .bind(normalisedEmail)
+    .prepare('SELECT id FROM users WHERE tenant_id = ? AND email = ?')
+    .bind(tenantId, normalisedEmail)
     .first<{ id: string }>();
 
   let userId: string;
@@ -1020,10 +1039,11 @@ async function upsertOAuthUser(
     userId = uuid();
     await db
       .prepare(
-        "INSERT INTO users (id, tenant_id, email, first_name, last_name, profile_image_url, email_verified, plan, created_at, updated_at) VALUES (?, 'platform', ?, ?, ?, ?, 1, ?, ?, ?)",
+        'INSERT INTO users (id, tenant_id, email, first_name, last_name, profile_image_url, email_verified, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)',
       )
       .bind(
         userId,
+        tenantId,
         normalisedEmail,
         firstName,
         lastName,
@@ -1088,7 +1108,8 @@ app.get('/google/start', async (c) => {
   // the most common victim of this. APP_URL is still the absolute fallback.
   const currentOrigin = new URL(c.req.url).origin;
   const redirectTo = safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin);
-  const state = await makeStateToken(c, 'google', redirectTo);
+  const tenantId = await resolveTenantIdFromQuery(c);
+  const state = await makeStateToken(c, 'google', redirectTo, tenantId);
   setCookie(c, STATE_COOKIE, state, {
     path: '/',
     secure: true,
@@ -1165,6 +1186,7 @@ app.get('/google/callback', async (c) => {
     profile.given_name || null,
     profile.family_name || null,
     profile.picture || null,
+    state.tenantId,
   );
   await issueSession(c, userId);
   return c.redirect(state.redirect);
@@ -1180,7 +1202,8 @@ app.get('/github/start', async (c) => {
   // host-only session cookie stays valid after the OAuth round-trip.
   const currentOrigin = new URL(c.req.url).origin;
   const redirectTo = safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin);
-  const state = await makeStateToken(c, 'github', redirectTo);
+  const tenantId = await resolveTenantIdFromQuery(c);
+  const state = await makeStateToken(c, 'github', redirectTo, tenantId);
   setCookie(c, STATE_COOKIE, state, {
     path: '/',
     secure: true,
@@ -1286,6 +1309,7 @@ app.get('/github/callback', async (c) => {
     firstName,
     lastName,
     profile.avatar_url || null,
+    state.tenantId,
   );
   await issueSession(c, userId);
   return c.redirect(state.redirect);
