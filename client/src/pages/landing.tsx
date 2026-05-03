@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
+import { InstallPwaButton } from "@/components/install-pwa-button";
 import { useLanguage } from "@/hooks/use-language";
 import {
   Smartphone,
@@ -127,6 +128,9 @@ export default function LandingPage() {
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
             <LanguageSelector compact />
             <ThemeToggle />
+            <div className="hidden md:block">
+              <InstallPwaButton variant="ghost" />
+            </div>
             <a href={loginUrl} className="hidden sm:block">
               <Button variant="ghost" data-testid="button-login">{t("nav.login")}</Button>
             </a>
@@ -663,6 +667,9 @@ export default function LandingPage() {
                 <a href="/cookies" className="block hover:text-primary transition-colors" data-testid="link-footer-cookies">{t("footer.cookies")}</a>
                 <a href="/refund-policy" className="block hover:text-primary transition-colors" data-testid="link-footer-refund">Refund Policy</a>
                 <a href="/.well-known/security.txt" className="block hover:text-primary transition-colors" data-testid="link-footer-security">Security</a>
+              </div>
+              <div className="pt-2">
+                <InstallPwaButton variant="outline" />
               </div>
             </div>
           </div>
