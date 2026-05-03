@@ -293,27 +293,25 @@ export function detectSensitive(text: string): SensitiveHit | null {
   return null;
 }
 
-// ============ Q&A EXTRACTION (LLM, two-pass: facts -> Q&As) ============
-async function callLLM(systemPrompt: string, userPrompt: string, model = "gpt-4.1-mini", signal?: AbortSignal): Promise<string> {
-  const OpenAI = (await import("openai")).default;
-  const client = new OpenAI({
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+// ============ Q&A EXTRACTION (LLM via shared provider — Gemini primary) ============
+// Uses aiChatComplete which prefers Gemini (OpenAI-compatible endpoint) and
+// falls back to OpenAI only if a key happens to be configured. Signal aborts
+// between LLM calls — Gemini's HTTP client does not expose mid-request cancel,
+// so an in-flight extraction will run to completion before the next abort
+// check.
+async function callLLM(systemPrompt: string, userPrompt: string, _model?: string, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) return "{}";
+  const { aiChatComplete } = await import("./ai-chat-provider");
+  const { text } = await aiChatComplete({
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    maxTokens: 2000,
+    temperature: 0.2,
+    responseFormat: { type: "json_object" },
   });
-  const completion = await client.chat.completions.create(
-    {
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 2000,
-      temperature: 0.2,
-    },
-    signal ? { signal } : undefined,
-  );
-  return completion.choices[0]?.message?.content || "{}";
+  return text || "{}";
 }
 
 type ExtractedQa = {
