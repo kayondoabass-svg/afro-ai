@@ -1,0 +1,26 @@
+{
+  "name": "Afro AI — Build Websites & Apps with AI",
+  "short_name": "Afro AI",
+  "description": "Build websites, mobile apps and online businesses with AI. No coding needed. Made in Africa.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["productivity", "developer", "business"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-384.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Dashboard", "url": "/dashboard", "description": "Open your dashboard" },
+    { "name": "Templates", "url": "/templates", "description": "Browse templates" },
+    { "name": "Pricing", "url": "/pricing", "description": "View pricing plans" }
+  ]
+}

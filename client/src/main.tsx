@@ -27,3 +27,15 @@ import "./index.css";
 })();
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+// ── Service Worker registration (PWA) ────────────────────────────────────────
+// Registered after first paint to avoid blocking the initial render. The SW
+// itself is a no-op on first visit (it precaches the shell + activates), and
+// from the second visit onwards provides offline support and faster loads.
+if (typeof window !== "undefined" && "serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((err) => {
+      console.warn("[pwa] Service worker registration failed:", err);
+    });
+  });
+}

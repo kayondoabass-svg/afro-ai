@@ -3,6 +3,7 @@ import { useEffect, lazy, Suspense } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { InstallPwaBanner } from "@/components/install-pwa-button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -486,6 +487,7 @@ function App() {
             <Toaster />
             <PageTitleUpdater />
             <AppRouter />
+            <InstallPwaBanner />
           </TooltipProvider>
         </LanguageProvider>
       </ThemeProvider>
