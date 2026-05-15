@@ -9,7 +9,7 @@ export interface ImagenResult {
 }
 
 function key(): string | undefined {
-  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API;
 }
 
 export function isImagenAvailable(): boolean {

@@ -59,7 +59,7 @@ function geminiKey(): string | undefined {
   // Accept either env name. GOOGLE_API_KEY is the modern name in
   // Google AI Studio; GEMINI_API_KEY is the legacy alias still used
   // throughout the codebase.
-  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API;
 }
 
 function isAvailable(provider: Provider): boolean {
