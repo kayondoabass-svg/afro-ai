@@ -62,6 +62,8 @@ Production runs on a DigitalOcean droplet behind Caddy + Cloudflare, on the `afr
 bash /opt/afro-ai/scripts/deploy.sh
 ```
 
+**Important:** do NOT run `git pull` manually before calling the script — the script does its own pull, and a manual pull beforehand will make it think nothing changed (it will still detect a stale `dist/` via `dist/.deployed_sha` and rebuild, but the log line will be confusing). Just call the script.
+
 `scripts/deploy.sh` pulls from origin, builds client + server, restarts the service, runs a `/api/health` check, and purges the Cloudflare cache. Safety guarantees:
 
 - **Concurrency lock** (`flock` on `/var/lock/afro-ai-deploy.lock`) — refuses to start if another deploy is already running.

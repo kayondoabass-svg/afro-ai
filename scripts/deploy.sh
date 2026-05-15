@@ -90,7 +90,7 @@ run_build() {
     source "$SHARED_ENV"
     set +a
     cd "$APP_DIR" || exit 1
-    timeout "$BUILD_TIMEOUT" bash -c 'NODE_OPTIONS="--max-old-space-size=768" npm run build'
+    timeout "$BUILD_TIMEOUT" bash -c 'NODE_OPTIONS="--max-old-space-size=2048" npm run build'
   )
   local rc=$?
   if [ $rc -ne 0 ]; then
@@ -190,10 +190,19 @@ main() {
   new_sha=$(git -C "$APP_DIR" rev-parse HEAD)
   log "New SHA: $new_sha"
 
-  if [ "$previous_sha" = "$new_sha" ]; then
-    log "Already at latest commit. Nothing to deploy."
+  # If dist/ already reflects the current HEAD, nothing to do.
+  # Otherwise (no dist, or dist built from an older SHA — e.g. user ran
+  # `git pull` manually before invoking this script) we MUST rebuild,
+  # even if previous_sha == new_sha.
+  local deployed_sha=""
+  [ -f "$APP_DIR/dist/.deployed_sha" ] && deployed_sha=$(cat "$APP_DIR/dist/.deployed_sha" 2>/dev/null || echo "")
+  if [ "$previous_sha" = "$new_sha" ] && [ "$deployed_sha" = "$new_sha" ]; then
+    log "Already at latest commit AND dist/ matches. Nothing to deploy."
     log "==== DEPLOY END (no-op) ===="
     exit 0
+  fi
+  if [ "$previous_sha" = "$new_sha" ] && [ "$deployed_sha" != "$new_sha" ]; then
+    log "Git already at $new_sha but dist/ was built from '${deployed_sha:-unknown}' — rebuilding."
   fi
 
   snapshot_dist
@@ -224,6 +233,11 @@ main() {
   fi
 
   rm -rf "$APP_DIR/dist.prev.kept" "$APP_DIR/dist.broken"
+
+  # Stamp the deployed dist/ with its SHA so future runs can detect
+  # a stale build even when git is already at the latest commit.
+  echo "$new_sha" > "$APP_DIR/dist/.deployed_sha"
+  chown "$SERVICE_USER:$SERVICE_USER" "$APP_DIR/dist/.deployed_sha" 2>/dev/null || true
 
   purge_cdn
 
