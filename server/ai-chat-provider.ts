@@ -24,10 +24,10 @@ export interface ChatCompleteOptions {
 // runaway free user can't burn $50 of credits in an afternoon. Business gets
 // the flagship model for code-generation quality.
 const GEMINI_MODEL_BY_TIER: Record<UserTier, string> = {
-  starter:  "gemini-2.0-flash",   // ~$0.10 / 1M input tokens
-  pro:      "gemini-2.5-flash",   // ~$0.30 / 1M input
-  business: "gemini-2.5-pro",     // ~$1.25 / 1M input — best quality
-  payg:     "gemini-2.5-pro",     // PAYG users metered per token, give them best
+  starter:  "gemini-2.5-flash-lite", // ~$0.10 / 1M input — cheapest current model
+  pro:      "gemini-2.5-flash",      // ~$0.30 / 1M input
+  business: "gemini-2.5-pro",        // ~$1.25 / 1M input — best quality
+  payg:     "gemini-2.5-pro",        // PAYG users metered per token, give them best
 };
 
 // Hard ceiling on output tokens per reply, by tier. Stops a single chat from

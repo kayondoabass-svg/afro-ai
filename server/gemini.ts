@@ -7,7 +7,7 @@ export async function analyzeImage(
   mimeType: string,
   prompt?: string
 ): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const analysisPrompt = prompt || 
     `You are an expert image analyst. Analyze this image carefully and provide a detailed report:
