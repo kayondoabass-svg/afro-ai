@@ -5,25 +5,32 @@ import { db } from "../db";
 import { users, usageLogs } from "@shared/schema";
 import { storage } from "../storage";
 
-export type AiKind = "chat" | "image" | "audio";
+export type AiKind = "chat" | "image" | "audio" | "video";
 export type UserPlan = "starter" | "pro" | "business" | "payg";
 
+// Daily caps tightened May 2026 to stop free-tier money-burn. Previous
+// starter limits (chat 200/day, image 10/day) let curious free users consume
+// up to ~$72/month of AI cost against $0 of revenue. New starter caps keep
+// the worst-case monthly cost on Gemini Flash + Imagen 3 under $2/user.
+//
+// Video is BUSINESS-ONLY because Veo 2 costs ~$0.35/second of generated video
+// and even 5 seconds/day caps at ~$1.75/user/day = $52/mo on a $25 plan.
 const DAILY_REQUEST_LIMITS: Record<AiKind, Record<UserPlan, number>> = {
-  chat:  { starter: 200, pro: 1000, business: 2000, payg: 5000 },
-  // Image caps tightened: at 100/day a Pro user could generate 3,000 images/mo
-  // costing ~$120 in OpenAI fees against $15 of revenue. New caps keep the
-  // worst-case monthly OpenAI spend per user under the plan price.
-  image: { starter: 10,  pro: 30,   business: 60,   payg: 500  },
-  audio: { starter: 30,  pro: 200,  business: 400,  payg: 1000 },
+  chat:  { starter: 30,  pro: 500,  business: 1500, payg: 5000 },
+  image: { starter: 3,   pro: 30,   business: 100,  payg: 500  },
+  audio: { starter: 10,  pro: 200,  business: 400,  payg: 1000 },
+  // Video = "video clips per day". Each clip is hard-capped at 5 seconds in
+  // server/veo.ts so total Veo cost per user/day stays bounded.
+  video: { starter: 0,   pro: 0,    business: 5,    payg: 50   },
 };
 
-// PAYG charge per generation. Must clear OpenAI cost + payment processor fees
-// (~3.5% Pesapal). gpt-4.1-mini chat ~0.2c, gpt-image-1
-// standard ~4c (HD ~8c), gpt-4o-mini-tts ~1-2c per short clip.
+// PAYG charge per generation. Must clear provider cost + Pesapal fees (~3.5%).
+// gemini-2.5-flash chat ~0.2c, imagen-3 ~4c, veo-2 ~5s clip ~175c.
 const COST_CENTS: Record<AiKind, number> = {
   chat: 2,
   image: 10,
   audio: 5,
+  video: 200, // 5-second Veo 2 clip ≈ $1.75 wholesale, charge $2.00
 };
 
 function planOf(raw: unknown): UserPlan {
@@ -53,6 +60,10 @@ export const aiBurstLimiters: Record<AiKind, RequestHandler> = {
   audio: rateLimit({
     windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false,
     message: { error: "Too many voice messages. Please wait a minute and try again." },
+  }),
+  video: rateLimit({
+    windowMs: 60_000, max: 2, standardHeaders: true, legacyHeaders: false,
+    message: { error: "Too many video generations. Please wait a minute and try again." },
   }),
 };
 
