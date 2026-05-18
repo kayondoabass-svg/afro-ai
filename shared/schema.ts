@@ -165,6 +165,8 @@ export const usageLogs = pgTable("usage_logs", {
   conversationId: integer("conversation_id"),
   model: varchar("model").notNull(),
   tokensUsed: integer("tokens_used").notNull().default(0),
+  kind: varchar("kind", { length: 16 }).notNull().default("chat"),
+  costCents: integer("cost_cents").notNull().default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

@@ -2102,6 +2102,8 @@ You are now in EDITOR MODE. Your workflow:
             conversationId,
             model,
             tokensUsed: completionTokens,
+            kind: "chat",
+            costCents: paygUserId === authUser.claims.sub ? PAYG_COST_PER_GENERATION_CENTS : 0,
           });
           // Deduct PAYG credits after successful generation
           if (paygUserId && authUser.claims.sub === paygUserId) {

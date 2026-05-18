@@ -2138,9 +2138,9 @@ export async function registerRoutes(
   app.post("/api/payg/limit", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { limitDollars } = req.body;
-      if (!limitDollars || limitDollars < 1 || limitDollars > 500) {
-        return res.status(400).json({ message: "Limit must be between $1 and $500" });
+      const limitDollars = Number(req.body?.limitDollars);
+      if (!Number.isFinite(limitDollars) || limitDollars < 0 || limitDollars > 500) {
+        return res.status(400).json({ message: "Limit must be between $0 (off) and $500" });
       }
       await storage.setPaygLimit(userId, Math.round(limitDollars * 100));
       res.json({ success: true, limitCents: Math.round(limitDollars * 100) });

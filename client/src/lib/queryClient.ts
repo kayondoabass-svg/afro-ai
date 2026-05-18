@@ -5,7 +5,7 @@ const API_BASE = (import.meta.env.VITE_API_URL as string) || "";
 // Inspect every AI response for quota headers / 429 body and dispatch a
 // global window event. The <QuotaNotifications> provider listens and shows
 // a soft toast at 80% or a blocking modal at 100%.
-function inspectQuota(res: Response, bodyText?: string): void {
+export function inspectQuota(res: Response, bodyText?: string): void {
   try {
     const kind = res.headers.get("X-AfroAI-Quota-Kind");
     if (!kind) return;

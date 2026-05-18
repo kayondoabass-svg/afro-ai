@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import rateLimit from "express-rate-limit";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, sql, or, lt, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { users, usageLogs } from "@shared/schema";
 import { storage } from "../storage";
@@ -69,17 +69,24 @@ async function maybeSendQuotaEmail(opts: {
   plan: UserPlan;
 }): Promise<void> {
   try {
-    const [u] = await db
-      .select({
-        email: users.email,
-        firstName: users.firstName,
-        quotaEmailSentAt: users.quotaEmailSentAt,
-      })
-      .from(users)
-      .where(eq(users.id, opts.userId));
+    // Atomic claim: only one concurrent request will win the row update.
+    // We "claim" the 24h slot first, then send. If send fails, we roll back
+    // the timestamp so the next request can retry.
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const claimed = await db
+      .update(users)
+      .set({ quotaEmailSentAt: new Date() as any })
+      .where(and(
+        eq(users.id, opts.userId),
+        or(
+          isNull(users.quotaEmailSentAt),
+          lt(users.quotaEmailSentAt, cutoff),
+        ),
+      ))
+      .returning({ email: users.email, firstName: users.firstName, prev: users.quotaEmailSentAt });
+    if (claimed.length === 0) return; // someone else already claimed the 24h slot
+    const u = claimed[0];
     if (!u?.email) return;
-    const last = u.quotaEmailSentAt ? new Date(u.quotaEmailSentAt as any).getTime() : 0;
-    if (Date.now() - last < 24 * 60 * 60 * 1000) return; // already emailed today
     const resetHours = Math.max(1, Math.round(friendlyMinutesUntilMidnightUtc() / 60));
     const sent = await sendQuotaReachedEmail(u.email, {
       name: u.firstName || undefined,
@@ -89,9 +96,10 @@ async function maybeSendQuotaEmail(opts: {
       plan: opts.plan,
       resetHours,
     });
-    if (sent) {
+    if (!sent) {
+      // Roll back the claim so a future request can retry.
       await db.update(users)
-        .set({ quotaEmailSentAt: new Date() as any })
+        .set({ quotaEmailSentAt: (u.prev ?? null) as any })
         .where(eq(users.id, opts.userId));
     }
   } catch (e) {
@@ -250,6 +258,8 @@ export function aiQuotaGuard(kind: AiKind): RequestHandler {
       const plan = planOf(u.plan);
       const cost = COST_CENTS[kind];
 
+      const since = startOfUtcDay();
+
       if (plan === "payg") {
         if ((u.paygBalance ?? 0) < cost) {
           return res.status(402).json({
@@ -258,20 +268,29 @@ export function aiQuotaGuard(kind: AiKind): RequestHandler {
           });
         }
         const limit = u.paygLimit ?? 0;
-        if (limit > 0 && (u.paygSpent ?? 0) + cost > limit) {
-          return res.status(402).json({
-            error: "You've reached your daily spend cap. Raise your limit in settings to continue.",
-            code: "PAYG_LIMIT_REACHED",
-          });
+        if (limit > 0) {
+          // Sum today's actual spend from usage_logs (NOT cumulative paygSpent).
+          // paygSpent has no daily reset — using it would permanently lock users.
+          const [spentRow] = await db
+            .select({ s: sql<number>`coalesce(sum(${usageLogs.costCents}), 0)::int` })
+            .from(usageLogs)
+            .where(and(eq(usageLogs.userId, userId), gte(usageLogs.createdAt, since)));
+          const spentToday = spentRow?.s ?? 0;
+          if (spentToday + cost > limit) {
+            return res.status(402).json({
+              error: "You've reached your daily spend cap. Raise your limit in settings to continue.",
+              code: "PAYG_LIMIT_REACHED",
+            });
+          }
         }
       }
 
       const dailyMax = DAILY_REQUEST_LIMITS[kind][plan];
-      const since = startOfUtcDay();
+      // Filter by kind so chat usage doesn't exhaust image/audio/video quotas.
       const [row] = await db
         .select({ n: sql<number>`count(*)::int` })
         .from(usageLogs)
-        .where(and(eq(usageLogs.userId, userId), gte(usageLogs.createdAt, since)));
+        .where(and(eq(usageLogs.userId, userId), eq(usageLogs.kind, kind), gte(usageLogs.createdAt, since)));
       const used = row?.n ?? 0;
 
       if (used >= dailyMax) {
@@ -323,6 +342,8 @@ export async function recordAiUsage(opts: {
       conversationId: opts.conversationId ?? null as any,
       model: opts.model,
       tokensUsed: opts.tokensUsed ?? 0,
+      kind: opts.kind,
+      costCents: cost,
     });
   } catch (e) {
     console.error("[recordAiUsage] usage log insert failed:", e);

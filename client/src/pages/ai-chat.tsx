@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, inspectQuota } from "@/lib/queryClient";
 import { FileTreeSidebar, saveProjectFiles, type ProjectFile } from "@/components/file-tree-sidebar";
 import { VibePanel, parseVibeMarkers } from "@/components/vibe-chips";
 import { NextStepsCard } from "@/components/next-steps-card";
@@ -2459,7 +2459,12 @@ export default function AIChatPage() {
         credentials: "include",
         body: JSON.stringify({ content: text, language }),
       });
-      if (!response.ok) throw new Error("Failed");
+      if (!response.ok) {
+        const errText = await response.text();
+        inspectQuota(response, errText);
+        throw new Error("Failed");
+      }
+      inspectQuota(response);
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No body");
       const decoder = new TextDecoder();
@@ -2546,7 +2551,12 @@ export default function AIChatPage() {
         }),
       });
 
-      if (!response.ok) throw new Error("Failed to send message");
+      if (!response.ok) {
+        const errText = await response.text();
+        inspectQuota(response, errText);
+        throw new Error("Failed to send message");
+      }
+      inspectQuota(response);
 
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response body");
