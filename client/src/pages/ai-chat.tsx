@@ -154,7 +154,27 @@ function extractAllCodeBlocks(text: string): string | null {
 }
 
 function removeCodeBlock(text: string): string {
-  return text.replace(/```(?:html)?\s*\n[\s\S]*?```/g, "").trim();
+  // Strip closed code fences first.
+  let out = text.replace(/```(?:html)?\s*\n[\s\S]*?```/g, "");
+  // Then strip any DANGLING open fence (truncated reply or mid-stream): everything from
+  // an unclosed ```html / ``` to end-of-string.
+  out = out.replace(/```(?:html)?\s*[\s\S]*$/i, "");
+  return out.trim();
+}
+
+// Strip our own structured markers ([BUILD PLAN]…[/BUILD PLAN], etc.) so they
+// never leak into the visible chat bubble — even when the message is still
+// streaming and only the opening tag has arrived.
+function stripStructuredMarkers(text: string): string {
+  let out = text;
+  for (const tag of ["BUILD PLAN", "REQUIREMENTS CHECK"]) {
+    // Closed pair → drop entirely (the card renderer handles it separately).
+    out = out.replace(new RegExp(`\\[${tag}\\][\\s\\S]*?\\[/${tag}\\]`, "g"), "");
+    // Dangling open tag mid-stream → drop everything from the open tag onwards
+    // so the user never sees "[BUILD PLAN] Building: …" in raw form.
+    out = out.replace(new RegExp(`\\[${tag}\\][\\s\\S]*$`), "");
+  }
+  return out.trim();
 }
 
 interface CodeTestResult {
@@ -2679,6 +2699,12 @@ export default function AIChatPage() {
     const vibeParsed = parseVibeMarkers(textOnly);
     textOnly = vibeParsed.cleanText;
 
+    // Final safety net: if a reply was truncated (token cap, network) and left
+    // a dangling [BUILD PLAN] open tag with no close, the extractor above
+    // won't have matched. Strip any such stragglers so users never see raw
+    // markers like "[BUILD PLAN] Building: …" or trailing "```html".
+    textOnly = stripStructuredMarkers(textOnly);
+
     return (
       <div className="space-y-3">
         {reqContent && <RequirementsCheckCard content={reqContent} />}
@@ -2978,8 +3004,8 @@ export default function AIChatPage() {
                         <p className="text-xs font-medium text-muted-foreground">Afro AI</p>
                         <div className="text-sm leading-relaxed">
                           <div className="space-y-3">
-                            {removeCodeBlock(streamingContent) && (
-                              <p className="whitespace-pre-wrap break-words">{removeCodeBlock(streamingContent)}</p>
+                            {stripStructuredMarkers(removeCodeBlock(streamingContent)) && (
+                              <p className="whitespace-pre-wrap break-words">{stripStructuredMarkers(removeCodeBlock(streamingContent))}</p>
                             )}
                             <StreamingBuildProgress
                               content={streamingContent}
