@@ -16,9 +16,12 @@ export type UserPlan = "starter" | "pro" | "business" | "payg";
 // Video is BUSINESS-ONLY because Veo 2 costs ~$0.35/second of generated video
 // and even 5 seconds/day caps at ~$1.75/user/day = $52/mo on a $25 plan.
 const DAILY_REQUEST_LIMITS: Record<AiKind, Record<UserPlan, number>> = {
-  chat:  { starter: 30,  pro: 500,  business: 1500, payg: 5000 },
-  image: { starter: 3,   pro: 30,   business: 100,  payg: 500  },
-  audio: { starter: 10,  pro: 200,  business: 400,  payg: 1000 },
+  // Chat raised starter 30→100: one app build is 5-15 messages, 30 was
+  // exhausting users mid-project. Worst-case starter spend on Flash Lite
+  // is still ~3¢/user/day even at 100 messages.
+  chat:  { starter: 100, pro: 1000, business: 3000, payg: 10000 },
+  image: { starter: 5,   pro: 50,   business: 200,  payg: 1000 },
+  audio: { starter: 20,  pro: 400,  business: 800,  payg: 2000 },
   // Video = "video clips per day". Each clip is hard-capped at 5 seconds in
   // server/veo.ts so total Veo cost per user/day stays bounded.
   video: { starter: 0,   pro: 0,    business: 5,    payg: 50   },

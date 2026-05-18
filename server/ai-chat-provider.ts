@@ -33,10 +33,10 @@ const GEMINI_MODEL_BY_TIER: Record<UserTier, string> = {
 // Hard ceiling on output tokens per reply, by tier. Stops a single chat from
 // producing a 50,000-token response that costs more than the user's plan.
 export const MAX_OUTPUT_TOKENS_BY_TIER: Record<UserTier, number> = {
-  starter:  2_000,
-  pro:      8_000,
-  business: 16_000,
-  payg:     32_000,
+  starter:  8_000,   // raised from 2k — 2k truncates HTML code-gen mid-build
+  pro:      16_000,  // raised from 8k for the same reason on bigger pages
+  business: 32_000,
+  payg:     64_000,
 };
 
 export function geminiModelForTier(tier?: UserTier): string {
