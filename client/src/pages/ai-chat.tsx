@@ -1560,6 +1560,38 @@ export default function AIChatPage() {
   const [githubExporting, setGithubExporting] = useState(false);
   const [githubResultUrl, setGithubResultUrl] = useState<string | null>(null);
   const [githubImportUrl, setGithubImportUrl] = useState("");
+  // OAuth-based push: server stores the token, the user just clicks Connect.
+  const [githubStatus, setGithubStatus] = useState<{ connected: boolean; login: string | null; configured: boolean } | null>(null);
+  const [githubVisibility, setGithubVisibility] = useState<"public" | "private" | "">("");
+  const refreshGithubStatus = useCallback(async () => {
+    try {
+      const r = await fetch("/api/github/status", { credentials: "include" });
+      if (r.ok) setGithubStatus(await r.json());
+    } catch {}
+  }, []);
+  useEffect(() => { refreshGithubStatus(); }, [refreshGithubStatus]);
+  // After OAuth callback redirects back with ?github=connected, refresh state.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gh = params.get("github");
+    if (gh === "connected") {
+      refreshGithubStatus();
+      toast({ title: "GitHub connected!", description: "You can now push your app to a new repo." });
+      params.delete("github");
+      const qs = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+      setShowGithubModal(true);
+      setGithubExportMode("repo");
+    } else if (gh === "error") {
+      const reason = params.get("reason") || "Unknown error";
+      toast({ title: "Could not connect to GitHub", description: reason, variant: "destructive" });
+      params.delete("github");
+      params.delete("reason");
+      const qs = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleInputChange(val: string) {
     setInput(val);
@@ -2352,50 +2384,36 @@ export default function AIChatPage() {
 
   const handleRepoExport = async () => {
     if (!previewCode || !githubRepoName.trim()) return;
+    if (githubVisibility !== "public" && githubVisibility !== "private") {
+      toast({ title: "Pick public or private", description: "Choose who can see your repo before pushing.", variant: "destructive" });
+      return;
+    }
     setGithubExporting(true);
     try {
-      const userRes = await fetch("https://api.github.com/user", {
-        headers: { "Authorization": `token ${githubToken}` },
-      });
-      const userData = await userRes.json();
-      if (!userRes.ok) throw new Error(userData.message || "Invalid GitHub token");
-      const username = userData.login;
-      const repoName = githubRepoName.trim().replace(/\s+/g, "-").toLowerCase();
-
-      const repoCheck = await fetch(`https://api.github.com/repos/${username}/${repoName}`, {
-        headers: { "Authorization": `token ${githubToken}` },
-      });
-      if (!repoCheck.ok) {
-        const createRes = await fetch("https://api.github.com/user/repos", {
-          method: "POST",
-          headers: { "Authorization": `token ${githubToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ name: repoName, description: "Built with Afro AI", auto_init: false }),
-        });
-        const createData = await createRes.json();
-        if (!createRes.ok) throw new Error(createData.message || "Could not create repository");
-      }
-
-      const fileCheck = await fetch(`https://api.github.com/repos/${username}/${repoName}/contents/index.html`, {
-        headers: { "Authorization": `token ${githubToken}` },
-      });
-      const fileData = fileCheck.ok ? await fileCheck.json() : null;
-      const content = btoa(unescape(encodeURIComponent(previewCode)));
-
-      const pushRes = await fetch(`https://api.github.com/repos/${username}/${repoName}/contents/index.html`, {
-        method: "PUT",
-        headers: { "Authorization": `token ${githubToken}`, "Content-Type": "application/json" },
+      const titleMatch = previewCode.match(/<title>([^<]+)<\/title>/i);
+      const title = titleMatch?.[1]?.trim() || "My Afro AI App";
+      const res = await fetch("/api/github/push", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: "Update app — built with Afro AI",
-          content,
-          ...(fileData?.sha ? { sha: fileData.sha } : {}),
+          repoName: githubRepoName.trim(),
+          htmlContent: previewCode,
+          title,
+          visibility: githubVisibility,
         }),
       });
-      const pushData = await pushRes.json();
-      if (!pushRes.ok) throw new Error(pushData.message || "Failed to push file");
-      setGithubResultUrl(`https://github.com/${username}/${repoName}`);
-      localStorage.setItem("afroai_github_token", githubToken);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to push to GitHub");
+      setGithubResultUrl(data.repoUrl);
     } catch (e: any) {
-      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+      const msg = e?.message || "Export failed";
+      if (/not connected/i.test(msg)) {
+        await refreshGithubStatus();
+        toast({ title: "Connect GitHub first", description: "Click 'Connect GitHub' in the dialog to authorize.", variant: "destructive" });
+      } else {
+        toast({ title: "Export failed", description: msg, variant: "destructive" });
+      }
     } finally {
       setGithubExporting(false);
     }
@@ -4111,7 +4129,102 @@ export default function AIChatPage() {
                 </Button>
               </div>
             </div>
+          ) : githubExportMode === "repo" ? (
+            // ===== REPO MODE — one-click OAuth, no token paste =====
+            <div className="space-y-4 py-2">
+              {!githubStatus?.configured ? (
+                <div className="rounded-lg border border-amber-400/30 bg-amber-50/5 p-3 text-xs text-amber-500">
+                  GitHub push isn't set up on this server yet. Ask the admin to add the GitHub OAuth credentials.
+                </div>
+              ) : !githubStatus?.connected ? (
+                <>
+                  <div className="rounded-lg border bg-muted/30 p-4 text-center space-y-3">
+                    <Github className="w-8 h-8 mx-auto text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-semibold">Connect your GitHub account</p>
+                      <p className="text-xs text-muted-foreground mt-1">One-time authorization. After that, every push is one click.</p>
+                    </div>
+                    <Button
+                      className="w-full gap-2"
+                      onClick={() => { window.location.href = `/api/github/connect?returnTo=${encodeURIComponent(window.location.pathname)}`; }}
+                      data-testid="button-github-connect"
+                    >
+                      <Github className="w-4 h-4" /> Connect GitHub
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      <span>Connected as <span className="font-semibold">@{githubStatus.login}</span></span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
+                      onClick={async () => {
+                        await fetch("/api/github/disconnect", { method: "POST", credentials: "include" });
+                        await refreshGithubStatus();
+                        toast({ title: "Disconnected from GitHub" });
+                      }}
+                      data-testid="button-github-disconnect"
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Repository name <span className="text-red-400">*</span></Label>
+                    <Input
+                      value={githubRepoName}
+                      onChange={(e) => setGithubRepoName(e.target.value)}
+                      placeholder="my-afro-ai-app"
+                      data-testid="input-github-repo-name"
+                    />
+                    <p className="text-xs text-muted-foreground">Created automatically if it doesn't exist. We'll add index.html, README.md and .gitignore.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Who can see this repo? <span className="text-red-400">*</span></Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setGithubVisibility("public")}
+                        className={`rounded-lg border p-3 text-left transition ${githubVisibility === "public" ? "border-primary bg-primary/10" : "hover:bg-muted/50"}`}
+                        data-testid="button-github-visibility-public"
+                      >
+                        <p className="text-sm font-semibold">Public</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Anyone can see and clone. Shareable.</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGithubVisibility("private")}
+                        className={`rounded-lg border p-3 text-left transition ${githubVisibility === "private" ? "border-primary bg-primary/10" : "hover:bg-muted/50"}`}
+                        data-testid="button-github-visibility-private"
+                      >
+                        <p className="text-sm font-semibold">Private</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Only you (and people you invite) can see it.</p>
+                      </button>
+                    </div>
+                  </div>
+
+                  <Button
+                    className="w-full gap-2"
+                    disabled={!githubRepoName.trim() || !githubVisibility || githubExporting}
+                    onClick={handleRepoExport}
+                    data-testid="button-github-export-submit"
+                  >
+                    {githubExporting
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Pushing to GitHub…</>
+                      : <><Github className="w-4 h-4" />Push to GitHub</>}
+                  </Button>
+                </>
+              )}
+            </div>
           ) : (
+            // ===== GIST MODE — keep the existing PAT flow, lightweight share =====
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <Label className="text-sm">GitHub Personal Access Token <span className="text-red-400">*</span></Label>
@@ -4123,32 +4236,19 @@ export default function AIChatPage() {
                   data-testid="input-github-token"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Get one at <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-primary underline">github.com/settings/tokens</a> — needs <strong>gist</strong>{githubExportMode === "repo" ? " and repo" : ""} scope. Saved in your browser only, never sent to Afro AI.
+                  Get one at <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-primary underline">github.com/settings/tokens</a> — needs <strong>gist</strong> scope. Saved in your browser only, never sent to Afro AI.
                 </p>
               </div>
 
-              {githubExportMode === "repo" && (
-                <div className="space-y-1.5">
-                  <Label className="text-sm">Repository name <span className="text-red-400">*</span></Label>
-                  <Input
-                    value={githubRepoName}
-                    onChange={(e) => setGithubRepoName(e.target.value)}
-                    placeholder="my-afro-ai-app"
-                    data-testid="input-github-repo-name"
-                  />
-                  <p className="text-xs text-muted-foreground">Created automatically if it doesn't exist yet.</p>
-                </div>
-              )}
-
               <Button
                 className="w-full gap-2"
-                disabled={!githubToken || (githubExportMode === "repo" && !githubRepoName.trim()) || githubExporting}
-                onClick={githubExportMode === "gist" ? handleGistExport : handleRepoExport}
+                disabled={!githubToken || githubExporting}
+                onClick={handleGistExport}
                 data-testid="button-github-export-submit"
               >
                 {githubExporting
-                  ? <><Loader2 className="w-4 h-4 animate-spin" />{githubExportMode === "gist" ? "Creating Gist…" : "Pushing to GitHub…"}</>
-                  : <><Github className="w-4 h-4" />{githubExportMode === "gist" ? "Create Gist" : "Push to GitHub"}</>}
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Creating Gist…</>
+                  : <><Github className="w-4 h-4" />Create Gist</>}
               </Button>
             </div>
           )}

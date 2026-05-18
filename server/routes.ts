@@ -5410,5 +5410,93 @@ Authorization: Bearer YOUR_API_KEY</pre>
     }
   });
 
+  // ========================================================================
+  // GitHub OAuth + Push-to-Repo
+  // One-click flow: user clicks "Connect GitHub" → bounces through GitHub
+  // OAuth → token saved encrypted → "Push to GitHub" creates/updates the repo
+  // via the GitHub REST API (no shell, no git binary needed).
+  // ========================================================================
+  const github = await import("./github");
+
+  app.get("/api/github/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const row = await github.getUserToken(userId);
+      res.json({
+        configured: github.isGithubOAuthConfigured(),
+        connected: Boolean(row),
+        login: row?.githubLogin || null,
+        connectedAt: row?.connectedAt || null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "Failed" });
+    }
+  });
+
+  app.get("/api/github/connect", isAuthenticated, async (req: any, res) => {
+    if (!github.isGithubOAuthConfigured()) {
+      return res.status(503).send("GitHub OAuth not configured");
+    }
+    const state = crypto.randomBytes(16).toString("hex");
+    (req.session as any).githubOAuthState = state;
+    (req.session as any).githubOAuthReturnTo = github.safeReturnTo(req.query.returnTo);
+    res.redirect(github.buildAuthorizeUrl(req, state));
+  });
+
+  app.get("/api/github/callback", isAuthenticated, async (req: any, res) => {
+    try {
+      const { code, state } = req.query as { code?: string; state?: string };
+      const expected = (req.session as any).githubOAuthState;
+      // Defense in depth: even though we sanitized on /connect, re-sanitize here
+      // so a tampered session cookie can't produce an open redirect either.
+      const returnTo = github.safeReturnTo((req.session as any).githubOAuthReturnTo);
+      delete (req.session as any).githubOAuthState;
+      delete (req.session as any).githubOAuthReturnTo;
+      if (!code || !state || state !== expected) {
+        return res.redirect(`${returnTo}?github=error&reason=${encodeURIComponent("Bad state")}`);
+      }
+      const { accessToken, scopes } = await github.exchangeCodeForToken(code, req);
+      await github.saveUserToken(req.user.id, accessToken, scopes);
+      res.redirect(`${returnTo}?github=connected`);
+    } catch (e: any) {
+      console.error("[github/callback]", e?.message || e);
+      res.redirect(`/ai-chat?github=error&reason=${encodeURIComponent(e?.message || "Failed")}`);
+    }
+  });
+
+  app.post("/api/github/disconnect", isAuthenticated, async (req: any, res) => {
+    try {
+      await github.deleteUserToken(req.user.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "Failed" });
+    }
+  });
+
+  app.post("/api/github/push", isAuthenticated, async (req: any, res) => {
+    try {
+      const { repoName, htmlContent, title, visibility, commitMessage, publishedUrl } = req.body || {};
+      if (!repoName || typeof repoName !== "string") return res.status(400).json({ error: "repoName required" });
+      if (!htmlContent || typeof htmlContent !== "string") return res.status(400).json({ error: "htmlContent required" });
+      if (visibility !== "public" && visibility !== "private") return res.status(400).json({ error: "visibility must be 'public' or 'private'" });
+      if (htmlContent.length > 5_000_000) return res.status(413).json({ error: "App too large to push (>5MB)" });
+
+      const result = await github.pushHtmlToRepo({
+        userId: req.user.id,
+        repoName,
+        htmlContent,
+        title: title || "My Afro AI App",
+        visibility,
+        commitMessage,
+        publishedUrl,
+      });
+      res.json(result);
+    } catch (e: any) {
+      const msg = e?.message || "Push failed";
+      const status = msg.includes("not connected") ? 401 : 500;
+      res.status(status).json({ error: msg });
+    }
+  });
+
   return httpServer;
 }

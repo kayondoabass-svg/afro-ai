@@ -800,3 +800,17 @@ export const partnerCertifications = pgTable("partner_certifications", {
 export const insertPartnerCertificationSchema = createInsertSchema(partnerCertifications).omit({ id: true, createdAt: true, passedAt: true });
 export type PartnerCertification = typeof partnerCertifications.$inferSelect;
 export type InsertPartnerCertification = z.infer<typeof insertPartnerCertificationSchema>;
+
+// GitHub OAuth — one connected GitHub account per Afro AI user, used by the
+// "Push to GitHub" feature in the AI chat. accessToken is stored AES-256-GCM
+// encrypted (see server/github.ts).
+export const userGithubTokens = pgTable("user_github_tokens", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  githubLogin: varchar("github_login").notNull(),
+  githubUserId: varchar("github_user_id").notNull(),
+  accessTokenEnc: text("access_token_enc").notNull(),
+  scopes: text("scopes").notNull(),
+  connectedAt: timestamp("connected_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+export type UserGithubToken = typeof userGithubTokens.$inferSelect;
