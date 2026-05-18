@@ -39,6 +39,10 @@ export const users = pgTable("users", {
   // Email verification — true if user confirmed via verification link, OR if account
   // came from an OAuth provider (Google/GitHub/Replit) which already verifies email.
   emailVerified: timestamp("email_verified"),
+  // Last time we emailed the user that they'd hit a daily AI quota. Used by
+  // server/replit_integrations/quota.ts to dedup quota-reached emails to at
+  // most one per 24h so we don't spam users who keep hitting send.
+  quotaEmailSentAt: timestamp("quota_email_sent_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

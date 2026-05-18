@@ -4,6 +4,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "../db";
 import { users, usageLogs } from "@shared/schema";
 import { storage } from "../storage";
+import { sendQuotaReachedEmail } from "../mailer";
 
 export type AiKind = "chat" | "image" | "audio" | "video";
 export type UserPlan = "starter" | "pro" | "business" | "payg";
@@ -49,6 +50,72 @@ function friendlyMinutesUntilMidnightUtc(): number {
   const now = new Date();
   const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
   return Math.max(1, Math.ceil((next.getTime() - now.getTime()) / 60_000));
+}
+
+function nextUtcMidnightIso(): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+}
+
+// Best-effort fire-and-forget email notification. Dedups: at most one quota
+// email per user per 24h, tracked via users.quotaEmailSentAt. Failures (no
+// email on file, SES error, suppression list) are swallowed silently — we
+// must never block a legit AI request on email infrastructure.
+async function maybeSendQuotaEmail(opts: {
+  userId: string;
+  kind: AiKind;
+  used: number;
+  limit: number;
+  plan: UserPlan;
+}): Promise<void> {
+  try {
+    const [u] = await db
+      .select({
+        email: users.email,
+        firstName: users.firstName,
+        quotaEmailSentAt: users.quotaEmailSentAt,
+      })
+      .from(users)
+      .where(eq(users.id, opts.userId));
+    if (!u?.email) return;
+    const last = u.quotaEmailSentAt ? new Date(u.quotaEmailSentAt as any).getTime() : 0;
+    if (Date.now() - last < 24 * 60 * 60 * 1000) return; // already emailed today
+    const resetHours = Math.max(1, Math.round(friendlyMinutesUntilMidnightUtc() / 60));
+    const sent = await sendQuotaReachedEmail(u.email, {
+      name: u.firstName || undefined,
+      kind: opts.kind,
+      used: opts.used,
+      limit: opts.limit,
+      plan: opts.plan,
+      resetHours,
+    });
+    if (sent) {
+      await db.update(users)
+        .set({ quotaEmailSentAt: new Date() as any })
+        .where(eq(users.id, opts.userId));
+    }
+  } catch (e) {
+    console.error("[maybeSendQuotaEmail] swallowed error:", e);
+  }
+}
+
+// Attach standard quota headers to every AI response so the client can show
+// a soft warning toast at 80%, etc. Cheap — just sets headers on the res
+// object that has already been resolved by the middleware.
+function setQuotaHeaders(res: Response, opts: {
+  kind: AiKind;
+  used: number;
+  limit: number;
+  plan: UserPlan;
+}): void {
+  try {
+    res.setHeader("X-AfroAI-Quota-Kind", opts.kind);
+    res.setHeader("X-AfroAI-Quota-Used", String(opts.used));
+    res.setHeader("X-AfroAI-Quota-Limit", String(opts.limit));
+    res.setHeader("X-AfroAI-Quota-Percent", String(Math.min(100, Math.round((opts.used / Math.max(1, opts.limit)) * 100))));
+    res.setHeader("X-AfroAI-Quota-Plan", opts.plan);
+    res.setHeader("X-AfroAI-Quota-Resets-At", nextUtcMidnightIso());
+  } catch { /* response already sent — ignore */ }
 }
 
 export const aiBurstLimiters: Record<AiKind, RequestHandler> = {
@@ -210,13 +277,27 @@ export function aiQuotaGuard(kind: AiKind): RequestHandler {
       if (used >= dailyMax) {
         const minutes = friendlyMinutesUntilMidnightUtc();
         res.setHeader("Retry-After", String(minutes * 60));
+        setQuotaHeaders(res, { kind, used, limit: dailyMax, plan });
+        // Fire-and-forget — don't await, don't block the response.
+        void maybeSendQuotaEmail({ userId, kind, used, limit: dailyMax, plan });
         return res.status(429).json({
           error: `You've hit today's ${kind} limit (${dailyMax}). It resets in about ${minutes} minute${minutes === 1 ? "" : "s"}. Upgrade your plan for more.`,
           code: "DAILY_QUOTA_REACHED",
+          kind,
+          used,
+          limit: dailyMax,
+          percent: 100,
+          plan,
+          resetsAt: nextUtcMidnightIso(),
           retryAfterSeconds: minutes * 60,
+          upgradeUrl: "/pricing",
+          creditsUrl: "/pricing#payg",
         });
       }
 
+      // Set soft-warning headers on every successful AI call. Used by the
+      // <QuotaNotifications> provider on the client to surface a toast at 80%.
+      setQuotaHeaders(res, { kind, used: used + 1, limit: dailyMax, plan });
       anyReq.aiContext = { kind, plan, cost, userId };
       return next();
     } catch (err) {

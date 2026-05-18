@@ -125,6 +125,33 @@ export async function sendDepletedEmail(to: string): Promise<boolean> {
   return send(to, subject, wrapped.html, wrapped.text);
 }
 
+export async function sendQuotaReachedEmail(to: string, opts: {
+  name?: string;
+  kind: "chat" | "image" | "audio" | "video";
+  used: number;
+  limit: number;
+  plan: string;
+  resetHours: number;
+}): Promise<boolean> {
+  const kindLabel: Record<string, string> = {
+    chat: "messages", image: "image generations", audio: "voice messages", video: "video clips",
+  };
+  const label = kindLabel[opts.kind] || opts.kind;
+  const subject = `You've reached today's Afro AI ${label} limit`;
+  const html = `
+    <p>Hi ${opts.name || "there"},</p>
+    <p>You've used all <strong>${opts.limit}</strong> daily ${label} on your <strong>${opts.plan}</strong> plan today. Your project is saved — pick up exactly where you left off.</p>
+    <p style="margin:24px 0;text-align:center;">
+      <a href="https://afroaigroup.com/pricing" style="background:${BRAND_COLOR};color:#000;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;margin:4px;">Upgrade plan →</a>
+      <a href="https://afroaigroup.com/pricing#payg" style="background:#27272a;color:#fff;border:1px solid #3f3f46;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;margin:4px;">Buy credits</a>
+    </p>
+    <p style="font-size:13px;color:#a1a1aa;">Or wait — your free limit resets in about <strong>${opts.resetHours} hour${opts.resetHours === 1 ? "" : "s"}</strong> (midnight UTC).</p>
+    <p style="font-size:12px;color:#71717a;margin-top:18px;">You'll only get this email once per day, even if you hit the limit again.</p>`;
+  const text = `Hi ${opts.name || "there"},\n\nYou've used your ${opts.limit} daily ${label} on Afro AI today (${opts.plan} plan).\n\nUpgrade or buy credits: https://afroaigroup.com/pricing\nOr wait — resets in ~${opts.resetHours} hour(s).`;
+  const wrapped = shell("Daily limit reached", html, text);
+  return send(to, subject, wrapped.html, wrapped.text);
+}
+
 export async function sendChatbotLimitEmail(to: string, opts: { plan: string; limit: number }): Promise<boolean> {
   const subject = "Your chatbot has hit its monthly reply limit";
   const html = `

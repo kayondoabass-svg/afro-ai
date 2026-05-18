@@ -1,17 +1,93 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useLanguage } from "@/hooks/use-language";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Globe, CreditCard, BarChart3, Folder, Clock, ArrowRight } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { User, Globe, CreditCard, BarChart3, Folder, Clock, ArrowRight, Shield } from "lucide-react";
 import { africanCountries } from "@shared/currencies";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Project } from "@shared/schema";
+
+type PaygStatus = { balance: number; limit: number; spent: number };
+
+function SpendCapCard() {
+  const { toast } = useToast();
+  const { data: payg, isLoading } = useQuery<PaygStatus>({ queryKey: ["/api/payg/status"] });
+  const [dollars, setDollars] = useState<number>(10);
+  const [touched, setTouched] = useState(false);
+
+  useEffect(() => {
+    if (payg?.limit != null && !touched) setDollars(Math.max(0, Math.round(payg.limit / 100)));
+  }, [payg?.limit, touched]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/payg/limit", { limitDollars: dollars });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payg/status"] });
+      setTouched(false);
+      toast({ title: "Spend cap updated", description: `We'll stop new AI requests at $${dollars}/day.` });
+    },
+    onError: () => toast({ title: "Couldn't save", description: "Please try again.", variant: "destructive" }),
+  });
+
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Shield className="w-4 h-4 text-muted-foreground" />
+          <h3 className="font-semibold">Daily spend cap</h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Set the most you ever want to spend on AI in a single day. We'll warn you at 80% and stop new requests at 100% so you never get a surprise bill.
+        </p>
+        {isLoading ? (
+          <Skeleton className="h-10 w-full" />
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Cap me at:</span>
+              <span className="text-2xl font-bold tabular-nums" data-testid="text-spend-cap-value">
+                {dollars === 0 ? "Off" : `$${dollars}/day`}
+              </span>
+            </div>
+            <Slider
+              value={[dollars]}
+              onValueChange={(v) => { setDollars(v[0]); setTouched(true); }}
+              min={0}
+              max={50}
+              step={1}
+              data-testid="slider-spend-cap"
+            />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Off</span>
+              <span>$50/day</span>
+            </div>
+            {touched && (
+              <Button
+                onClick={() => save.mutate()}
+                disabled={save.isPending}
+                className="w-full"
+                data-testid="button-save-spend-cap"
+              >
+                {save.isPending ? "Saving..." : "Save cap"}
+              </Button>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function useCountryPreference() {
   const [country, setCountry] = useState<string>(() => {
@@ -161,6 +237,8 @@ export default function SettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        <SpendCapCard />
 
         <Card>
           <CardContent className="p-6 space-y-4">
