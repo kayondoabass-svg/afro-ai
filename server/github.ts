@@ -1,8 +1,21 @@
 import crypto from "crypto";
-import { Octokit } from "@octokit/rest";
 import { db } from "./db";
 import { userGithubTokens, type UserGithubToken } from "@shared/schema";
 import { eq } from "drizzle-orm";
+
+// @octokit/rest v22 is ESM-only. Our prod build outputs CommonJS, so a static
+// `import { Octokit } from "@octokit/rest"` becomes a `require()` at runtime
+// and crashes with ERR_REQUIRE_ESM. Load it lazily via dynamic import, which
+// Node treats as a real ESM import even from a CJS bundle.
+type OctokitCtor = new (opts: { auth: string }) => any;
+let _OctokitCached: OctokitCtor | null = null;
+async function getOctokit(auth: string): Promise<any> {
+  if (!_OctokitCached) {
+    const mod = await import("@octokit/rest");
+    _OctokitCached = mod.Octokit as unknown as OctokitCtor;
+  }
+  return new _OctokitCached({ auth });
+}
 
 const CLIENT_ID = process.env.GITHUB_OAUTH_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.GITHUB_OAUTH_CLIENT_SECRET || "";
@@ -107,7 +120,7 @@ export async function exchangeCodeForToken(code: string, req: any): Promise<{ ac
 
 // ---- token CRUD -------------------------------------------------------------
 export async function saveUserToken(userId: string, accessToken: string, scopes: string): Promise<UserGithubToken> {
-  const octokit = new Octokit({ auth: accessToken });
+  const octokit = await getOctokit(accessToken);
   const { data: gh } = await octokit.users.getAuthenticated();
   const row = {
     userId,
@@ -201,7 +214,7 @@ export async function pushHtmlToRepo(opts: {
   const tokenRow = await getUserToken(opts.userId);
   if (!tokenRow) throw new Error("GitHub account not connected");
   const token = decryptToken(tokenRow.accessTokenEnc);
-  const octokit = new Octokit({ auth: token });
+  const octokit = await getOctokit(token);
 
   const owner = tokenRow.githubLogin;
   const repo = sanitizeRepoName(opts.repoName);
