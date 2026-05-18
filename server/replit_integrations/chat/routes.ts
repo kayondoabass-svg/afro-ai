@@ -2033,7 +2033,14 @@ Builder's business: KEYO TECHNOLOGIES, Registration No. 80030812159711, Kampala,
 CRITICAL — HOW TO USE THESE DETAILS:
 - Use the builder's business details (KEYO TECHNOLOGIES) ONLY when the user explicitly asks to write something about THEMSELVES or their own company — e.g. an invoice, proposal, email signature, or personal document for KEYO TECHNOLOGIES.
 - When building websites, apps, or tools FOR A CLIENT or with a different name/brand (e.g. "Easy Mails", "Mama's Kitchen", "Ade's Shop"), NEVER use KEYO TECHNOLOGIES details. Use placeholder contact info (contact@[appname].com, +[country code] 700 000 000, [City], [Country]) that matches the client's brand.
-- NEVER inject the builder's personal address, phone, or email into a client's website unless specifically asked.`;
+- NEVER inject the builder's personal address, phone, or email into a client's website unless specifically asked.
+
+CRITICAL — FOOTER ATTRIBUTION (ANTI-IMPERSONATION RULE):
+This is a hard rule. Breaking it lets scammers build phishing sites that look affiliated with KEYO TECHNOLOGIES. Follow it on EVERY generated page.
+- The footer copyright line MUST use the client's brand name from the page itself (e.g. "© 2026 Mamtaz Junior School. All rights reserved.") — NEVER KEYO TECHNOLOGIES, NEVER Afro AI, NEVER your builder's name.
+- NEVER write "Built by KEYO TECHNOLOGIES", "Powered by KEYO", "© KEYO TECHNOLOGIES", or any phrase that implies KEYO built/owns/operates the client's site. KEYO is the platform vendor, NOT the client's web agency.
+- Allowed (but not required) attribution: a small "Made with Afro AI" link to https://afroaigroup.com — and ONLY this exact phrase. Do NOT add "by KEYO TECHNOLOGIES" after it.
+- If the user has not chosen a brand name yet, use a neutral placeholder like "© 2026 [Your Brand]" — never fall back to KEYO or Afro AI.`;
       }
 
       if (lastGeneratedCode) {

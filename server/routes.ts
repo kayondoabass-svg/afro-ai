@@ -27,7 +27,7 @@ import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, i
 import { analyzeImage } from "./gemini";
 import { checkDomainAvailability, checkSingleDomain, registerDomain, listDomains, getDomainInfo, renewDomain, setNameservers, getCostPrice } from "./namedotcom";
 import { sendSms as atSendSms, getAccountBalance as atGetBalance, isAtConfigured, atMode } from "./africastalking";
-import { scanHtmlContent, publishedAppHeaders } from "./security";
+import { scanHtmlContent, sanitizeKeyoImpersonation, publishedAppHeaders } from "./security";
 import { injectFeedbackWidget } from "./feedback-widget";
 import { insertAppFeedbackSchema } from "@shared/schema";
 import { uploadToR2, deleteFromR2, isR2Configured, putBlob, getBlobText, deleteBlob } from "./r2";
@@ -1083,7 +1083,12 @@ export async function registerRoutes(
         return sendError(validation.error!);
       }
 
-      const scanResult = scanHtmlContent(htmlContent);
+      // ANTI-IMPERSONATION: strip any "Built by KEYO TECHNOLOGIES" / "Powered by KEYO"
+      // / "© KEYO TECHNOLOGIES" attributions the AI may have invented on a CLIENT
+      // site. KEYO is the platform vendor — they did NOT build this end-user's
+      // page, and a phishing-style impersonation footer is the #1 risk vector.
+      const sanitizedHtml = sanitizeKeyoImpersonation(htmlContent);
+      const scanResult = scanHtmlContent(sanitizedHtml);
       if (scanResult.blocked) {
         sendStep("validate", "error", "Safety check");
         return sendError(
@@ -1095,6 +1100,8 @@ export async function registerRoutes(
           }
         );
       }
+      // Use the sanitized content for everything downstream (storage, R2, etc.).
+      const cleanHtml = sanitizedHtml;
       if (scanResult.warnings.length > 0) {
         const highWarnings = scanResult.warnings.filter(w => w.severity === "high");
         if (highWarnings.length > 0) {
@@ -1153,7 +1160,7 @@ export async function registerRoutes(
         await storage.createAppVersion(existing.id, existing.htmlContent, existing.title, "publish");
         await storage.deleteOldVersions(existing.id, 20);
         result = await storage.updatePublishedApp(existing.id, {
-          htmlContent,
+          htmlContent: cleanHtml,
           title,
           cloudflareDnsRecordId: dnsRecordId || undefined,
         });
@@ -1161,7 +1168,7 @@ export async function registerRoutes(
         result = await storage.createPublishedApp({
           userId,
           subdomain: subdomainLower,
-          htmlContent,
+          htmlContent: cleanHtml,
           title,
           cloudflareDnsRecordId: dnsRecordId || null,
         });
@@ -1171,7 +1178,7 @@ export async function registerRoutes(
       if (result && isR2Configured()) {
         try {
           const r2Key = `sites/${result.id}.html`;
-          await putBlob(r2Key, htmlContent, "text/html; charset=utf-8");
+          await putBlob(r2Key, cleanHtml, "text/html; charset=utf-8");
           await storage.updatePublishedApp(result.id, { htmlR2Key: r2Key });
           result.htmlR2Key = r2Key;
         } catch (r2err: any) {

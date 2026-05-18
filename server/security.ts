@@ -90,6 +90,29 @@ export interface ScanResult {
   autoFixHint?: string;
 }
 
+// Strip impersonation attributions ("Built by KEYO TECHNOLOGIES", "© KEYO", etc.)
+// from end-user published sites. Defense-in-depth — the AI prompt also tells the
+// model not to emit these, but a scammer could bypass the prompt by editing the
+// HTML directly before publishing. This runs server-side on every publish.
+const KEYO_IMPERSONATION_PATTERNS: RegExp[] = [
+  // "Built by KEYO TECHNOLOGIES" / "Built by <a>KEYO TECHNOLOGIES</a>" / "Built by KEYO"
+  /\s*(?:Built|Powered|Developed|Made|Created)\s+by\s*(?:<[^>]+>\s*)*\s*KEYO(?:\s+TECHNOLOGIES)?\s*(?:<\/[^>]+>\s*)*[.,]?/gi,
+  // Standalone "© KEYO TECHNOLOGIES" copyright line
+  /(?:©|&copy;|\(c\))\s*(?:\d{4}\s*)?KEYO(?:\s+TECHNOLOGIES)?[.,]?/gi,
+  // "by KEYO TECHNOLOGIES" tagging on its own (rare but possible)
+  /\s*by\s+KEYO\s+TECHNOLOGIES[.,]?/gi,
+];
+export function sanitizeKeyoImpersonation(html: string): string {
+  if (!html) return html;
+  let out = html;
+  for (const re of KEYO_IMPERSONATION_PATTERNS) {
+    out = out.replace(re, "");
+  }
+  // Collapse any double-spaces / orphan dots we just created.
+  out = out.replace(/  +/g, " ").replace(/\s+\./g, ".").replace(/\.\s*\./g, ".");
+  return out;
+}
+
 export function scanHtmlContent(html: string): ScanResult {
   const warnings: ScanResult["warnings"] = [];
   let highCount = 0;
