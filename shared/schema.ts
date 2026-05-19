@@ -574,6 +574,11 @@ export const emailApiDomains = pgTable("email_api_domains", {
   dmarcRecord: text("dmarc_record"),
   verifiedAt: timestamp("verified_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  // Which email provider this domain was verified through. New rows default
+  // to whichever provider is active when they're created. Older rows are SES.
+  provider: varchar("provider").notNull().default("ses"), // ses | resend
+  // Resend's domain UUID — needed to poll verification status and delete.
+  resendDomainId: text("resend_domain_id"),
 });
 export const insertEmailApiDomainSchema = createInsertSchema(emailApiDomains).omit({ id: true, createdAt: true, verifiedAt: true, dkimToken: true, spfRecord: true, dmarcRecord: true });
 export type EmailApiDomain = typeof emailApiDomains.$inferSelect;

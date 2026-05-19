@@ -4729,24 +4729,51 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
     res.json(domains);
   });
 
-  // Add a domain for verification
+  // Add a domain for verification. Routes through whichever provider is
+  // currently active (Resend by default, falls back to SES). Either way we
+  // store provider-specific identifiers so /verify and DELETE know who to
+  // talk to even after the active provider is later flipped.
   app.post("/api/email-api/domains", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     const { domain } = req.body;
     if (!domain) return res.status(400).json({ error: "Domain required" });
 
-    // Generate DKIM tokens via AWS SES
+    const { activeEmailProvider } = await import("./email-provider");
+    const provider = activeEmailProvider();
+
+    if (provider === "resend") {
+      try {
+        const { createResendDomain, formatRecordsForUi } = await import("./resend-domains");
+        const region = process.env.RESEND_REGION || "us-east-1";
+        const created = await createResendDomain(domain, region);
+        const recs = formatRecordsForUi(created.records);
+        const [row] = await db.insert(emailApiDomains).values({
+          userId,
+          domain,
+          status: created.status === "verified" ? "verified" : "pending",
+          dkimToken: recs.dkimText,
+          spfRecord: recs.spfText,
+          dmarcRecord: recs.dmarcText,
+          provider: "resend",
+          resendDomainId: created.id,
+        }).returning();
+        return res.json(row);
+      } catch (e: any) {
+        console.error("[EmailAPI] Resend domain create error:", e?.message || e);
+        return res.status(502).json({ error: e?.message || "Failed to register domain with Resend" });
+      }
+    }
+
+    // SES fallback (legacy / when EMAIL_PROVIDER=ses)
     let dkimToken = "";
     let spfRecord = `v=spf1 include:amazonses.com ~all`;
     let dmarcRecord = `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}`;
-
     try {
       const dkimRes = await sesClient.send(new VerifyDomainDkimCommand({ Domain: domain }));
       dkimToken = (dkimRes.DkimTokens || []).map(t => `${t}._domainkey.${domain} → ${t}.dkim.amazonses.com`).join("\n");
     } catch (e: any) {
       console.error("[EmailAPI] DKIM error:", e.message);
     }
-
     const [created] = await db.insert(emailApiDomains).values({
       userId,
       domain,
@@ -4754,36 +4781,65 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       dkimToken,
       spfRecord,
       dmarcRecord,
+      provider: "ses",
     }).returning();
-
     res.json(created);
   });
 
-  // Check domain verification status
+  // Check domain verification status. Asks whichever provider this row was
+  // registered with (provider column), not the currently-active one — so
+  // a domain added on Resend keeps being checked on Resend even after a
+  // later flip to SES.
   app.post("/api/email-api/domains/:id/verify", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     const [domainRecord] = await db.select().from(emailApiDomains).where(dbAnd(dbEq(emailApiDomains.id, parseInt(req.params.id)), dbEq(emailApiDomains.userId, userId)));
     if (!domainRecord) return res.status(404).json({ error: "Domain not found" });
 
+    if (domainRecord.provider === "resend" && domainRecord.resendDomainId) {
+      try {
+        const { verifyResendDomain, getResendDomain } = await import("./resend-domains");
+        // Trigger a re-check, then read back the current status.
+        await verifyResendDomain(domainRecord.resendDomainId).catch(() => null);
+        const fresh = await getResendDomain(domainRecord.resendDomainId);
+        const isVerified = fresh.status === "verified";
+        await db.update(emailApiDomains).set({
+          status: isVerified ? "verified" : "pending",
+          verifiedAt: isVerified ? new Date() : null,
+        }).where(dbEq(emailApiDomains.id, domainRecord.id));
+        return res.json({ status: isVerified ? "verified" : "pending", providerStatus: fresh.status });
+      } catch (e: any) {
+        return res.json({ status: "pending", error: e?.message || "Resend check failed" });
+      }
+    }
+
     try {
       const verifyRes = await sesClient.send(new GetIdentityVerificationAttributesCommand({ Identities: [domainRecord.domain] }));
       const attr = verifyRes.VerificationAttributes?.[domainRecord.domain];
       const isVerified = attr?.VerificationStatus === "Success";
-
       await db.update(emailApiDomains).set({
         status: isVerified ? "verified" : "pending",
         verifiedAt: isVerified ? new Date() : null,
       }).where(dbEq(emailApiDomains.id, domainRecord.id));
-
       res.json({ status: isVerified ? "verified" : "pending" });
     } catch (e: any) {
       res.json({ status: "pending", error: e.message });
     }
   });
 
-  // Delete a domain
+  // Delete a domain — also remove from the upstream provider so it doesn't
+  // linger on Resend's account forever.
   app.delete("/api/email-api/domains/:id", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    const [row] = await db.select().from(emailApiDomains).where(dbAnd(dbEq(emailApiDomains.id, parseInt(req.params.id)), dbEq(emailApiDomains.userId, userId)));
+    if (row?.provider === "resend" && row.resendDomainId) {
+      try {
+        const { deleteResendDomain } = await import("./resend-domains");
+        await deleteResendDomain(row.resendDomainId);
+      } catch (e: any) {
+        // Don't block deletion of our own row if Resend cleanup fails — log only.
+        console.warn("[EmailAPI] Resend domain delete failed:", e?.message || e);
+      }
+    }
     await db.delete(emailApiDomains).where(dbAnd(dbEq(emailApiDomains.id, parseInt(req.params.id)), dbEq(emailApiDomains.userId, userId)));
     res.json({ success: true });
   });
@@ -4900,6 +4956,34 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
   // Delivery events to an SNS topic, then point that topic's HTTPS subscription at:
   //   https://afroaigroup.com/api/ses/sns
   // We auto-confirm the subscription handshake and verify every signature.
+  // Resend webhooks (Svix-signed). Wire BEFORE the SES route so they don't
+  // share the same body parser instance. Raw text needed for HMAC.
+  app.post("/api/resend/webhook", express.text({ type: "*/*", limit: "256kb" }), async (req, res) => {
+    try {
+      const { verifySvix, handleResendEvent } = await import("./resend-webhook");
+      const secret = process.env.RESEND_WEBHOOK_SECRET;
+      if (!secret) return res.status(503).json({ error: "RESEND_WEBHOOK_SECRET not configured" });
+      const raw = typeof req.body === "string" ? req.body : "";
+      const headers = {
+        id: String(req.headers["svix-id"] || ""),
+        timestamp: String(req.headers["svix-timestamp"] || ""),
+        signature: String(req.headers["svix-signature"] || ""),
+      };
+      if (!headers.id || !headers.timestamp || !headers.signature) {
+        return res.status(400).json({ error: "Missing Svix headers" });
+      }
+      if (!verifySvix(raw, headers, secret)) {
+        return res.status(403).json({ error: "Invalid signature" });
+      }
+      const evt = JSON.parse(raw);
+      const result = await handleResendEvent(evt);
+      return res.status(200).json(result);
+    } catch (e: any) {
+      console.error("[resend-webhook] failed:", e?.message || e);
+      return res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
   app.post("/api/ses/sns", express.text({ type: "*/*", limit: "256kb" }), async (req, res) => {
     try {
       const result = await handleSnsRequest(typeof req.body === "string" ? req.body : "");
