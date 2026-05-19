@@ -189,7 +189,7 @@ console.log(data.messageId); // → "01000196..."
             <Mail className="w-6 h-6 text-primary" />
             Email API
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">Send transactional emails via API. Powered by AWS SES.</p>
+          <p className="text-muted-foreground text-sm mt-1">Send transactional emails via API. Powered by AfroAI.</p>
         </div>
         <div className="flex gap-2">
           <Button size="sm" onClick={() => setShowAddDomain(true)} variant="outline" data-testid="button-add-domain">
