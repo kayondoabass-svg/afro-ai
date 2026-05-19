@@ -4963,7 +4963,16 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
       const { verifySvix, handleResendEvent } = await import("./resend-webhook");
       const secret = process.env.RESEND_WEBHOOK_SECRET;
       if (!secret) return res.status(503).json({ error: "RESEND_WEBHOOK_SECRET not configured" });
-      const raw = typeof req.body === "string" ? req.body : "";
+      // express.json (registered globally in server/index.ts) consumes the
+      // body before this route's express.text() parser ever runs, so we
+      // must pull the raw bytes from the verify-hook buffer it stashed on
+      // req.rawBody. Falling back to a JSON.stringify of the parsed body
+      // would change byte ordering and break the HMAC.
+      const rawBuf = (req as any).rawBody as Buffer | undefined;
+      const raw = rawBuf
+        ? rawBuf.toString("utf8")
+        : (typeof req.body === "string" ? req.body : "");
+      if (!raw) return res.status(400).json({ error: "Empty body" });
       const headers = {
         id: String(req.headers["svix-id"] || ""),
         timestamp: String(req.headers["svix-timestamp"] || ""),
