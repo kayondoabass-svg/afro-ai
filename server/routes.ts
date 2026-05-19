@@ -36,7 +36,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import express from "express";
-import { SESClient, SendEmailCommand, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIdentityVerificationAttributesCommand, SetIdentityMailFromDomainCommand } from "@aws-sdk/client-ses";
+import { SESClient, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIdentityVerificationAttributesCommand, SetIdentityMailFromDomainCommand } from "@aws-sdk/client-ses";
 import bcrypt from "bcryptjs";
 
 const apiLimiter = rateLimit({
@@ -151,20 +151,8 @@ export async function registerRoutes(
       }
 
       const fromAddress = process.env.EMAIL_API_DEMO_FROM || "noreply@afroaigroup.com";
-      const ses = new SESClient({ region: process.env.AWS_REGION || "us-east-1" });
-      const sesConfigSet = process.env.SES_CONFIGURATION_SET;
-      await ses.send(new SendEmailCommand({
-        Source: fromAddress,
-        Destination: { ToAddresses: [to] },
-        Message: {
-          Subject: { Data: subject, Charset: "UTF-8" },
-          Body: {
-            Html: { Data: html, Charset: "UTF-8" },
-            ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}),
-          },
-        },
-        ...(sesConfigSet ? { ConfigurationSetName: sesConfigSet } : {}),
-      }));
+      const { sendEmail } = await import("./email-provider");
+      await sendEmail({ from: fromAddress, to, subject, html, text });
       res.json({ ok: true });
     } catch (err: any) {
       console.error("[cf-mail] failed:", err?.message || err);
@@ -2560,24 +2548,22 @@ export async function registerRoutes(
       let failed = 0;
       const errors: string[] = [];
 
-      // Send sequentially with small delay to respect SES rate limits (sandbox = 1/sec)
+      // Send sequentially with small delay to respect provider rate limits
+      const { sendEmail } = await import("./email-provider");
       for (const sub of activeSubs) {
         try {
-          await sesClient.send(new SendEmailCommand({
-            Source: fromAddress,
-            Destination: { ToAddresses: [sub.email] },
-            Message: {
-              Subject: { Data: campaign.subject, Charset: "UTF-8" },
-              Body: { Html: { Data: campaign.htmlContent, Charset: "UTF-8" } },
-            },
-            ...(process.env.SES_CONFIGURATION_SET ? { ConfigurationSetName: process.env.SES_CONFIGURATION_SET } : {}),
-          }));
+          await sendEmail({
+            from: fromAddress,
+            to: sub.email,
+            subject: campaign.subject,
+            html: campaign.htmlContent,
+          });
           sent++;
         } catch (err: any) {
           failed++;
           if (errors.length < 5) errors.push(`${sub.email}: ${err.message}`);
           // If we hit a throttle, back off to avoid cascading failures
-          if (/Throttl|Rate exceeded/i.test(err.message || "")) {
+          if (/Throttl|Rate exceeded|rate.limit/i.test(err.message || "")) {
             await new Promise(r => setTimeout(r, 1500));
           }
         }
@@ -4874,20 +4860,9 @@ ${widget.knowledgeBase || "No specific knowledge base provided. Answer general q
     }
 
     try {
-      const cmd = new SendEmailCommand({
-        Source: from,
-        Destination: { ToAddresses: allowed },
-        Message: {
-          Subject: { Data: subject, Charset: "UTF-8" },
-          Body: html
-            ? { Html: { Data: html, Charset: "UTF-8" }, ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}) }
-            : { Text: { Data: text, Charset: "UTF-8" } },
-        },
-        ...(process.env.SES_CONFIGURATION_SET ? { ConfigurationSetName: process.env.SES_CONFIGURATION_SET } : {}),
-      });
-
-      const result = await sesClient.send(cmd);
-      const messageId = result.MessageId;
+      const { sendEmail } = await import("./email-provider");
+      const result = await sendEmail({ from, to: allowed, subject, html, text });
+      const messageId = result.messageId;
 
       // Log & increment counter
       await db.insert(emailApiLogs).values({
@@ -5052,18 +5027,8 @@ Authorization: Bearer YOUR_API_KEY</pre>
         </div>`;
       const text = "It works! This test email was sent from the Afro AI Email API. Visit https://afroaigroup.com/email-api to start sending.";
 
-      await sesClient.send(new SendEmailCommand({
-        Source: from,
-        Destination: { ToAddresses: [to] },
-        Message: {
-          Subject: { Data: subject, Charset: "UTF-8" },
-          Body: {
-            Html: { Data: html, Charset: "UTF-8" },
-            Text: { Data: text, Charset: "UTF-8" },
-          },
-        },
-        ...(process.env.SES_CONFIGURATION_SET ? { ConfigurationSetName: process.env.SES_CONFIGURATION_SET } : {}),
-      }));
+      const { sendEmail } = await import("./email-provider");
+      await sendEmail({ from, to, subject, html, text });
 
       demoIpCooldown.set(ipKey, now);
       demoEmailCooldown.set(toKey, now);
