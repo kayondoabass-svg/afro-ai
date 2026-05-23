@@ -10,13 +10,19 @@
 import fs from "fs";
 import path from "path";
 import { parse as parseCsv } from "csv-parse/sync";
-import { createRequire } from "module";
-// pdf-parse is CommonJS-only with no ESM default export, so we load it via
-// createRequire to avoid "does not provide an export named 'default'" under
-// Node's native ESM loader (tsx / production both run as ESM).
-const require = createRequire(import.meta.url);
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse: (buf: Buffer) => Promise<{ text: string }> = require("pdf-parse");
+
+// pdf-parse is CommonJS-only with no proper ESM default export. We use a lazy
+// dynamic import so this works in BOTH dev (tsx native ESM) and prod (esbuild
+// CJS bundle). The previous createRequire(import.meta.url) approach broke in
+// the CJS bundle where import.meta is empty — esbuild warned about it and
+// PDF parsing would silently fail in production.
+let _pdfParse: ((buf: Buffer) => Promise<{ text: string }>) | null = null;
+async function loadPdfParse(): Promise<(buf: Buffer) => Promise<{ text: string }>> {
+  if (_pdfParse) return _pdfParse;
+  const mod: any = await import("pdf-parse");
+  _pdfParse = (mod?.default ?? mod) as (buf: Buffer) => Promise<{ text: string }>;
+  return _pdfParse;
+}
 
 const MAX_BYTES = 5 * 1024 * 1024;        // 5MB — anything bigger we refuse
 const MAX_OUT_CHARS = 12_000;             // per-file cap on text sent to LLM
@@ -175,6 +181,7 @@ export async function parseAttachment(att: {
     try {
       // Hard timeout: pdf-parse is sync-CPU on the event loop and a crafted
       // PDF can spike for many seconds. After PARSE_TIMEOUT_MS we abandon.
+      const pdfParse = await loadPdfParse();
       const data = await withTimeout(pdfParse(buf), PARSE_TIMEOUT_MS, "PDF parse");
       const text = clip((data?.text || "").trim());
       if (!text) return { ok: false, name, kind: "pdf", error: "no extractable text (image-only PDF?)" };
