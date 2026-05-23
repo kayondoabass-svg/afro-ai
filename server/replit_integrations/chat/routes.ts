@@ -11,6 +11,7 @@ import { isAuthenticated, FOUNDER_EMAIL } from "../auth/replitAuth";
 import { aiQuotaGuard } from "../quota";
 import { aiChatCompleteStream } from "../../ai-chat-provider";
 import { buildLiveWebContext, extractUrls } from "../../url-scrape";
+import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -1975,11 +1976,50 @@ export function registerChatRoutes(app: Express): void {
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
+      // Helper: append extra text context to the LAST user message in
+      // chatMessages, handling both string and array (multimodal) content.
+      const appendToLastUserMessage = (extra: string) => {
+        if (!extra) return;
+        for (let i = chatMessages.length - 1; i >= 0; i--) {
+          const m = chatMessages[i];
+          if (m.role !== "user") continue;
+          if (typeof m.content === "string") {
+            m.content = `${m.content}${extra}`;
+          } else if (Array.isArray(m.content)) {
+            const textPart = m.content.find((p: any) => p?.type === "text");
+            if (textPart && typeof textPart.text === "string") {
+              textPart.text = `${textPart.text}${extra}`;
+            } else {
+              m.content.push({ type: "text", text: extra });
+            }
+          }
+          break;
+        }
+      };
+
+      // === Attachment parsing (PDF / CSV / TXT / JSON / MD) ===
+      // The CURRENT turn's attachments may contain real text the model needs.
+      // Image/video attachments are already handled above as vision parts;
+      // here we extract readable text from documents and splice it into the
+      // last user message.
+      try {
+        const parseable = (attachments || []).filter((a: any) => isParseableAttachment(a?.mimetype, a?.originalName));
+        if (parseable.length > 0) {
+          try {
+            res.write(`data: ${JSON.stringify({ type: "status", message: `Reading ${parseable.length} file${parseable.length > 1 ? "s" : ""}...` })}\n\n`);
+          } catch { /* ignore */ }
+          const attachmentContext = await buildAttachmentContext(parseable);
+          if (attachmentContext) appendToLastUserMessage(attachmentContext);
+        }
+      } catch (attErr) {
+        console.error("[attachment-parse] failed (non-fatal):", attErr);
+      }
+
       // === Live web fetch ===
       // If the user's CURRENT turn (text) contains any URLs, fetch them now
-      // and splice the cleaned page text into the last user message before
-      // calling the AI. Without this the model only sees the URL string and
-      // either makes up details or pulls from stale training data.
+      // via Jina AI Reader (with direct-fetch fallback) and splice the cleaned
+      // page text into the last user message. Without this the model only
+      // sees the URL string and hallucinates details about the target site.
       try {
         const urlsInTurn = extractUrls(typeof userContent === "string" ? userContent : "");
         if (urlsInTurn.length > 0) {
@@ -1987,26 +2027,7 @@ export function registerChatRoutes(app: Express): void {
             res.write(`data: ${JSON.stringify({ type: "status", message: `Fetching ${urlsInTurn.length} link${urlsInTurn.length > 1 ? "s" : ""} live from the web...` })}\n\n`);
           } catch { /* ignore write errors */ }
           const liveContext = await buildLiveWebContext(userContent);
-          if (liveContext) {
-            // Append to the LAST user message so the freshly scraped content
-            // sits next to the user's prompt instead of in the system prompt.
-            for (let i = chatMessages.length - 1; i >= 0; i--) {
-              const m = chatMessages[i];
-              if (m.role !== "user") continue;
-              if (typeof m.content === "string") {
-                m.content = `${m.content}${liveContext}`;
-              } else if (Array.isArray(m.content)) {
-                // Find or create a text part and append there
-                const textPart = m.content.find((p: any) => p?.type === "text");
-                if (textPart && typeof textPart.text === "string") {
-                  textPart.text = `${textPart.text}${liveContext}`;
-                } else {
-                  m.content.push({ type: "text", text: liveContext });
-                }
-              }
-              break;
-            }
-          }
+          if (liveContext) appendToLastUserMessage(liveContext);
         }
       } catch (webErr) {
         console.error("[live-web] scrape failed (non-fatal):", webErr);

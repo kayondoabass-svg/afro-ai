@@ -3213,7 +3213,7 @@ export default function AIChatPage() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*,video/*"
+                      accept="image/*,video/*,.pdf,.csv,.txt,.md,.json,application/pdf,text/csv,text/plain"
                       multiple
                       className="hidden"
                       onChange={handleFileSelect}

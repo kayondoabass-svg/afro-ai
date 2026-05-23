@@ -73,13 +73,14 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const blocked = /svg/i;
-    const allowed = /^(image|video)\//;
+    const allowedMime = /^(image|video)\/|^application\/(pdf|json|csv)$|^text\/(plain|csv|markdown)$/;
+    const allowedExt = /\.(pdf|csv|txt|md|json)$/i;
     if (blocked.test(file.mimetype) || blocked.test(file.originalname)) {
       cb(new Error("SVG files are not allowed for security reasons"));
-    } else if (allowed.test(file.mimetype)) {
+    } else if (allowedMime.test(file.mimetype) || allowedExt.test(file.originalname)) {
       cb(null, true);
     } else {
-      cb(new Error("Only image and video files are allowed"));
+      cb(new Error("Only images, videos, PDFs, CSVs, and text files are allowed"));
     }
   },
 });
