@@ -944,9 +944,29 @@ export async function registerRoutes(
   });
 
   // App version history routes
+  // Helper: ensure the caller owns the conversation that holds these versions.
+  // Founders may inspect any conversation; regular users only their own.
+  const assertConversationOwner = async (conversationId: number, req: any): Promise<{ ok: true } | { ok: false; status: number; message: string }> => {
+    if (!Number.isFinite(conversationId)) return { ok: false, status: 400, message: "Invalid conversation id" };
+    const userId = req.user?.claims?.sub;
+    if (!userId) return { ok: false, status: 401, message: "Not authenticated" };
+    const [conv] = await db.select({ userId: conversations.userId }).from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+    if (!conv) return { ok: false, status: 404, message: "Conversation not found" };
+    const email = req.user?.claims?.email;
+    const isFounderUser = !!email && FOUNDER_EMAILS.includes(email);
+    // Legacy rows without a userId are treated as orphaned: only founders may read them.
+    if (conv.userId !== userId && !isFounderUser) {
+      return { ok: false, status: 403, message: "You don't have access to this conversation's history" };
+    }
+    return { ok: true };
+  };
+
   app.get("/api/conversations/:id/versions", isAuthenticated, async (req: any, res) => {
     try {
-      const versions = await storage.getAppVersions(parseInt(req.params.id));
+      const conversationId = parseInt(req.params.id);
+      const guard = await assertConversationOwner(conversationId, req);
+      if (!guard.ok) return res.status(guard.status).json({ message: guard.message });
+      const versions = await storage.getAppVersions(conversationId);
       res.json(versions);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch versions" });
@@ -957,6 +977,8 @@ export async function registerRoutes(
     try {
       const version = await storage.getAppVersion(parseInt(req.params.id));
       if (!version) return res.status(404).json({ message: "Version not found" });
+      const guard = await assertConversationOwner(version.conversationId, req);
+      if (!guard.ok) return res.status(guard.status).json({ message: guard.message });
       res.json(version);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch version" });

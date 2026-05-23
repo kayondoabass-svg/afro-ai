@@ -16,7 +16,7 @@ import {
   Trash2, ArrowUp, Pencil, X, Plus, ChevronDown, Square,
   Monitor, Sparkles, Globe, ListChecks, PanelRightOpen,
   Copy, Download, LogOut, Settings, Paperclip, Image as ImageIcon,
-  Rocket,
+  Rocket, Undo2, RotateCcw, Eye, Clock, CheckCircle2, Layers,
 } from "lucide-react";
 import { PublishDialog } from "@/pages/ai-chat";
 
@@ -49,6 +49,14 @@ interface ConversationSummary {
   title: string;
   createdAt: string;
   projectId?: number | null;
+}
+
+interface AppVersion {
+  id: number;
+  conversationId: number;
+  htmlContent: string;
+  label: string | null;
+  createdAt: string;
 }
 
 const ACTION_ICON: Record<ActionKind, any> = {
@@ -108,6 +116,7 @@ export default function AgentPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [queueDrainTrigger, setQueueDrainTrigger] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const [progressStep, setProgressStep] = useState(0); // 0..4
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishCode, setPublishCode] = useState("");
@@ -122,6 +131,53 @@ export default function AgentPage() {
     queryKey: ["/api/conversations"],
     enabled: !!user,
   });
+
+  // Load version history for the current conversation (each AI generation is a snapshot).
+  // Backend enforces per-user ownership; another client cannot read these.
+  const { data: appVersionsList = [], refetch: refetchVersions } = useQuery<AppVersion[]>({
+    queryKey: ["/api/conversations", conversationId, "versions"],
+    enabled: !!user && !!conversationId,
+    refetchInterval: versionsOpen ? 3000 : false,
+  });
+
+  // Refetch versions whenever the assistant finishes a turn (a new snapshot may have been saved).
+  useEffect(() => {
+    if (!working && conversationId) refetchVersions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [working, conversationId]);
+
+  // Restore a previous version by pushing it back into the chat as the latest
+  // assistant response. The existing publish / preview pipeline reads
+  // `latestAssistantHtml()`, so this single push makes the old code "current"
+  // without any extra plumbing.
+  const restoreVersion = (ver: AppVersion, opts: { silent?: boolean } = {}) => {
+    setMessages(m => [
+      ...m,
+      {
+        id: `restore-${ver.id}-${Date.now()}`,
+        role: "assistant",
+        content: `Restored ${ver.label || `version #${ver.id}`} from ${new Date(ver.createdAt).toLocaleString()}.\n\n\`\`\`html\n${ver.htmlContent}\n\`\`\``,
+        timestamp: Date.now(),
+        actions: [{ kind: "edit", label: "Restored" }],
+      },
+    ]);
+    if (!opts.silent) {
+      toast({
+        title: "Version restored",
+        description: `${ver.label || `Version #${ver.id}`} is now your active app. Click Publish to deploy it.`,
+      });
+    }
+    setVersionsOpen(false);
+  };
+
+  // One-click Undo: restore the second-most-recent snapshot (the one before
+  // the latest generation). Disabled when there's nothing to undo back to.
+  const canUndo = appVersionsList.length >= 2;
+  const handleUndo = () => {
+    if (!canUndo) return;
+    const prior = appVersionsList[1]; // [0] is latest, [1] is the previous one
+    restoreVersion(prior);
+  };
 
   // Lazily create a conversation. Called on mount AND on first send (retry).
   const ensureConversation = async (): Promise<number | null> => {
@@ -644,6 +700,126 @@ export default function AgentPage() {
                     <p className="text-[10px] text-zinc-500 mt-0.5">{new Date(c.createdAt).toLocaleString()}</p>
                   </button>
                 ))}
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          {/* One-click Undo — restores the previous code snapshot */}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Undo last change"
+            title={canUndo ? "Undo last change — restore previous version" : "Nothing to undo yet"}
+            className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
+            disabled={!canUndo}
+            onClick={handleUndo}
+            data-testid="button-undo"
+          >
+            <Undo2 className="w-4 h-4" />
+          </Button>
+
+          {/* Versions panel trigger */}
+          <Sheet open={versionsOpen} onOpenChange={setVersionsOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Version history"
+                title="Version history"
+                className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 relative"
+                data-testid="button-versions"
+              >
+                <Layers className="w-4 h-4" />
+                {appVersionsList.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-violet-500 text-[10px] font-semibold text-white flex items-center justify-center">
+                    {appVersionsList.length}
+                  </span>
+                )}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="bg-zinc-950 border-zinc-800 text-zinc-100 w-full sm:w-96 p-0 flex flex-col">
+              <SheetHeader className="px-4 py-3 border-b border-zinc-800">
+                <SheetTitle className="text-zinc-100 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-violet-400" />
+                  Version history
+                  {appVersionsList.length > 0 && (
+                    <span className="text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded-full font-normal">
+                      {appVersionsList.length}
+                    </span>
+                  )}
+                </SheetTitle>
+              </SheetHeader>
+              <div className="px-4 py-2 bg-violet-500/5 border-b border-zinc-800 text-xs text-zinc-400">
+                Every time the AI generates an app, a snapshot is saved here. Only you can see these — they're tied to your account.
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {appVersionsList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-12">
+                    <Clock className="w-10 h-10 text-zinc-700" />
+                    <div>
+                      <div className="font-medium text-zinc-400 text-sm">No versions yet</div>
+                      <div className="text-xs text-zinc-600 mt-1">Versions are saved automatically each time the AI generates a new app.</div>
+                    </div>
+                  </div>
+                ) : (
+                  appVersionsList.map((ver, idx) => {
+                    const date = new Date(ver.createdAt);
+                    const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                    const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
+                    const isLatest = idx === 0;
+                    return (
+                      <div
+                        key={ver.id}
+                        className={`rounded-xl border p-3 space-y-2 transition-all ${isLatest ? "border-violet-500/40 bg-violet-500/5" : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700"}`}
+                        data-testid={`card-version-${ver.id}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${isLatest ? "bg-violet-500" : "bg-zinc-700"}`} />
+                            <span className="font-medium text-sm text-zinc-100 truncate">
+                              {ver.label || `Version ${appVersionsList.length - idx}`}
+                            </span>
+                            {isLatest && (
+                              <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                                Latest
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-zinc-500 shrink-0">{timeStr}</span>
+                        </div>
+                        <div className="text-xs text-zinc-500">{dateStr} · {(ver.htmlContent.length / 1024).toFixed(1)} KB</div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const w = window.open("", "_blank", "noopener,noreferrer");
+                              if (w) { w.document.open(); w.document.write(ver.htmlContent); w.document.close(); }
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-700 hover:border-violet-500/40 hover:text-violet-300 text-xs font-medium text-zinc-300 transition-all"
+                            data-testid={`button-preview-version-${ver.id}`}
+                          >
+                            <Eye className="w-3 h-3" />
+                            Preview
+                          </button>
+                          {isLatest ? (
+                            <div className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10 text-violet-300 text-xs font-medium">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Current
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => restoreVersion(ver)}
+                              className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium transition-all"
+                              data-testid={`button-restore-version-${ver.id}`}
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              Restore
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </SheetContent>
           </Sheet>
