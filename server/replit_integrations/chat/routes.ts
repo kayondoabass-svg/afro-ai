@@ -2302,16 +2302,40 @@ You are now in EDITOR MODE. Your workflow:
 
       await chatStorage.createMessage(conversationId, "assistant", fullResponse);
 
-      // Auto-save version if the response contains a full HTML page
+      // Auto-save version whenever the response contains any HTML output.
+      // Matches three formats the AI may emit (in priority order):
+      //   1. Full document: <!DOCTYPE html ... </html>
+      //   2. ```html ... ``` fenced block (what the /chat agent prompt produces)
+      //   3. Any ``` fenced block whose body looks like HTML
+      // This mirrors the extractor used by the frontend (extractHtml in agent.tsx
+      // and ai-chat.tsx) so what the user SEES in the preview is what gets saved.
       try {
-        const htmlMatch = fullResponse.match(/<!DOCTYPE html[\s\S]*<\/html>/i);
-        if (htmlMatch) {
+        let extracted: string | null = null;
+        const fullDoc = fullResponse.match(/<!DOCTYPE html[\s\S]*?<\/html>/i);
+        if (fullDoc) {
+          extracted = fullDoc[0];
+        } else {
+          const fences: { lang: string; code: string }[] = [];
+          const fenceRe = /```(\w+)?\n([\s\S]*?)```/g;
+          let fm: RegExpExecArray | null;
+          while ((fm = fenceRe.exec(fullResponse)) !== null) {
+            fences.push({ lang: (fm[1] || "").toLowerCase(), code: fm[2] });
+          }
+          const htmlFence = fences.find(f => f.lang === "html" || f.lang === "htm");
+          if (htmlFence) {
+            extracted = htmlFence.code.trim();
+          } else {
+            const looksHtml = fences.find(f => /<!doctype html|<html\b|<body\b|<div\b|<section\b/i.test(f.code));
+            if (looksHtml) extracted = looksHtml.code.trim();
+          }
+        }
+        if (extracted && extracted.length > 50) {
           const { storage } = await import("../../storage");
           const existingVersions = await storage.getAppVersions(conversationId);
           const versionNum = existingVersions.length + 1;
           await storage.saveAppVersion({
             conversationId,
-            htmlContent: htmlMatch[0],
+            htmlContent: extracted,
             label: `Version ${versionNum}`,
           });
         }
