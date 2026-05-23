@@ -82,6 +82,36 @@ restore_snapshot() {
   return 0
 }
 
+install_deps_if_changed() {
+  # Detect whether package.json / package-lock.json changed in this pull.
+  # If they did, run `npm ci` so newly-added deps (which esbuild marks as
+  # external and expects in node_modules at runtime) are actually present.
+  # Otherwise the server crashes at startup with "Cannot find module 'X'".
+  local prev="$1"
+  local new="$2"
+  local changed=""
+  if [ -n "$prev" ] && [ -n "$new" ] && [ "$prev" != "$new" ]; then
+    changed=$(git -C "$APP_DIR" diff --name-only "$prev" "$new" -- package.json package-lock.json 2>/dev/null)
+  fi
+  # Also install if node_modules is missing entirely (fresh checkout).
+  if [ -n "$changed" ] || [ ! -d "$APP_DIR/node_modules" ]; then
+    log "Dependency manifest changed (or node_modules missing) — running npm ci"
+    (
+      cd "$APP_DIR" || exit 1
+      timeout "$BUILD_TIMEOUT" npm ci --omit=dev=false
+    )
+    local rc=$?
+    if [ $rc -ne 0 ]; then
+      log "npm ci failed (exit $rc)"
+      return $rc
+    fi
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR/node_modules" 2>/dev/null || true
+  else
+    log "No package.json/package-lock.json changes — skipping npm ci"
+  fi
+  return 0
+}
+
 run_build() {
   log "Building (timeout ${BUILD_TIMEOUT}s)..."
   (
@@ -94,6 +124,31 @@ run_build() {
     return $rc
   fi
   chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR/dist"
+  return 0
+}
+
+post_start_stability_check() {
+  # The /api/health route can answer 200 before the process has finished
+  # loading every module. If the bundle throws AFTER first request (e.g.
+  # a missing optional dep loaded on demand), the deploy script would
+  # report SUCCESS and walk away while systemd auto-restart-loops in the
+  # background. To catch that pattern, we re-check health after a short
+  # delay and verify the systemd unit is still "active (running)".
+  log "Post-start stability check (30s settle)..."
+  sleep 30
+  local state
+  state=$(systemctl is-active "$SERVICE" 2>/dev/null || echo "unknown")
+  if [ "$state" != "active" ]; then
+    log "Service state is '$state' 30s after start — NOT stable"
+    return 1
+  fi
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$HEALTH_URL" 2>/dev/null || echo "000")
+  if [ "$code" != "200" ] && [ "$code" != "204" ]; then
+    log "Second health check 30s after start returned $code — NOT stable"
+    return 1
+  fi
+  log "Service is stable 30s after start (state=$state, health=$code)"
   return 0
 }
 
@@ -212,6 +267,12 @@ main() {
 
   snapshot_dist
 
+  if ! install_deps_if_changed "$previous_sha" "$new_sha"; then
+    log "Dependency install FAILED — entering recovery"
+    emergency_recovery "$previous_sha"
+    exit 1
+  fi
+
   if ! run_build; then
     log "Build FAILED — entering recovery"
     emergency_recovery "$previous_sha"
@@ -232,6 +293,13 @@ main() {
 
   if ! health_check; then
     log "Health check FAILED after deploy — entering recovery"
+    mv "$APP_DIR/dist.prev.kept" "$APP_DIR/dist.prev" 2>/dev/null || true
+    emergency_recovery "$previous_sha"
+    exit 1
+  fi
+
+  if ! post_start_stability_check; then
+    log "Stability check FAILED — process died after passing initial health — entering recovery"
     mv "$APP_DIR/dist.prev.kept" "$APP_DIR/dist.prev" 2>/dev/null || true
     emergency_recovery "$previous_sha"
     exit 1
