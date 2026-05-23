@@ -44,6 +44,7 @@ import {
   ScanSearch,
   Camera,
   Undo2,
+  Redo2,
   Gamepad2,
   Swords,
   ShieldAlert,
@@ -772,9 +773,9 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
 
   return (
     <Dialog open={open} onOpenChange={isPublishing ? undefined : onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 pr-8">
             <Rocket className="w-5 h-5 text-primary" />
             {publishedUrl ? "Published!" : showProgress ? "Publishing..." : isRepublish ? "Republish Your App" : "Publish Your App"}
           </DialogTitle>
@@ -1083,7 +1084,7 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth, onGithubExport, onSelectElement, isSelectMode, onToggleSelectMode }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onRedo, canRedo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth, onGithubExport, onSelectElement, isSelectMode, onToggleSelectMode }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -1092,6 +1093,8 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   onBackToChat?: () => void;
   onUndo?: () => void;
   canUndo?: boolean;
+  onRedo?: () => void;
+  canRedo?: boolean;
   onAutoFix?: (errors: string[]) => void;
   onVerify?: () => void;
   onShowHistory?: () => void;
@@ -1217,9 +1220,28 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
                 <ShieldCheck className="w-3 h-3" /><span className="hidden lg:inline">Verify</span>
               </Button>
             )}
-            {canUndo && onUndo && (
-              <Button size="icon" variant="ghost" onClick={onUndo} title="Undo" data-testid="button-undo-preview">
+            {onUndo && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={onUndo}
+                disabled={!canUndo}
+                title={canUndo ? "Undo last change" : "Nothing to undo yet"}
+                data-testid="button-undo-preview"
+              >
                 <Undo2 className="w-4 h-4" />
+              </Button>
+            )}
+            {onRedo && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={onRedo}
+                disabled={!canRedo}
+                title={canRedo ? "Redo" : "Nothing to redo"}
+                data-testid="button-redo-preview"
+              >
+                <Redo2 className="w-4 h-4" />
               </Button>
             )}
             {onGithubExport && (
@@ -1289,9 +1311,14 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
                   <ShieldCheck className="w-4 h-4 mr-2" />Verify App
                 </DropdownMenuItem>
               )}
-              {canUndo && onUndo && (
-                <DropdownMenuItem onClick={onUndo} data-testid="menu-undo">
+              {onUndo && (
+                <DropdownMenuItem onClick={onUndo} disabled={!canUndo} data-testid="menu-undo">
                   <Undo2 className="w-4 h-4 mr-2" />Undo Last Change
+                </DropdownMenuItem>
+              )}
+              {onRedo && (
+                <DropdownMenuItem onClick={onRedo} disabled={!canRedo} data-testid="menu-redo">
+                  <Redo2 className="w-4 h-4 mr-2" />Redo
                 </DropdownMenuItem>
               )}
               {onGithubExport && (
@@ -1515,6 +1542,7 @@ export default function AIChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [previewCode, setPreviewCode] = useState<string | null>(null);
   const [previousCode, setPreviousCode] = useState<string | null>(null);
+  const [nextCode, setNextCode] = useState<string | null>(null);
   const [selectedElement, setSelectedElement] = useState<{ selector: string; tagName: string; textPreview: string; outerHtmlPreview: string } | null>(null);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
@@ -1910,6 +1938,7 @@ export default function AIChatPage() {
     setTimeout(() => {
       const wrapped = generateAuthWrappedHtml(previewCode, firebaseConfig, authType, authAppTitle);
       setPreviousCode(previewCode);
+      setNextCode(null);
       setPreviewCode(wrapped);
       setShowPreview(true);
       setInjectingAuth(false);
@@ -1929,6 +1958,7 @@ export default function AIChatPage() {
       if (code) {
         if (previewCode && previewCode !== code) {
           setPreviousCode(previewCode);
+          setNextCode(null);
         }
         setPreviewCode(code);
         setShowPreview(true);
@@ -3590,9 +3620,19 @@ export default function AIChatPage() {
               canUndo={!!previousCode}
               onUndo={() => {
                 if (previousCode) {
+                  setNextCode(previewCode);
                   setPreviewCode(previousCode);
                   setPreviousCode(null);
-                  toast({ title: "Reverted", description: "Restored your previous version." });
+                  toast({ title: "Undone", description: "Restored your previous version. Click Redo to bring it back." });
+                }
+              }}
+              canRedo={!!nextCode}
+              onRedo={() => {
+                if (nextCode) {
+                  setPreviousCode(previewCode);
+                  setPreviewCode(nextCode);
+                  setNextCode(null);
+                  toast({ title: "Redone", description: "Brought back the change you undid." });
                 }
               }}
               onVerify={handleVerify}
@@ -3716,6 +3756,7 @@ export default function AIChatPage() {
                             <button
                               onClick={() => {
                                 setPreviousCode(previewCode);
+                                setNextCode(null);
                                 setPreviewCode(ver.htmlContent);
                                 setPreviewingVersionId(null);
                                 setShowPreview(true);
