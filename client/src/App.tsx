@@ -426,6 +426,26 @@ function AppRouter() {
     );
   }
 
+  // Public auth pages must work regardless of stale auth state. After Log Out,
+  // the cookie clear can race the next `/cf-auth/me` (CF edge cache, slow
+  // service-worker unregister, etc.) and `user` momentarily still resolves
+  // truthy — that's the "logged out but landing on /login 404" bug, because
+  // the authenticated <Switch /> below has no /login route. Always serve these
+  // pages from the public switch so the logout flow can never dead-end.
+  const PUBLIC_AUTH_PATHS = new Set(["/login", "/forgot-password", "/reset-password", "/verify-email"]);
+  if (PUBLIC_AUTH_PATHS.has(location)) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Switch>
+          <Route path="/login" component={LoginPage} />
+          <Route path="/forgot-password" component={ForgotPasswordPage} />
+          <Route path="/reset-password" component={ResetPasswordPage} />
+          <Route path="/verify-email" component={VerifyEmailPage} />
+        </Switch>
+      </Suspense>
+    );
+  }
+
   if (!user) {
     // Hard guard for protected routes: a logged-out visitor on /chat,
     // /dashboard, /settings, etc. used to silently fall through to the
