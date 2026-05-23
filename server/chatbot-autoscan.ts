@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type { InsertChatbotQa } from "@shared/schema";
+import { scrapeUrl } from "./url-scrape";
 
 const UA = "AfroAIBot";
 const FULL_UA = "Mozilla/5.0 (compatible; AfroAIBot/1.0; +https://afroaigroup.com)";
@@ -166,6 +167,22 @@ export async function fetchSitemapUrls(sitemapUrl: string, signal?: AbortSignal,
   return urls;
 }
 
+// Extract `[text](url)` markdown links from Jina's output so the crawler can
+// keep discovering new pages even when sitemap.xml is missing/empty. Returns
+// raw hrefs; same-host + SSRF filtering happens in normalizeUrl downstream.
+function extractMarkdownLinks(md: string): string[] {
+  const out: string[] = [];
+  const rx = /\[[^\]]*\]\(([^)\s]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = rx.exec(md)) !== null) {
+    const href = m[1].trim();
+    if (href && !href.startsWith("#") && !href.startsWith("mailto:") && !href.startsWith("tel:")) {
+      out.push(href);
+    }
+  }
+  return out;
+}
+
 function htmlToText(html: string): { title: string; text: string; links: string[] } {
   const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   const title = titleMatch ? titleMatch[1].trim() : "";
@@ -252,10 +269,27 @@ export async function crawlSite(startUrl: string, opts: CrawlOpts = {}): Promise
     try { pathname = new URL(url).pathname || "/"; } catch {}
     if (!isAllowedByRobots(pathname, robots)) continue;
 
-    const html = await fetchHtml(url, signal);
-    if (!html) continue;
-    const { title, text, links } = htmlToText(html);
-    if (text.length < 80) continue;
+    // Jina-first content fetch — clean markdown, handles JS-heavy SPAs,
+    // and respects the same SSRF guards. Falls back to a direct fetch
+    // internally if Jina is rate-limited / down. We still keep fetchHtml
+    // as a final backup so a single bad Jina call doesn't kill the crawl.
+    const scraped = await scrapeUrl(url, signal);
+    let title = "";
+    let text = "";
+    let links: string[] = [];
+    if (scraped.ok && scraped.text && scraped.text.length >= 80) {
+      title = scraped.title || "";
+      text = scraped.text;
+      links = extractMarkdownLinks(text);
+    } else {
+      const html = await fetchHtml(url, signal);
+      if (!html) continue;
+      const parsed = htmlToText(html);
+      title = parsed.title;
+      text = parsed.text;
+      links = parsed.links;
+      if (text.length < 80) continue;
+    }
 
     pages.push({ url, title, text: text.slice(0, 12000), hash: sha256(text) });
     opts.onPage?.({ scanned: pages.length, total: Math.min(maxPages, pages.length + queue.length), url });
