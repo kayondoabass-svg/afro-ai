@@ -85,10 +85,6 @@ restore_snapshot() {
 run_build() {
   log "Building (timeout ${BUILD_TIMEOUT}s)..."
   (
-    set -a
-    # shellcheck disable=SC1090
-    source "$SHARED_ENV"
-    set +a
     cd "$APP_DIR" || exit 1
     timeout "$BUILD_TIMEOUT" bash -c 'NODE_OPTIONS="--max-old-space-size=2048" npm run build'
   )
@@ -174,6 +170,15 @@ main() {
 
   check_prereqs
   cd "$APP_DIR" || die "cannot cd into $APP_DIR"
+
+  # Load shared env ONCE for the whole script (build, health, purge_cdn).
+  # Sourcing inside run_build's subshell used to drop CLOUDFLARE_* before
+  # purge_cdn could see them, causing intermittent "credentials missing"
+  # skips. Loading here makes every later step see the same env.
+  set -a
+  # shellcheck disable=SC1090
+  source "$SHARED_ENV"
+  set +a
 
   log "==== DEPLOY START ===="
   require_clean_tree
