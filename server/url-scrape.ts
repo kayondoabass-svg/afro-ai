@@ -193,12 +193,18 @@ export async function scrapeUrl(url: string, signal?: AbortSignal): Promise<Scra
       ? AbortSignal.any([signal, jinaController.signal])
       : jinaController.signal;
     try {
+      const jinaHeaders: Record<string, string> = {
+        "User-Agent": UA,
+        Accept: "text/plain, text/markdown, */*;q=0.5",
+        "X-Return-Format": "markdown",
+      };
+      // Authenticated Jina requests get ~10x the rate limit + priority.
+      // Key is optional — without it we fall back to the public quota.
+      if (process.env.JINA_API_KEY) {
+        jinaHeaders["Authorization"] = `Bearer ${process.env.JINA_API_KEY}`;
+      }
       const jinaRes = await fetch(`https://r.jina.ai/${target}`, {
-        headers: {
-          "User-Agent": UA,
-          Accept: "text/plain, text/markdown, */*;q=0.5",
-          "X-Return-Format": "markdown",
-        },
+        headers: jinaHeaders,
         redirect: "follow",
         signal: jinaSignal,
       });
