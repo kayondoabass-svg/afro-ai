@@ -10,6 +10,7 @@ import path from "path";
 import { isAuthenticated, FOUNDER_EMAIL } from "../auth/replitAuth";
 import { aiQuotaGuard } from "../quota";
 import { aiChatCompleteStream } from "../../ai-chat-provider";
+import { buildLiveWebContext, extractUrls } from "../../url-scrape";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -1973,6 +1974,43 @@ export function registerChatRoutes(app: Express): void {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
+
+      // === Live web fetch ===
+      // If the user's CURRENT turn (text) contains any URLs, fetch them now
+      // and splice the cleaned page text into the last user message before
+      // calling the AI. Without this the model only sees the URL string and
+      // either makes up details or pulls from stale training data.
+      try {
+        const urlsInTurn = extractUrls(typeof userContent === "string" ? userContent : "");
+        if (urlsInTurn.length > 0) {
+          try {
+            res.write(`data: ${JSON.stringify({ type: "status", message: `Fetching ${urlsInTurn.length} link${urlsInTurn.length > 1 ? "s" : ""} live from the web...` })}\n\n`);
+          } catch { /* ignore write errors */ }
+          const liveContext = await buildLiveWebContext(userContent);
+          if (liveContext) {
+            // Append to the LAST user message so the freshly scraped content
+            // sits next to the user's prompt instead of in the system prompt.
+            for (let i = chatMessages.length - 1; i >= 0; i--) {
+              const m = chatMessages[i];
+              if (m.role !== "user") continue;
+              if (typeof m.content === "string") {
+                m.content = `${m.content}${liveContext}`;
+              } else if (Array.isArray(m.content)) {
+                // Find or create a text part and append there
+                const textPart = m.content.find((p: any) => p?.type === "text");
+                if (textPart && typeof textPart.text === "string") {
+                  textPart.text = `${textPart.text}${liveContext}`;
+                } else {
+                  m.content.push({ type: "text", text: liveContext });
+                }
+              }
+              break;
+            }
+          }
+        }
+      } catch (webErr) {
+        console.error("[live-web] scrape failed (non-fatal):", webErr);
+      }
 
       let lastGeneratedCode = "";
       for (let i = chatMessages.length - 1; i >= 0; i--) {
