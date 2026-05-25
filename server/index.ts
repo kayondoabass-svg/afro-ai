@@ -1,3 +1,8 @@
+// ── Sentry must be initialised before anything else imports modules that need
+// auto-instrumentation. Safe no-op if SENTRY_DSN is not set.
+import { initSentry, requestTracingMiddleware, attachSentryErrorHandler, captureServerError } from "./observability";
+initSentry();
+
 import express, { type Request, Response, NextFunction } from "express";
 import compression from "compression";
 import { registerRoutes } from "./routes";
@@ -33,6 +38,12 @@ app.use((req, res, next) => {
 });
 
 const httpServer = createServer(app);
+
+// Assign a correlation ID to every request and echo it back in the X-Trace-ID
+// response header. This same ID is attached to any Sentry events captured
+// during the request so production errors can be cross-referenced to a single
+// user-visible reference. Runs before everything else.
+app.use(requestTracingMiddleware);
 
 app.use(compression());
 app.use(securityHeaders);
@@ -441,17 +452,33 @@ httpServer.listen(
   runExpiryCheck();
   setInterval(runExpiryCheck, 6 * 60 * 60 * 1000);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+  // Sentry's Express error handler must come BEFORE our custom one so unhandled
+  // exceptions flowing through Express middleware are captured automatically.
+  // No-op if Sentry was not initialised (no DSN).
+  attachSentryErrorHandler(app);
+
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    console.error(`[ERROR] [TraceID: ${req.traceId}]`, err);
+
+    // Belt-and-braces: even with Sentry's express handler attached, ensure 5xx
+    // errors that we know about are reported with our route context.
+    if (status >= 500) {
+      captureServerError(err, {
+        traceId: req.traceId,
+        route: `${req.method} ${req.path}`,
+        userId: (req as any).user?.id,
+      });
+    }
 
     if (res.headersSent) {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    // Surface the trace ID to the client so support can grep logs / Sentry by it.
+    return res.status(status).json({ message, referenceId: req.traceId });
   });
 
   // importantly only setup vite in development and after
