@@ -22,7 +22,12 @@ export function initSentry() {
     dsn,
     environment: process.env.NODE_ENV || "development",
     release: process.env.RELEASE_SHA || undefined,
-    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0.1),
+    // Errors are always captured. Performance tracing is OFF by default
+    // because full Express auto-instrumentation requires Sentry to be loaded
+    // via `node --import ./instrument.mjs server/index.js` BEFORE express
+    // itself is imported (a package.json script change we don't ship here).
+    // Set SENTRY_TRACES_SAMPLE_RATE > 0 only if/when that flag is added.
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0),
     sendDefaultPii: false,
     ignoreErrors: [
       "ECONNRESET",
