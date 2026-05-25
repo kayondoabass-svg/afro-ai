@@ -126,6 +126,16 @@ export async function registerRoutes(
     res.status(204).end();
   });
 
+  // ── Sentry pipeline test (founder-only) ─────────────────────────────────
+  // Hit GET /api/_diagnostics/sentry-test as a founder to confirm Sentry is
+  // wired up end-to-end. Throws a tagged error inside the request handler so
+  // it flows through our error middleware → Sentry capture → dashboard.
+  // The response includes the trace ID so you can search for it in Sentry.
+  app.get("/api/_diagnostics/sentry-test", isFounder, (req, _res, _next) => {
+    const traceId = (req as any).traceId || "unknown";
+    throw new Error(`Sentry pipeline test — traceId=${traceId} — safe to ignore.`);
+  });
+
   // ── Internal SES proxy for the Cloudflare Worker (cf-auth) ──────────────
   // The Worker forwards transactional mail (password resets, etc.) here so
   // every outgoing message goes through the same SES domain identity. Auth
