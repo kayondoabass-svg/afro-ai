@@ -353,6 +353,13 @@ export default function AgentPage() {
       catch { assistantText += payload; setStreamingContent(assistantText); if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus("Writing response…"); } return; }
       if (evt && evt.type === "error") { serverError = evt.message || "Agent error"; return; }
       if (evt && typeof evt.error === "string") { serverError = evt.error; return; }
+      if (evt && evt.type === "version-saved") {
+        // Server tells us whether a snapshot was saved. Refetch immediately so
+        // Undo lights up without waiting for the 3s panel poll.
+        if (evt.saved) refetchVersions();
+        console.log("[version-saved]", evt);
+        return;
+      }
       if (typeof evt === "string") assistantText += evt;
       else if (evt && (evt.type === "text" || evt.type === "chunk" || evt.type === "delta")) assistantText += evt.content || evt.text || evt.delta || "";
       else if (evt && typeof evt.content === "string") assistantText += evt.content;

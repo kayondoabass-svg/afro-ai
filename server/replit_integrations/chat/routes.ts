@@ -2303,45 +2303,81 @@ You are now in EDITOR MODE. Your workflow:
       await chatStorage.createMessage(conversationId, "assistant", fullResponse);
 
       // Auto-save version whenever the response contains any HTML output.
-      // Matches three formats the AI may emit (in priority order):
-      //   1. Full document: <!DOCTYPE html ... </html>
-      //   2. ```html ... ``` fenced block (what the /chat agent prompt produces)
-      //   3. Any ``` fenced block whose body looks like HTML
-      // This mirrors the extractor used by the frontend (extractHtml in agent.tsx
-      // and ai-chat.tsx) so what the user SEES in the preview is what gets saved.
+      // Detection ladder (broadest catch — we'd rather over-save than miss):
+      //   1. Full document <!DOCTYPE html ... </html>
+      //   2. <html>...</html> without DOCTYPE
+      //   3. ```html / ```htm fenced block
+      //   4. ANY ``` fenced block whose body contains an HTML tag
+      //   5. Raw response (no fence) that contains <html, <body, or starts with <!doctype
+      // We log the outcome so we can see WHY a save was skipped via stdout + Sentry.
+      let versionSaveResult: { saved: boolean; reason: string; versionId?: number; label?: string } =
+        { saved: false, reason: "no-html-detected" };
       try {
         let extracted: string | null = null;
+        let detectedVia = "";
+
         const fullDoc = fullResponse.match(/<!DOCTYPE html[\s\S]*?<\/html>/i);
         if (fullDoc) {
           extracted = fullDoc[0];
+          detectedVia = "doctype-block";
         } else {
-          const fences: { lang: string; code: string }[] = [];
-          const fenceRe = /```(\w+)?\n([\s\S]*?)```/g;
-          let fm: RegExpExecArray | null;
-          while ((fm = fenceRe.exec(fullResponse)) !== null) {
-            fences.push({ lang: (fm[1] || "").toLowerCase(), code: fm[2] });
-          }
-          const htmlFence = fences.find(f => f.lang === "html" || f.lang === "htm");
-          if (htmlFence) {
-            extracted = htmlFence.code.trim();
+          const htmlTag = fullResponse.match(/<html[\s\S]*?<\/html>/i);
+          if (htmlTag) {
+            extracted = htmlTag[0];
+            detectedVia = "html-tag-block";
           } else {
-            const looksHtml = fences.find(f => /<!doctype html|<html\b|<body\b|<div\b|<section\b/i.test(f.code));
-            if (looksHtml) extracted = looksHtml.code.trim();
+            // Fence detection — tolerate optional newline after lang ("```html" with no \n)
+            const fences: { lang: string; code: string }[] = [];
+            const fenceRe = /```([\w-]*)\s*\n?([\s\S]*?)```/g;
+            let fm: RegExpExecArray | null;
+            while ((fm = fenceRe.exec(fullResponse)) !== null) {
+              fences.push({ lang: (fm[1] || "").toLowerCase(), code: fm[2] });
+            }
+            const htmlFence = fences.find(f => f.lang === "html" || f.lang === "htm");
+            if (htmlFence) {
+              extracted = htmlFence.code.trim();
+              detectedVia = "html-lang-fence";
+            } else {
+              const looksHtml = fences.find(f => /<!doctype|<html\b|<body\b|<head\b|<div\b|<section\b|<main\b|<style\b/i.test(f.code));
+              if (looksHtml) {
+                extracted = looksHtml.code.trim();
+                detectedVia = "looks-html-fence";
+              } else if (/<!doctype html|<html\b|<body\b/i.test(fullResponse)) {
+                // No fence at all — accept the raw response if it looks like a page
+                extracted = fullResponse.trim();
+                detectedVia = "raw-html";
+              }
+            }
           }
         }
+
         if (extracted && extracted.length > 50) {
           const { storage } = await import("../../storage");
           const existingVersions = await storage.getAppVersions(conversationId);
           const versionNum = existingVersions.length + 1;
-          await storage.saveAppVersion({
+          const saved = await storage.saveAppVersion({
             conversationId,
             htmlContent: extracted,
             label: `Version ${versionNum}`,
           });
+          versionSaveResult = { saved: true, reason: detectedVia, versionId: saved.id, label: saved.label || undefined };
+          console.log(`[app-version] saved v${versionNum} (id=${saved.id}) for conversation ${conversationId} via ${detectedVia} (${extracted.length} bytes)`);
+        } else {
+          versionSaveResult = { saved: false, reason: extracted ? "too-short" : "no-html-detected" };
+          console.log(`[app-version] skip save for conversation ${conversationId}: ${versionSaveResult.reason} (response ${fullResponse.length} bytes, first 200 chars: ${JSON.stringify(fullResponse.slice(0, 200))})`);
         }
-      } catch (versionErr) {
-        console.error("Error saving app version:", versionErr);
+      } catch (versionErr: any) {
+        versionSaveResult = { saved: false, reason: `error: ${versionErr?.message || "unknown"}` };
+        console.error("[app-version] save failed:", versionErr);
+        try {
+          const { captureServerError } = await import("../../observability");
+          captureServerError(versionErr, { route: `save-app-version:conv-${conversationId}` });
+        } catch {}
       }
+
+      // Surface the result to the client so the UI can refetch immediately and
+      // we can debug from DevTools without server log access.
+      res.write(`data: ${JSON.stringify({ type: "version-saved", ...versionSaveResult })}\n\n`);
 
       try {
         const authUser = (req as any).user;
