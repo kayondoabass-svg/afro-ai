@@ -16,7 +16,7 @@ import {
   Trash2, ArrowUp, Pencil, X, Plus, ChevronDown, Square,
   Monitor, Sparkles, Globe, ListChecks, PanelRightOpen,
   Copy, Download, LogOut, Settings, Paperclip, Image as ImageIcon,
-  Rocket, Undo2, RotateCcw, Eye, Clock, CheckCircle2, Layers,
+  Rocket, Undo2, Redo2, RotateCcw, Eye, Clock, CheckCircle2, Layers,
 } from "lucide-react";
 import { PublishDialog } from "@/pages/ai-chat";
 
@@ -117,6 +117,10 @@ export default function AgentPage() {
   const [queueDrainTrigger, setQueueDrainTrigger] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  // Cursor into appVersionsList. 0 = latest. N = N steps back into history.
+  // Undo increments, Redo decrements. Reset to 0 whenever a brand-new version lands.
+  const [historyCursor, setHistoryCursor] = useState(0);
+  const prevVersionsLenRef = useRef(0);
   const [progressStep, setProgressStep] = useState(0); // 0..4
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishCode, setPublishCode] = useState("");
@@ -170,14 +174,32 @@ export default function AgentPage() {
     setVersionsOpen(false);
   };
 
-  // One-click Undo: restore the second-most-recent snapshot (the one before
-  // the latest generation). Disabled when there's nothing to undo back to.
-  const canUndo = appVersionsList.length >= 2;
+  // Undo/Redo walk a cursor through appVersionsList. [0] is the newest snapshot.
+  // historyCursor = N means "we're viewing the snapshot N steps back from latest".
+  // Undo moves further into the past; Redo walks back toward the latest.
+  const canUndo = appVersionsList.length > historyCursor + 1;
+  const canRedo = historyCursor > 0;
   const handleUndo = () => {
     if (!canUndo) return;
-    const prior = appVersionsList[1]; // [0] is latest, [1] is the previous one
-    restoreVersion(prior);
+    const nextCursor = historyCursor + 1;
+    setHistoryCursor(nextCursor);
+    restoreVersion(appVersionsList[nextCursor]);
   };
+  const handleRedo = () => {
+    if (!canRedo) return;
+    const nextCursor = historyCursor - 1;
+    setHistoryCursor(nextCursor);
+    restoreVersion(appVersionsList[nextCursor]);
+  };
+
+  // Whenever a brand-new snapshot lands (length grew), the user has just
+  // generated something fresh — that becomes the new "latest", so reset the
+  // cursor to 0 and drop any stale redo stack.
+  useEffect(() => {
+    const len = appVersionsList.length;
+    if (len > prevVersionsLenRef.current) setHistoryCursor(0);
+    prevVersionsLenRef.current = len;
+  }, [appVersionsList.length]);
 
   // Lazily create a conversation. Called on mount AND on first send (retry).
   const ensureConversation = async (): Promise<number | null> => {
@@ -709,13 +731,27 @@ export default function AgentPage() {
             variant="ghost"
             size="icon"
             aria-label="Undo last change"
-            title={canUndo ? "Undo last change — restore previous version" : "Nothing to undo yet"}
+            title={canUndo ? "Undo — restore previous version" : "Nothing to undo yet"}
             className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
             disabled={!canUndo}
             onClick={handleUndo}
             data-testid="button-undo"
           >
             <Undo2 className="w-4 h-4" />
+          </Button>
+
+          {/* Redo — re-applies a version you just undid */}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Redo"
+            title={canRedo ? "Redo — re-apply the version you just undid" : "Nothing to redo"}
+            className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
+            disabled={!canRedo}
+            onClick={handleRedo}
+            data-testid="button-redo"
+          >
+            <Redo2 className="w-4 h-4" />
           </Button>
 
           {/* Versions panel trigger */}
