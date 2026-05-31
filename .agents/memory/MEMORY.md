@@ -1,0 +1,1 @@
+- [i18n translation waves](i18n-translations.md) — t()/translations.ts: 15 langs, {name}+count plural, grep before adding keys (TS1117 dupes), rolled out per-screen.

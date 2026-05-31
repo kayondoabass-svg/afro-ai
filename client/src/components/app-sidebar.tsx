@@ -54,7 +54,6 @@ import {
   Handshake,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { LanguageSelector } from "@/components/language-selector";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 const ALL_MENU_ITEMS = [
@@ -82,7 +81,6 @@ const ALL_MENU_ITEMS = [
   { titleKey: "sidebar.ussd", title: "USSD Builder", url: "/ussd", icon: PhoneCall },
   { titleKey: "sidebar.myUssd", title: "My USSD Apps", url: "/ussd/apps", icon: Smartphone },
   { titleKey: "sidebar.files", title: "Files & Storage", url: "/files", icon: HardDrive },
-  { titleKey: "sidebar.d1", title: "D1 Database", url: "/d1", icon: DatabaseZap },
   { titleKey: "sidebar.secrets", title: "Secrets", url: "/secrets", icon: KeyRound },
   { titleKey: "sidebar.logs", title: "Activity Logs", url: "/logs", icon: Activity },
   { titleKey: "sidebar.console", title: "Console", url: "/console", icon: SquareTerminal },
@@ -97,6 +95,7 @@ const ALL_MENU_ITEMS = [
 const FOUNDER_ITEMS = [
   { titleKey: "sidebar.founderDashboard", title: "Founder Dashboard", url: "/founder", icon: Crown },
   { titleKey: "sidebar.commandCenter", title: "Command Center", url: "/admin-command", icon: Terminal },
+  { titleKey: "sidebar.d1", title: "D1 Database", url: "/d1", icon: DatabaseZap },
 ];
 
 export function AppSidebar() {
@@ -188,9 +187,6 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-4 space-y-3">
-        <div className="px-1">
-          <LanguageSelector />
-        </div>
         <div className="flex items-center gap-3">
           <Avatar className="w-8 h-8">
             <AvatarImage src={user?.profileImageUrl || undefined} />

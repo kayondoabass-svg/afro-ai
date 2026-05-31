@@ -7,10 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Database, Play, RefreshCw, Table2, ChevronRight, RotateCcw, AlertCircle } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { Database, Play, RefreshCw, Table2, ChevronRight, RotateCcw, AlertCircle, Lock } from "lucide-react";
 
 export default function D1ConsolePage() {
   const { toast } = useToast();
+  const { user, isLoading: authLoading } = useAuth();
+  const isFounder = (user as any)?.isFounder === true;
   const [sql, setSql] = useState("SELECT name FROM sqlite_master WHERE type='table';");
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [queryResult, setQueryResult] = useState<{ results: any[]; meta: any } | null>(null);
@@ -18,23 +21,24 @@ export default function D1ConsolePage() {
 
   const { data: status } = useQuery<{ configured: boolean }>({
     queryKey: ["/api/d1/status"],
+    enabled: isFounder,
   });
 
   const { data: tablesData, isLoading: tablesLoading, refetch: refetchTables } = useQuery<{ tables: string[] }>({
     queryKey: ["/api/d1/tables"],
-    enabled: status?.configured === true,
+    enabled: isFounder && status?.configured === true,
   });
 
   const { data: tableInfo } = useQuery<{ columns: any[] }>({
     queryKey: ["/api/d1/tables", selectedTable, "info"],
     queryFn: () => fetch(`/api/d1/tables/${selectedTable}/info`, { credentials: "include" }).then(r => r.json()),
-    enabled: !!selectedTable,
+    enabled: isFounder && !!selectedTable,
   });
 
   const { data: tableRows, isLoading: rowsLoading } = useQuery<{ results: any[]; meta: any }>({
     queryKey: ["/api/d1/tables", selectedTable, "rows"],
     queryFn: () => fetch(`/api/d1/tables/${selectedTable}/rows?limit=50`, { credentials: "include" }).then(r => r.json()),
-    enabled: !!selectedTable,
+    enabled: isFounder && !!selectedTable,
   });
 
   const queryMutation = useMutation({
@@ -83,6 +87,22 @@ export default function D1ConsolePage() {
   const displayColumns = selectedTable
     ? tableInfo?.columns?.map((c: any) => c.name) || []
     : queryResult?.results?.length ? Object.keys(queryResult.results[0]) : [];
+
+  if (!authLoading && !isFounder) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto" data-testid="d1-access-denied">
+        <Card>
+          <CardContent className="pt-6 text-center py-12">
+            <Lock className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+            <p className="font-medium">This tool isn't available on your account</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+              The D1 Database console is an internal administration tool reserved for the platform team.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!status?.configured) {
     return (

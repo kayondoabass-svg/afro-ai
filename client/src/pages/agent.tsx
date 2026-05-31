@@ -10,6 +10,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import {
   ArrowLeft, History, MessageSquarePlus, MoreVertical,
   Brain, Terminal, FileEdit, Search, BookOpen, MoreHorizontal,
@@ -86,6 +87,7 @@ function getQueryParam(name: string): string | null {
 
 export default function AgentPage() {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
   const { data: user } = useQuery<any>({ queryKey: ["/api/auth/user"] });
@@ -160,15 +162,15 @@ export default function AgentPage() {
       {
         id: `restore-${ver.id}-${Date.now()}`,
         role: "assistant",
-        content: `Restored ${ver.label || `version #${ver.id}`} from ${new Date(ver.createdAt).toLocaleString()}.\n\n\`\`\`html\n${ver.htmlContent}\n\`\`\``,
+        content: `${t("chat.restoredContent", { label: ver.label || t("chat.versionNum", { id: ver.id }), date: new Date(ver.createdAt).toLocaleString() })}\n\n\`\`\`html\n${ver.htmlContent}\n\`\`\``,
         timestamp: Date.now(),
-        actions: [{ kind: "edit", label: "Restored" }],
+        actions: [{ kind: "edit", label: t("chat.actionRestored") }],
       },
     ]);
     if (!opts.silent) {
       toast({
-        title: "Version restored",
-        description: `${ver.label || `Version #${ver.id}`} is now your active app. Click Publish to deploy it.`,
+        title: t("chat.toastVersionRestored"),
+        description: t("chat.toastVersionRestoredDesc", { label: ver.label || t("chat.versionNum", { id: ver.id }) }),
       });
     }
     setVersionsOpen(false);
@@ -209,7 +211,7 @@ export default function AgentPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: projectName ? `${projectName} session` : "Agent Session",
+          title: projectName ? t("chat.sessionTitle", { name: projectName }) : t("chat.agentSession"),
           projectId: projectIdParam ? parseInt(projectIdParam) : undefined,
         }),
         credentials: "include",
@@ -217,8 +219,8 @@ export default function AgentPage() {
       if (!res.ok) {
         const errBody = await res.text().catch(() => "");
         toast({
-          title: "Couldn't start chat",
-          description: errBody?.slice(0, 200) || `Server returned ${res.status}. Try refreshing or sign in again.`,
+          title: t("chat.toastCouldntStart"),
+          description: errBody?.slice(0, 200) || t("chat.errServerReturned", { status: res.status }),
           variant: "destructive",
         });
         return null;
@@ -229,8 +231,8 @@ export default function AgentPage() {
       return conv.id;
     } catch (e: any) {
       toast({
-        title: "Couldn't start chat",
-        description: e?.message || "Network error. Check your connection and try again.",
+        title: t("chat.toastCouldntStart"),
+        description: e?.message || t("chat.errNetwork"),
         variant: "destructive",
       });
       return null;
@@ -321,7 +323,7 @@ export default function AgentPage() {
     setInput("");
     setPendingAttachments([]);
     setWorking(true);
-    setWorkingStatus("Thinking…");
+    setWorkingStatus(t("chat.statusThinking"));
     setProgressStep(0);
     setStreamingContent("");
 
@@ -330,9 +332,9 @@ export default function AgentPage() {
 
     // Step 0: Thinking, 1: Reading, 2: Drafting, 3: Polishing, 4: Done
     const statusUpdates = [
-      { step: 1, label: "Reading what you asked…" },
-      { step: 2, label: "Drafting a response…" },
-      { step: 3, label: "Polishing the words…" },
+      { step: 1, label: t("chat.progReading") },
+      { step: 2, label: t("chat.progDrafting") },
+      { step: 3, label: t("chat.progPolishing") },
     ];
     let statusIdx = 0;
     const statusTimer = setInterval(() => {
@@ -350,8 +352,8 @@ export default function AgentPage() {
       if (!payload || payload === "[DONE]") return;
       let evt: any;
       try { evt = JSON.parse(payload); }
-      catch { assistantText += payload; setStreamingContent(assistantText); if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus("Writing response…"); } return; }
-      if (evt && evt.type === "error") { serverError = evt.message || "Agent error"; return; }
+      catch { assistantText += payload; setStreamingContent(assistantText); if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus(t("chat.statusWriting")); } return; }
+      if (evt && evt.type === "error") { serverError = evt.message || t("chat.toastAgentError"); return; }
       if (evt && typeof evt.error === "string") { serverError = evt.error; return; }
       if (evt && evt.type === "version-saved") {
         // Server tells us whether a snapshot was saved. Refetch immediately so
@@ -366,7 +368,7 @@ export default function AgentPage() {
       else if (evt && typeof evt.text === "string") assistantText += evt.text;
       else if (evt && typeof evt.delta === "string") assistantText += evt.delta;
       setStreamingContent(assistantText);
-      if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus("Writing response…"); }
+      if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus(t("chat.statusWriting")); }
     };
 
     try {
@@ -405,14 +407,14 @@ export default function AgentPage() {
       setMessages(m => [...m, {
         id: `a-${Date.now()}`,
         role: "assistant",
-        content: assistantText || "(No response)",
+        content: assistantText || t("chat.noResponse"),
         timestamp: Date.now(),
         actions: inferActions(assistantText),
       }]);
       setQueueDrainTrigger(t => t + 1);
     } catch (e: any) {
       if (e.name !== "AbortError") {
-        toast({ title: "Agent error", description: e.message, variant: "destructive" });
+        toast({ title: t("chat.toastAgentError"), description: e.message, variant: "destructive" });
       }
     } finally {
       clearInterval(statusTimer);
@@ -444,7 +446,7 @@ export default function AgentPage() {
     if (working) {
       setQueue(q => [...q, { id: `q-${Date.now()}`, text }]);
       setInput("");
-      toast({ title: "Added to queue", description: "Will run after the current task." });
+      toast({ title: t("chat.toastQueued"), description: t("chat.toastQueuedDesc") });
       return;
     }
     sendMessage(text, pendingAttachments);
@@ -476,7 +478,7 @@ export default function AgentPage() {
     const next: Attachment[] = [];
     for (const f of files) {
       if (f.size > 5 * 1024 * 1024) {
-        toast({ title: "File too large", description: `${f.name} exceeds 5MB`, variant: "destructive" });
+        toast({ title: t("chat.toastFileTooLarge"), description: t("chat.toastFileTooLargeDesc", { name: f.name }), variant: "destructive" });
         continue;
       }
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -517,7 +519,7 @@ export default function AgentPage() {
   const editQueueItem = (id: string) => {
     const item = queue.find(x => x.id === id);
     if (!item) return;
-    const updated = window.prompt("Edit prompt:", item.text);
+    const updated = window.prompt(t("chat.promptEditPrompt"), item.text);
     if (updated && updated.trim()) {
       setQueue(q => q.map(x => x.id === id ? { ...x, text: updated.trim() } : x));
     }
@@ -525,7 +527,7 @@ export default function AgentPage() {
   const deleteQueueItem = (id: string) => setQueue(q => q.filter(x => x.id !== id));
   const clearQueue = () => {
     if (queue.length === 0) return;
-    if (window.confirm(`Clear all ${queue.length} queued prompt${queue.length !== 1 ? "s" : ""}?`)) setQueue([]);
+    if (window.confirm(t("chat.confirmClearQueue", { n: queue.length }))) setQueue([]);
   };
 
   // ---------- History ----------
@@ -533,7 +535,7 @@ export default function AgentPage() {
   const loadConversation = async (id: number) => {
     try {
       const res = await fetch(`/api/conversations/${id}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load");
+      if (!res.ok) throw new Error(t("chat.errFailedLoad"));
       const data = await res.json();
       const msgs: AgentMessage[] = (data.messages || []).map((m: any) => {
         let content = m.content;
@@ -570,14 +572,14 @@ export default function AgentPage() {
       initialDescriptionSentRef.current = true;
       if (msgs.length === 0) {
         toast({
-          title: "Empty conversation",
-          description: "No messages yet — type below to start.",
+          title: t("chat.toastEmptyConv"),
+          description: t("chat.toastEmptyConvDesc"),
         });
       } else {
-        toast({ title: "Loaded conversation", description: `${msgs.length} message${msgs.length === 1 ? "" : "s"}` });
+        toast({ title: t("chat.toastLoadedConv"), description: t("chat.toastLoadedConvDesc", { n: msgs.length }) });
       }
     } catch (e: any) {
-      toast({ title: "Error loading conversation", description: e.message, variant: "destructive" });
+      toast({ title: t("chat.toastErrLoadConv"), description: e.message, variant: "destructive" });
     }
   };
 
@@ -586,7 +588,7 @@ export default function AgentPage() {
       const res = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "New chat" }),
+        body: JSON.stringify({ title: t("chat.agentNewChat") }),
         credentials: "include",
       });
       if (res.ok) {
@@ -604,7 +606,7 @@ export default function AgentPage() {
         setPendingAttachments([]);
         initialDescriptionSentRef.current = true;
         refetchConvos();
-        toast({ title: "Started new chat" });
+        toast({ title: t("chat.toastStartedNew") });
       }
     } catch {}
   };
@@ -613,7 +615,7 @@ export default function AgentPage() {
 
   const copyShareLink = () => {
     const url = `${window.location.origin}/chat${projectIdParam ? `?projectId=${projectIdParam}` : ""}`;
-    navigator.clipboard.writeText(url).then(() => toast({ title: "Link copied" }));
+    navigator.clipboard.writeText(url).then(() => toast({ title: t("chat.toastLinkCopied") }));
   };
 
   const exportChat = () => {
@@ -645,7 +647,7 @@ export default function AgentPage() {
       if (projectName) match = apps.find(a => (a.title || "").toLowerCase() === projectName.toLowerCase());
       if (!match && apps.length > 0) match = apps[apps.length - 1]; // most recent
       if (!match) {
-        toast({ title: "Nothing published yet", description: "Press the publish button after you build to put your site online.", });
+        toast({ title: t("chat.toastNothingPublished"), description: t("chat.toastNothingPublishedDesc"), });
         return;
       }
       const url = match.customDomain
@@ -653,7 +655,7 @@ export default function AgentPage() {
         : `https://${match.subdomain}.afroaigroup.com`;
       window.open(url, "_blank");
     } catch {
-      toast({ title: "Sign in to view your site", variant: "destructive" });
+      toast({ title: t("chat.toastSignInView"), variant: "destructive" });
     }
   };
   const goToCode = () => setLocation("/chat-classic");
@@ -673,8 +675,8 @@ export default function AgentPage() {
       }
     }
     toast({
-      title: "Build something first",
-      description: "Ask me to create a website, then press Publish to put it online.",
+      title: t("chat.toastBuildFirst"),
+      description: t("chat.toastBuildFirstDesc"),
     });
   };
 
@@ -682,8 +684,8 @@ export default function AgentPage() {
     const html = extractHtml(content);
     if (!html) {
       toast({
-        title: "No website to publish",
-        description: "This message doesn't contain a complete website yet.",
+        title: t("chat.toastNoWebsite"),
+        description: t("chat.toastNoWebsiteDesc"),
         variant: "destructive",
       });
       return;
@@ -701,22 +703,22 @@ export default function AgentPage() {
       {/* Top bar */}
       <header className="flex items-center justify-between px-3 py-3 border-b border-zinc-800/80 flex-shrink-0">
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" aria-label="Go back" className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" onClick={() => setLocation("/dashboard")} data-testid="button-back">
+          <Button variant="ghost" size="icon" aria-label={t("chat.goBack")} className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" onClick={() => setLocation("/dashboard")} data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Conversation history" className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-testid="button-history">
+              <Button variant="ghost" size="icon" aria-label={t("chat.conversationHistory")} className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-testid="button-history">
                 <History className="w-4 h-4" />
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="bg-zinc-950 border-zinc-800 text-zinc-100 w-80">
               <SheetHeader>
-                <SheetTitle className="text-zinc-100">Conversation history</SheetTitle>
+                <SheetTitle className="text-zinc-100">{t("chat.conversationHistory")}</SheetTitle>
               </SheetHeader>
               <div className="mt-4 space-y-1 overflow-y-auto max-h-[calc(100vh-100px)]">
                 {conversations.length === 0 && (
-                  <p className="text-sm text-zinc-500 px-2 py-3">No conversations yet.</p>
+                  <p className="text-sm text-zinc-500 px-2 py-3">{t("chat.agentNoConversations")}</p>
                 )}
                 {conversations.map(c => (
                   <button
@@ -725,7 +727,7 @@ export default function AgentPage() {
                     className={`w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-900 transition-colors ${conversationId === c.id ? "bg-zinc-900 border border-violet-500/30" : ""}`}
                     data-testid={`button-history-conv-${c.id}`}
                   >
-                    <p className="text-sm text-zinc-200 truncate">{c.title || "Untitled"}</p>
+                    <p className="text-sm text-zinc-200 truncate">{c.title || t("chat.untitled")}</p>
                     <p className="text-[10px] text-zinc-500 mt-0.5">{new Date(c.createdAt).toLocaleString()}</p>
                   </button>
                 ))}
@@ -737,8 +739,8 @@ export default function AgentPage() {
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Undo last change"
-            title={canUndo ? "Undo — restore previous version" : "Nothing to undo yet"}
+            aria-label={t("chat.undoLabel")}
+            title={canUndo ? t("chat.undoTitle") : t("chat.undoNothing")}
             className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
             disabled={!canUndo}
             onClick={handleUndo}
@@ -751,8 +753,8 @@ export default function AgentPage() {
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Redo"
-            title={canRedo ? "Redo — re-apply the version you just undid" : "Nothing to redo"}
+            aria-label={t("chat.redoLabel")}
+            title={canRedo ? t("chat.redoTitle") : t("chat.redoNothing")}
             className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
             disabled={!canRedo}
             onClick={handleRedo}
@@ -767,8 +769,8 @@ export default function AgentPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Version history"
-                title="Version history"
+                aria-label={t("chat.versionHistory")}
+                title={t("chat.versionHistory")}
                 className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 relative"
                 data-testid="button-versions"
               >
@@ -784,7 +786,7 @@ export default function AgentPage() {
               <SheetHeader className="px-4 py-3 border-b border-zinc-800">
                 <SheetTitle className="text-zinc-100 flex items-center gap-2">
                   <Layers className="w-4 h-4 text-violet-400" />
-                  Version history
+                  {t("chat.versionHistory")}
                   {appVersionsList.length > 0 && (
                     <span className="text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded-full font-normal">
                       {appVersionsList.length}
@@ -793,15 +795,15 @@ export default function AgentPage() {
                 </SheetTitle>
               </SheetHeader>
               <div className="px-4 py-2 bg-violet-500/5 border-b border-zinc-800 text-xs text-zinc-400">
-                Every time the AI generates an app, a snapshot is saved here. Only you can see these — they're tied to your account.
+                {t("chat.versionsNote")}
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {appVersionsList.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-12">
                     <Clock className="w-10 h-10 text-zinc-700" />
                     <div>
-                      <div className="font-medium text-zinc-400 text-sm">No versions yet</div>
-                      <div className="text-xs text-zinc-600 mt-1">Versions are saved automatically each time the AI generates a new app.</div>
+                      <div className="font-medium text-zinc-400 text-sm">{t("chat.noVersions")}</div>
+                      <div className="text-xs text-zinc-600 mt-1">{t("chat.noVersionsDesc")}</div>
                     </div>
                   </div>
                 ) : (
@@ -820,11 +822,11 @@ export default function AgentPage() {
                           <div className="flex items-center gap-2 min-w-0">
                             <div className={`w-2 h-2 rounded-full shrink-0 ${isLatest ? "bg-violet-500" : "bg-zinc-700"}`} />
                             <span className="font-medium text-sm text-zinc-100 truncate">
-                              {ver.label || `Version ${appVersionsList.length - idx}`}
+                              {ver.label || t("chat.version", { n: appVersionsList.length - idx })}
                             </span>
                             {isLatest && (
                               <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
-                                Latest
+                                {t("chat.latest")}
                               </span>
                             )}
                           </div>
@@ -841,12 +843,12 @@ export default function AgentPage() {
                             data-testid={`button-preview-version-${ver.id}`}
                           >
                             <Eye className="w-3 h-3" />
-                            Preview
+                            {t("chat.versionPreview")}
                           </button>
                           {isLatest ? (
                             <div className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10 text-violet-300 text-xs font-medium">
                               <CheckCircle2 className="w-3 h-3" />
-                              Current
+                              {t("chat.current")}
                             </div>
                           ) : (
                             <button
@@ -855,7 +857,7 @@ export default function AgentPage() {
                               data-testid={`button-restore-version-${ver.id}`}
                             >
                               <RotateCcw className="w-3 h-3" />
-                              Restore
+                              {t("chat.restore")}
                             </button>
                           )}
                         </div>
@@ -872,7 +874,7 @@ export default function AgentPage() {
           <div className="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
             <Sparkles className="w-3 h-3 text-violet-400" />
           </div>
-          <span className="font-semibold text-sm">{projectName || "Agent"}</span>
+          <span className="font-semibold text-sm">{projectName || t("chat.agent")}</span>
         </div>
 
         <div className="flex items-center gap-1">
@@ -883,33 +885,33 @@ export default function AgentPage() {
             data-testid="button-publish"
           >
             <Rocket className="w-4 h-4" />
-            <span className="hidden sm:inline">Publish</span>
+            <span className="hidden sm:inline">{t("chat.publish")}</span>
           </Button>
-          <Button variant="ghost" size="icon" aria-label="New chat" className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-testid="button-new-chat" onClick={startNewChat}>
+          <Button variant="ghost" size="icon" aria-label={t("chat.agentNewChat")} className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-testid="button-new-chat" onClick={startNewChat}>
             <MessageSquarePlus className="w-4 h-4" />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="More options" className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-testid="button-menu">
+              <Button variant="ghost" size="icon" aria-label={t("chat.moreOptions")} className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-testid="button-menu">
                 <MoreVertical className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800 text-zinc-100">
               <DropdownMenuItem onClick={copyShareLink} data-testid="menu-copy-link">
-                <Copy className="w-4 h-4 mr-2" /> Copy share link
+                <Copy className="w-4 h-4 mr-2" /> {t("chat.copyLink")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={exportChat} data-testid="menu-export">
-                <Download className="w-4 h-4 mr-2" /> Export chat
+                <Download className="w-4 h-4 mr-2" /> {t("chat.exportChat")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setMessages([])} data-testid="menu-clear">
-                <Trash2 className="w-4 h-4 mr-2" /> Clear messages
+                <Trash2 className="w-4 h-4 mr-2" /> {t("chat.clearMessages")}
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-zinc-800" />
               <DropdownMenuItem onClick={() => setLocation("/dashboard")} data-testid="menu-settings">
-                <Settings className="w-4 h-4 mr-2" /> Settings
+                <Settings className="w-4 h-4 mr-2" /> {t("chat.settings")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">
-                <LogOut className="w-4 h-4 mr-2" /> Sign out
+                <LogOut className="w-4 h-4 mr-2" /> {t("chat.signOut")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -923,13 +925,13 @@ export default function AgentPage() {
             <div className="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center mb-3">
               <Sparkles className="w-6 h-6 text-violet-400" />
             </div>
-            <h2 className="text-lg font-semibold text-zinc-200 mb-1">Hey {user?.firstName || "there"} 👋</h2>
-            <p className="text-sm mb-4">Ask me to build, edit, debug, or explain anything.</p>
+            <h2 className="text-lg font-semibold text-zinc-200 mb-1">{t("chat.greeting", { name: user?.firstName || t("chat.there") })}</h2>
+            <p className="text-sm mb-4">{t("chat.emptyPrompt")}</p>
             <div className="grid gap-2 w-full max-w-sm">
               {[
-                "Build a simple landing page for my business",
-                "Create a contact form that sends to my email",
-                "Add login with Google to my app",
+                t("chat.agentSuggestion1"),
+                t("chat.agentSuggestion2"),
+                t("chat.agentSuggestion3"),
               ].map(s => (
                 <button
                   key={s}
@@ -966,12 +968,12 @@ export default function AgentPage() {
             data-testid="button-toggle-queue"
           >
             <div className="flex items-center gap-2">
-              <span>Queue</span>
+              <span>{t("chat.queue")}</span>
               {queue.length > 0 && <span className="text-xs text-zinc-500">({queue.length})</span>}
             </div>
             <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
               {queue.length > 0 && (
-                <Button variant="ghost" size="icon" aria-label="Clear queue" className="h-7 w-7 text-zinc-500 hover:text-red-400 hover:bg-zinc-800" onClick={clearQueue} data-testid="button-clear-queue">
+                <Button variant="ghost" size="icon" aria-label={t("chat.clearQueue")} className="h-7 w-7 text-zinc-500 hover:text-red-400 hover:bg-zinc-800" onClick={clearQueue} data-testid="button-clear-queue">
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
               )}
@@ -986,14 +988,14 @@ export default function AgentPage() {
                   <CardContent className="p-3 flex items-start gap-2">
                     <p className="flex-1 text-sm text-zinc-300 leading-snug line-clamp-3 min-w-0">{item.text}</p>
                     <div className="flex items-center gap-0.5 flex-shrink-0">
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" onClick={() => runQueueItem(item.id)} disabled={working} data-testid={`button-queue-next-${item.id}`}>Next</Button>
-                      <Button variant="ghost" size="icon" aria-label="Move up" className="h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" onClick={() => moveQueueItem(item.id, -1)} disabled={idx === 0} data-testid={`button-queue-up-${item.id}`}>
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" onClick={() => runQueueItem(item.id)} disabled={working} data-testid={`button-queue-next-${item.id}`}>{t("chat.next")}</Button>
+                      <Button variant="ghost" size="icon" aria-label={t("chat.moveUp")} className="h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" onClick={() => moveQueueItem(item.id, -1)} disabled={idx === 0} data-testid={`button-queue-up-${item.id}`}>
                         <ArrowUp className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" aria-label="Edit prompt" className="h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" onClick={() => editQueueItem(item.id)} data-testid={`button-queue-edit-${item.id}`}>
+                      <Button variant="ghost" size="icon" aria-label={t("chat.editPrompt")} className="h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" onClick={() => editQueueItem(item.id)} data-testid={`button-queue-edit-${item.id}`}>
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" aria-label="Remove from queue" className="h-7 w-7 text-zinc-400 hover:text-red-400 hover:bg-zinc-800" onClick={() => deleteQueueItem(item.id)} data-testid={`button-queue-delete-${item.id}`}>
+                      <Button variant="ghost" size="icon" aria-label={t("chat.removeFromQueue")} className="h-7 w-7 text-zinc-400 hover:text-red-400 hover:bg-zinc-800" onClick={() => deleteQueueItem(item.id)} data-testid={`button-queue-delete-${item.id}`}>
                         <X className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -1012,7 +1014,7 @@ export default function AgentPage() {
             <div key={idx} className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 text-xs text-zinc-300" data-testid={`attachment-pending-${idx}`}>
               {att.mimetype.startsWith("image/") ? <ImageIcon className="w-3 h-3" /> : <Paperclip className="w-3 h-3" />}
               <span className="max-w-[140px] truncate">{att.originalName}</span>
-              <button onClick={() => removePendingAttachment(idx)} aria-label="Remove attachment" className="text-zinc-500 hover:text-red-400">
+              <button onClick={() => removePendingAttachment(idx)} aria-label={t("chat.removeAttachment")} className="text-zinc-500 hover:text-red-400">
                 <X className="w-3 h-3" />
               </button>
             </div>
@@ -1026,7 +1028,7 @@ export default function AgentPage() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.metaKey) { e.preventDefault(); handleSend(); } }}
-          placeholder="Make, test, iterate..."
+          placeholder={t("chat.inputPlaceholder")}
           className="bg-transparent border-0 text-sm text-zinc-200 placeholder:text-zinc-500 resize-none min-h-[40px] max-h-32 px-1 py-1 focus-visible:ring-0 focus-visible:ring-offset-0"
           rows={1}
           data-testid="input-prompt"
@@ -1034,26 +1036,26 @@ export default function AgentPage() {
 
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" aria-label="Attach file" onClick={handleAttachClick} className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-full" data-testid="button-attach">
+            <Button variant="ghost" size="icon" aria-label={t("chat.attachFile")} onClick={handleAttachClick} className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-full" data-testid="button-attach">
               <Plus className="w-4 h-4" />
             </Button>
 
             <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
               <Checkbox checked={planMode} onCheckedChange={(v) => setPlanMode(!!v)} className="h-3.5 w-3.5 border-zinc-600 data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" data-testid="checkbox-plan-mode" />
-              <span>Plan</span>
+              <span>{t("chat.plan")}</span>
             </label>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-1 text-xs text-zinc-300 hover:text-zinc-100" data-testid="button-power-mode">
-                  <span>{powerMode}</span>
+                  <span>{t(`chat.power${powerMode}`)}</span>
                   <ChevronDown className="w-3 h-3" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="bg-zinc-900 border-zinc-800 text-zinc-100">
                 {(["Power", "Standard", "Eco"] as const).map(m => (
                   <DropdownMenuItem key={m} onClick={() => setPowerMode(m)} data-testid={`menu-power-${m.toLowerCase()}`}>
-                    {m}{powerMode === m ? " ✓" : ""}
+                    {t(`chat.power${m}`)}{powerMode === m ? " ✓" : ""}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -1061,11 +1063,11 @@ export default function AgentPage() {
           </div>
 
           {working ? (
-            <Button size="icon" aria-label="Stop generation" className="h-9 w-9 rounded-lg bg-blue-500 hover:bg-blue-600 text-white" onClick={stopAgent} data-testid="button-stop">
+            <Button size="icon" aria-label={t("chat.stopGeneration")} className="h-9 w-9 rounded-lg bg-blue-500 hover:bg-blue-600 text-white" onClick={stopAgent} data-testid="button-stop">
               <Square className="w-3.5 h-3.5 fill-white" />
             </Button>
           ) : (
-            <Button size="icon" aria-label="Send message" className="h-9 w-9 rounded-lg bg-blue-500 hover:bg-blue-600 text-white disabled:bg-zinc-800 disabled:text-zinc-500" onClick={handleSend} disabled={!input.trim() && pendingAttachments.length === 0} data-testid="button-send">
+            <Button size="icon" aria-label={t("chat.sendMessage")} className="h-9 w-9 rounded-lg bg-blue-500 hover:bg-blue-600 text-white disabled:bg-zinc-800 disabled:text-zinc-500" onClick={handleSend} disabled={!input.trim() && pendingAttachments.length === 0} data-testid="button-send">
               <ArrowUp className="w-4 h-4" />
             </Button>
           )}
@@ -1075,14 +1077,14 @@ export default function AgentPage() {
       {/* Bottom nav */}
       <nav className="flex items-center justify-around px-2 py-2 border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0">
         {[
-          { icon: Square, key: "code", label: "Classic chat", testid: "nav-code", action: goToCode },
-          { icon: Monitor, key: "preview", label: "Preview", testid: "nav-preview", action: goToProjectPreview },
-          { icon: Sparkles, key: "agent", label: "Agent", active: true, testid: "nav-agent", action: () => {} },
-          { icon: Globe, key: "web", label: "Open site", testid: "nav-web", action: goToWeb },
+          { icon: Square, key: "code", label: t("chat.nav.classic"), testid: "nav-code", action: goToCode },
+          { icon: Monitor, key: "preview", label: t("chat.nav.preview"), testid: "nav-preview", action: goToProjectPreview },
+          { icon: Sparkles, key: "agent", label: t("chat.agent"), active: true, testid: "nav-agent", action: () => {} },
+          { icon: Globe, key: "web", label: t("chat.nav.openSite"), testid: "nav-web", action: goToWeb },
           { divider: true, key: "div" },
-          { icon: Terminal, key: "shell", label: "Shell", testid: "nav-shell", action: goToShell },
-          { icon: ListChecks, key: "tasks", label: "Dashboard", testid: "nav-tasks", action: goToTasks },
-          { icon: PanelRightOpen, key: "panel", label: "Toggle queue", testid: "nav-panel", action: () => setQueueOpen(o => !o) },
+          { icon: Terminal, key: "shell", label: t("chat.nav.shell"), testid: "nav-shell", action: goToShell },
+          { icon: ListChecks, key: "tasks", label: t("chat.nav.dashboard"), testid: "nav-tasks", action: goToTasks },
+          { icon: PanelRightOpen, key: "panel", label: t("chat.nav.toggleQueue"), testid: "nav-panel", action: () => setQueueOpen(o => !o) },
         ].map(item => (item as any).divider ? (
           <div key={item.key} className="w-px h-5 bg-zinc-800" />
         ) : (
@@ -1179,6 +1181,7 @@ function MarkdownText({ text, className }: { text: string; className?: string })
 }
 
 function MessageBlock({ msg, onPublish }: { msg: AgentMessage; onPublish?: (content: string) => void }) {
+  const { t } = useLanguage();
   if (msg.role === "user") {
     return (
       <div className="flex flex-col items-end gap-1" data-testid={`message-user-${msg.id}`}>
@@ -1196,7 +1199,7 @@ function MessageBlock({ msg, onPublish }: { msg: AgentMessage; onPublish?: (cont
             </div>
           )}
         </div>
-        <span className="text-[10px] text-zinc-500 px-1">{timeAgo(msg.timestamp)}</span>
+        <span className="text-[10px] text-zinc-500 px-1">{timeAgo(msg.timestamp, t)}</span>
       </div>
     );
   }
@@ -1215,7 +1218,7 @@ function MessageBlock({ msg, onPublish }: { msg: AgentMessage; onPublish?: (cont
             data-testid={`button-publish-message-${msg.id}`}
           >
             <Rocket className="w-3.5 h-3.5" />
-            Publish this site
+            {t("chat.publishThisSite")}
           </Button>
         </div>
       )}
@@ -1224,6 +1227,7 @@ function MessageBlock({ msg, onPublish }: { msg: AgentMessage; onPublish?: (cont
 }
 
 function ActionChipsRow({ actions }: { actions: ActionChip[] }) {
+  const { t } = useLanguage();
   const display = actions.slice(0, 6);
   const overflow = actions.length > 6;
   return (
@@ -1234,19 +1238,20 @@ function ActionChipsRow({ actions }: { actions: ActionChip[] }) {
           <MoreHorizontal className="w-3 h-3 text-zinc-500" />
         </div>
       )}
-      <span className="ml-1">{actions.length} action{actions.length !== 1 ? "s" : ""}</span>
+      <span className="ml-1">{t("chat.actionsCount", { count: actions.length })}</span>
     </div>
   );
 }
 
 function ProgressSteps({ step, status, hasStreamed }: { step: number; status: string; hasStreamed: boolean }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const steps = [
-    { icon: Brain, label: "Thinking", desc: "Understanding your request" },
-    { icon: Search, label: "Reading", desc: "Looking at the context" },
-    { icon: FileEdit, label: "Drafting", desc: "Writing the first version" },
-    { icon: BookOpen, label: "Polishing", desc: "Improving the wording" },
-    { icon: Sparkles, label: "Writing", desc: "Sending the response to you" },
+    { icon: Brain, label: t("chat.stepThinking"), desc: t("chat.stepThinkingDesc") },
+    { icon: Search, label: t("chat.stepReading"), desc: t("chat.stepReadingDesc") },
+    { icon: FileEdit, label: t("chat.stepDrafting"), desc: t("chat.stepDraftingDesc") },
+    { icon: BookOpen, label: t("chat.stepPolishing"), desc: t("chat.stepPolishingDesc") },
+    { icon: Sparkles, label: t("chat.stepWriting"), desc: t("chat.stepWritingDesc") },
   ];
   return (
     <div className="space-y-2" data-testid="progress-steps">
@@ -1295,7 +1300,7 @@ function ProgressSteps({ step, status, hasStreamed }: { step: number; status: st
           })}
         </div>
         <span className="text-sm text-violet-400 font-medium ml-1 flex-1 truncate" data-testid="text-working-status">
-          {status || "Working…"}
+          {status || t("chat.working")}
         </span>
         {!hasStreamed && (
           <span className="flex gap-0.5">
@@ -1313,7 +1318,7 @@ function ProgressSteps({ step, status, hasStreamed }: { step: number; status: st
             const Icon = s.icon;
             const isActive = i === step;
             const isDone = i < step;
-            const stateLabel = isDone ? "Done" : isActive ? "In progress…" : "Waiting";
+            const stateLabel = isDone ? t("chat.stateDone") : isActive ? t("chat.stateInProgress") : t("chat.stateWaiting");
             const stateColor = isDone ? "text-emerald-400" : isActive ? "text-violet-300" : "text-zinc-500";
             return (
               <div key={i} className="flex items-start gap-2.5" data-testid={`progress-item-${i}`}>
@@ -1370,12 +1375,12 @@ function ActionIcon({ kind, pulse = false }: { kind: ActionKind; pulse?: boolean
   );
 }
 
-function timeAgo(ts: number): string {
+function timeAgo(ts: number, t: (key: string, params?: Record<string, string | number>) => string): string {
   const seconds = Math.floor((Date.now() - ts) / 1000);
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return t("chat.justNow");
   const mins = Math.floor(seconds / 60);
-  if (mins < 60) return `${mins} minute${mins !== 1 ? "s" : ""} ago`;
+  if (mins < 60) return t("chat.minAgo", { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hour${hrs !== 1 ? "s" : ""} ago`;
+  if (hrs < 24) return t("chat.hourAgo", { n: hrs });
   return new Date(ts).toLocaleDateString();
 }

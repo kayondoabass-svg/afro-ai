@@ -521,7 +521,7 @@ export async function registerRoutes(
   // ============ CLOUDFLARE D1 (Admin Console — Founder only) ============
   // The raw D1 console exposes the full database. Restrict to founder to
   // prevent any logged-in user from reading other users' rows or schema.
-  app.get("/api/d1/status", isAuthenticated, async (_req, res) => {
+  app.get("/api/d1/status", isFounder, async (_req, res) => {
     const { isD1Configured } = await import("./d1");
     res.json({ configured: isD1Configured() });
   });
