@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageProvider } from "@/hooks/use-language";
 import { LanguageSelector } from "@/components/language-selector";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -118,6 +119,7 @@ function AuthenticatedLayout() {
             </div>
           </header>
           <main className="flex-1 flex flex-col overflow-y-auto min-h-0">
+            <ErrorBoundary>
             <Suspense fallback={<RouteFallback />}>
               <Switch>
                 <Route path="/dashboard" component={DashboardPage} />
@@ -188,6 +190,7 @@ function AuthenticatedLayout() {
                 <Route component={NotFound} />
               </Switch>
             </Suspense>
+            </ErrorBoundary>
           </main>
         </div>
       </div>
@@ -438,14 +441,16 @@ function AppRouter() {
   const PUBLIC_AUTH_PATHS = new Set(["/login", "/forgot-password", "/reset-password", "/verify-email"]);
   if (PUBLIC_AUTH_PATHS.has(location)) {
     return (
-      <Suspense fallback={<RouteFallback />}>
-        <Switch>
-          <Route path="/login" component={LoginPage} />
-          <Route path="/forgot-password" component={ForgotPasswordPage} />
-          <Route path="/reset-password" component={ResetPasswordPage} />
-          <Route path="/verify-email" component={VerifyEmailPage} />
-        </Switch>
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<RouteFallback />}>
+          <Switch>
+            <Route path="/login" component={LoginPage} />
+            <Route path="/forgot-password" component={ForgotPasswordPage} />
+            <Route path="/reset-password" component={ResetPasswordPage} />
+            <Route path="/verify-email" component={VerifyEmailPage} />
+          </Switch>
+        </Suspense>
+      </ErrorBoundary>
     );
   }
 
@@ -460,6 +465,7 @@ function AppRouter() {
       return <LoginRedirectGuard from={location} />;
     }
     return (
+      <ErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
         <Switch>
           <Route path="/login" component={LoginPage} />
@@ -496,6 +502,7 @@ function AppRouter() {
           <Route component={LandingPage} />
         </Switch>
       </Suspense>
+      </ErrorBoundary>
     );
   }
 

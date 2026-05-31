@@ -1,2 +1,3 @@
 - [i18n translations](i18n-translations.md) — t()/translations.ts conventions: 15 langs, {name} + count plural, grep before adding keys to avoid TS1117 dup-key errors; missing keys fall back to en.
 - [Knowledge RAG + tool-calling](knowledge-rag.md) — per-user jsonb vector store + in-app cosine (no pgvector); embeddings reuse Gemini→OpenAI fallback; server-side URL fetch must be SSRF-guarded; RAG content is untrusted (injection vector).
+- [Blank page after deploy](blank-page-chunk-errors.md) — lazy-route SPA crashes to a black screen when stale PWA/cache chunks 404; needs an ErrorBoundary that auto-reloads on chunk-load errors.
