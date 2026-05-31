@@ -628,12 +628,12 @@ export default function LandingPage() {
                 <a href="/website-builder" className="block hover:text-primary transition-colors" data-testid="link-footer-website-builder">{t("footer.websiteBuilder")}</a>
                 <a href="/app-designer" className="block hover:text-primary transition-colors" data-testid="link-footer-app-designer">{t("footer.appDesigner")}</a>
                 <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-ai-assistant">{t("footer.aiAssistant")}</a>
-                <a href="/templates" className="block hover:text-primary transition-colors" data-testid="link-footer-templates">Templates</a>
-                <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">Marketplace</a>
-                <a href="/domain-names" className="block hover:text-primary transition-colors" data-testid="link-footer-domains">Domain Store</a>
-                <a href="/chatbot-api" className="block hover:text-primary transition-colors" data-testid="link-footer-chatbot-api">Chatbot API</a>
-                <a href="/developer-email" className="block hover:text-primary transition-colors" data-testid="link-footer-email-api">Email API</a>
-                <a href="/ussd-builder" className="block hover:text-primary transition-colors" data-testid="link-footer-ussd-builder">USSD Builder</a>
+                <a href="/templates" className="block hover:text-primary transition-colors" data-testid="link-footer-templates">{t("footer.templates")}</a>
+                <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">{t("footer.marketplace")}</a>
+                <a href="/domain-names" className="block hover:text-primary transition-colors" data-testid="link-footer-domains">{t("footer.domainStore")}</a>
+                <a href="/chatbot-api" className="block hover:text-primary transition-colors" data-testid="link-footer-chatbot-api">{t("footer.chatbotApi")}</a>
+                <a href="/developer-email" className="block hover:text-primary transition-colors" data-testid="link-footer-email-api">{t("footer.emailApi")}</a>
+                <a href="/ussd-builder" className="block hover:text-primary transition-colors" data-testid="link-footer-ussd-builder">{t("footer.ussdBuilder")}</a>
                 <a href="https://pages.github.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors" data-testid="link-footer-github-pages-product">
                   <Github className="w-3.5 h-3.5" /> GitHub Pages
                 </a>
@@ -641,10 +641,10 @@ export default function LandingPage() {
             </div>
 
             <div className="space-y-3">
-              <h4 className="font-semibold text-sm">Earn</h4>
+              <h4 className="font-semibold text-sm">{t("footer.earn")}</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <a href="/affiliate" className="block hover:text-primary transition-colors" data-testid="link-footer-affiliate">Affiliate Program</a>
-                <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-referrals">Refer & Earn</a>
+                <a href="/affiliate" className="block hover:text-primary transition-colors" data-testid="link-footer-affiliate">{t("footer.affiliateProgram")}</a>
+                <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-referrals">{t("footer.referEarn")}</a>
               </div>
             </div>
 
@@ -654,8 +654,8 @@ export default function LandingPage() {
                 <a href="/about" className="block hover:text-primary transition-colors" data-testid="link-footer-about">{t("footer.aboutUs")}</a>
                 <a href="/blog" className="block hover:text-primary transition-colors" data-testid="link-footer-blog">{t("footer.blog")}</a>
                 <a href="/contact" className="block hover:text-primary transition-colors" data-testid="link-footer-contact">{t("footer.contact")}</a>
-                <a href="mailto:Support@afroaigroup.com" className="block hover:text-primary transition-colors" data-testid="link-footer-support">Support</a>
-                <a href="/pricing" className="block hover:text-primary transition-colors" data-testid="link-footer-pricing">Pricing</a>
+                <a href="mailto:Support@afroaigroup.com" className="block hover:text-primary transition-colors" data-testid="link-footer-support">{t("footer.support")}</a>
+                <a href="/pricing" className="block hover:text-primary transition-colors" data-testid="link-footer-pricing">{t("footer.pricing")}</a>
               </div>
             </div>
 
@@ -665,8 +665,8 @@ export default function LandingPage() {
                 <a href="/privacy" className="block hover:text-primary transition-colors" data-testid="link-footer-privacy">{t("footer.privacy")}</a>
                 <a href="/terms" className="block hover:text-primary transition-colors" data-testid="link-footer-terms">{t("footer.terms")}</a>
                 <a href="/cookies" className="block hover:text-primary transition-colors" data-testid="link-footer-cookies">{t("footer.cookies")}</a>
-                <a href="/refund-policy" className="block hover:text-primary transition-colors" data-testid="link-footer-refund">Refund Policy</a>
-                <a href="/.well-known/security.txt" className="block hover:text-primary transition-colors" data-testid="link-footer-security">Security</a>
+                <a href="/refund-policy" className="block hover:text-primary transition-colors" data-testid="link-footer-refund">{t("footer.refundPolicy")}</a>
+                <a href="/.well-known/security.txt" className="block hover:text-primary transition-colors" data-testid="link-footer-security">{t("footer.security")}</a>
               </div>
               <div className="pt-2">
                 <InstallPwaButton variant="outline" />

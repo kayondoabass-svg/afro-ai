@@ -23,7 +23,7 @@ interface RecentConvo {
 export default function OverviewPage() {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const firstName = (user as any)?.firstName || "Creator";
+  const firstName = (user as any)?.firstName || t("overview.defaultUser");
   const plan = (user as any)?.plan || "starter";
 
   const { data: overview, isLoading } = useQuery<any>({
@@ -35,11 +35,11 @@ export default function OverviewPage() {
   });
 
   const statCards = [
-    { label: "Published Apps", value: overview?.totalApps ?? 0, icon: Globe, color: "text-primary", sub: `${overview?.activeApps ?? 0} active`, link: "/deployments" },
-    { label: "Total Views", value: overview?.totalViews ?? 0, icon: Eye, color: "text-blue-500", sub: "across all apps", link: "/analytics" },
-    { label: "Projects", value: overview?.totalProjects ?? 0, icon: FolderOpen, color: "text-amber-500", sub: "in workspace", link: "/dashboard" },
-    { label: "Files Uploaded", value: overview?.totalFiles ?? 0, icon: FileImage, color: "text-purple-500", sub: "images & videos", link: "/files" },
-    { label: "Forms Created", value: overview?.totalForms ?? 0, icon: ClipboardList, color: "text-green-500", sub: `${overview?.totalSubmissions ?? 0} submissions`, link: "/forms" },
+    { id: "published-apps", label: t("overview.statPublishedApps"), value: overview?.totalApps ?? 0, icon: Globe, color: "text-primary", sub: t("overview.subActive", { n: overview?.activeApps ?? 0 }), link: "/deployments" },
+    { id: "total-views", label: t("overview.statTotalViews"), value: overview?.totalViews ?? 0, icon: Eye, color: "text-blue-500", sub: t("overview.subAcrossApps"), link: "/analytics" },
+    { id: "projects", label: t("overview.statProjects"), value: overview?.totalProjects ?? 0, icon: FolderOpen, color: "text-amber-500", sub: t("overview.subInWorkspace"), link: "/dashboard" },
+    { id: "files-uploaded", label: t("overview.statFilesUploaded"), value: overview?.totalFiles ?? 0, icon: FileImage, color: "text-purple-500", sub: t("overview.subImagesVideos"), link: "/files" },
+    { id: "forms-created", label: t("overview.statFormsCreated"), value: overview?.totalForms ?? 0, icon: ClipboardList, color: "text-green-500", sub: t("overview.subSubmissions", { n: overview?.totalSubmissions ?? 0 }), link: "/forms" },
   ];
 
   const eventColors: Record<string, string> = {
@@ -66,19 +66,19 @@ export default function OverviewPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">
-            Welcome back, <span className="text-primary">{firstName}</span>
+            {t("dashboard.welcome")} <span className="text-primary">{firstName}</span>
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Here's what's happening with your apps
+            {t("overview.welcomeSubtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={plan === "starter" ? "secondary" : "default"} className="capitalize">
-            {plan} plan
+            {plan} {t("overview.planLabel")}
           </Badge>
           <Link href="/chat">
             <Button size="sm" data-testid="button-create-new-app">
-              <Zap className="w-4 h-4 mr-1" /> Build New App
+              <Zap className="w-4 h-4 mr-1" /> {t("overview.buildNewApp")}
             </Button>
           </Link>
         </div>
@@ -124,7 +124,7 @@ export default function OverviewPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {statCards.map((card) => (
           <Link key={card.label} href={card.link}>
-            <Card className="hover:border-primary/50 transition-colors cursor-pointer" data-testid={`card-stat-${card.label.toLowerCase().replace(/\s/g, "-")}`}>
+            <Card className="hover:border-primary/50 transition-colors cursor-pointer" data-testid={`card-stat-${card.id}`}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <card.icon className={`w-4 h-4 ${card.color}`} />
@@ -147,11 +147,11 @@ export default function OverviewPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Globe className="w-4 h-4 text-primary" /> Published Apps
+              <Globe className="w-4 h-4 text-primary" /> {t("overview.statPublishedApps")}
             </CardTitle>
             <Link href="/deployments">
               <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" data-testid="button-view-all-apps">
-                View all <ArrowRight className="w-3 h-3 ml-1" />
+                {t("overview.viewAll")} <ArrowRight className="w-3 h-3 ml-1" />
               </Button>
             </Link>
           </CardHeader>
@@ -161,8 +161,8 @@ export default function OverviewPage() {
             ) : overview?.recentApps?.length === 0 ? (
               <div className="text-center py-6 text-muted-foreground text-sm">
                 <Globe className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                No apps published yet.{" "}
-                <Link href="/chat" className="text-primary hover:underline">Build your first app</Link>
+                {t("overview.noAppsPublished")}{" "}
+                <Link href="/chat" className="text-primary hover:underline">{t("overview.buildFirstApp")}</Link>
               </div>
             ) : (
               overview?.recentApps?.map((app: any) => (
@@ -193,11 +193,11 @@ export default function OverviewPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="w-4 h-4 text-primary" /> Recent Activity
+              <Activity className="w-4 h-4 text-primary" /> {t("overview.recentActivity")}
             </CardTitle>
             <Link href="/logs">
               <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" data-testid="button-view-all-logs">
-                View all <ArrowRight className="w-3 h-3 ml-1" />
+                {t("overview.viewAll")} <ArrowRight className="w-3 h-3 ml-1" />
               </Button>
             </Link>
           </CardHeader>
@@ -207,7 +207,7 @@ export default function OverviewPage() {
             ) : overview?.recentLogs?.length === 0 ? (
               <div className="text-center py-6 text-muted-foreground text-sm">
                 <Activity className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                No recent activity yet.
+                {t("overview.noRecentActivity")}
               </div>
             ) : (
               overview?.recentLogs?.map((log: any) => {
@@ -236,19 +236,19 @@ export default function OverviewPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-primary" /> Quick Actions
+            <TrendingUp className="w-4 h-4 text-primary" /> {t("overview.quickActions")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: "AI Builder", href: "/chat", icon: Zap, desc: "Create with AI" },
-              { label: "Analytics", href: "/analytics", icon: TrendingUp, desc: "View stats" },
-              { label: "Secrets", href: "/secrets", icon: CheckCircle, desc: "Manage env vars" },
-              { label: "Activity Logs", href: "/logs", icon: Activity, desc: "See all events" },
+              { id: "ai-builder", label: t("overview.qaAiBuilder"), href: "/chat", icon: Zap, desc: t("overview.qaAiBuilderDesc") },
+              { id: "analytics", label: t("overview.qaAnalytics"), href: "/analytics", icon: TrendingUp, desc: t("overview.qaAnalyticsDesc") },
+              { id: "secrets", label: t("overview.qaSecrets"), href: "/secrets", icon: CheckCircle, desc: t("overview.qaSecretsDesc") },
+              { id: "activity-logs", label: t("overview.qaActivityLogs"), href: "/logs", icon: Activity, desc: t("overview.qaActivityLogsDesc") },
             ].map((item) => (
-              <Link key={item.label} href={item.href}>
-                <div className="p-3 rounded-lg border hover:border-primary/50 hover:bg-primary/5 transition-colors cursor-pointer text-center" data-testid={`link-quick-${item.label.toLowerCase().replace(/\s/g, "-")}`}>
+              <Link key={item.id} href={item.href}>
+                <div className="p-3 rounded-lg border hover:border-primary/50 hover:bg-primary/5 transition-colors cursor-pointer text-center" data-testid={`link-quick-${item.id}`}>
                   <item.icon className="w-5 h-5 text-primary mx-auto mb-1" />
                   <p className="text-sm font-medium">{item.label}</p>
                   <p className="text-xs text-muted-foreground">{item.desc}</p>

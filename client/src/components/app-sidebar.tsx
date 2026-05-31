@@ -105,7 +105,7 @@ export function AppSidebar() {
   const { user, logout } = useAuth();
   const { t } = useLanguage();
   const [search, setSearch] = useState("");
-  const firstName = user?.firstName || "Creator";
+  const firstName = user?.firstName || t("overview.defaultUser");
   const isFounder = (user as any)?.isFounder === true;
 
   const filteredItems = search.trim()
@@ -129,7 +129,7 @@ export function AppSidebar() {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input
-            placeholder="Search…"
+            placeholder={t("sidebar.searchPlaceholder")}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-8 h-8 text-sm"
@@ -140,11 +140,11 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>{search ? `Results (${filteredItems.length})` : t("sidebar.menu")}</SidebarGroupLabel>
+          <SidebarGroupLabel>{search ? t("sidebar.results", { n: filteredItems.length }) : t("sidebar.menu")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {filteredItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground px-2 py-4 text-center">No matches found</p>
+                <p className="text-xs text-muted-foreground px-2 py-4 text-center">{t("sidebar.noMatches")}</p>
               ) : (
                 filteredItems.map((item) => (
                   <SidebarMenuItem key={item.url}>

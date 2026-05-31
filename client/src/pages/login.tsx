@@ -99,8 +99,8 @@ export default function LoginPage() {
     e.preventDefault();
     if (!loginToken) {
       toast({
-        title: "One quick check",
-        description: "Wait a moment for the security check to finish, then try again.",
+        title: t("auth.toastCheckTitle"),
+        description: t("auth.toastCheckDesc"),
         variant: "destructive",
       });
       return;
@@ -122,7 +122,7 @@ export default function LoginPage() {
         const message = translateLockMessage(
           t,
           data,
-          "Too many sign-in attempts. Please wait a few minutes and try again.",
+          t("auth.locked.body.login"),
         );
         const retryAfter = parseRetryAfter(res, data?.message || message);
         setLoginLock({ until: Date.now() + retryAfter * 1000, message });
@@ -133,8 +133,8 @@ export default function LoginPage() {
       }
       if (!res.ok) {
         toast({
-          title: "Login failed",
-          description: data?.message || "Check your email and password and try again.",
+          title: t("auth.toastLoginFailedTitle"),
+          description: data?.message || t("auth.toastLoginFailedDesc"),
           variant: "destructive",
         });
         setLoginResetSignal((n) => n + 1);
@@ -145,8 +145,8 @@ export default function LoginPage() {
       redirectAfterAuth();
     } catch {
       toast({
-        title: "Login failed",
-        description: "Check your internet and try again.",
+        title: t("auth.toastLoginFailedTitle"),
+        description: t("auth.toastNetworkDesc"),
         variant: "destructive",
       });
       setLoginResetSignal((n) => n + 1);
@@ -160,16 +160,16 @@ export default function LoginPage() {
     e.preventDefault();
     if (registerPassword !== registerConfirmPassword) {
       toast({
-        title: "Passwords don't match",
-        description: "Please make sure both password fields are identical.",
+        title: t("auth.passwordsMismatch"),
+        description: t("auth.toastMismatchDesc"),
         variant: "destructive",
       });
       return;
     }
     if (!signupToken) {
       toast({
-        title: "One quick check",
-        description: "Wait a moment for the security check to finish, then try again.",
+        title: t("auth.toastCheckTitle"),
+        description: t("auth.toastCheckDesc"),
         variant: "destructive",
       });
       return;
@@ -193,7 +193,7 @@ export default function LoginPage() {
         const message = translateLockMessage(
           t,
           data,
-          "Too many signup attempts. Please wait a few minutes and try again.",
+          t("auth.locked.body.signup"),
         );
         const retryAfter = parseRetryAfter(res, data?.message || message);
         setSignupLock({ until: Date.now() + retryAfter * 1000, message });
@@ -204,8 +204,8 @@ export default function LoginPage() {
       }
       if (!res.ok) {
         toast({
-          title: "Registration failed",
-          description: data?.message || "Please check your details and try again.",
+          title: t("auth.toastRegisterFailedTitle"),
+          description: data?.message || t("auth.toastRegisterFailedDesc"),
           variant: "destructive",
         });
         setSignupResetSignal((n) => n + 1);
@@ -216,8 +216,8 @@ export default function LoginPage() {
       redirectAfterAuth();
     } catch {
       toast({
-        title: "Registration failed",
-        description: "Check your internet and try again.",
+        title: t("auth.toastRegisterFailedTitle"),
+        description: t("auth.toastNetworkDesc"),
         variant: "destructive",
       });
       setSignupResetSignal((n) => n + 1);
@@ -277,15 +277,15 @@ export default function LoginPage() {
                 Afro AI
               </h1>
               <p className="text-sm text-muted-foreground mt-1" data-testid="text-login-subtitle">
-                Built by Africans for the world
+                {t("auth.tagline")}
               </p>
             </div>
           </div>
 
           <Tabs defaultValue="signup" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signup" data-testid="tab-signup">Sign Up</TabsTrigger>
-              <TabsTrigger value="login" data-testid="tab-login">Log In</TabsTrigger>
+              <TabsTrigger value="signup" data-testid="tab-signup">{t("auth.tabSignup")}</TabsTrigger>
+              <TabsTrigger value="login" data-testid="tab-login">{t("auth.tabLogin")}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="signup" className="space-y-4 mt-4">
@@ -303,7 +303,7 @@ export default function LoginPage() {
                   <form onSubmit={handleRegister} className="space-y-3">
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <Label htmlFor="reg-first-name">First Name</Label>
+                        <Label htmlFor="reg-first-name">{t("auth.firstName")}</Label>
                         <Input
                           id="reg-first-name"
                           placeholder="Ada"
@@ -313,7 +313,7 @@ export default function LoginPage() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label htmlFor="reg-last-name">Last Name</Label>
+                        <Label htmlFor="reg-last-name">{t("auth.lastName")}</Label>
                         <Input
                           id="reg-last-name"
                           placeholder="Okonkwo"
@@ -324,7 +324,7 @@ export default function LoginPage() {
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <Label htmlFor="reg-email">Email</Label>
+                      <Label htmlFor="reg-email">{t("auth.email")}</Label>
                       <Input
                         id="reg-email"
                         type="email"
@@ -336,12 +336,12 @@ export default function LoginPage() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label htmlFor="reg-password">Password</Label>
+                      <Label htmlFor="reg-password">{t("auth.password")}</Label>
                       <div className="relative">
                         <Input
                           id="reg-password"
                           type={showRegisterPassword ? "text" : "password"}
-                          placeholder="At least 6 characters"
+                          placeholder={t("auth.passwordPlaceholder")}
                           required
                           value={registerPassword}
                           onChange={(e) => setRegisterPassword(e.target.value)}
@@ -353,7 +353,7 @@ export default function LoginPage() {
                           type="button"
                           onClick={() => setShowRegisterPassword((v) => !v)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          aria-label={showRegisterPassword ? "Hide signup password" : "Show signup password"}
+                          aria-label={showRegisterPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                           aria-pressed={showRegisterPassword}
                           data-testid="button-toggle-register-password"
                         >
@@ -362,12 +362,12 @@ export default function LoginPage() {
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <Label htmlFor="reg-confirm-password">Confirm Password</Label>
+                      <Label htmlFor="reg-confirm-password">{t("auth.confirmPassword")}</Label>
                       <div className="relative">
                         <Input
                           id="reg-confirm-password"
                           type={showConfirmPassword ? "text" : "password"}
-                          placeholder="Re-enter password"
+                          placeholder={t("auth.confirmPasswordPlaceholder")}
                           required
                           value={registerConfirmPassword}
                           onChange={(e) => setRegisterConfirmPassword(e.target.value)}
@@ -384,7 +384,7 @@ export default function LoginPage() {
                           type="button"
                           onClick={() => setShowConfirmPassword((v) => !v)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                          aria-label={showConfirmPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                           aria-pressed={showConfirmPassword}
                           data-testid="button-toggle-confirm-password"
                         >
@@ -399,7 +399,7 @@ export default function LoginPage() {
                           className="text-xs text-destructive"
                           data-testid="text-password-mismatch"
                         >
-                          Passwords don't match
+                          {t("auth.passwordsMismatch")}
                         </p>
                       )}
                     </div>
@@ -421,7 +421,7 @@ export default function LoginPage() {
                       }
                       data-testid="button-register-submit"
                     >
-                      {isLoading ? "Creating account..." : "Create Account"}
+                      {isLoading ? t("auth.creatingAccount") : t("auth.createAccount")}
                     </Button>
                   </form>
 
@@ -430,7 +430,7 @@ export default function LoginPage() {
                       <span className="w-full border-t" />
                     </div>
                     <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+                      <span className="bg-background px-2 text-muted-foreground">{t("auth.orContinueWith")}</span>
                     </div>
                   </div>
 
@@ -474,7 +474,7 @@ export default function LoginPage() {
                 <>
                   <form onSubmit={handleEmailLogin} className="space-y-3">
                     <div className="space-y-1">
-                      <Label htmlFor="login-email">Email</Label>
+                      <Label htmlFor="login-email">{t("auth.email")}</Label>
                       <Input
                         id="login-email"
                         type="email"
@@ -486,12 +486,12 @@ export default function LoginPage() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label htmlFor="login-password">Password</Label>
+                      <Label htmlFor="login-password">{t("auth.password")}</Label>
                       <div className="relative">
                         <Input
                           id="login-password"
                           type={showLoginPassword ? "text" : "password"}
-                          placeholder="Your password"
+                          placeholder={t("auth.loginPasswordPlaceholder")}
                           required
                           value={loginPassword}
                           onChange={(e) => setLoginPassword(e.target.value)}
@@ -503,7 +503,7 @@ export default function LoginPage() {
                           type="button"
                           onClick={() => setShowLoginPassword((v) => !v)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          aria-label={showLoginPassword ? "Hide login password" : "Show login password"}
+                          aria-label={showLoginPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                           aria-pressed={showLoginPassword}
                           data-testid="button-toggle-login-password"
                         >
@@ -524,7 +524,7 @@ export default function LoginPage() {
                       disabled={isLoading || !loginToken}
                       data-testid="button-login-submit"
                     >
-                      {isLoading ? "Signing in..." : "Sign In"}
+                      {isLoading ? t("auth.signingIn") : t("auth.signIn")}
                     </Button>
                     <div className="text-center">
                       <Link
@@ -532,7 +532,7 @@ export default function LoginPage() {
                         className="text-xs text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
                         data-testid="link-forgot-password"
                       >
-                        Forgot your password?
+                        {t("auth.forgotPassword")}
                       </Link>
                     </div>
                   </form>
@@ -542,7 +542,7 @@ export default function LoginPage() {
                       <span className="w-full border-t" />
                     </div>
                     <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+                      <span className="bg-background px-2 text-muted-foreground">{t("auth.orContinueWith")}</span>
                     </div>
                   </div>
 
@@ -574,20 +574,20 @@ export default function LoginPage() {
           </Tabs>
 
           <p className="text-center text-xs text-muted-foreground">
-            By continuing, you agree to our{" "}
-            <a href="/terms" className="underline hover:text-primary" data-testid="link-login-terms">Terms of Service</a>
-            {" "}and{" "}
-            <a href="/privacy" className="underline hover:text-primary" data-testid="link-login-privacy">Privacy Policy</a>
+            {t("auth.agreePrefix")}{" "}
+            <a href="/terms" className="underline hover:text-primary" data-testid="link-login-terms">{t("auth.termsOfService")}</a>
+            {" "}{t("auth.and")}{" "}
+            <a href="/privacy" className="underline hover:text-primary" data-testid="link-login-privacy">{t("auth.privacyPolicy")}</a>
           </p>
         </Card>
       </div>
 
       <footer className="text-center py-4 text-xs text-muted-foreground space-x-3">
-        <span>Building the Future We Want</span>
+        <span>{t("auth.footerTagline")}</span>
         <span aria-hidden>·</span>
-        <a href="/privacy" className="hover:text-primary" data-testid="link-footer-privacy">Privacy</a>
-        <a href="/terms" className="hover:text-primary" data-testid="link-footer-terms">Terms</a>
-        <a href="/.well-known/security.txt" className="hover:text-primary" data-testid="link-footer-security">Security</a>
+        <a href="/privacy" className="hover:text-primary" data-testid="link-footer-privacy">{t("auth.footerPrivacy")}</a>
+        <a href="/terms" className="hover:text-primary" data-testid="link-footer-terms">{t("auth.footerTerms")}</a>
+        <a href="/.well-known/security.txt" className="hover:text-primary" data-testid="link-footer-security">{t("auth.footerSecurity")}</a>
       </footer>
     </div>
   );

@@ -80,11 +80,11 @@ export default function DashboardPage() {
       setPaymentSuccess({ plan });
       window.history.replaceState({}, "", "/");
     } else if (payment === "pending") {
-      toast({ title: "Payment pending", description: "Your payment is being processed. Your plan will be updated shortly.", variant: "default" });
+      toast({ title: t("dashboard.paymentPending"), description: t("dashboard.paymentPendingDesc"), variant: "default" });
       window.history.replaceState({}, "", "/");
     } else if (payment === "failed") {
-      const reason = params.get("reason") || "Payment was not completed.";
-      toast({ title: "Payment not completed", description: reason, variant: "destructive" });
+      const reason = params.get("reason") || t("dashboard.paymentDefaultReason");
+      toast({ title: t("dashboard.paymentNotCompleted"), description: reason, variant: "destructive" });
       window.history.replaceState({}, "", "/");
     }
   }, []);
@@ -125,8 +125,8 @@ export default function DashboardPage() {
       const live = (data?.removedPublished || []) as { subdomain: string }[];
       if (live.length > 0) {
         toast({
-          title: "Project & live site deleted",
-          description: `Took down ${live.length} live site${live.length > 1 ? "s" : ""}: ${live.map(l => l.subdomain + ".afroaigroup.com").join(", ")}`,
+          title: t("dashboard.projectAndSiteDeleted"),
+          description: t("dashboard.tookDownSites", { count: live.length, list: live.map(l => l.subdomain + ".afroaigroup.com").join(", ") }),
         });
       } else {
         toast({ title: t("dashboard.projectDeleted") });
@@ -135,7 +135,7 @@ export default function DashboardPage() {
       setDeleteConfirmText("");
     },
     onError: (err: any) => {
-      toast({ title: "Delete failed", description: err?.message || "Could not delete", variant: "destructive" });
+      toast({ title: t("dashboard.deleteFailed"), description: err?.message || t("dashboard.couldNotDelete"), variant: "destructive" });
     },
   });
 
@@ -171,7 +171,7 @@ export default function DashboardPage() {
     navigate(`/chat?projectId=${project.id}&project=${encodeURIComponent(project.name)}&type=${encodeURIComponent(project.type)}&description=${encodeURIComponent(project.description || "")}`);
   };
 
-  const firstName = user?.firstName || "Creator";
+  const firstName = user?.firstName || t("overview.defaultUser");
 
   return (
     <div className="flex-1 overflow-auto min-h-0">
@@ -183,10 +183,10 @@ export default function DashboardPage() {
             <Rocket className="w-6 h-6 text-yellow-400 mt-0.5 shrink-0" />
             <div className="flex-1">
               <p className="font-semibold text-yellow-300 capitalize">
-                Welcome to the {paymentSuccess.plan} plan!
+                {t("dashboard.paymentWelcome", { plan: paymentSuccess.plan })}
               </p>
               <p className="text-sm text-yellow-200/70 mt-1">
-                Your upgrade was successful. You now have access to all {paymentSuccess.plan} features including more AI generations and advanced capabilities.
+                {t("dashboard.paymentUpgradeSuccess", { plan: paymentSuccess.plan })}
               </p>
             </div>
             <button
@@ -267,7 +267,7 @@ export default function DashboardPage() {
           <div>
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" data-testid="text-live-sites-heading">
               <Globe className="w-5 h-5 text-green-500" />
-              Live Sites
+              {t("dashboard.liveSites")}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {publishedApps.slice(0, 6).map((app) => (
@@ -375,7 +375,7 @@ export default function DashboardPage() {
                       data-testid={`button-build-project-${project.id}`}
                     >
                       <Sparkles className="w-3.5 h-3.5" />
-                      Open & Build
+                      {t("dashboard.openAndBuild")}
                       <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </CardContent>
@@ -403,16 +403,16 @@ export default function DashboardPage() {
               <div>
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Lightbulb className="w-4 h-4 text-primary" />
-                  Quick Start Ideas
+                  {t("dashboard.quickStartIdeas")}
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {[
-                    { icon: Globe, title: "Business Website", desc: "Professional website for your business with contact form and services", type: "website" },
-                    { icon: Smartphone, title: "Mobile App", desc: "Build a mobile-friendly app for your customers", type: "mobile_app" },
-                    { icon: Rocket, title: "Portfolio Site", desc: "Showcase your work with a stunning portfolio website", type: "website" },
-                    { icon: MessageSquare, title: "Blog Platform", desc: "Start a blog to share your ideas with the world", type: "website" },
-                    { icon: ScanSearch, title: "E-Commerce Store", desc: "Sell products online with a beautiful storefront", type: "website" },
-                    { icon: Sparkles, title: "Landing Page", desc: "High-converting landing page for your product launch", type: "website" },
+                    { icon: Globe, title: t("dashboard.ideaBusinessWebsite"), desc: t("dashboard.ideaBusinessWebsiteDesc"), type: "website" },
+                    { icon: Smartphone, title: t("dashboard.mobileApp"), desc: t("dashboard.ideaMobileAppDesc"), type: "mobile_app" },
+                    { icon: Rocket, title: t("dashboard.ideaPortfolio"), desc: t("dashboard.ideaPortfolioDesc"), type: "website" },
+                    { icon: MessageSquare, title: t("dashboard.ideaBlog"), desc: t("dashboard.ideaBlogDesc"), type: "website" },
+                    { icon: ScanSearch, title: t("dashboard.ideaEcommerce"), desc: t("dashboard.ideaEcommerceDesc"), type: "website" },
+                    { icon: Sparkles, title: t("dashboard.ideaLanding"), desc: t("dashboard.ideaLandingDesc"), type: "website" },
                   ].map((idea, i) => (
                     <Card
                       key={i}
@@ -507,13 +507,13 @@ export default function DashboardPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive">Delete "{projectToDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogTitle className="text-destructive">{t("dashboard.deleteConfirmTitle", { name: projectToDelete?.name || "" })}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
-                <p>This will permanently delete the project draft. <strong>This cannot be undone.</strong></p>
+                <p>{t("dashboard.deleteConfirmBody")} <strong>{t("dashboard.cannotBeUndone")}</strong></p>
                 {matchingLiveSites.length > 0 && (
                   <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3 space-y-2">
-                    <p className="font-semibold text-destructive">⚠ This will also take down your live site{matchingLiveSites.length > 1 ? "s" : ""}:</p>
+                    <p className="font-semibold text-destructive">{t("dashboard.alsoTakeDownSites", { count: matchingLiveSites.length })}</p>
                     <ul className="list-disc list-inside text-xs">
                       {matchingLiveSites.map(a => (
                         <li key={a.id} className="font-mono" data-testid={`text-live-site-${a.id}`}>
@@ -521,11 +521,11 @@ export default function DashboardPage() {
                         </li>
                       ))}
                     </ul>
-                    <p className="text-xs text-muted-foreground">Visitors will see "site not found" right after deletion.</p>
+                    <p className="text-xs text-muted-foreground">{t("dashboard.visitorsSeeNotFound")}</p>
                   </div>
                 )}
                 <div className="pt-1">
-                  <p className="text-xs font-medium mb-1.5">Type <strong className="font-mono bg-muted px-1.5 py-0.5 rounded text-destructive">DELETE</strong> below to confirm:</p>
+                  <p className="text-xs font-medium mb-1.5">{t("dashboard.typeToConfirmPrefix")} <strong className="font-mono bg-muted px-1.5 py-0.5 rounded text-destructive">DELETE</strong> {t("dashboard.typeToConfirmSuffix")}</p>
                   <Input
                     autoFocus
                     value={deleteConfirmText}
@@ -539,7 +539,7 @@ export default function DashboardPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete-project">Cancel</AlertDialogCancel>
+            <AlertDialogCancel data-testid="button-cancel-delete-project">{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={deleteConfirmText.trim() !== "DELETE" || deleteMutation.isPending}
@@ -552,7 +552,7 @@ export default function DashboardPage() {
               data-testid="button-confirm-delete-project"
             >
               <Trash2 className="w-4 h-4 mr-1" />
-              {deleteMutation.isPending ? "Deleting…" : `Delete${matchingLiveSites.length > 0 ? " everything" : " project"}`}
+              {deleteMutation.isPending ? t("dashboard.deleting") : (matchingLiveSites.length > 0 ? t("dashboard.deleteEverything") : t("dashboard.deleteProject"))}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
