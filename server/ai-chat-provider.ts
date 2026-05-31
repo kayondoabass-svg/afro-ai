@@ -18,6 +18,10 @@ export interface ChatCompleteOptions {
    * cost-controlled output. Falls back to "starter" if omitted.
    */
   tier?: UserTier;
+  /** OpenAI-style tool/function definitions. When set, the model may return tool_calls. */
+  tools?: any[];
+  /** "auto" | "none" | { type: "function", function: { name } }. Defaults to "auto" when tools are set. */
+  toolChoice?: any;
 }
 
 // Gemini model selection per plan. Free tier uses the cheapest model so a
@@ -51,6 +55,9 @@ export interface ChatCompleteResult {
   text: string;
   provider: "openai" | "gemini";
   model: string;
+  /** Present when the model decided to call one or more tools. */
+  toolCalls?: any[];
+  finishReason?: string;
 }
 
 type Provider = "openai" | "gemini";
@@ -149,9 +156,12 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
         max_tokens: effectiveMax,
         temperature: opts.temperature ?? 0.4,
         ...(opts.responseFormat ? { response_format: opts.responseFormat as any } : {}),
+        ...(opts.tools ? { tools: opts.tools as any, tool_choice: (opts.toolChoice ?? "auto") as any } : {}),
       });
-      const text = completion.choices?.[0]?.message?.content?.trim() || "";
-      return { text, provider, model };
+      const choice = completion.choices?.[0];
+      const text = choice?.message?.content?.trim() || "";
+      const toolCalls = (choice?.message as any)?.tool_calls || undefined;
+      return { text, provider, model, toolCalls, finishReason: choice?.finish_reason };
     } catch (err: any) {
       lastErr = err;
       const fatal = isFatalAuthOrQuotaError(err);

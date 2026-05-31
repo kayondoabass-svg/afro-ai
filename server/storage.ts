@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, teamMembers, partnerApplications, partners, partnerCustomers, partnerCommissions, partnerLeads, partnerPayouts, partnerCertifications, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog, type TeamMember, type InsertTeamMember } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, teamMembers, partnerApplications, partners, partnerCustomers, partnerCommissions, partnerLeads, partnerPayouts, partnerCertifications, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog, type TeamMember, type InsertTeamMember, knowledgeDocuments, knowledgeChunks, type KnowledgeDocument, type InsertKnowledgeDocument, type KnowledgeChunk, type InsertKnowledgeChunk } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -231,6 +231,17 @@ export interface IStorage {
   getAllPartnerCommissions(): Promise<any[]>;
   getAllPartnerLeads(): Promise<any[]>;
   getAllPartnerPayouts(): Promise<any[]>;
+
+  // ============ Knowledge Base (semantic RAG) ============
+  createKnowledgeDocument(doc: InsertKnowledgeDocument): Promise<KnowledgeDocument>;
+  getKnowledgeDocumentsByUser(userId: string): Promise<KnowledgeDocument[]>;
+  getKnowledgeDocument(id: number): Promise<KnowledgeDocument | undefined>;
+  updateKnowledgeDocument(id: number, data: Partial<KnowledgeDocument>): Promise<KnowledgeDocument>;
+  deleteKnowledgeDocument(id: number): Promise<void>;
+  insertKnowledgeChunks(rows: InsertKnowledgeChunk[]): Promise<void>;
+  getKnowledgeChunksForUser(userId: string): Promise<KnowledgeChunk[]>;
+  deleteKnowledgeChunksByDocument(documentId: number): Promise<void>;
+  setChatbotQaEmbedding(id: number, embedding: number[]): Promise<void>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -1636,6 +1647,42 @@ class DatabaseStorage implements IStorage {
       .where(sql`LOWER(${users.email}) LIKE ${q} OR LOWER(${users.firstName}) LIKE ${q} OR LOWER(${users.lastName}) LIKE ${q}`)
       .limit(limit);
     return rows;
+  }
+
+  // ============ Knowledge Base (semantic RAG) ============
+  async createKnowledgeDocument(doc: InsertKnowledgeDocument): Promise<KnowledgeDocument> {
+    const [row] = await db.insert(knowledgeDocuments).values(doc).returning();
+    return row;
+  }
+  async getKnowledgeDocumentsByUser(userId: string): Promise<KnowledgeDocument[]> {
+    return db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.userId, userId)).orderBy(desc(knowledgeDocuments.createdAt));
+  }
+  async getKnowledgeDocument(id: number): Promise<KnowledgeDocument | undefined> {
+    const [row] = await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id));
+    return row;
+  }
+  async updateKnowledgeDocument(id: number, data: Partial<KnowledgeDocument>): Promise<KnowledgeDocument> {
+    const [updated] = await db.update(knowledgeDocuments).set({ ...data, updatedAt: new Date() } as any).where(eq(knowledgeDocuments.id, id)).returning();
+    return updated;
+  }
+  async deleteKnowledgeDocument(id: number): Promise<void> {
+    await db.delete(knowledgeDocuments).where(eq(knowledgeDocuments.id, id));
+  }
+  async insertKnowledgeChunks(rows: InsertKnowledgeChunk[]): Promise<void> {
+    if (rows.length === 0) return;
+    // Insert in batches to avoid hitting parameter limits on large documents.
+    for (let i = 0; i < rows.length; i += 200) {
+      await db.insert(knowledgeChunks).values(rows.slice(i, i + 200));
+    }
+  }
+  async getKnowledgeChunksForUser(userId: string): Promise<KnowledgeChunk[]> {
+    return db.select().from(knowledgeChunks).where(eq(knowledgeChunks.userId, userId));
+  }
+  async deleteKnowledgeChunksByDocument(documentId: number): Promise<void> {
+    await db.delete(knowledgeChunks).where(eq(knowledgeChunks.documentId, documentId));
+  }
+  async setChatbotQaEmbedding(id: number, embedding: number[]): Promise<void> {
+    await db.update(chatbotQas).set({ embedding } as any).where(eq(chatbotQas.id, id));
   }
 }
 

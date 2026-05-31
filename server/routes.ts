@@ -3859,6 +3859,100 @@ Never invent features or pricing not listed above.`;
     }
   });
 
+  // ============ KNOWLEDGE BASE (semantic RAG + tool calling) ============
+  app.get("/api/knowledge", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const docs = await storage.getKnowledgeDocumentsByUser(userId);
+      res.json(docs);
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
+  app.post("/api/knowledge", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const { title, sourceType, content, url } = req.body || {};
+      const type = ["text", "url", "file"].includes(sourceType) ? sourceType : "text";
+      if (type === "url" && !url) return res.status(400).json({ message: "url required" });
+      if (type !== "url" && !String(content || "").trim()) return res.status(400).json({ message: "content required" });
+
+      const { hasEmbeddingProvider } = await import("./embeddings");
+      if (!hasEmbeddingProvider()) return res.status(503).json({ message: "Embeddings unavailable. Configure an AI provider key." });
+
+      const doc = await storage.createKnowledgeDocument({
+        userId,
+        title: String(title || (type === "url" ? url : "Untitled")).slice(0, 200),
+        sourceType: type,
+        sourceRef: type === "url" ? String(url) : (type === "file" ? String(title || "") : null),
+        content: type === "url" ? null : String(content || ""),
+      } as any);
+
+      // Ingest (chunk + embed) in the background so the request returns immediately.
+      const { ingestDocument } = await import("./knowledge");
+      ingestDocument(doc).catch((e) => console.error("[knowledge] ingest failed", e));
+      res.status(201).json(doc);
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
+  app.post("/api/knowledge/:id/reindex", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const id = parseInt(req.params.id);
+      const doc = await storage.getKnowledgeDocument(id);
+      if (!doc || doc.userId !== userId) return res.status(404).json({ message: "Not found" });
+      await storage.updateKnowledgeDocument(id, { status: "processing", error: null });
+      const fresh = await storage.getKnowledgeDocument(id);
+      const { ingestDocument } = await import("./knowledge");
+      ingestDocument(fresh!).catch((e) => console.error("[knowledge] reindex failed", e));
+      res.json({ ok: true });
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
+  app.delete("/api/knowledge/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const id = parseInt(req.params.id);
+      const doc = await storage.getKnowledgeDocument(id);
+      if (!doc || doc.userId !== userId) return res.status(404).json({ message: "Not found" });
+      await storage.deleteKnowledgeDocument(id); // chunks cascade via FK
+      res.json({ ok: true });
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
+  // Tool-calling demo: the model calls search_knowledge to answer over the user's content.
+  app.post("/api/knowledge/ask", isAuthenticated, aiQuotaGuard("chat"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const question = String(req.body?.question || "").trim();
+      if (!question) return res.status(400).json({ message: "question required" });
+      const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : [];
+      const user = await storage.getUser(userId);
+      const plan = String(user?.plan || "starter");
+      const tier = (["starter", "pro", "business", "payg"].includes(plan) ? plan : "starter") as any;
+
+      const { runChatWithTools } = await import("./ai-tools");
+      const system = {
+        role: "system",
+        content: "You are Afro AI's knowledge assistant. Answer the user's questions using their own knowledge base. ALWAYS call the search_knowledge tool to find relevant passages before answering. If the knowledge base has no answer, say so plainly instead of inventing facts. Be concise and friendly.",
+      };
+      const result = await runChatWithTools({
+        messages: [system, ...history.map((m: any) => ({ role: m.role, content: String(m.content || "") })), { role: "user", content: question }],
+        tier,
+        ctx: { userId },
+      });
+
+      const docs = await storage.getKnowledgeDocumentsByUser(userId);
+      const titleById = new Map(docs.map((d) => [d.id, d.title]));
+      const sources = result.sources.map((s) => ({
+        documentId: s.documentId,
+        title: titleById.get(s.documentId) || "Untitled",
+        score: Number(s.score.toFixed(3)),
+        excerpt: s.content.slice(0, 240),
+      }));
+      res.json({ answer: result.text, sources, usedTools: result.usedTools });
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
   // ============ CHATBOT WIDGETS ============
   // Public CORS-enabled chat endpoint (used by embedded widgets on external sites)
   app.options("/api/widget-chat/:apiKey", (req, res) => {
@@ -3913,8 +4007,16 @@ Never invent features or pricing not listed above.`;
         useStructured = true;
         // Sanitize KB content to defend against prompt injection in scraped Q&As
         const sanitize = (s: string) => s.replace(/```/g, "ʼʼʼ").replace(/<<END_KB>>/gi, "").slice(0, 1500);
-        const qaBlock = includedQas
-          .slice(0, 60) // cap context size
+        // Semantic retrieval: rank Q&As by relevance to THIS message instead of
+        // dumping the first 60. Lazily embeds Q&As on first use (self-healing).
+        let rankedQas = includedQas.slice(0, 60); // fallback if embeddings unavailable
+        try {
+          const { semanticRankQas } = await import("./knowledge");
+          rankedQas = await semanticRankQas(includedQas, String(message), 14);
+        } catch (e) {
+          console.error("[widget-chat] semantic rank failed, using fallback", e);
+        }
+        const qaBlock = rankedQas
           .map((q) => `[QA-${q.id}] (${sanitize(q.topic)}) Q: ${sanitize(q.question)}\nA: ${sanitize(q.answer)}${q.sourceUrl ? `\nSource: ${q.sourceUrl}` : ""}`)
           .join("\n\n");
 

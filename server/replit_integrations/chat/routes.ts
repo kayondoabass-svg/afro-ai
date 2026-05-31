@@ -2223,6 +2223,18 @@ export function registerChatRoutes(app: Express): void {
         contextPrompt += ragContext;
       }
 
+      // === Semantic RAG: ground the build in the user's own knowledge base ===
+      try {
+        const ragUserId = req.user?.claims?.sub || req.user?.claims?.id;
+        if (ragUserId && userContent) {
+          const { retrieveKnowledge, formatKnowledgeContext } = await import("../../knowledge");
+          const kbChunks = await retrieveKnowledge(ragUserId, userContent, 5);
+          contextPrompt += formatKnowledgeContext(kbChunks);
+        }
+      } catch (e) {
+        console.error("[chat] knowledge retrieval failed", e);
+      }
+
       if (userProfile.name || userProfile.email) {
         const today = new Date();
         const tomorrow = new Date(today);

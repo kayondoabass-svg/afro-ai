@@ -1,1 +1,2 @@
-- [i18n translation waves](i18n-translations.md) — t()/translations.ts: 15 langs, {name}+count plural, grep before adding keys (TS1117 dupes), rolled out per-screen.
+- [i18n translations](i18n-translations.md) — t()/translations.ts conventions: 15 langs, {name} + count plural, grep before adding keys to avoid TS1117 dup-key errors; missing keys fall back to en.
+- [Knowledge RAG + tool-calling](knowledge-rag.md) — per-user jsonb vector store + in-app cosine (no pgvector); embeddings reuse Gemini→OpenAI fallback; server-side URL fetch must be SSRF-guarded; RAG content is untrusted (injection vector).

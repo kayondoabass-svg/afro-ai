@@ -42,6 +42,7 @@ const TemplatesPage = lazy(() => import("@/pages/templates"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const BillingPage = lazy(() => import("@/pages/billing"));
 const FormsPage = lazy(() => import("@/pages/forms"));
+const KnowledgePage = lazy(() => import("@/pages/knowledge"));
 const BlockBuilderPage = lazy(() => import("@/pages/block-builder"));
 const BlogPage = lazy(() => import("@/pages/blog"));
 const EmailMarketingPage = lazy(() => import("@/pages/email-marketing"));
@@ -134,6 +135,7 @@ function AuthenticatedLayout() {
                 <Route path="/settings" component={SettingsPage} />
                 <Route path="/billing" component={BillingPage} />
                 <Route path="/forms" component={FormsPage} />
+                <Route path="/knowledge" component={KnowledgePage} />
                 <Route path="/builder" component={BlockBuilderPage} />
                 <Route path="/blog" component={BlogPage} />
                 <Route path="/email" component={EmailMarketingPage} />
@@ -268,6 +270,7 @@ const AUTH_REQUIRED_EXACT = new Set<string>([
   "/settings",
   "/billing",
   "/forms",
+  "/knowledge",
   "/builder",
   "/email",
   "/analytics",

@@ -1,7 +1,7 @@
 export * from "./models/auth";
 export * from "./models/chat";
 
-import { pgTable, serial, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -424,10 +424,13 @@ export const chatbotQas = pgTable("chatbot_qas", {
   sensitive: boolean("sensitive").notNull().default(false),
   sensitiveReason: text("sensitive_reason"),
   included: boolean("included").notNull().default(true),
+  // Semantic-retrieval embedding for this Q&A. Computed lazily (self-healing) at
+  // widget-chat time so the auto-scan path stays fast. Null until first embed.
+  embedding: jsonb("embedding").$type<number[]>(),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
-export const insertChatbotQaSchema = createInsertSchema(chatbotQas).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertChatbotQaSchema = createInsertSchema(chatbotQas).omit({ id: true, embedding: true, createdAt: true, updatedAt: true });
 export type ChatbotQa = typeof chatbotQas.$inferSelect;
 export type InsertChatbotQa = z.infer<typeof insertChatbotQaSchema>;
 
@@ -819,3 +822,45 @@ export const userGithubTokens = pgTable("user_github_tokens", {
   connectedAt: timestamp("connected_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 export type UserGithubToken = typeof userGithubTokens.$inferSelect;
+
+// ============ KNOWLEDGE BASE (semantic RAG over user-supplied content) ============
+// A user-supplied source (pasted text, fetched URL, or uploaded text file). The
+// raw extracted text is kept on `content` so the document can be re-chunked/
+// re-embedded without re-fetching. Embeddings live on knowledgeChunks.
+export const knowledgeDocuments = pgTable("knowledge_documents", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  sourceType: varchar("source_type", { length: 16 }).notNull().default("text"), // text | url | file
+  sourceRef: text("source_ref"), // url or original filename
+  content: text("content"), // raw extracted text (source of truth for re-indexing)
+  status: varchar("status", { length: 16 }).notNull().default("processing"), // processing | ready | error
+  error: text("error"),
+  chunkCount: integer("chunk_count").notNull().default(0),
+  charCount: integer("char_count").notNull().default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  userIdx: index("knowledge_documents_user_idx").on(t.userId),
+}));
+export const insertKnowledgeDocumentSchema = createInsertSchema(knowledgeDocuments).omit({
+  id: true, status: true, error: true, chunkCount: true, charCount: true, createdAt: true, updatedAt: true,
+});
+export type KnowledgeDocument = typeof knowledgeDocuments.$inferSelect;
+export type InsertKnowledgeDocument = z.infer<typeof insertKnowledgeDocumentSchema>;
+
+export const knowledgeChunks = pgTable("knowledge_chunks", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull().references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  chunkIndex: integer("chunk_index").notNull().default(0),
+  content: text("content").notNull(),
+  embedding: jsonb("embedding").$type<number[]>(),
+  embeddingModel: varchar("embedding_model", { length: 64 }),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  userIdx: index("knowledge_chunks_user_idx").on(t.userId),
+  docIdx: index("knowledge_chunks_doc_idx").on(t.documentId),
+}));
+export type KnowledgeChunk = typeof knowledgeChunks.$inferSelect;
+export type InsertKnowledgeChunk = typeof knowledgeChunks.$inferInsert;
