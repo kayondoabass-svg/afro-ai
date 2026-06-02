@@ -8,7 +8,7 @@ vite.config.ts.*
 .env.local
 .env.*.local
 !.env.example
-attached_assets/
+attached_assets/*
 !attached_assets/hero-bg.jpg
 !attached_assets/hero-bg.png
 !attached_assets/workspace.jpg

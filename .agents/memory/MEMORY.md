@@ -3,3 +3,4 @@
 - [Blank page after deploy](blank-page-chunk-errors.md) — lazy-route SPA crashes to a black screen when stale PWA/cache chunks 404; needs an ErrorBoundary that auto-reloads on chunk-load errors.
 - [Build vs typecheck](build-typecheck.md) — esbuild build skips tsc; ~60 pre-existing tsc errors, so CI typecheck stays non-blocking. Never claim "tsc clean" without diffing the baseline.
 - [Ownership/IDOR checks](authz-ownership.md) — scope per-user rows by req.user.claims.sub; founder-bypass policy is inconsistent across chat/audio/routes (FOUNDER_EMAIL vs FOUNDER_EMAILS vs none).
+- [attached_assets gitignore trap](attached-assets-gitignore.md) — @assets images can pass locally/prod but be untracked → CI test file fails to LOAD + build can't resolve; use `attached_assets/*` + `!` negation + commit the binary.
