@@ -2,6 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
