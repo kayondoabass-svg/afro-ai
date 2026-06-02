@@ -93,6 +93,28 @@ touch /var/log/afro-ai-deploy.log && chown root:root /var/log/afro-ai-deploy.log
 
 Required env vars in `/srv/afro-ai/shared/.env`: everything the app needs at runtime, plus `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN` (token must have **Zone → Cache Purge → Purge** permission for `afroaigroup.com`) for the auto-purge step.
 
+### CI/CD (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+- **verify** job — `npm ci` → `npm run check` (tsc) → `npm run test` (vitest) → `npm run build`. Catches failing tests and build breaks before they ever reach the droplet. **Note:** the `npm run check` (tsc) step is currently `continue-on-error` (informational, non-blocking) because the project has a backlog of ~60 pre-existing type errors and ships via esbuild (`tsx script/build.ts`), which bundles without type-checking. It surfaces the type-error count but does not fail CI; make it blocking once the tsc baseline is cleaned up.
+- **deploy** job — runs only after `verify` passes and only on a push to `main` (never on PRs). It SSHes into the droplet and runs `scripts/deploy.sh`. The job auto-skips if the `DROPLET_HOST` secret is not configured, so CI keeps working as plain checks.
+
+Required GitHub repo secrets (Settings → Secrets and variables → Actions) for auto-deploy: `DROPLET_HOST`, `DROPLET_USER` (e.g. `root`), `DROPLET_SSH_KEY` (the PRIVATE key whose public key is in the droplet's `authorized_keys`), and optionally `DROPLET_SSH_PORT` (defaults to 22). Manual `bash /opt/afro-ai/scripts/deploy.sh` still works and is unaffected. Note: the deploy job runs the same lock-protected script, so a manual deploy and an auto-deploy can't clobber each other (the `flock` in deploy.sh serializes them).
+
+### Scaling & High Availability
+
+The app is already largely horizontally-scalable at the code level:
+- **Stateless sessions** — server sessions are stored in PostgreSQL via `connect-pg-simple`, and primary auth is the stateless Cloudflare `afroai_session` cookie. No in-memory session state, so any instance can serve any request.
+- **External storage** — uploaded files and published-app HTML live in Cloudflare R2, not on local disk.
+- **Proxy-aware** — `app.set("trust proxy", true)` is set, so the app reads the real client IP / protocol correctly behind a load balancer.
+
+To scale horizontally when traffic warrants it (this is infrastructure provisioning, a monthly cost, not a code change):
+1. Provision one or more additional droplets with the same `afro-ai.service` setup (same `/srv/afro-ai/shared/.env`, same deploy flow).
+2. Put a **DigitalOcean Load Balancer** in front, health-checking `/api/health`. Point the Cloudflare DNS record at the load balancer instead of the single droplet.
+3. Ensure all instances share the **same PostgreSQL database** (they already would via the shared env) and the **same R2 buckets**.
+4. **Known single-instance caveat — the Dev Console interactive terminal** (`/console` Terminal tab) uses Socket.io + `node-pty`, which binds a real shell process to one instance. Across multiple instances it needs either sticky sessions on that route or a Socket.io Redis adapter. It's a founder-only tool, so the simplest path is to pin `/console` (and the Socket.io path) to a single instance via the load balancer until a Redis adapter is added.
+5. Move any future in-process caches/cron locks to a shared store (e.g. Redis) before scaling past one instance, so scheduled jobs (free-app suspension cron, etc.) don't run on every instance simultaneously.
+
 ## External Dependencies
 -   **AI Services:** Google Gemini (primary) with OpenAI fallback. Unified by `server/ai-chat-provider.ts` which exposes `aiChatComplete({ tier })`. Provider order is controlled by `AI_PRIMARY_PROVIDER` (default `gemini`); the helper auto-falls-back to OpenAI on auth/quota errors (HTTP 401/402/403/429, `insufficient_quota`, `invalid_api_key`, billing). Gemini is reached via its OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`) so the same client code works for both. **Tier-based model routing**: starter→`gemini-2.5-flash-lite` (~$0.10/1M), pro→`gemini-2.5-flash` (~$0.30/1M), business+payg→`gemini-2.5-pro` (~$1.25/1M). (Note: `gemini-2.0-flash` was retired by Google for new keys; we use `2.5-flash-lite` as the cheapest current model.) Per-tier output-token cap (starter 2k, pro 8k, business 16k, payg 32k) prevents a single reply from exceeding the user's plan economics. Used by `/api/demo-chat`, `/api/widget-chat/:apiKey`, `/api/v1/chatbot/message`, and the USSD AI route. `OPENAI_MODEL` and `GEMINI_MODEL` env vars still override defaults if set (useful for incident pinning).
 -   **Image Generation:** Imagen 3 (`imagen-3.0-generate-002`) via Gemini REST in `server/imagen.ts` is primary; OpenAI `gpt-image-1` is the auto-fallback. Routed at `POST /api/generate-image` (`server/replit_integrations/image/routes.ts`). Aspect ratio configurable (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`).

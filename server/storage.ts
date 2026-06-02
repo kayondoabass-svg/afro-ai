@@ -106,7 +106,7 @@ export interface IStorage {
   // Activity Logs
   getActivityLogs(userId: string, limit?: number): Promise<ActivityLog[]>;
   createActivityLog(data: InsertActivityLog): Promise<ActivityLog>;
-  deleteActivityLog(id: number): Promise<void>;
+  deleteActivityLog(id: number, userId: string): Promise<boolean>;
   // App version history
   saveAppVersion(data: InsertAppVersion): Promise<AppVersion>;
   getAppVersions(conversationId: number): Promise<AppVersion[]>;
@@ -1404,8 +1404,12 @@ class DatabaseStorage implements IStorage {
     return log;
   }
 
-  async deleteActivityLog(id: number): Promise<void> {
-    await db.delete(activityLogs).where(eq(activityLogs.id, id));
+  async deleteActivityLog(id: number, userId: string): Promise<boolean> {
+    const rows = await db
+      .delete(activityLogs)
+      .where(and(eq(activityLogs.id, id), eq(activityLogs.userId, userId)))
+      .returning({ id: activityLogs.id });
+    return rows.length > 0;
   }
 
   // ============ TEAM MEMBERS ============

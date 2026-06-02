@@ -11,7 +11,8 @@ export function registerAudioRoutes(app: Express): void {
   // Get all conversations
   app.get("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const conversations = await chatStorage.getAllConversations();
+      const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id;
+      const conversations = await chatStorage.getConversationsByUser(userId);
       res.json(conversations);
     } catch (error) {
       console.error("Error fetching conversations:", error);
@@ -22,9 +23,10 @@ export function registerAudioRoutes(app: Express): void {
   // Get single conversation with messages
   app.get("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id;
       const id = parseInt(req.params.id);
       const conversation = await chatStorage.getConversation(id);
-      if (!conversation) {
+      if (!conversation || conversation.userId !== userId) {
         return res.status(404).json({ error: "Conversation not found" });
       }
       const messages = await chatStorage.getMessagesByConversation(id);
@@ -38,8 +40,9 @@ export function registerAudioRoutes(app: Express): void {
   // Create new conversation
   app.post("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id;
       const { title } = req.body;
-      const conversation = await chatStorage.createConversation(title || "New Chat");
+      const conversation = await chatStorage.createConversation(title || "New Chat", undefined, userId);
       res.status(201).json(conversation);
     } catch (error) {
       console.error("Error creating conversation:", error);
@@ -50,7 +53,12 @@ export function registerAudioRoutes(app: Express): void {
   // Delete conversation
   app.delete("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id;
       const id = parseInt(req.params.id);
+      const conversation = await chatStorage.getConversation(id);
+      if (!conversation || conversation.userId !== userId) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
       await chatStorage.deleteConversation(id);
       res.status(204).send();
     } catch (error) {
@@ -76,6 +84,12 @@ export function registerAudioRoutes(app: Express): void {
 
       if (!audio) {
         return res.status(400).json({ error: "Audio data (base64) is required" });
+      }
+
+      // Ownership check: the conversation must belong to the caller.
+      const ownedConvo = await chatStorage.getConversation(conversationId);
+      if (!ownedConvo || ownedConvo.userId !== ctx.userId) {
+        return res.status(404).json({ error: "Conversation not found" });
       }
 
       // 1. Auto-detect format and convert to OpenAI-compatible format

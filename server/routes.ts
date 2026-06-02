@@ -456,7 +456,13 @@ export async function registerRoutes(
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { projectName, conversationId, fileCount } = req.body;
-      const exp = await storage.createZipExport({ userId, projectName: projectName || "afro-ai-project", conversationId: conversationId || null, fileCount: fileCount || 1 });
+      // Only associate the export with a conversation the caller actually owns.
+      let safeConversationId: number | null = null;
+      if (conversationId) {
+        const guard = await assertConversationOwner(parseInt(conversationId), req);
+        if (guard.ok) safeConversationId = parseInt(conversationId);
+      }
+      const exp = await storage.createZipExport({ userId, projectName: projectName || "afro-ai-project", conversationId: safeConversationId, fileCount: fileCount || 1 });
       res.json(exp);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -772,7 +778,9 @@ export async function registerRoutes(
 
   app.delete("/api/logs/:id", isAuthenticated, async (req: any, res) => {
     try {
-      await storage.deleteActivityLog(parseInt(req.params.id));
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const ok = await storage.deleteActivityLog(parseInt(req.params.id), userId);
+      if (!ok) return res.status(404).json({ message: "Log not found" });
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -961,7 +969,7 @@ export async function registerRoutes(
     if (!Number.isFinite(conversationId)) return { ok: false, status: 400, message: "Invalid conversation id" };
     const userId = req.user?.claims?.sub;
     if (!userId) return { ok: false, status: 401, message: "Not authenticated" };
-    const [conv] = await db.select({ userId: conversations.userId }).from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+    const [conv] = await db.select({ userId: conversations.userId }).from(conversations).where(dbEq(conversations.id, conversationId)).limit(1);
     if (!conv) return { ok: false, status: 404, message: "Conversation not found" };
     const email = req.user?.claims?.email;
     const isFounderUser = !!email && FOUNDER_EMAILS.includes(email);
@@ -2629,6 +2637,9 @@ export async function registerRoutes(
 
   app.get("/api/analytics/:appId", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user?.id || req.user?.claims?.sub;
+      const app = await storage.getPublishedAppById(parseInt(req.params.appId));
+      if (!app || app.userId !== userId) return res.status(404).json({ message: "App not found" });
       const stats = await storage.getAppViewStats(parseInt(req.params.appId));
       res.json(stats);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
