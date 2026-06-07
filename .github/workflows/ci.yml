@@ -29,12 +29,19 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
 
+      - name: Diagnose install
+        run: |
+          echo "node $(node -v) / npm $(npm -v) / NODE_ENV=$NODE_ENV"
+          echo "omit=$(npm config get omit) production=$(npm config get production)"
+          ls -la node_modules/vitest/vitest.mjs || echo "MISSING vitest package"
+          ls -la node_modules/.bin/vitest || echo "MISSING .bin/vitest symlink"
+
       - name: Typecheck (non-blocking)
-        run: npx tsc
+        run: node node_modules/typescript/bin/tsc
         continue-on-error: true
 
       - name: Test
-        run: npx vitest run
+        run: node node_modules/vitest/vitest.mjs run
 
       - name: Build
-        run: npx tsx script/build.ts
+        run: node node_modules/tsx/dist/cli.mjs script/build.ts
