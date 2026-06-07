@@ -42,3 +42,16 @@ and making it non-portable. The all-platforms lock that `npm audit fix` produced
 **How to apply:** for a CI "<bin>: not found" where local `npm ci` works, first suspect
 devDeps being omitted on the runner (NODE_ENV=production repo var, omit=dev, etc.) — fix with
 `npm ci --include=dev` — before churning the lockfile or only swapping in npx.
+
+# Follow-up: after the 127 was fixed, exit 1 appeared (slow-runner test timeout)
+Once the Test step actually RAN (error went 127 → exit 1/2), the remaining failure was
+NOT environmental config — it was the heavy component test (`lock-screen-translations`,
+60 page renders across 15 locales) tripping Testing-Library's default 1s `waitFor`/`findBy`
+timeout and vitest's default 5s per-test timeout on GitHub's cold 2-core runner. Passes in
+~8s locally, times out on the slow runner.
+Fix (pure code, pushable normally — NOT a workflow file):
+- `vitest.config.ts` test block: `testTimeout: 30000`, `hookTimeout: 30000`.
+- `client/src/__tests__/setup.ts`: `import { configure } from "@testing-library/react"` then
+  `configure({ asyncUtilTimeout: 10000 })` (raises waitFor/findBy from 1s).
+Lesson: exit 127 = tool/dep not found (install/bin problem); exit 1 from a vitest step =
+tests actually ran and one FAILED — treat as a real/flaky test, not an install issue.
