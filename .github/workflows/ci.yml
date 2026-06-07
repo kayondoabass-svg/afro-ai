@@ -21,16 +21,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      - name: Install dependencies
-        run: npm install --include=dev
+      - name: Clean install (no cache reuse)
+        run: |
+          npm cache clean --force
+          rm -rf node_modules
+          npm ci --include=dev
 
-      - name: Diagnose install
+      - name: Diagnose vite
         run: |
           echo "node $(node -v) / npm $(npm -v)"
-          node -e "console.log('vite   ->', require('vite/package.json').version)" || echo "MISSING vite"
-          node -e "console.log('vitest ->', require('vitest/package.json').version)" || echo "MISSING vitest"
+          echo "--- node_modules/vite contents ---"
+          ls -la node_modules/vite 2>&1 | head -20
+          echo "--- vite package.json (version / main / exports) ---"
+          node -e "const v=require('./node_modules/vite/package.json');console.log('version:',v.version,'| main:',v.main,'| has exports:',!!v.exports)" || echo ">>> VITE package.json BROKEN OR MISSING <<<"
+          echo "--- can Node actually import vite? ---"
+          node --input-type=module -e "import('vite').then(()=>console.log('ESM import vite: OK')).catch(e=>console.log('ESM import vite FAILED:',e.code,e.message))"
 
       - name: Typecheck (non-blocking)
         run: node node_modules/typescript/bin/tsc
