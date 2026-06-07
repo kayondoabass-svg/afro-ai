@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +50,9 @@ import {
   Network,
   Smartphone,
   Handshake,
+  Copy,
+  PartyPopper,
+  Hourglass,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -338,6 +342,23 @@ export default function FounderDashboardPage() {
     },
     onError: (err: any) => {
       toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
+  const [sentEmails, setSentEmails] = useState<Record<string, boolean>>({});
+
+  const sendPaymentEmailMutation = useMutation({
+    mutationFn: async ({ id, type }: { id: number; type: "congrats" | "nudge" }) => {
+      const res = await apiRequest("POST", `/api/admin/payments/${id}/email`, { type });
+      return res.json();
+    },
+    onSuccess: (data: any, vars) => {
+      setSentEmails((prev) => ({ ...prev, [`${vars.id}-${vars.type}`]: true }));
+      toast({ title: "Email sent", description: `Delivered to ${data.to}` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Could not send email", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1060,7 +1081,12 @@ export default function FounderDashboardPage() {
                       ? "bg-red-500/10 text-red-400 border-red-500/20"
                       : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20";
                     return (
-                      <div key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors" data-testid={`payment-row-${p.id}`}>
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer"
+                        data-testid={`payment-row-${p.id}`}
+                        onClick={() => setSelectedPayment(p)}
+                      >
                         {statusIcon}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -1068,11 +1094,14 @@ export default function FounderDashboardPage() {
                             <Badge variant="outline" className={`text-xs ${statusColor}`}>{p.status}</Badge>
                             {p.paymentMethod && <span className="text-xs text-muted-foreground hidden sm:block">{p.paymentMethod}</span>}
                           </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs text-muted-foreground font-mono truncate">{p.merchantReference}</span>
-                            {p.pesapalTrackingId && (
-                              <span className="text-xs text-muted-foreground hidden md:block">· Pesapal: {p.pesapalTrackingId}</span>
-                            )}
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <Mail className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                            <span className="text-xs text-foreground/80 truncate" data-testid={`payment-email-${p.id}`}>
+                              {p.userEmail || "No email on file"}
+                              {(p.userFirstName || p.userLastName)
+                                ? ` · ${[p.userFirstName, p.userLastName].filter(Boolean).join(" ")}`
+                                : ""}
+                            </span>
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
@@ -1091,7 +1120,7 @@ export default function FounderDashboardPage() {
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7 flex-shrink-0 hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => { if (confirm("Delete this payment record?")) deletePaymentMutation.mutate(p.id); }}
+                          onClick={(e) => { e.stopPropagation(); if (confirm("Delete this payment record?")) deletePaymentMutation.mutate(p.id); }}
                           disabled={deletePaymentMutation.isPending}
                           data-testid={`button-delete-payment-${p.id}`}
                         >
@@ -1111,6 +1140,106 @@ export default function FounderDashboardPage() {
             </ScrollArea>
           </CardContent>
         </Card>
+
+        {/* Customer Follow-Up panel */}
+        <Sheet open={!!selectedPayment} onOpenChange={(open) => { if (!open) setSelectedPayment(null); }}>
+          <SheetContent className="w-full sm:max-w-md overflow-y-auto" data-testid="sheet-payment-detail">
+            {selectedPayment && (() => {
+              const p = selectedPayment;
+              const fullName = [p.userFirstName, p.userLastName].filter(Boolean).join(" ").trim();
+              const initials = (fullName || p.userEmail || "?").slice(0, 2).toUpperCase();
+              const statusColor = p.status === "completed"
+                ? "bg-green-500/10 text-green-400 border-green-500/20"
+                : p.status === "failed"
+                ? "bg-red-500/10 text-red-400 border-red-500/20"
+                : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20";
+              const recommend = p.status === "completed" ? "congrats" : "nudge";
+              const noEmail = !p.userEmail;
+              const sendingType = sendPaymentEmailMutation.isPending
+                ? (sendPaymentEmailMutation.variables as any)?.type
+                : null;
+              const congratsSent = sentEmails[`${p.id}-congrats`];
+              const nudgeSent = sentEmails[`${p.id}-nudge`];
+              const copyEmail = () => {
+                if (p.userEmail) {
+                  navigator.clipboard.writeText(p.userEmail);
+                  toast({ title: "Email copied" });
+                }
+              };
+              const detail = (label: string, value: ReactNode, testid: string) => (
+                <div className="flex items-start justify-between gap-3 py-2 border-b border-border/40">
+                  <span className="text-xs text-muted-foreground">{label}</span>
+                  <span className="text-xs font-medium text-right break-all" data-testid={testid}>{value}</span>
+                </div>
+              );
+              return (
+                <>
+                  <SheetHeader className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-12 w-12">
+                        <AvatarFallback className="bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <SheetTitle className="truncate" data-testid="text-customer-name">{fullName || "Unknown customer"}</SheetTitle>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-xs text-muted-foreground truncate" data-testid="text-customer-email">{p.userEmail || "No email on file"}</span>
+                          {p.userEmail && (
+                            <button onClick={copyEmail} className="text-muted-foreground hover:text-foreground flex-shrink-0" data-testid="button-copy-email" title="Copy email">
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <SheetDescription className="sr-only">Customer payment details and follow-up email actions</SheetDescription>
+                  </SheetHeader>
+
+                  <div className="mt-4">
+                    {detail("Status", <Badge variant="outline" className={`text-xs ${statusColor}`}>{p.status}</Badge>, "detail-status")}
+                    {detail("Plan", p.plan, "detail-plan")}
+                    {detail("Amount", `${p.currency || ""} ${parseFloat(p.amount || 0).toFixed(2)}`.trim(), "detail-amount")}
+                    {detail("Payment method", p.paymentMethod || "—", "detail-method")}
+                    {detail("Date", p.createdAt ? new Date(p.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—", "detail-date")}
+                    {detail("Order ID", <span className="font-mono">{p.merchantReference || "—"}</span>, "detail-order-id")}
+                    {detail("Pesapal ref", <span className="font-mono">{p.pesapalTrackingId || "—"}</span>, "detail-pesapal-ref")}
+                    {p.confirmationCode && detail("Confirmation", <span className="font-mono">{p.confirmationCode}</span>, "detail-confirmation")}
+                  </div>
+
+                  <div className="mt-6 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Send follow-up email</p>
+                    {noEmail && (
+                      <p className="text-xs text-amber-400">This customer has no email address on file, so emails cannot be sent.</p>
+                    )}
+                    <Button
+                      className="w-full justify-start gap-2 bg-green-600 hover:bg-green-700 text-white"
+                      disabled={noEmail || sendPaymentEmailMutation.isPending || congratsSent}
+                      onClick={() => sendPaymentEmailMutation.mutate({ id: p.id, type: "congrats" })}
+                      data-testid="button-send-congrats"
+                    >
+                      <PartyPopper className="w-4 h-4" />
+                      {congratsSent ? "Congratulations sent ✓" : sendingType === "congrats" ? "Sending…" : "Send Congratulations"}
+                      {recommend === "congrats" && !congratsSent && (
+                        <Badge variant="outline" className="ml-auto text-[10px] bg-white/15 text-white border-white/25">Recommended</Badge>
+                      )}
+                    </Button>
+                    <Button
+                      className="w-full justify-start gap-2 bg-amber-500 hover:bg-amber-600 text-black"
+                      disabled={noEmail || sendPaymentEmailMutation.isPending || nudgeSent}
+                      onClick={() => sendPaymentEmailMutation.mutate({ id: p.id, type: "nudge" })}
+                      data-testid="button-send-nudge"
+                    >
+                      <Hourglass className="w-4 h-4" />
+                      {nudgeSent ? "Nudge sent ✓" : sendingType === "nudge" ? "Sending…" : "Send Try Again Nudge"}
+                      {recommend === "nudge" && !nudgeSent && (
+                        <Badge variant="outline" className="ml-auto text-[10px] bg-black/15 text-black border-black/25">Recommended</Badge>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
+          </SheetContent>
+        </Sheet>
 
         {/* Platform Health */}
         <Card>

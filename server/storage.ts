@@ -125,6 +125,7 @@ export interface IStorage {
   updatePaymentByMerchantRef(merchantRef: string, data: Partial<InsertPayment>): Promise<Payment | undefined>;
   getPaymentsByUser(userId: string): Promise<Payment[]>;
   getAllPayments(limit?: number): Promise<Payment[]>;
+  getAllPaymentsWithUser(limit?: number): Promise<any[]>;
   getPaymentById(id: number): Promise<Payment | undefined>;
   getPaymentByMerchantRef(merchantRef: string): Promise<Payment | undefined>;
   deletePayment(id: number): Promise<void>;
@@ -752,6 +753,30 @@ class DatabaseStorage implements IStorage {
 
   async getAllPayments(limit = 200): Promise<Payment[]> {
     return db.select().from(payments).orderBy(desc(payments.createdAt)).limit(limit);
+  }
+
+  async getAllPaymentsWithUser(limit = 200): Promise<any[]> {
+    return db
+      .select({
+        id: payments.id,
+        userId: payments.userId,
+        plan: payments.plan,
+        amount: payments.amount,
+        currency: payments.currency,
+        pesapalTrackingId: payments.pesapalTrackingId,
+        merchantReference: payments.merchantReference,
+        paymentMethod: payments.paymentMethod,
+        confirmationCode: payments.confirmationCode,
+        status: payments.status,
+        createdAt: payments.createdAt,
+        userEmail: users.email,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+      })
+      .from(payments)
+      .leftJoin(users, eq(payments.userId, users.id))
+      .orderBy(desc(payments.createdAt))
+      .limit(limit);
   }
 
   async getPaymentById(id: number): Promise<Payment | undefined> {

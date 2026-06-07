@@ -66,6 +66,50 @@ export async function sendReceiptEmail(to: string, opts: {
   return send(to, subject, wrapped.html, wrapped.text);
 }
 
+export async function sendPaymentCongratsEmail(to: string, opts: {
+  customerName: string; plan: string; amount: string; currency: string;
+}): Promise<boolean> {
+  const name = opts.customerName || "valued customer";
+  const subject = `Your ${opts.plan} plan is now active`;
+  const html = `
+    <p>Dear ${name},</p>
+    <p>We are pleased to confirm that your payment has been received successfully and your <strong>${opts.plan}</strong> plan is now active.</p>
+    <table style="width:100%;border-collapse:collapse;margin:18px 0;border-top:1px solid #27272a;">
+      <tr><td style="padding:8px 0;color:#a1a1aa;font-size:13px;">Plan</td><td style="padding:8px 0;color:#fff;font-size:13px;text-align:right;">${opts.plan}</td></tr>
+      <tr><td style="padding:8px 0;color:#a1a1aa;font-size:13px;border-top:1px solid #27272a;">Amount paid</td><td style="padding:8px 0;color:#fff;font-size:13px;text-align:right;border-top:1px solid #27272a;">${opts.currency} ${opts.amount}</td></tr>
+    </table>
+    <p>You now have full access to every feature included in your plan. We encourage you to sign in to your account to get started right away.</p>
+    <p style="margin-top:18px;"><a href="https://afroaigroup.com/dashboard" style="background:${BRAND_COLOR};color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">Go to your dashboard →</a></p>
+    <p style="margin-top:18px;">Thank you for choosing ${PLATFORM}. We look forward to supporting your work.</p>
+    <p>Kind regards,<br/>The ${PLATFORM} Team</p>`;
+  const text = `Dear ${name},\n\nWe are pleased to confirm that your payment has been received and your ${opts.plan} plan is now active.\n\nPlan: ${opts.plan}\nAmount paid: ${opts.currency} ${opts.amount}\n\nSign in to your dashboard: https://afroaigroup.com/dashboard\n\nThank you for choosing ${PLATFORM}.\n\nKind regards,\nThe ${PLATFORM} Team`;
+  const wrapped = shell("Payment confirmed", html, text);
+  return send(to, subject, wrapped.html, wrapped.text);
+}
+
+export async function sendPaymentNudgeEmail(to: string, opts: {
+  customerName: string; plan: string; amount: string; currency: string;
+}): Promise<boolean> {
+  const name = opts.customerName || "valued customer";
+  const subject = `Completing your ${opts.plan} subscription`;
+  const html = `
+    <p>Dear ${name},</p>
+    <p>We noticed that your recent attempt to subscribe to the <strong>${opts.plan}</strong> plan (${opts.currency} ${opts.amount}) was not completed.</p>
+    <p>If you experienced any difficulty, the most common causes and their quick resolutions are listed below:</p>
+    <ul style="padding-left:18px;margin:14px 0;color:#d4d4d8;">
+      <li style="margin-bottom:8px;"><strong>Insufficient balance</strong> — please ensure your Mobile Money or card account holds sufficient funds.</li>
+      <li style="margin-bottom:8px;"><strong>Incorrect PIN</strong> — re-enter your Mobile Money PIN carefully when prompted.</li>
+      <li style="margin-bottom:8px;"><strong>Network timeout</strong> — allow a brief moment and try again on a stable connection.</li>
+    </ul>
+    <p>You may resume your subscription at any time using the button below. Your selection has been saved for your convenience.</p>
+    <p style="margin-top:18px;"><a href="https://afroaigroup.com/billing" style="background:${BRAND_COLOR};color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">Complete your payment →</a></p>
+    <p style="margin-top:18px;">Should you require any assistance, please reply to this email and our team will be glad to help.</p>
+    <p>Kind regards,<br/>The ${PLATFORM} Team</p>`;
+  const text = `Dear ${name},\n\nWe noticed that your recent attempt to subscribe to the ${opts.plan} plan (${opts.currency} ${opts.amount}) was not completed.\n\nCommon causes and resolutions:\n- Insufficient balance: ensure your account holds sufficient funds.\n- Incorrect PIN: re-enter your Mobile Money PIN carefully.\n- Network timeout: try again on a stable connection.\n\nComplete your payment: https://afroaigroup.com/billing\n\nShould you require assistance, simply reply to this email.\n\nKind regards,\nThe ${PLATFORM} Team`;
+  const wrapped = shell("Complete your subscription", html, text);
+  return send(to, subject, wrapped.html, wrapped.text);
+}
+
 export async function sendAppPublishedEmail(to: string, opts: { title: string; url: string; isUpdate: boolean }): Promise<boolean> {
   const verb = opts.isUpdate ? "Updated" : "Published";
   const subject = `${verb}: ${opts.title} is live`;

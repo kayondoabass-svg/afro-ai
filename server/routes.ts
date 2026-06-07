@@ -1792,8 +1792,41 @@ export async function registerRoutes(
 
   app.get("/api/admin/payments", isFounder, async (_req, res) => {
     try {
-      const allPayments = await storage.getAllPayments(200);
+      const allPayments = await storage.getAllPaymentsWithUser(200);
       res.json(allPayments);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Send a follow-up email to a customer about a specific payment.
+  // type "congrats" → congratulations (best for completed); "nudge" → try-again (best for pending/failed)
+  app.post("/api/admin/payments/:id/email", isFounder, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid payment ID" });
+      const type = req.body?.type;
+      if (type !== "congrats" && type !== "nudge") {
+        return res.status(400).json({ message: "Invalid email type" });
+      }
+      const payment = await storage.getPaymentById(id);
+      if (!payment) return res.status(404).json({ message: "Payment not found" });
+      const user = await storage.getUser(payment.userId);
+      const to = user?.email;
+      if (!to) return res.status(400).json({ message: "This customer has no email address on file." });
+      const customerName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+      const mailer = await import("./mailer");
+      const opts = {
+        customerName,
+        plan: payment.plan,
+        amount: String(payment.amount),
+        currency: payment.currency || "",
+      };
+      const sent = type === "congrats"
+        ? await mailer.sendPaymentCongratsEmail(to, opts)
+        : await mailer.sendPaymentNudgeEmail(to, opts);
+      if (!sent) {
+        return res.status(502).json({ message: "Email could not be sent — the address may be unsubscribed or invalid." });
+      }
+      res.json({ success: true, to });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
