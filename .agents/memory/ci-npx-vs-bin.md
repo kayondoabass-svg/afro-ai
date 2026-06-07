@@ -1,39 +1,44 @@
 ---
-name: CI vitest/tsx "not found" despite correct lockfile
-description: GitHub Actions npm-run-script fails to find a dep bin even when npm ci exits 0 and the lockfile is healthy; use npx in CI. Also: don't "regenerate" an all-platform lock against a single-platform node_modules.
+name: CI vitest/tsx "not found" — dev-deps skipped on GitHub runner
+description: GitHub Actions Test step fails "vitest: not found" (exit 127) even though npm ci is green; real cause was dev-dependencies not installed on the runner. Fix = npm ci --include=dev (plus npx for the tool steps as a safety net).
 ---
 
 # Symptom
-GitHub Actions CI step `npm run test` (script = `vitest run`) fails with
-`sh: 1: vitest: not found` (exit 127), while the *previous* `Install dependencies`
-(`npm ci`) step is GREEN. Same pattern can hit `npm run build` (tsx) or `npm run check` (tsc).
+GitHub Actions `verify` job: `Install dependencies` (`npm ci`) shows GREEN, then the
+Test step (`vitest run`, whether via `npm run test` or `npx vitest run`) fails with
+`sh: 1: vitest: not found`, exit 127. Same risk for the Build (`tsx script/build.ts`)
+and Typecheck (`tsc`) steps — vitest, tsx, vite, esbuild, typescript are ALL devDependencies.
+
+# Root cause (confirmed)
+The runner's `npm ci` was NOT installing devDependencies, so the bins never existed in
+`node_modules/.bin`. A green install step does not prove devDeps were installed. Switching
+the invocation to `npx` alone did NOT fix it (npx can't run a package that isn't installed).
+
+# Fix
+Change the install step to force devDeps:
+`npm ci` → `npm ci --include=dev`
+and use npx for the tool steps as a belt-and-suspenders against bin-link quirks:
+`npx vitest run`, `npx tsx script/build.ts`, `npx tsc`.
+Both changes together cover the two possible causes (missing devDeps + unlinked bins).
+
+**Editing constraint:** Replit's GitHub OAuth lacks the `workflow` scope, so pushing any
+change to `.github/workflows/*` from Replit is rejected. The user must edit ci.yml on the
+GitHub website directly. Do NOT edit the local copy (a local diff that can't be pushed will
+block the user's normal Replit→GitHub pushes).
 
 # What it is NOT (ruled out exhaustively)
-- Lockfile corruption from `npm audit fix --force`. The committed lock was healthy.
-- dev-deps omitted. vitest was `dev=true` in both the broken and the prior-green lock,
-  and prior-green runs installed+ran it, so CI does NOT `--omit=dev`.
-- Cold npm cache / optional-deps pruning (npm#4828). A clean `npm ci` of the exact
-  committed lock — warm AND cold cache, on Linux, with python+make+gcc on PATH —
-  reliably creates `node_modules/.bin/vitest`, exit 0.
-
-# Root cause / fix
-The failure is an environment-specific `node_modules/.bin` symlink-linking issue on the
-GitHub runner. `npm run <script>` relies on the bare bin symlink in `node_modules/.bin`;
-`npx <tool>` resolves the package's `bin` entry from `node_modules/<pkg>` directly and does
-not depend on that symlink.
-**Fix (edit on GitHub web — Replit OAuth lacks the `workflow` scope so pushing .github/workflows/* is rejected):**
-change CI steps to the npx form, matching the locally-green `test` workflow:
-`npx vitest run`, `npx tsx script/build.ts`, `npx tsc`.
+- Lockfile corruption from `npm audit fix --force`. The committed lock was healthy and
+  portable (all-platform optional deps present).
+- A bare-bin-vs-npx problem on its own. npx did not fix it; the package wasn't installed.
+- Reproducible locally: a clean `npm ci` (warm AND cold cache, Linux) reliably installs
+  vitest and runs 79/79; `npx tsx script/build.ts` builds clean. The failure is runner-only.
 
 # Trap discovered while debugging
 Do NOT "regenerate" a lockfile with `npm install --package-lock-only` when `node_modules`
-only has the current platform installed: it PRUNES the other-platform optional deps
-(all the non-linux `@esbuild/*`, `@rollup/rollup-*`, etc.), shrinking the lock (~911→785 pkgs
-here) and making it non-portable. The all-platforms lock that `npm audit fix` produced was
-the CORRECT, portable one.
+only has the current platform installed: it PRUNES other-platform optional deps
+(non-linux `@esbuild/*`, `@rollup/rollup-*`, etc.), shrinking the lock (~911→785 pkgs here)
+and making it non-portable. The all-platforms lock that `npm audit fix` produced is correct.
 
-**Why:** confirmed by reproduction — `npm ci` of the committed lock created the bin every
-time locally, so the bug lives in the runner's reify/bin-link, not the repo. npx sidesteps it.
-
-**How to apply:** when a CI "<bin>: not found" appears but local `npm ci` creates the bin,
-switch the CI invocation from `npm run X` to `npx <bin>` rather than churning the lockfile.
+**How to apply:** for a CI "<bin>: not found" where local `npm ci` works, first suspect
+devDeps being omitted on the runner (NODE_ENV=production repo var, omit=dev, etc.) — fix with
+`npm ci --include=dev` — before churning the lockfile or only swapping in npx.
