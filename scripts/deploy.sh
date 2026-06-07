@@ -235,6 +235,15 @@ main() {
   source "$SHARED_ENV"
   set +a
 
+  # The app's real PORT lives in the shared env (e.g. 3000). HEALTH_URL was
+  # computed at the top of the script from the 5000 default BEFORE this load,
+  # so recompute it now. On this droplet 5000 is a DIFFERENT app, so checking
+  # the wrong port returns a false-positive 200 and masks a crash-looping
+  # afro-ai.service. Always target the port the service actually binds.
+  PORT="${PORT:-5000}"
+  HEALTH_URL="http://127.0.0.1:${PORT}/api/health"
+  log "Health check target: $HEALTH_URL"
+
   log "==== DEPLOY START ===="
   require_clean_tree
 
