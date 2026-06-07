@@ -98,7 +98,7 @@ install_deps_if_changed() {
     log "Dependency manifest changed (or node_modules missing) — running npm ci"
     (
       cd "$APP_DIR" || exit 1
-      timeout "$BUILD_TIMEOUT" npm ci --omit=dev=false
+      timeout "$BUILD_TIMEOUT" npm ci --include=dev
     )
     local rc=$?
     if [ $rc -ne 0 ]; then
