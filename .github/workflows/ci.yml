@@ -1,5 +1,9 @@
 name: CI
 
+# Runs tests + build on every push to main and every pull request.
+# Deployment is done manually on the droplet via:
+#   bash /opt/afro-ai/scripts/deploy.sh
+
 on:
   push:
     branches: [main]
@@ -23,9 +27,7 @@ jobs:
           node-version: 20
           cache: npm
 
-      # Force dev-dependencies (vitest, tsx, vite, tsc) to install on the
-      # runner. Without --include=dev they were being skipped, causing
-      # "vitest: not found" (exit 127) in the Test step.
+      # --include=dev forces dev tools (vitest, tsx, vite, tsc) to install.
       - name: Install dependencies
         run: npm ci --include=dev
 
@@ -38,32 +40,3 @@ jobs:
 
       - name: Build
         run: npx tsx script/build.ts
-
-  deploy:
-    name: Deploy to droplet
-    needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Guard - require deploy secrets
-        id: guard
-        env:
-          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
-        run: |
-          if [ -z "$DROPLET_HOST" ]; then
-            echo "DROPLET_HOST secret not set - skipping deploy."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: SSH deploy (runs scripts/deploy.sh on the droplet)
-        if: steps.guard.outputs.ready == 'true'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DROPLET_HOST }}
-          username: ${{ secrets.DROPLET_USER }}
-          key: ${{ secrets.DROPLET_SSH_KEY }}
-          port: ${{ secrets.DROPLET_SSH_PORT || 22 }}
-          command_timeout: 20m
-          script: bash /opt/afro-ai/scripts/deploy.sh
