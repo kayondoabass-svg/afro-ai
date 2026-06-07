@@ -17,6 +17,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Guard lockfile registry URLs
+        run: |
+          if grep -q "package-firewall.replit.local" package-lock.json; then
+            echo "::error::package-lock.json contains package-firewall.replit.local (Replit-internal registry, unreachable in CI and prod). Fix: sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json"
+            exit 1
+          fi
+          echo "Lockfile registry URLs OK (no package-firewall refs)"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

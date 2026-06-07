@@ -98,11 +98,17 @@ install_deps_if_changed() {
     log "Dependency manifest changed (or node_modules missing) — running npm ci"
     (
       cd "$APP_DIR" || exit 1
-      # Pin the PUBLIC npm registry. A leftover Replit-only registry
-      # (package-firewall.replit.local) in env/.npmrc resolves only inside
-      # Replit; on this droplet it fails with EAI_AGAIN and silently leaves a
-      # partial node_modules (different module missing each run). The CLI flag
-      # overrides any env var or .npmrc so deploys always reach real npm.
+      # Preflight: package-lock.json generated inside Replit bakes
+      # package-firewall.replit.local into its "resolved" URLs. npm ci obeys
+      # those verbatim and --registry does NOT override them, so off-Replit it
+      # fails with EAI_AGAIN and leaves a partial node_modules (a different
+      # module missing each run) that crash-loops the service. Fail loudly here
+      # instead of half-installing.
+      if grep -q "package-firewall.replit.local" package-lock.json; then
+        echo "FATAL: package-lock.json contains package-firewall.replit.local resolved URLs (Replit-internal registry, unreachable here). Normalize them with: sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json" >&2
+        exit 1
+      fi
+      # Pin the PUBLIC npm registry as belt-and-suspenders for env/.npmrc too.
       timeout "$BUILD_TIMEOUT" npm ci --include=dev --registry=https://registry.npmjs.org/
     )
     local rc=$?
