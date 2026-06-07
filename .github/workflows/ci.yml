@@ -1,8 +1,7 @@
 name: CI
 
-# Runs tests + build on every push to main and every pull request.
-# Deployment is done manually on the droplet via:
-#   bash /opt/afro-ai/scripts/deploy.sh
+# Tests + build on every push to main and every PR.
+# Deployment is manual on the droplet: bash /opt/afro-ai/scripts/deploy.sh
 
 on:
   push:
@@ -27,7 +26,6 @@ jobs:
           node-version: 20
           cache: npm
 
-      # --include=dev forces dev tools (vitest, tsx, vite, tsc) to install.
       - name: Install dependencies
         run: npm ci --include=dev
 
