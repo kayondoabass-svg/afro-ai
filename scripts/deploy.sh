@@ -98,7 +98,12 @@ install_deps_if_changed() {
     log "Dependency manifest changed (or node_modules missing) — running npm ci"
     (
       cd "$APP_DIR" || exit 1
-      timeout "$BUILD_TIMEOUT" npm ci --include=dev
+      # Pin the PUBLIC npm registry. A leftover Replit-only registry
+      # (package-firewall.replit.local) in env/.npmrc resolves only inside
+      # Replit; on this droplet it fails with EAI_AGAIN and silently leaves a
+      # partial node_modules (different module missing each run). The CLI flag
+      # overrides any env var or .npmrc so deploys always reach real npm.
+      timeout "$BUILD_TIMEOUT" npm ci --include=dev --registry=https://registry.npmjs.org/
     )
     local rc=$?
     if [ $rc -ne 0 ]; then
