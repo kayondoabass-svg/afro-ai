@@ -1,8 +1,5 @@
 name: CI
 
-# Tests + build on every push to main and every PR.
-# Deployment is manual on the droplet: bash /opt/afro-ai/scripts/deploy.sh
-
 on:
   push:
     branches: [main]
@@ -27,14 +24,13 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci --include=dev
+        run: npm install --include=dev
 
       - name: Diagnose install
         run: |
-          echo "node $(node -v) / npm $(npm -v) / NODE_ENV=$NODE_ENV"
-          echo "omit=$(npm config get omit) production=$(npm config get production)"
-          ls -la node_modules/vitest/vitest.mjs || echo "MISSING vitest package"
-          ls -la node_modules/.bin/vitest || echo "MISSING .bin/vitest symlink"
+          echo "node $(node -v) / npm $(npm -v)"
+          node -e "console.log('vite   ->', require('vite/package.json').version)" || echo "MISSING vite"
+          node -e "console.log('vitest ->', require('vitest/package.json').version)" || echo "MISSING vitest"
 
       - name: Typecheck (non-blocking)
         run: node node_modules/typescript/bin/tsc
