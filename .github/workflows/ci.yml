@@ -48,14 +48,14 @@ jobs:
       # this non-blocking so it surfaces the count without failing CI, until
       # the baseline is cleaned up.
       - name: Typecheck (non-blocking)
-        run: npm run check
+        run: npx tsc
         continue-on-error: true
 
       - name: Test
-        run: npm run test
+        run: npx vitest run
 
       - name: Build
-        run: npm run build
+        run: npx tsx script/build.ts
 
   deploy:
     name: Deploy to droplet
