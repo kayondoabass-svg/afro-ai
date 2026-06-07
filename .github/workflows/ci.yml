@@ -1,22 +1,5 @@
 name: CI
 
-# Runs on every push to main and on every pull request.
-# - `verify` catches type errors, failing tests, and build breaks BEFORE
-#   they reach the production droplet.
-# - `deploy` runs scripts/deploy.sh on the droplet, but ONLY after `verify`
-#   passes and ONLY on a push to main (never on pull requests).
-#
-# Required GitHub repository secrets for the deploy job (Settings → Secrets
-# and variables → Actions):
-#   DROPLET_HOST     - droplet IP or hostname (e.g. 165.232.64.81)
-#   DROPLET_USER     - SSH user that may run deploy.sh (e.g. root)
-#   DROPLET_SSH_KEY  - the PRIVATE SSH key (PEM) whose public key is in the
-#                      droplet's authorized_keys
-#   DROPLET_SSH_PORT - (optional) SSH port; defaults to 22 if unset
-#
-# If the deploy secrets are not set, the deploy job is skipped automatically
-# so CI still works as plain checks.
-
 on:
   push:
     branches: [main]
@@ -40,13 +23,12 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Force dev-dependencies (vitest, tsx, vite, tsc) to install on the
+      # runner. Without --include=dev they were being skipped, causing
+      # "vitest: not found" (exit 127) in the Test step.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
-      # Typecheck is currently informational: the project builds via esbuild
-      # (no type-checking) and has a backlog of pre-existing tsc errors. Keep
-      # this non-blocking so it surfaces the count without failing CI, until
-      # the baseline is cleaned up.
       - name: Typecheck (non-blocking)
         run: npx tsc
         continue-on-error: true
