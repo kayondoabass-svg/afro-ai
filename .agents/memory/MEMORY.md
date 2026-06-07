@@ -4,3 +4,4 @@
 - [Build vs typecheck](build-typecheck.md) — esbuild build skips tsc; ~60 pre-existing tsc errors, so CI typecheck stays non-blocking. Never claim "tsc clean" without diffing the baseline.
 - [Ownership/IDOR checks](authz-ownership.md) — scope per-user rows by req.user.claims.sub; founder-bypass policy is inconsistent across chat/audio/routes (FOUNDER_EMAIL vs FOUNDER_EMAILS vs none).
 - [attached_assets gitignore trap](attached-assets-gitignore.md) — @assets images can pass locally/prod but be untracked → CI test file fails to LOAD + build can't resolve; use `attached_assets/*` + `!` negation + commit the binary.
+- [CI "vitest: not found" w/ healthy lock](ci-npx-vs-bin.md) — npm ci green but `npm run test` can't find the bin on the runner; use `npx vitest run`/`npx tsx` in CI. Don't regenerate an all-platform lock against a 1-platform node_modules (prunes optional deps).
