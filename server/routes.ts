@@ -1254,7 +1254,7 @@ export async function registerRoutes(
   app.get("/api/published-apps/:id/versions", isAuthenticated, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = req.user?.claims?.sub || req.user?.id;
+      const userId = req.user?.claims?.sub;
       const apps = await storage.getPublishedAppsByUser(userId);
       const app = apps.find(a => a.id === id);
       if (!app) return res.status(404).json({ error: "App not found or access denied" });
@@ -1275,7 +1275,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const versionId = parseInt(req.params.versionId);
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const apps = await storage.getPublishedAppsByUser(userId);
       const app = apps.find(a => a.id === id);
       if (!app) return res.status(404).json({ error: "App not found or access denied" });
@@ -2472,7 +2472,7 @@ export async function registerRoutes(
   // ============ BLOG / CMS ROUTES ============
   app.get("/api/blog", isAuthenticated, async (req: any, res) => {
     try {
-      const posts = await storage.getBlogPostsByUser(req.user.id);
+      const posts = await storage.getBlogPostsByUser(req.user.claims.sub);
       res.json(posts);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2483,7 +2483,7 @@ export async function registerRoutes(
       if (!title) return res.status(400).json({ message: "Title is required" });
       const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") + "-" + Date.now();
       const post = await storage.createBlogPost({
-        userId: req.user.id, title, slug, content: content || "", excerpt: excerpt || null,
+        userId: req.user.claims.sub, title, slug, content: content || "", excerpt: excerpt || null,
         coverImage: coverImage || null, status: status || "draft",
         publishedAt: status === "published" ? new Date() : null,
       });
@@ -2495,7 +2495,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const post = await storage.getBlogPost(id);
-      if (!post || post.userId !== req.user.id) return res.status(404).json({ message: "Post not found" });
+      if (!post || post.userId !== req.user.claims.sub) return res.status(404).json({ message: "Post not found" });
       const { title, content, excerpt, coverImage, status } = req.body;
       const updated = await storage.updateBlogPost(id, {
         title, content, excerpt, coverImage, status,
@@ -2509,7 +2509,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const post = await storage.getBlogPost(id);
-      if (!post || post.userId !== req.user.id) return res.status(404).json({ message: "Post not found" });
+      if (!post || post.userId !== req.user.claims.sub) return res.status(404).json({ message: "Post not found" });
       await storage.deleteBlogPost(id);
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2518,7 +2518,7 @@ export async function registerRoutes(
   // ============ EMAIL SUBSCRIBERS ROUTES ============
   app.get("/api/email/subscribers", isAuthenticated, async (req: any, res) => {
     try {
-      const subs = await storage.getEmailSubscribersByUser(req.user.id);
+      const subs = await storage.getEmailSubscribersByUser(req.user.claims.sub);
       res.json(subs);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2527,14 +2527,14 @@ export async function registerRoutes(
     try {
       const { email, name, tags } = req.body;
       if (!email) return res.status(400).json({ message: "Email is required" });
-      const sub = await storage.addEmailSubscriber({ userId: req.user.id, email, name: name || null, status: "active", tags: tags || [] });
+      const sub = await storage.addEmailSubscriber({ userId: req.user.claims.sub, email, name: name || null, status: "active", tags: tags || [] });
       res.json(sub);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.patch("/api/email/subscribers/:id/status", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.id || req.user?.claims?.sub;
+      const userId = req.user?.claims?.sub;
       const ok = await storage.updateEmailSubscriberStatus(parseInt(req.params.id), req.body.status, userId);
       if (!ok) return res.status(404).json({ message: "Subscriber not found" });
       res.json({ success: true });
@@ -2543,7 +2543,7 @@ export async function registerRoutes(
 
   app.delete("/api/email/subscribers/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.id || req.user?.claims?.sub;
+      const userId = req.user?.claims?.sub;
       const ok = await storage.deleteEmailSubscriber(parseInt(req.params.id), userId);
       if (!ok) return res.status(404).json({ message: "Subscriber not found" });
       res.json({ success: true });
@@ -2553,7 +2553,7 @@ export async function registerRoutes(
   // ============ EMAIL CAMPAIGNS ROUTES ============
   app.get("/api/email/campaigns", isAuthenticated, async (req: any, res) => {
     try {
-      const campaigns = await storage.getEmailCampaignsByUser(req.user.id);
+      const campaigns = await storage.getEmailCampaignsByUser(req.user.claims.sub);
       res.json(campaigns);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2562,7 +2562,7 @@ export async function registerRoutes(
     try {
       const { name, subject, htmlContent } = req.body;
       if (!name || !subject) return res.status(400).json({ message: "Name and subject are required" });
-      const campaign = await storage.createEmailCampaign({ userId: req.user.id, name, subject, htmlContent: htmlContent || "", status: "draft", recipientCount: 0 });
+      const campaign = await storage.createEmailCampaign({ userId: req.user.claims.sub, name, subject, htmlContent: htmlContent || "", status: "draft", recipientCount: 0 });
       res.json(campaign);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2571,7 +2571,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const campaign = await storage.getEmailCampaign(id);
-      if (!campaign || campaign.userId !== req.user.id) return res.status(404).json({ message: "Campaign not found" });
+      if (!campaign || campaign.userId !== req.user.claims.sub) return res.status(404).json({ message: "Campaign not found" });
       const updated = await storage.updateEmailCampaign(id, req.body);
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2581,7 +2581,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const campaign = await storage.getEmailCampaign(id);
-      if (!campaign || campaign.userId !== req.user.id) return res.status(404).json({ message: "Campaign not found" });
+      if (!campaign || campaign.userId !== req.user.claims.sub) return res.status(404).json({ message: "Campaign not found" });
       await storage.deleteEmailCampaign(id);
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2593,7 +2593,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const campaign = await storage.getEmailCampaign(id);
-      if (!campaign || campaign.userId !== req.user.id) return res.status(404).json({ message: "Campaign not found" });
+      if (!campaign || campaign.userId !== req.user.claims.sub) return res.status(404).json({ message: "Campaign not found" });
       if (!campaign.htmlContent || !campaign.htmlContent.trim()) {
         return res.status(400).json({ message: "Campaign has no HTML content. Edit the campaign and add content first." });
       }
@@ -2604,7 +2604,7 @@ export async function registerRoutes(
       await storage.updateEmailCampaign(id, { status: "sending" } as any);
 
       const fromAddress = "Afro AI <support@afroaigroup.com>";
-      const allSubs = await storage.getEmailSubscribersByUser(req.user.id);
+      const allSubs = await storage.getEmailSubscribersByUser(req.user.claims.sub);
       const activeSubs = allSubs.filter(s => s.status === "active");
 
       if (activeSubs.length === 0) {
@@ -2662,7 +2662,7 @@ export async function registerRoutes(
   // ============ ANALYTICS ============
   app.get("/api/analytics", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const data = await storage.getAppViewsByUser(userId);
       res.json(data);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2670,7 +2670,7 @@ export async function registerRoutes(
 
   app.get("/api/analytics/:appId", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.id || req.user?.claims?.sub;
+      const userId = req.user?.claims?.sub;
       const app = await storage.getPublishedAppById(parseInt(req.params.appId));
       if (!app || app.userId !== userId) return res.status(404).json({ message: "App not found" });
       const stats = await storage.getAppViewStats(parseInt(req.params.appId));
@@ -2689,7 +2689,7 @@ export async function registerRoutes(
 
   app.get("/api/marketplace/mine", isAuthenticated, async (req: any, res) => {
     try {
-      const listings = await storage.getMarketplaceListingsByUser(req.user.id);
+      const listings = await storage.getMarketplaceListingsByUser(req.user.claims.sub);
       res.json(listings);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2704,7 +2704,7 @@ export async function registerRoutes(
 
   app.post("/api/marketplace", isAuthenticated, async (req: any, res) => {
     try {
-      const listing = await storage.createMarketplaceListing({ ...req.body, userId: req.user.id });
+      const listing = await storage.createMarketplaceListing({ ...req.body, userId: req.user.claims.sub });
       res.json(listing);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2713,7 +2713,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getMarketplaceListing(id);
-      if (!existing || existing.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      if (!existing || existing.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
       const updated = await storage.updateMarketplaceListing(id, req.body);
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2723,7 +2723,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getMarketplaceListing(id);
-      if (!existing || existing.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      if (!existing || existing.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
       await storage.deleteMarketplaceListing(id);
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2744,7 +2744,7 @@ export async function registerRoutes(
     try {
       const projectId = parseInt(req.params.projectId);
       const project = await storage.getProject(projectId);
-      if (!project || project.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      if (!project || project.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
       const collaborators = await storage.getCollaboratorsByProject(projectId);
       res.json(collaborators);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2763,7 +2763,7 @@ export async function registerRoutes(
     try {
       const { projectId, inviteEmail, role } = req.body;
       const project = await storage.getProject(parseInt(projectId));
-      if (!project || project.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      if (!project || project.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
       const collaborator = await storage.addCollaborator({ projectId: parseInt(projectId), inviteEmail, role: role || "viewer", status: "pending" });
       res.json(collaborator);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2834,7 +2834,7 @@ export async function registerRoutes(
 
   app.get("/api/domains/my", isAuthenticated, async (req: any, res) => {
     try {
-      const orders = await storage.getDomainOrdersByUser(req.user.id);
+      const orders = await storage.getDomainOrdersByUser(req.user.claims.sub);
       res.json(orders);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2859,7 +2859,7 @@ export async function registerRoutes(
 
       // Create pending order
       const order = await storage.createDomainOrder({
-        userId: req.user.id,
+        userId: req.user.claims.sub,
         domainName,
         status: "pending_payment",
         pricePaid: priceCents,
@@ -2912,7 +2912,7 @@ export async function registerRoutes(
     try {
       const orderId = parseInt(req.params.orderId);
       const order = await storage.getDomainOrder(orderId);
-      if (!order || order.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      if (!order || order.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
       if (order.status === "active") return res.json({ message: "Already active", order });
 
       const contact = {
@@ -2955,7 +2955,7 @@ export async function registerRoutes(
     try {
       const orderId = parseInt(req.params.orderId);
       const order = await storage.getDomainOrder(orderId);
-      if (!order || order.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      if (!order || order.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
       const { nameservers } = req.body;
       await setNameservers(order.domainName, nameservers);
       await storage.updateDomainOrder(orderId, { nameservers });
@@ -2968,7 +2968,7 @@ export async function registerRoutes(
     try {
       const { publishedAppId } = req.body;
       const app = await storage.getPublishedAppById(parseInt(publishedAppId));
-      if (!app || app.userId !== req.user.id) return res.status(403).json({ message: "Not authorized" });
+      if (!app || app.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
       const appName = app.appName || "My App";
       const slug = app.subdomain;
       const manifest = {
@@ -3084,7 +3084,7 @@ export async function registerRoutes(
   // Authenticated partner: get their portal data
   app.get("/api/partner/me", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const partner = await storage.getPartnerByUserId(userId);
       if (!partner) {
         const u = await storage.getUser(userId);
@@ -3209,7 +3209,7 @@ export async function registerRoutes(
       await storage.updatePartnerApplication(id, {
         status: "approved",
         reviewedAt: new Date(),
-        reviewedBy: req.user.id,
+        reviewedBy: req.user.claims.sub,
         reviewNotes: req.body.notes || null,
       });
       res.json({ success: true, partner });
@@ -3225,7 +3225,7 @@ export async function registerRoutes(
       await storage.updatePartnerApplication(id, {
         status: "rejected",
         reviewedAt: new Date(),
-        reviewedBy: req.user.id,
+        reviewedBy: req.user.claims.sub,
         reviewNotes: req.body.notes || null,
       });
       res.json({ success: true });
@@ -3309,12 +3309,12 @@ export async function registerRoutes(
 
   // ============ API INTEGRATIONS ============
   app.get("/api/integrations", isAuthenticated, async (req: any, res) => {
-    try { res.json(await storage.getApiIntegrations(req.user.id)); } catch (e: any) { res.status(500).json({ message: e.message }); }
+    try { res.json(await storage.getApiIntegrations(req.user.claims.sub)); } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/integrations", isAuthenticated, async (req: any, res) => {
     try {
-      const created = await storage.createApiIntegration({ ...req.body, userId: req.user.id });
+      const created = await storage.createApiIntegration({ ...req.body, userId: req.user.claims.sub });
       res.json(created);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3323,7 +3323,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getApiIntegration(id);
-      if (!existing || existing.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!existing || existing.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       res.json(await storage.updateApiIntegration(id, req.body));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3332,7 +3332,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getApiIntegration(id);
-      if (!existing || existing.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!existing || existing.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       await storage.deleteApiIntegration(id);
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -3342,7 +3342,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const integration = await storage.getApiIntegration(id);
-      if (!integration || integration.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!integration || integration.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       const headers: Record<string, string> = {};
       if (integration.headers) { try { Object.assign(headers, JSON.parse(integration.headers)); } catch {} }
       const authCfg = integration.authConfig ? (() => { try { return JSON.parse(integration.authConfig!); } catch { return {}; } })() : {};
@@ -3424,7 +3424,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const i = await storage.getApiIntegration(id);
-      if (!i || i.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!i || i.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       let authLine = "";
       let preSnippet = "";
       const cfg = i.authConfig ? (() => { try { return JSON.parse(i.authConfig!); } catch { return {}; } })() : {};
@@ -3452,12 +3452,12 @@ export async function registerRoutes(
 
   // ============ WEBHOOKS ============
   app.get("/api/webhooks", isAuthenticated, async (req: any, res) => {
-    try { res.json(await storage.getWebhooks(req.user.id)); } catch (e: any) { res.status(500).json({ message: e.message }); }
+    try { res.json(await storage.getWebhooks(req.user.claims.sub)); } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/webhooks", isAuthenticated, async (req: any, res) => {
     try {
-      const created = await storage.createWebhook({ ...req.body, userId: req.user.id });
+      const created = await storage.createWebhook({ ...req.body, userId: req.user.claims.sub });
       res.json(created);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3466,7 +3466,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getWebhook(id);
-      if (!existing || existing.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!existing || existing.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       res.json(await storage.updateWebhook(id, req.body));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3475,7 +3475,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const existing = await storage.getWebhook(id);
-      if (!existing || existing.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!existing || existing.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       await storage.deleteWebhook(id);
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -3485,7 +3485,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const hook = await storage.getWebhook(id);
-      if (!hook || hook.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!hook || hook.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       const body = JSON.stringify({ event: "test", timestamp: new Date().toISOString(), message: "Test webhook from Afro AI", hookId: hook.id, hookName: hook.name });
       const headers: Record<string, string> = { "Content-Type": "application/json", "User-Agent": "AfroAI-Webhooks/1.0" };
       if (hook.secret) {
@@ -3503,7 +3503,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.publishedAppId);
       const appRecord = await storage.getPublishedAppById(id);
-      if (!appRecord || appRecord.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!appRecord || appRecord.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       res.json(await storage.getAppSeo(id) || {});
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3512,7 +3512,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.publishedAppId);
       const appRecord = await storage.getPublishedAppById(id);
-      if (!appRecord || appRecord.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!appRecord || appRecord.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       res.json(await storage.upsertAppSeo({ publishedAppId: id, ...req.body }));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3522,7 +3522,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.publishedAppId);
       const appRecord = await storage.getPublishedAppById(id);
-      if (!appRecord || appRecord.userId !== req.user.id) return res.status(404).json({ message: "Not found" });
+      if (!appRecord || appRecord.userId !== req.user.claims.sub) return res.status(404).json({ message: "Not found" });
       const seo = await storage.getAppSeo(id);
       const htmlSnippet = appRecord.htmlContent.slice(0, 4000);
       const prompt = `You are an SEO expert. Analyze this webpage and return a JSON object with exactly these fields:
@@ -5654,7 +5654,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
 
   app.get("/api/github/status", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const row = await github.getUserToken(userId);
       res.json({
         configured: github.isGithubOAuthConfigured(),
@@ -5690,7 +5690,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
         return res.redirect(`${returnTo}?github=error&reason=${encodeURIComponent("Bad state")}`);
       }
       const { accessToken, scopes } = await github.exchangeCodeForToken(code, req);
-      await github.saveUserToken(req.user.id, accessToken, scopes);
+      await github.saveUserToken(req.user.claims.sub, accessToken, scopes);
       res.redirect(`${returnTo}?github=connected`);
     } catch (e: any) {
       console.error("[github/callback]", e?.message || e);
@@ -5700,7 +5700,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
 
   app.post("/api/github/disconnect", isAuthenticated, async (req: any, res) => {
     try {
-      await github.deleteUserToken(req.user.id);
+      await github.deleteUserToken(req.user.claims.sub);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Failed" });
@@ -5716,7 +5716,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
       if (htmlContent.length > 5_000_000) return res.status(413).json({ error: "App too large to push (>5MB)" });
 
       const result = await github.pushHtmlToRepo({
-        userId: req.user.id,
+        userId: req.user.claims.sub,
         repoName,
         htmlContent,
         title: title || "My Afro AI App",
