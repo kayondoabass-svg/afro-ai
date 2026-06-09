@@ -53,6 +53,10 @@ import {
   Copy,
   PartyPopper,
   Hourglass,
+  ChevronDown,
+  ChevronRight,
+  Wallet,
+  MousePointerClick,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -243,6 +247,105 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
+function affMoney(cents: number, currency = "USD") {
+  return `${currency} ${((cents ?? 0) / 100).toFixed(2)}`;
+}
+
+function AffiliateDrilldown({
+  id,
+  onPay,
+  paying,
+}: {
+  id: number;
+  onPay: () => void;
+  paying: boolean;
+}) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/affiliate/applications", id],
+    retry: false,
+  });
+
+  if (isLoading) {
+    return <div className="px-2 pb-2"><Skeleton className="h-20 rounded-md" /></div>;
+  }
+  if (!data) return null;
+
+  const pendingCents = (data.commissions || [])
+    .filter((c: any) => c.status === "pending")
+    .reduce((s: number, c: any) => s + c.amountCents, 0);
+  const portalToken = data.affiliate?.portalToken;
+  const portalUrl = portalToken ? `${window.location.origin}/affiliate/portal/${portalToken}` : null;
+
+  return (
+    <div className="ml-9 mr-2 mb-2 p-3 rounded-md bg-muted/40 border space-y-3" data-testid={`affiliate-drilldown-${id}`}>
+      {portalUrl && (
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-[10px] font-mono bg-background rounded px-2 py-1 truncate text-primary">{portalUrl}</code>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5"
+            onClick={() => { navigator.clipboard.writeText(portalUrl); }}
+            data-testid={`button-copy-portal-${id}`}
+          >
+            <Copy className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] text-muted-foreground">
+          Pending payout: <span className="font-semibold text-foreground">{affMoney(pendingCents)}</span>
+        </p>
+        <Button
+          size="sm"
+          className="h-6 text-[11px] px-2"
+          disabled={paying || pendingCents <= 0}
+          onClick={onPay}
+          data-testid={`button-pay-affiliate-${id}`}
+        >
+          <Wallet className="w-3 h-3 mr-1" /> Mark paid
+        </Button>
+      </div>
+
+      <div>
+        <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-1">Referrals ({data.referrals?.length ?? 0})</p>
+        {data.referrals && data.referrals.length > 0 ? (
+          <div className="space-y-0.5">
+            {data.referrals.map((r: any) => (
+              <div key={r.id} className="flex items-center justify-between text-[10px]" data-testid={`drilldown-referral-${r.id}`}>
+                <span className="truncate">{r.referredEmail || "New user"}</span>
+                <Badge variant={r.status === "converted" ? "default" : "secondary"} className="text-[9px] px-1">
+                  {r.status === "converted" ? "Paying" : "Signed up"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground">No referrals yet</p>
+        )}
+      </div>
+
+      <div>
+        <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-1">Commissions ({data.commissions?.length ?? 0})</p>
+        {data.commissions && data.commissions.length > 0 ? (
+          <div className="space-y-0.5">
+            {data.commissions.map((c: any) => (
+              <div key={c.id} className="flex items-center justify-between text-[10px]" data-testid={`drilldown-commission-${c.id}`}>
+                <span>{affMoney(c.amountCents, c.currency)} <span className="text-muted-foreground">({c.periodMonth})</span></span>
+                <Badge variant={c.status === "paid" ? "default" : "secondary"} className="text-[9px] px-1">
+                  {c.status === "paid" ? "Paid" : "Pending"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground">No commissions yet</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const PLAN_COLORS: Record<string, string> = {
   starter: "bg-muted text-muted-foreground",
   pro: "bg-blue-500/10 text-blue-400 border-blue-500/30",
@@ -369,6 +472,20 @@ export default function FounderDashboardPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications"] });
       toast({ title: "Status updated" });
+    },
+  });
+
+  const [expandedAffiliate, setExpandedAffiliate] = useState<number | null>(null);
+
+  const payAffiliateMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("PATCH", `/api/affiliate/applications/${id}/pay`, {});
+      return (await res.json()) as { paidCents: number };
+    },
+    onSuccess: (data, id) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications", id] });
+      toast({ title: "Marked paid", description: `Paid out ${(data.paidCents / 100).toFixed(2)} in commissions` });
     },
   });
 
@@ -882,37 +999,66 @@ export default function FounderDashboardPage() {
             <ScrollArea className="h-[300px]">
               <div className="p-2 space-y-1">
                 {affiliateApps && affiliateApps.length > 0 ? (
-                  affiliateApps.map((a: any) => (
-                    <div key={a.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`affiliate-app-${a.id}`}>
-                      <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <Gift className="w-3.5 h-3.5 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{a.fullName}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">{a.email} · <span className="text-primary font-mono">{a.referralCode}</span></p>
-                        {a.country && <p className="text-[10px] text-muted-foreground">{a.country}</p>}
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <Badge variant="outline" className={`text-[10px] px-1.5 ${
-                          a.status === "approved" ? "text-green-400 border-green-500/30" :
-                          a.status === "rejected" ? "text-red-400 border-red-500/30" :
-                          "text-yellow-400 border-yellow-500/30"
-                        }`}>
-                          {a.status}
-                        </Badge>
-                        {a.status === "pending" && (
-                          <>
-                            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-green-400 hover:text-green-300" onClick={() => updateAffiliateMutation.mutate({ id: a.id, status: "approved" })} data-testid={`button-approve-affiliate-${a.id}`}>
-                              <CheckCircle className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-400 hover:text-red-300" onClick={() => updateAffiliateMutation.mutate({ id: a.id, status: "rejected" })} data-testid={`button-reject-affiliate-${a.id}`}>
-                              <Ban className="w-3.5 h-3.5" />
-                            </Button>
-                          </>
+                  affiliateApps.map((a: any) => {
+                    const isApproved = a.status === "approved";
+                    const isExpanded = expandedAffiliate === a.id;
+                    return (
+                    <div key={a.id}>
+                      <div
+                        className={`flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors ${isApproved ? "cursor-pointer" : ""}`}
+                        onClick={isApproved ? () => setExpandedAffiliate(isExpanded ? null : a.id) : undefined}
+                        data-testid={`affiliate-app-${a.id}`}
+                      >
+                        {isApproved ? (
+                          isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        ) : (
+                          <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Gift className="w-3.5 h-3.5 text-primary" />
+                          </div>
                         )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{a.fullName}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{a.email} · <span className="text-primary font-mono">{a.referralCode}</span></p>
+                          {isApproved && (
+                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                              <span className="flex items-center gap-0.5" title="Clicks"><MousePointerClick className="w-2.5 h-2.5" />{a.clicks ?? 0}</span>
+                              <span className="flex items-center gap-0.5" title="Sign-ups"><Users className="w-2.5 h-2.5" />{a.referralCount ?? 0}</span>
+                              <span className="flex items-center gap-0.5" title="Paying"><CheckCircle className="w-2.5 h-2.5" />{a.convertedCount ?? 0}</span>
+                              <span className="flex items-center gap-0.5 text-primary font-medium" title="Earned"><Wallet className="w-2.5 h-2.5" />{affMoney(a.totalEarnedCents ?? 0)}</span>
+                            </div>
+                          )}
+                          {!isApproved && a.country && <p className="text-[10px] text-muted-foreground">{a.country}</p>}
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <Badge variant="outline" className={`text-[10px] px-1.5 ${
+                            a.status === "approved" ? "text-green-400 border-green-500/30" :
+                            a.status === "rejected" ? "text-red-400 border-red-500/30" :
+                            "text-yellow-400 border-yellow-500/30"
+                          }`}>
+                            {a.status}
+                          </Badge>
+                          {a.status === "pending" && (
+                            <>
+                              <Button size="sm" variant="ghost" className="h-6 px-1.5 text-green-400 hover:text-green-300" onClick={() => updateAffiliateMutation.mutate({ id: a.id, status: "approved" })} data-testid={`button-approve-affiliate-${a.id}`}>
+                                <CheckCircle className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-400 hover:text-red-300" onClick={() => updateAffiliateMutation.mutate({ id: a.id, status: "rejected" })} data-testid={`button-reject-affiliate-${a.id}`}>
+                                <Ban className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
+                      {isApproved && isExpanded && (
+                        <AffiliateDrilldown
+                          id={a.id}
+                          paying={payAffiliateMutation.isPending}
+                          onPay={() => payAffiliateMutation.mutate(a.id)}
+                        />
+                      )}
                     </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-8">No affiliate applications yet</p>
                 )}

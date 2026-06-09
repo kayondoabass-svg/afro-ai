@@ -53,6 +53,7 @@ const PwaBuilderPage = lazy(() => import("@/pages/pwa-builder"));
 const CollaborationPage = lazy(() => import("@/pages/collaboration"));
 const DomainsPage = lazy(() => import("@/pages/domains"));
 const AffiliatePage = lazy(() => import("@/pages/affiliate"));
+const AffiliatePortalPage = lazy(() => import("@/pages/affiliate-portal"));
 const ApiIntegrationsPage = lazy(() => import("@/pages/api-integrations"));
 const SeoToolsPage = lazy(() => import("@/pages/seo-tools"));
 const WebhooksPage = lazy(() => import("@/pages/webhooks"));
@@ -334,6 +335,29 @@ function AppRouter() {
   const [location, navigate] = useLocation();
   const { toast } = useToast();
 
+  // Affiliate referral capture: when a visitor arrives on a ?ref=AFFxxxx link,
+  // persist the code in a 30-day cookie (read at signup by the server to credit
+  // the affiliate) and ping the click tracker once per browser session.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const ref = new URLSearchParams(window.location.search).get("ref");
+    if (!ref) return;
+    document.cookie = `afro_ref=${encodeURIComponent(ref)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+    try {
+      const key = `afro_ref_tracked_${ref}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        fetch("/api/affiliate/track", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: ref }),
+        }).catch(() => {});
+      }
+    } catch {
+      /* sessionStorage unavailable — cookie is still set, that's enough */
+    }
+  }, []);
+
   // After login, redirect back to chatbot checkout if a plan was pending
   useEffect(() => {
     if (user) {
@@ -438,6 +462,21 @@ function AppRouter() {
   // truthy — that's the "logged out but landing on /login 404" bug, because
   // the authenticated <Switch /> below has no /login route. Always serve these
   // pages from the public switch so the logout flow can never dead-end.
+  // Token-gated affiliate dashboard — accessed via an emailed link by people
+  // who have no platform login, so it renders standalone (no sidebar) for both
+  // logged-in and logged-out visitors.
+  if (location.startsWith("/affiliate/portal/")) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<RouteFallback />}>
+          <Switch>
+            <Route path="/affiliate/portal/:token" component={AffiliatePortalPage} />
+          </Switch>
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
   const PUBLIC_AUTH_PATHS = new Set(["/login", "/forgot-password", "/reset-password", "/verify-email"]);
   if (PUBLIC_AUTH_PATHS.has(location)) {
     return (

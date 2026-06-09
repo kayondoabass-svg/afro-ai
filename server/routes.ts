@@ -2331,6 +2331,34 @@ export async function registerRoutes(
       console.error("[receipt-email] failed:", emailErr?.message || emailErr);
     }
 
+    // Affiliate commission — if this paying user was referred by an affiliate,
+    // credit 10% of the payment. Best-effort, never blocks plan activation.
+    try {
+      const referral = await storage.getAffiliateReferralByUserId(userId);
+      if (referral) {
+        const baseAmountCents = Math.round(Number(existingPayment.amount) * 100);
+        if (baseAmountCents > 0) {
+          const commissionPercent = 10;
+          const amountCents = Math.round(baseAmountCents * (commissionPercent / 100));
+          await storage.createAffiliateCommission({
+            affiliateId: referral.affiliateId,
+            referralId: referral.id,
+            userId,
+            baseAmountCents,
+            amountCents,
+            commissionPercent,
+            currency: existingPayment.currency || "USD",
+            description: `${plan} plan payment`,
+            periodMonth: new Date().toISOString().slice(0, 7),
+            status: "pending",
+          });
+          await storage.markAffiliateReferralConverted(referral.id);
+        }
+      }
+    } catch (affErr: any) {
+      console.error("[affiliate-commission] failed:", affErr?.message || affErr);
+    }
+
     // Chatbot subscription — activate or upgrade chatbot plan
     if (plan.startsWith("chatbot-")) {
       const cfg = CHATBOT_PLAN_CONFIG[plan];
@@ -2991,6 +3019,25 @@ export async function registerRoutes(
   });
 
   // === AFFILIATE PROGRAM ===
+
+  // View-access gate for affiliate management. Allows the founder AND active
+  // manager-level team members (e.g. country/regional managers) to *read*
+  // affiliate stats. Write actions (approve/reject/pay) stay founder-only.
+  const isFounderOrTeamViewer: import("express").RequestHandler = async (req: any, res, next) => {
+    if (!req.isAuthenticated?.()) return res.status(401).json({ message: "Unauthorized" });
+    const email = req.user?.claims?.email;
+    if (email && FOUNDER_EMAILS.includes(email)) return next();
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      const member = userId ? await storage.getTeamMemberByUserId(userId) : undefined;
+      const { isManagerRole } = await import("@shared/team-constants");
+      if (member && member.status === "active" && isManagerRole(member.role)) return next();
+    } catch (e: any) {
+      console.error("[affiliate-team-viewer]", e?.message || e);
+    }
+    return res.status(403).json({ message: "Forbidden: manager access required" });
+  };
+
   app.post("/api/affiliate/apply", async (req, res) => {
     try {
       const { fullName, email, phone, country, promotionMethod, socialMedia } = req.body;
@@ -2998,22 +3045,113 @@ export async function registerRoutes(
       const existing = await storage.getAffiliateApplicationByEmail(email);
       if (existing) return res.status(409).json({ message: "This email is already registered as an affiliate", referralCode: existing.referralCode });
       const code = "AFF" + Math.random().toString(36).slice(2, 8).toUpperCase();
-      const application = await storage.createAffiliateApplication({ fullName, email, phone: phone || null, country: country || null, promotionMethod: promotionMethod || null, socialMedia: socialMedia || null, referralCode: code, status: "pending" });
+      const portalToken = crypto.randomBytes(24).toString("hex");
+      const application = await storage.createAffiliateApplication({ fullName, email, phone: phone || null, country: country || null, promotionMethod: promotionMethod || null, socialMedia: socialMedia || null, referralCode: code, status: "pending", portalToken });
       res.json({ success: true, referralCode: application.referralCode, referralLink: `https://afroaigroup.com?ref=${application.referralCode}` });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.get("/api/affiliate/applications", isFounder, async (_req: any, res) => {
+  // Public: record a click when a visitor lands on a ?ref= affiliate link.
+  app.post("/api/affiliate/track", async (req, res) => {
+    try {
+      const code = String(req.body?.code || req.query?.code || "").trim();
+      if (code) await storage.incrementAffiliateClicks(code);
+      res.json({ success: true });
+    } catch { res.json({ success: true }); } // never surface errors to a public pixel
+  });
+
+  // Public (token-gated): an approved affiliate's self-service dashboard.
+  app.get("/api/affiliate/portal/:token", async (req, res) => {
+    try {
+      const affiliate = await storage.getAffiliateByPortalToken(req.params.token);
+      if (!affiliate || affiliate.status !== "approved") {
+        return res.status(404).json({ message: "Affiliate dashboard not found" });
+      }
+      const [referrals, commissions] = await Promise.all([
+        storage.getAffiliateReferrals(affiliate.id),
+        storage.getAffiliateCommissions(affiliate.id),
+      ]);
+      const pendingCents = commissions.filter((c) => c.status === "pending").reduce((s, c) => s + c.amountCents, 0);
+      res.json({
+        affiliate: {
+          fullName: affiliate.fullName,
+          referralCode: affiliate.referralCode,
+          referralLink: `https://afroaigroup.com?ref=${affiliate.referralCode}`,
+          clicks: affiliate.clicks,
+          referralCount: affiliate.referralCount,
+          convertedCount: affiliate.convertedCount,
+          totalEarnedCents: affiliate.totalEarnedCents,
+          totalPaidCents: affiliate.totalPaidCents,
+          pendingCents,
+          createdAt: affiliate.createdAt,
+        },
+        referrals: referrals.map((r) => ({ id: r.id, referredEmail: r.referredEmail, status: r.status, firstPaidAt: r.firstPaidAt, createdAt: r.createdAt })),
+        commissions: commissions.map((c) => ({ id: c.id, amountCents: c.amountCents, baseAmountCents: c.baseAmountCents, commissionPercent: c.commissionPercent, currency: c.currency, periodMonth: c.periodMonth, status: c.status, createdAt: c.createdAt })),
+      });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/affiliate/applications", isFounderOrTeamViewer, async (_req: any, res) => {
     try {
       const applications = await storage.getAllAffiliateApplications();
       res.json(applications);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // Founder + manager team members: per-affiliate drill-down — referrals + commission records.
+  app.get("/api/affiliate/applications/:id", isFounderOrTeamViewer, async (req: any, res) => {
+    try {
+      const affiliate = await storage.getAffiliateApplicationById(parseInt(req.params.id));
+      if (!affiliate) return res.status(404).json({ message: "Affiliate not found" });
+      const [referrals, commissions] = await Promise.all([
+        storage.getAffiliateReferrals(affiliate.id),
+        storage.getAffiliateCommissions(affiliate.id),
+      ]);
+      res.json({ affiliate, referrals, commissions });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   app.patch("/api/affiliate/applications/:id/status", isFounder, async (req: any, res) => {
     try {
-      await storage.updateAffiliateStatus(parseInt(req.params.id), req.body.status);
+      const id = parseInt(req.params.id);
+      const status = req.body.status;
+      await storage.updateAffiliateStatus(id, status);
+
+      // On approval, ensure a portal token exists and email the affiliate their
+      // link + private dashboard URL. Best-effort — never block the status update.
+      if (status === "approved") {
+        try {
+          let affiliate = await storage.getAffiliateApplicationById(id);
+          if (affiliate && !affiliate.portalToken) {
+            const token = crypto.randomBytes(24).toString("hex");
+            await storage.setAffiliatePortalToken(id, token);
+            affiliate = { ...affiliate, portalToken: token };
+          }
+          if (affiliate?.email && affiliate.portalToken) {
+            const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || "https";
+            const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.headers.host;
+            const origin = host ? `${proto}://${host}` : "https://afroaigroup.com";
+            const { sendAffiliateApprovedEmail } = await import("./mailer");
+            await sendAffiliateApprovedEmail(affiliate.email, {
+              name: affiliate.fullName,
+              referralCode: affiliate.referralCode,
+              referralLink: `https://afroaigroup.com?ref=${affiliate.referralCode}`,
+              portalUrl: `${origin}/affiliate/portal/${affiliate.portalToken}`,
+            });
+          }
+        } catch (mailErr: any) {
+          console.error("[affiliate-approval-email] failed:", mailErr?.message || mailErr);
+        }
+      }
       res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Founder: mark all pending commissions for an affiliate as paid out.
+  app.patch("/api/affiliate/applications/:id/pay", isFounder, async (req: any, res) => {
+    try {
+      const paidCents = await storage.markAffiliateCommissionsPaid(parseInt(req.params.id));
+      res.json({ success: true, paidCents });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

@@ -1,6 +1,6 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
-import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, teamMembers, partnerApplications, partners, partnerCustomers, partnerCommissions, partnerLeads, partnerPayouts, partnerCertifications, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog, type TeamMember, type InsertTeamMember, knowledgeDocuments, knowledgeChunks, type KnowledgeDocument, type InsertKnowledgeDocument, type KnowledgeChunk, type InsertKnowledgeChunk } from "@shared/schema";
+import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, affiliateReferrals, affiliateCommissions, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, teamMembers, partnerApplications, partners, partnerCustomers, partnerCommissions, partnerLeads, partnerPayouts, partnerCertifications, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type AffiliateReferral, type InsertAffiliateReferral, type AffiliateCommission, type InsertAffiliateCommission, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog, type TeamMember, type InsertTeamMember, knowledgeDocuments, knowledgeChunks, type KnowledgeDocument, type InsertKnowledgeDocument, type KnowledgeChunk, type InsertKnowledgeChunk } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
 import { eq, desc, sql, count, and, gte } from "drizzle-orm";
@@ -45,8 +45,20 @@ export interface IStorage {
   updateUserPlan(userId: string, plan: string): Promise<void>;
   createAffiliateApplication(data: InsertAffiliateApplication): Promise<AffiliateApplication>;
   getAffiliateApplicationByEmail(email: string): Promise<AffiliateApplication | undefined>;
+  getAffiliateApplicationById(id: number): Promise<AffiliateApplication | undefined>;
+  getApprovedAffiliateByCode(code: string): Promise<AffiliateApplication | undefined>;
+  getAffiliateByPortalToken(token: string): Promise<AffiliateApplication | undefined>;
   getAllAffiliateApplications(): Promise<AffiliateApplication[]>;
   updateAffiliateStatus(id: number, status: string): Promise<void>;
+  setAffiliatePortalToken(id: number, token: string): Promise<void>;
+  incrementAffiliateClicks(code: string): Promise<void>;
+  createAffiliateReferral(data: InsertAffiliateReferral): Promise<AffiliateReferral | undefined>;
+  getAffiliateReferralByUserId(userId: string): Promise<AffiliateReferral | undefined>;
+  getAffiliateReferrals(affiliateId: number): Promise<AffiliateReferral[]>;
+  createAffiliateCommission(data: InsertAffiliateCommission): Promise<AffiliateCommission>;
+  getAffiliateCommissions(affiliateId: number): Promise<AffiliateCommission[]>;
+  markAffiliateReferralConverted(id: number): Promise<void>;
+  markAffiliateCommissionsPaid(affiliateId: number): Promise<number>;
   // API Integrations
   getApiIntegrations(userId: string): Promise<ApiIntegration[]>;
   getApiIntegration(id: number): Promise<ApiIntegration | undefined>;
@@ -648,6 +660,94 @@ class DatabaseStorage implements IStorage {
 
   async updateAffiliateStatus(id: number, status: string): Promise<void> {
     await db.update(affiliateApplications).set({ status }).where(eq(affiliateApplications.id, id));
+  }
+
+  async getAffiliateApplicationById(id: number): Promise<AffiliateApplication | undefined> {
+    const [app] = await db.select().from(affiliateApplications).where(eq(affiliateApplications.id, id));
+    return app;
+  }
+
+  async getApprovedAffiliateByCode(code: string): Promise<AffiliateApplication | undefined> {
+    const [app] = await db.select().from(affiliateApplications)
+      .where(and(eq(affiliateApplications.referralCode, code), eq(affiliateApplications.status, "approved")));
+    return app;
+  }
+
+  async getAffiliateByPortalToken(token: string): Promise<AffiliateApplication | undefined> {
+    const [app] = await db.select().from(affiliateApplications).where(eq(affiliateApplications.portalToken, token));
+    return app;
+  }
+
+  async setAffiliatePortalToken(id: number, token: string): Promise<void> {
+    await db.update(affiliateApplications).set({ portalToken: token }).where(eq(affiliateApplications.id, id));
+  }
+
+  async incrementAffiliateClicks(code: string): Promise<void> {
+    await db.update(affiliateApplications)
+      .set({ clicks: sql`${affiliateApplications.clicks} + 1` })
+      .where(and(eq(affiliateApplications.referralCode, code), eq(affiliateApplications.status, "approved")));
+  }
+
+  async createAffiliateReferral(data: InsertAffiliateReferral): Promise<AffiliateReferral | undefined> {
+    // Idempotent: one referral row per referred user (unique constraint).
+    const existing = await this.getAffiliateReferralByUserId(data.referredUserId);
+    if (existing) return existing;
+    const [created] = await db.insert(affiliateReferrals).values(data).returning();
+    await db.update(affiliateApplications)
+      .set({ referralCount: sql`${affiliateApplications.referralCount} + 1` })
+      .where(eq(affiliateApplications.id, data.affiliateId));
+    return created;
+  }
+
+  async getAffiliateReferralByUserId(userId: string): Promise<AffiliateReferral | undefined> {
+    const [ref] = await db.select().from(affiliateReferrals).where(eq(affiliateReferrals.referredUserId, userId));
+    return ref;
+  }
+
+  async getAffiliateReferrals(affiliateId: number): Promise<AffiliateReferral[]> {
+    return db.select().from(affiliateReferrals)
+      .where(eq(affiliateReferrals.affiliateId, affiliateId))
+      .orderBy(desc(affiliateReferrals.createdAt));
+  }
+
+  async createAffiliateCommission(data: InsertAffiliateCommission): Promise<AffiliateCommission> {
+    const [created] = await db.insert(affiliateCommissions).values(data).returning();
+    await db.update(affiliateApplications)
+      .set({ totalEarnedCents: sql`${affiliateApplications.totalEarnedCents} + ${data.amountCents}` })
+      .where(eq(affiliateApplications.id, data.affiliateId));
+    return created;
+  }
+
+  async getAffiliateCommissions(affiliateId: number): Promise<AffiliateCommission[]> {
+    return db.select().from(affiliateCommissions)
+      .where(eq(affiliateCommissions.affiliateId, affiliateId))
+      .orderBy(desc(affiliateCommissions.createdAt));
+  }
+
+  async markAffiliateReferralConverted(id: number): Promise<void> {
+    // Only flip to converted on the FIRST paid event (bump convertedCount once).
+    const [ref] = await db.select().from(affiliateReferrals).where(eq(affiliateReferrals.id, id));
+    if (!ref || ref.status === "converted") return;
+    await db.update(affiliateReferrals)
+      .set({ status: "converted", firstPaidAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(affiliateReferrals.id, id));
+    await db.update(affiliateApplications)
+      .set({ convertedCount: sql`${affiliateApplications.convertedCount} + 1` })
+      .where(eq(affiliateApplications.id, ref.affiliateId));
+  }
+
+  async markAffiliateCommissionsPaid(affiliateId: number): Promise<number> {
+    const pending = await db.select().from(affiliateCommissions)
+      .where(and(eq(affiliateCommissions.affiliateId, affiliateId), eq(affiliateCommissions.status, "pending")));
+    if (pending.length === 0) return 0;
+    const totalCents = pending.reduce((s, c) => s + c.amountCents, 0);
+    await db.update(affiliateCommissions)
+      .set({ status: "paid" })
+      .where(and(eq(affiliateCommissions.affiliateId, affiliateId), eq(affiliateCommissions.status, "pending")));
+    await db.update(affiliateApplications)
+      .set({ totalPaidCents: sql`${affiliateApplications.totalPaidCents} + ${totalCents}` })
+      .where(eq(affiliateApplications.id, affiliateId));
+    return totalCents;
   }
 
   async getUser(userId: string): Promise<any | undefined> {

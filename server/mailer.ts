@@ -87,6 +87,26 @@ export async function sendPaymentCongratsEmail(to: string, opts: {
   return send(to, subject, wrapped.html, wrapped.text);
 }
 
+export async function sendAffiliateApprovedEmail(to: string, opts: {
+  name: string; referralCode: string; referralLink: string; portalUrl: string;
+}): Promise<boolean> {
+  const name = opts.name || "there";
+  const subject = "You're approved — welcome to the Afro AI Affiliate Program";
+  const html = `
+    <p>Hi ${name},</p>
+    <p>Great news — your application to the <strong>Afro AI Affiliate Program</strong> has been <strong>approved</strong>! You now earn <strong>10% commission</strong> every time someone you refer becomes a paying customer.</p>
+    <p style="margin:18px 0 6px;color:#a1a1aa;font-size:13px;">Your unique referral link</p>
+    <p style="background:#0b0b0c;border:1px solid #27272a;border-radius:8px;padding:14px;font-family:ui-monospace,monospace;font-size:13px;color:${BRAND_COLOR};word-break:break-all;">${opts.referralLink}</p>
+    <p style="margin:6px 0 18px;font-size:13px;color:#a1a1aa;">Referral code: <strong style="color:#fff;font-family:ui-monospace,monospace;">${opts.referralCode}</strong></p>
+    <p>Share your link anywhere — social media, WhatsApp, your website. Anyone who signs up and pays through it earns you commission automatically.</p>
+    <p style="margin-top:18px;"><a href="${opts.portalUrl}" style="background:${BRAND_COLOR};color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">Open your affiliate dashboard →</a></p>
+    <p style="font-size:13px;color:#a1a1aa;margin-top:18px;">Bookmark that dashboard link — it's your private page to track clicks, referrals and earnings. Keep it to yourself.</p>
+    <p style="margin-top:18px;">Welcome aboard,<br/>The ${PLATFORM} Team</p>`;
+  const text = `Hi ${name},\n\nYour application to the Afro AI Affiliate Program has been approved! You earn 10% commission on every paying customer you refer.\n\nYour referral link: ${opts.referralLink}\nReferral code: ${opts.referralCode}\n\nTrack your clicks, referrals and earnings on your private dashboard:\n${opts.portalUrl}\n\n(Bookmark that link and keep it private.)\n\nWelcome aboard,\nThe ${PLATFORM} Team`;
+  const wrapped = shell("Affiliate application approved ✓", html, text);
+  return send(to, subject, wrapped.html, wrapped.text);
+}
+
 export async function sendPaymentNudgeEmail(to: string, opts: {
   customerName: string; plan: string; amount: string; currency: string;
 }): Promise<boolean> {

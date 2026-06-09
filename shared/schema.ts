@@ -311,12 +311,66 @@ export const affiliateApplications = pgTable("affiliate_applications", {
   socialMedia: text("social_media"),
   referralCode: varchar("referral_code").notNull().unique(),
   status: varchar("status").notNull().default("pending"),
+  // Self-service portal access — affiliates have no platform login, so an
+  // unguessable token (emailed on approval) gates their stats page.
+  portalToken: varchar("portal_token").unique(),
+  // Running counters kept on the row for a fast founder list (mirrors the
+  // partner program's totalCustomers / totalEarnedCents / totalPaidCents).
+  clicks: integer("clicks").notNull().default(0),
+  referralCount: integer("referral_count").notNull().default(0),
+  convertedCount: integer("converted_count").notNull().default(0),
+  totalEarnedCents: integer("total_earned_cents").notNull().default(0),
+  totalPaidCents: integer("total_paid_cents").notNull().default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
-export const insertAffiliateApplicationSchema = createInsertSchema(affiliateApplications).omit({ id: true, createdAt: true });
+export const insertAffiliateApplicationSchema = createInsertSchema(affiliateApplications).omit({
+  id: true,
+  createdAt: true,
+  clicks: true,
+  referralCount: true,
+  convertedCount: true,
+  totalEarnedCents: true,
+  totalPaidCents: true,
+});
 export type AffiliateApplication = typeof affiliateApplications.$inferSelect;
 export type InsertAffiliateApplication = z.infer<typeof insertAffiliateApplicationSchema>;
+
+// A user who signed up through an affiliate's ?ref= link. One row per
+// referred user (unique), created at first signup attribution.
+export const affiliateReferrals = pgTable("affiliate_referrals", {
+  id: serial("id").primaryKey(),
+  affiliateId: integer("affiliate_id").notNull().references(() => affiliateApplications.id, { onDelete: "cascade" }),
+  referredUserId: varchar("referred_user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
+  referredEmail: varchar("referred_email"),
+  status: varchar("status").notNull().default("signed_up"), // signed_up | converted
+  firstPaidAt: timestamp("first_paid_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertAffiliateReferralSchema = createInsertSchema(affiliateReferrals).omit({ id: true, createdAt: true, firstPaidAt: true });
+export type AffiliateReferral = typeof affiliateReferrals.$inferSelect;
+export type InsertAffiliateReferral = z.infer<typeof insertAffiliateReferralSchema>;
+
+// One commission record per completed payment made by a referred user.
+export const affiliateCommissions = pgTable("affiliate_commissions", {
+  id: serial("id").primaryKey(),
+  affiliateId: integer("affiliate_id").notNull().references(() => affiliateApplications.id, { onDelete: "cascade" }),
+  referralId: integer("referral_id").references(() => affiliateReferrals.id, { onDelete: "set null" }),
+  userId: varchar("user_id").references(() => users.id),
+  baseAmountCents: integer("base_amount_cents").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  commissionPercent: integer("commission_percent").notNull().default(10),
+  currency: varchar("currency").notNull().default("USD"),
+  description: text("description"),
+  periodMonth: varchar("period_month").notNull(), // YYYY-MM
+  status: varchar("status").notNull().default("pending"), // pending | paid
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertAffiliateCommissionSchema = createInsertSchema(affiliateCommissions).omit({ id: true, createdAt: true });
+export type AffiliateCommission = typeof affiliateCommissions.$inferSelect;
+export type InsertAffiliateCommission = z.infer<typeof insertAffiliateCommissionSchema>;
 
 // ============ API INTEGRATIONS ============
 export const apiIntegrations = pgTable("api_integrations", {

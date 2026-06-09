@@ -81,6 +81,32 @@ export function cfAuthBridge(): RequestHandler {
         }
       } catch {}
 
+      // Affiliate attribution: if this is a fresh signup that arrived carrying
+      // an `afro_ref` cookie (dropped by the frontend when a visitor lands on a
+      // ?ref=AFFxxxx link), credit the referring affiliate. Best-effort and
+      // idempotent (one referral row per user), never blocks the request.
+      try {
+        if (dbUser.createdAt) {
+          const ageMs = Date.now() - new Date(dbUser.createdAt).getTime();
+          const refCode = cookies["afro_ref"];
+          if (ageMs < 30_000 && refCode) {
+            const { storage } = await import("../../storage");
+            const affiliate = await storage.getApprovedAffiliateByCode(refCode);
+            // Don't let an affiliate self-refer with their own application email.
+            if (affiliate && affiliate.email?.toLowerCase() !== (dbUser.email || "").toLowerCase()) {
+              await storage.createAffiliateReferral({
+                affiliateId: affiliate.id,
+                referredUserId: dbUser.id,
+                referredEmail: dbUser.email || null,
+                status: "signed_up",
+              });
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error("[cfBridge] affiliate attribution failed:", e?.message || e);
+      }
+
       // Shape req.user identically to what Passport produces in this codebase.
       (req as any).user = {
         claims: {
