@@ -3003,19 +3003,15 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.get("/api/affiliate/applications", isAuthenticated, async (req: any, res) => {
+  app.get("/api/affiliate/applications", isFounder, async (_req: any, res) => {
     try {
-      const user = await storage.getUser(req.user.id);
-      if (!user?.isFounder) return res.status(403).json({ message: "Forbidden" });
       const applications = await storage.getAllAffiliateApplications();
       res.json(applications);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.patch("/api/affiliate/applications/:id/status", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/affiliate/applications/:id/status", isFounder, async (req: any, res) => {
     try {
-      const user = await storage.getUser(req.user.id);
-      if (!user?.isFounder) return res.status(403).json({ message: "Forbidden" });
       await storage.updateAffiliateStatus(parseInt(req.params.id), req.body.status);
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
