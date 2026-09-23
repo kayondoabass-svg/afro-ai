@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Pc7R6JeI_tXl1keClJC1O"
+uri = "file://docs/afro-ai-weekly-execution-guide.md"
+type = "text"
+title = "Afro AI — Weekly Execution Guide"
+description = "The combined 15-step checklist and research, organized by day with execution steps, completion checks, cost cautions, and security corrections."
+logical_id = "ae786cd1-7866-488d-ab17-6a91def27a1e"
+content_hash = "sha256:9f57a730d0638ba6327d3dcce56713daded70cccc1cf41576a39166aafdf3c2b"
+size = 13468
+mtime_ms = 1790198210016
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/ae786cd1-7866-488d-ab17-6a91def27a1e/883c0496-0708-488b-9306-0fe3ad4a17f6"
+storage_version_token = "1790198223591489"
+content_type = "text/markdown"
