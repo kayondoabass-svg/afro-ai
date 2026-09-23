@@ -38,7 +38,11 @@ Days are planning targets, not automatic deadlines. If a gate fails, resolve it 
 
 ### Day 1 — scope, inventory, and budget
 
-#### 1. Confirm infrastructure and budget
+#### 1. Confirm infrastructure and budget — DONE (initial review)
+
+Marked complete at the user's request after the initial infrastructure/budget discussion. Current server: DigitalOcean, 1 GB RAM, 25 GB disk, FRA1, Ubuntu 24.04; its name indicates 1 vCPU. Current cost reported as $6/month, with a proposed $18/month website upgrade. This is not an approved GPU or media budget. The desired target is 10,000 simultaneous users, not a measured capacity.
+
+**Carry-forward checks:** free disk, backups, live workloads, exact upgrade specifications, capacity/load tests, and separate inference/training/media quotes remain unverified. The detailed checks below are retained honestly; completing this initial review does not certify production readiness.
 - [ ] Record DigitalOcean instance type, CPU, RAM, free disk, GPU/VRAM if present, region, and current workloads.
 - [ ] Check current backups, resource usage, and remaining capacity.
 - [ ] Obtain current training, hosting, storage, and media quotes.
@@ -47,11 +51,13 @@ Days are planning targets, not automatic deadlines. If a gate fails, resolve it 
 
 **Done when:** a costed hardware shortlist and approved spending ceiling exist. No upgrade is purchased merely to troubleshoot a disabled UI option.
 
-#### 2. Audit existing Afro AI features
-- [ ] Inventory chat providers, streaming, document retrieval, tools, image/audio/video routes, storage, authentication, and background jobs.
-- [ ] Mark each capability: working, partial, absent, or untested.
+#### 2. Audit existing Afro AI features — IN PROGRESS
+- [x] Inventory chat providers, streaming, document retrieval, tools, image/audio/video routes, storage, authentication, and background jobs.
+- [x] Mark each capability: implemented, partial, not found, or runtime unverified.
 - [ ] Select three priority text jobs and the languages to evaluate.
-- [ ] Document which existing modules can be reused and which require work.
+- [x] Document which existing modules can be reused and which require work.
+
+Source audit saved in [Afro AI feature audit](afro-ai-feature-audit.md). No application code changed or paid API tests performed. Runtime verification and user confirmation of task/language scope remain open.
 
 **Done when:** there is a short gap list based on code and behavior, not assumptions.
 
