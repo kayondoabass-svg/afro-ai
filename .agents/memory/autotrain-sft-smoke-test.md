@@ -14,3 +14,9 @@ For endpoint troubleshooting, verify the actual model repository, task metadata,
 **Why:** repeated deployment advice based only on adapter-loading traces did not establish the endpoint configuration. A merged model can also lack a model card declaring its task; missing task metadata is a hypothesis to check, not proof of a hardware or billing restriction.
 
 **How to apply:** distinguish training, merging, and serving; inspect the model file list and endpoint Task setting. Do not repeat unavailable engine selections or claim an upgrade will unlock them without evidence.
+
+The user confirmed that adding model-card metadata with `pipeline_tag: text-generation` and `library_name: transformers` made vLLM selectable for the merged model.
+
+**Why:** the disabled engine selection was resolved through model metadata without changing GPUs or funding.
+
+**How to apply:** for future merged model uploads with disabled engine choices, check task metadata first; this observation does not guarantee every disabled engine has the same cause.
