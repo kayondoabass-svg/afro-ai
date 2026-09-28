@@ -1,11 +1,35 @@
 export * from "./models/auth";
 export * from "./models/chat";
 
-import { pgTable, serial, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index, customType } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { users } from "./models/auth";
+
+const mediaBytes = customType<{ data: Buffer }>({ dataType: () => "bytea" });
+export const mediaJobs = pgTable("media_jobs", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  kind: text("kind").notNull(),
+  prompt: text("prompt").notNull(),
+  duration: integer("duration"),
+  idempotencyKey: varchar("idempotency_key", { length: 128 }).notNull(),
+  status: text("status").notNull().default("queued"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  leaseToken: text("lease_token"),
+  error: text("error"),
+  plan: text("plan").notNull(),
+  costCents: integer("cost_cents").notNull(),
+  usageLogId: integer("usage_log_id"),
+  assetKey: text("asset_key"),
+  assetBytes: mediaBytes("asset_bytes"),
+  mimeType: text("mime_type"),
+}, (t) => [
+  uniqueIndex("media_jobs_user_idempotency").on(t.userId, t.idempotencyKey),
+  index("media_jobs_queue").on(t.status, t.createdAt),
+]);
 
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),

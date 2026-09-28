@@ -167,13 +167,40 @@ describe("bounded authenticated tool loop", () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it("lets web search finish after the former ten-second tool deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      model.mockResolvedValueOnce(reply([call("web_search", { query: "Pesapal Zambia payment methods" })]));
+      const source = { title: "Result", url: "https://example.org/result", snippet: "Summary", retrievedAt: "2026-01-01T00:00:00.000Z" };
+      search.mockImplementationOnce(() => new Promise(resolve => setTimeout(() => resolve([source]), 15_000)));
+      const task = runChatWithTools(options(["web_search"]));
+      await vi.advanceTimersByTimeAsync(15_001);
+      const result = await task;
+      expect(result.toolResults[0].ok).toBe(true);
+      expect(result.webSources).toEqual([source]);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("bounds an unresponsive web search at forty seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      model.mockResolvedValueOnce(reply([call("web_search", { query: "news" })]));
+      search.mockImplementationOnce(() => new Promise(() => {}));
+      const task = runChatWithTools(options(["web_search"]));
+      await vi.advanceTimersByTimeAsync(40_001);
+      const result = await task;
+      expect(result.toolResults[0].error?.code).toBe("CANCELLED");
+      expect(result.webSources).toEqual([]);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("enforces the whole-request deadline even if the model never resolves", async () => {
     vi.useFakeTimers();
     try {
       model.mockImplementationOnce(() => new Promise(() => {}));
       const task = runChatWithTools(options());
       const rejection = expect(task).rejects.toThrow("cancelled or timed out");
-      await vi.advanceTimersByTimeAsync(60_001);
+      await vi.advanceTimersByTimeAsync(110_001);
       await rejection;
       expect(model).toHaveBeenCalledTimes(1);
     } finally { vi.useRealTimers(); }

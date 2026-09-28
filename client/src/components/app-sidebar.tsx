@@ -53,6 +53,7 @@ import {
   SquareTerminal,
   Play,
   Handshake,
+  Images,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
@@ -61,6 +62,7 @@ const ALL_MENU_ITEMS = [
   { titleKey: "sidebar.overview", title: "Overview", url: "/overview", icon: LayoutGrid },
   { titleKey: "sidebar.dashboard", title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { titleKey: "sidebar.aiBuilder", title: "AI Builder", url: "/chat", icon: MessageSquare },
+  { titleKey: "media.title", title: "AI Images & Videos", url: "/media", icon: Images },
   { titleKey: "sidebar.playground", title: "Run Code", url: "/playground", icon: Play },
   { titleKey: "sidebar.blockBuilder", title: "Block Builder", url: "/builder", icon: Layers },
   { titleKey: "sidebar.templates", title: "Templates", url: "/templates", icon: LayoutTemplate },

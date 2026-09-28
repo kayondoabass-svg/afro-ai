@@ -51,7 +51,7 @@ export function detectAudioFormat(buffer: Buffer): AudioFormat {
  * Uses temp files instead of pipes because video containers (MP4/MOV)
  * require seeking to find the audio track.
  */
-export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
+export async function convertToWav(audioBuffer: Buffer, signal?: AbortSignal, maxSeconds?: number): Promise<Buffer> {
   const inputPath = join(tmpdir(), `input-${randomUUID()}`);
   const outputPath = join(tmpdir(), `output-${randomUUID()}.wav`);
 
@@ -64,20 +64,23 @@ export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
       const ffmpeg = spawn("ffmpeg", [
         "-i", inputPath,
         "-vn",              // Extract audio only (ignore video track)
+        ...(maxSeconds ? ["-t", String(maxSeconds)] : []),
         "-f", "wav",
         "-ar", "16000",     // 16kHz sample rate (good for speech)
         "-ac", "1",         // Mono
         "-acodec", "pcm_s16le",
         "-y",               // Overwrite output
         outputPath,
-      ]);
+      ], { signal });
+      const timer = setTimeout(() => ffmpeg.kill("SIGKILL"), 20_000);
 
       ffmpeg.stderr.on("data", () => {}); // Suppress logs
       ffmpeg.on("close", (code) => {
+        clearTimeout(timer);
         if (code === 0) resolve();
         else reject(new Error(`ffmpeg exited with code ${code}`));
       });
-      ffmpeg.on("error", reject);
+      ffmpeg.on("error", (error) => { clearTimeout(timer); reject(error); });
     });
 
     // Read converted audio
@@ -95,13 +98,14 @@ export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
  * - WebM/MP4/OGG: Convert to WAV via ffmpeg
  */
 export async function ensureCompatibleFormat(
-  audioBuffer: Buffer
+  audioBuffer: Buffer,
+  signal?: AbortSignal
 ): Promise<{ buffer: Buffer; format: "wav" | "mp3" }> {
   const detected = detectAudioFormat(audioBuffer);
   if (detected === "wav") return { buffer: audioBuffer, format: "wav" };
   if (detected === "mp3") return { buffer: audioBuffer, format: "mp3" };
   // Convert WebM, MP4, OGG, or unknown to WAV
-  const wavBuffer = await convertToWav(audioBuffer);
+  const wavBuffer = await convertToWav(audioBuffer, signal);
   return { buffer: wavBuffer, format: "wav" };
 }
 
@@ -187,7 +191,8 @@ export async function voiceChatStream(
 export async function textToSpeech(
   text: string,
   voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy",
-  format: "wav" | "mp3" | "flac" | "opus" | "pcm16" = "wav"
+  format: "wav" | "mp3" | "flac" | "opus" | "pcm16" = "wav",
+  signal?: AbortSignal
 ): Promise<Buffer> {
   const response = await openai.chat.completions.create({
     model: "gpt-audio",
@@ -197,7 +202,7 @@ export async function textToSpeech(
       { role: "system", content: "You are an assistant that performs text-to-speech." },
       { role: "user", content: `Repeat the following text verbatim: ${text}` },
     ],
-  });
+  }, { signal });
   const audioData = (response.choices[0]?.message as any)?.audio?.data ?? "";
   return Buffer.from(audioData, "base64");
 }
@@ -239,13 +244,14 @@ export async function textToSpeechStream(
  */
 export async function speechToText(
   audioBuffer: Buffer,
-  format: "wav" | "mp3" | "webm" = "wav"
+  format: "wav" | "mp3" | "webm" = "wav",
+  signal?: AbortSignal
 ): Promise<string> {
   const file = await toFile(audioBuffer, `audio.${format}`);
   const response = await openai.audio.transcriptions.create({
     file,
     model: "gpt-4o-mini-transcribe",
-  });
+  }, { signal });
   return response.text;
 }
 

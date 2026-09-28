@@ -7,6 +7,7 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerVibeRoutes } from "./vibe-routes";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { registerAudioRoutes } from "./replit_integrations/audio";
+import { registerKnowledgeUploadRoutes } from "./knowledge-upload-routes";
 import {
   aiBurstLimiters,
   aiQuotaGuard,
@@ -303,6 +304,7 @@ export async function registerRoutes(
   registerVibeRoutes(app);
   registerImageRoutes(app);
   registerAudioRoutes(app);
+  registerKnowledgeUploadRoutes(app);
 
   // ============ INTERNAL EMAIL (Cloudflare Worker → Express SES) ============
   // The Cloudflare Worker (cloudflare/src/index.ts) calls this endpoint to
@@ -4073,7 +4075,7 @@ Never invent features or pricing not listed above.`;
     if (!ctx) return res.status(503).json({ message: "Unable to verify AI quota." });
     const controller = new AbortController();
     let timedOut = false;
-    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 45_000);
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
     const onClose = () => { if (!res.writableEnded) controller.abort(); };
     res.on("close", onClose);
     try {

@@ -18,7 +18,7 @@ export function isImagenAvailable(): boolean {
 
 export async function generateImageWithImagen(
   prompt: string,
-  opts: { aspectRatio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4" } = {},
+  opts: { aspectRatio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4"; signal?: AbortSignal } = {},
 ): Promise<ImagenResult> {
   const apiKey = key();
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
@@ -33,6 +33,7 @@ export async function generateImageWithImagen(
   };
 
   const res = await fetch(url, {
+    signal: opts.signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -61,16 +62,17 @@ export async function generateImageWithImagen(
 export async function generateImageWithOpenAIFallback(
   prompt: string,
   size: "1024x1024" | "512x512" | "256x256" = "1024x1024",
+  signal?: AbortSignal,
 ): Promise<ImagenResult> {
   const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("No OpenAI key configured for image fallback.");
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, maxRetries: 0 });
   const response = await client.images.generate({
     model: "gpt-image-1",
     prompt,
     n: 1,
     size,
-  });
+  }, { signal });
   const data = response.data?.[0];
   if (!data?.b64_json) {
     throw new Error("OpenAI image generation returned no data.");

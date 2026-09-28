@@ -28,10 +28,15 @@ describe("searchWeb", () => {
     const sources = await searchWeb("test & query");
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url.origin).toBe("https://s.jina.ai");
-    expect(url.searchParams.get("q")).toBe("test & query");
+    expect(url).toBe("https://s.jina.ai/");
+    expect(options.method).toBe("POST");
+    expect(JSON.parse(options.body)).toEqual({ q: "test & query" });
     expect(options.redirect).toBe("error");
     expect(options.headers.Authorization).toBe("Bearer test-key");
+    expect(options.headers.Accept).toBe("application/json");
+    expect(options.headers["Content-Type"]).toBe("application/json");
+    expect(options.headers["X-Engine"]).toBe("direct");
+    expect(options.headers["X-Respond-With"]).toBe("no-content");
     expect(sources).toHaveLength(5);
     expect(sources[0]).toMatchObject({ title: "First", url: "https://example.org/article", snippet: "A summary" });
     expect(Number.isNaN(Date.parse(sources[0].retrievedAt))).toBe(false);
@@ -62,5 +67,32 @@ describe("searchWeb", () => {
     controller.abort();
     fetchMock.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
     await expect(searchWeb("hello", controller.signal)).rejects.toThrow("cancelled");
+  });
+
+  it("allows a slow live-style response beyond twelve seconds but bounds the provider wait", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn((_url, options) => new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(new Response(JSON.stringify({
+          data: [{ title: "Result", url: "https://example.org/result", description: "Summary" }],
+        }), { headers: { "Content-Type": "application/json" } })), 15_000);
+        options.signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("aborted", "AbortError"));
+        }, { once: true });
+      }));
+      vi.stubGlobal("fetch", fetchMock);
+      const successful = searchWeb("Pesapal Zambia payment methods");
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await successful).toHaveLength(1);
+
+      fetchMock.mockImplementationOnce((_url, options) => new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      }));
+      const timedOut = searchWeb("Pesapal Zambia payment methods");
+      const rejection = expect(timedOut).rejects.toThrow("Web search timed out.");
+      await vi.advanceTimersByTimeAsync(35_001);
+      await rejection;
+    } finally { vi.useRealTimers(); }
   });
 });

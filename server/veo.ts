@@ -26,17 +26,18 @@ export function isVeoAvailable(): boolean {
   return Boolean(key());
 }
 
-async function startGeneration(prompt: string, durationSeconds: number, apiKey: string): Promise<string> {
+async function startGeneration(prompt: string, durationSeconds: number, apiKey: string, signal?: AbortSignal): Promise<string> {
   const url = `${ENDPOINT}/models/${VEO_MODEL}:predictLongRunning?key=${encodeURIComponent(apiKey)}`;
   const body = {
     instances: [{ prompt }],
     parameters: {
       aspectRatio: "16:9",
-      durationSeconds: Math.min(MAX_DURATION_SECONDS, Math.max(2, durationSeconds)),
+      durationSeconds,
       personGeneration: "allow_adult",
     },
   };
   const res = await fetch(url, {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -53,14 +54,16 @@ async function startGeneration(prompt: string, durationSeconds: number, apiKey: 
   return opName;
 }
 
-async function pollOperation(opName: string, apiKey: string): Promise<any> {
+async function pollOperation(opName: string, apiKey: string, signal?: AbortSignal): Promise<any> {
   const startedAt = Date.now();
   const url = `${ENDPOINT}/${opName}?key=${encodeURIComponent(apiKey)}`;
   while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal });
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
-      throw new Error(`Veo poll failed (${res.status}): ${txt.slice(0, 200)}`);
+      const error = new Error(`Veo poll failed (${res.status}): ${txt.slice(0, 200)}`);
+      Object.assign(error, { status: res.status });
+      throw error;
     }
     const data: any = await res.json().catch(() => ({}));
     if (data?.done) {
@@ -71,19 +74,23 @@ async function pollOperation(opName: string, apiKey: string): Promise<any> {
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
-  throw new Error("Veo generation timed out after 5 minutes.");
+  const timeout = new Error("Veo generation timed out after 5 minutes.");
+  timeout.name = "TimeoutError";
+  throw timeout;
 }
 
 export async function generateVideoWithVeo(
   prompt: string,
-  opts: { durationSeconds?: number } = {},
+  opts: { durationSeconds?: number; signal?: AbortSignal } = {},
 ): Promise<VeoResult> {
+  const duration = opts.durationSeconds === undefined ? 5 : opts.durationSeconds;
+  if (!Number.isInteger(duration) || duration < 2 || duration > MAX_DURATION_SECONDS)
+    throw new Error("VEO_INVALID_DURATION");
   const apiKey = key();
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
 
-  const duration = Math.min(MAX_DURATION_SECONDS, Math.max(2, opts.durationSeconds ?? 5));
-  const opName = await startGeneration(prompt, duration, apiKey);
-  const response = await pollOperation(opName, apiKey);
+  const opName = await startGeneration(prompt, duration, apiKey, opts.signal);
+  const response = await pollOperation(opName, apiKey, opts.signal);
 
   const sample = response?.generatedSamples?.[0] || response?.videos?.[0];
   const videoBytes: string | undefined =

@@ -24,6 +24,7 @@ const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"));
 const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const AIChatPage = lazy(() => import("@/pages/ai-chat"));
+const MediaPage = lazy(() => import("@/pages/media"));
 const AgentPage = lazy(() => import("@/pages/agent"));
 const PreviewPage = lazy(() => import("@/pages/preview"));
 const PricingPage = lazy(() => import("@/pages/pricing"));
@@ -128,6 +129,7 @@ function AuthenticatedLayout() {
                 <Route path="/agent" component={AgentPage} />
                 <Route path="/preview/:id" component={PreviewPage} />
                 <Route path="/chat-classic" component={AIChatPage} />
+                <Route path="/media" component={MediaPage} />
                 <Route path="/deployments" component={DeploymentsPage} />
                 <Route path="/pricing" component={PricingPage} />
                 <Route path="/founder" component={FounderDashboardPage} />
@@ -216,6 +218,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/refund-policy": "Refund Policy — Afro AI",
   "/dashboard": "Dashboard — Afro AI",
   "/chat": "AI Builder — Afro AI",
+  "/media": "AI Images & Videos — Afro AI",
   "/deployments": "Deployments — Afro AI",
   "/settings": "Settings — Afro AI",
   "/billing": "Billing — Afro AI",
@@ -266,6 +269,7 @@ const AUTH_REQUIRED_EXACT = new Set<string>([
   "/chat",
   "/agent",
   "/chat-classic",
+  "/media",
   "/deployments",
   "/founder",
   "/team",

@@ -16,7 +16,7 @@ export type UserPlan = "starter" | "pro" | "business" | "payg";
 //
 // Video is BUSINESS-ONLY because Veo 2 costs ~$0.35/second of generated video
 // and even 5 seconds/day caps at ~$1.75/user/day = $52/mo on a $25 plan.
-const DAILY_REQUEST_LIMITS: Record<AiKind, Record<UserPlan, number>> = {
+export const DAILY_REQUEST_LIMITS: Record<AiKind, Record<UserPlan, number>> = {
   // Chat raised starter 30→100: one app build is 5-15 messages, 30 was
   // exhausting users mid-project. Worst-case starter spend on Flash Lite
   // is still ~3¢/user/day even at 100 messages.
@@ -30,7 +30,7 @@ const DAILY_REQUEST_LIMITS: Record<AiKind, Record<UserPlan, number>> = {
 
 // PAYG charge per generation. Must clear provider cost + Pesapal fees (~3.5%).
 // gemini-2.5-flash chat ~0.2c, imagen-3 ~4c, veo-2 ~5s clip ~175c.
-const COST_CENTS: Record<AiKind, number> = {
+export const COST_CENTS: Record<AiKind, number> = {
   chat: 2,
   image: 10,
   audio: 5,

@@ -9,7 +9,7 @@ export type WebSource = {
 
 const ENDPOINT = "https://s.jina.ai/";
 const MAX_RESPONSE_BYTES = 128 * 1024;
-const TIMEOUT_MS = 12_000;
+const TIMEOUT_MS = 35_000;
 
 function publicHttpsUrl(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 2048) return null;
@@ -48,16 +48,17 @@ export async function searchWeb(query: string, signal?: AbortSignal): Promise<We
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const endpoint = new URL(ENDPOINT);
-    endpoint.searchParams.set("q", query.trim());
-    const response = await fetch(endpoint, {
-      method: "GET",
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
       redirect: "error",
       headers: {
         Authorization: `Bearer ${key}`,
         Accept: "application/json",
-        "X-Token-Budget": "4096",
+        "Content-Type": "application/json",
+        "X-Engine": "direct",
+        "X-Respond-With": "no-content",
       },
+      body: JSON.stringify({ q: query.trim() }),
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Web search provider returned HTTP ${response.status}.`);

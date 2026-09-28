@@ -36,6 +36,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type { KnowledgeDocument } from "@shared/schema";
+import { KnowledgeAudio, fileBase64 } from "@/components/knowledge-audio";
 
 interface AskSource {
   documentId: number;
@@ -76,6 +77,7 @@ export default function KnowledgePage() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [url, setUrl] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
 
   const [question, setQuestion] = useState("");
   const [askResult, setAskResult] = useState<AskResult | null>(null);
@@ -109,6 +111,12 @@ export default function KnowledgePage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (tab === "file") {
+        if (!uploadFile || !uploadFile.size || uploadFile.size > 5 * 1024 * 1024) throw new Error("Choose a non-empty file up to 5 MB.");
+        return apiRequest("POST", "/api/knowledge/upload", {
+          name: uploadFile.name, title, data: await fileBase64(uploadFile),
+        });
+      }
       const payload =
         tab === "url"
           ? { title: title.trim() || url.trim(), sourceType: "url", url: url.trim() }
@@ -121,6 +129,7 @@ export default function KnowledgePage() {
       setTitle("");
       setContent("");
       setUrl("");
+      setUploadFile(null);
       toast({ title: t("knowledge.added"), description: t("knowledge.addedDesc") });
     },
     onError: (e: any) => toast({ title: t("knowledge.error"), description: e.message, variant: "destructive" }),
@@ -237,13 +246,14 @@ export default function KnowledgePage() {
               <DialogDescription>{t("knowledge.addDialogDesc")}</DialogDescription>
             </DialogHeader>
             <Tabs value={tab} onValueChange={setTab}>
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="text" data-testid="tab-text" className="gap-2">
                   <FileText className="h-4 w-4" /> {t("knowledge.tabText")}
                 </TabsTrigger>
                 <TabsTrigger value="url" data-testid="tab-url" className="gap-2">
                   <Link2 className="h-4 w-4" /> {t("knowledge.tabUrl")}
                 </TabsTrigger>
+                <TabsTrigger value="file" data-testid="tab-file">Upload file</TabsTrigger>
               </TabsList>
               <div className="space-y-3 pt-4">
                 <div className="space-y-1.5">
@@ -267,6 +277,11 @@ export default function KnowledgePage() {
                     data-testid="input-content"
                   />
                 </TabsContent>
+                <TabsContent value="file" className="mt-0 space-y-1.5">
+                  <Label htmlFor="kb-file">Document file</Label>
+                  <Input id="kb-file" type="file" accept=".pdf,.txt,.md,.csv,.json" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
+                  <p className="text-xs text-muted-foreground">PDF, TXT, Markdown, CSV or JSON, up to 5 MB. Text extraction is limited to 12,000 characters (CSV: first 200 rows). Scanned PDFs are not supported.</p>
+                </TabsContent>
                 <TabsContent value="url" className="mt-0 space-y-1.5">
                   <Label htmlFor="kb-url">{t("knowledge.fieldUrl")}</Label>
                   <Input
@@ -282,7 +297,7 @@ export default function KnowledgePage() {
             <DialogFooter>
               <Button
                 onClick={() => createMutation.mutate()}
-                disabled={createMutation.isPending || (tab === "url" ? !url.trim() : !content.trim())}
+                disabled={createMutation.isPending || (tab === "file" ? !uploadFile : tab === "url" ? !url.trim() : !content.trim())}
                 data-testid="button-submit-knowledge"
               >
                 {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : t("knowledge.addSubmit")}
@@ -439,6 +454,7 @@ export default function KnowledgePage() {
         </CardContent>
       </Card>
 
+      <KnowledgeAudio afroAvailable={Boolean(capabilities?.afroAvailable)} />
       {/* Document list */}
       <div className="space-y-3">
         <h2 className="font-semibold text-lg">{t("knowledge.documents")}</h2>
