@@ -14,6 +14,7 @@ import { buildLiveWebContext, extractUrls } from "../../url-scrape";
 import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
 import { listProjectFiles, saveProjectFiles } from "../../project-files";
 import { buildProjectEditContext, parseProjectEditResponse } from "./project-edit";
+import { productSelfKnowledge } from "../../product-self-knowledge";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -397,7 +398,7 @@ If a request is ambiguous, ask exactly one focused clarifying question, then pro
 
 const BUILDER_SYSTEM_PROMPT = `You are Afro AI, an elite AI-powered website and app builder. Born in Africa, built for the world. You produce stunning, award-winning digital products that rival the best agencies globally. You serve creators in all 54 African countries, across the Americas, Europe, Asia, and beyond. You are a co-creator — not just a code generator.
 
-You can build ANYTHING a user asks for: websites, web apps, multi-page applications, games, dashboards, tools, utilities, calculators, booking systems, portfolios, e-commerce stores, social platforms, educational apps, IoT control panels, and more. There are no limits.
+You can draft many kinds of websites and apps: games, dashboards, tools, booking systems, portfolios and more. Real services and platform features are subject to their actual setup and limits.
 
 === PLAIN LANGUAGE LAW (HIGHEST PRIORITY — OVERRIDES EVERYTHING BELOW) ===
 Your users are everyday African people — shop owners, salon owners, students, pastors, farmers, market traders. Most have NEVER written a line of code. You speak to them like a friendly neighbour, not a developer or a tech blogger.
@@ -1852,11 +1853,7 @@ Users tell Afro AI their experience level (Beginner / Intermediate / Expert) and
 **Gemini-Primary AI with OpenAI Auto-Fallback**
 - Primary AI provider switched from OpenAI to Google Gemini for better pricing
 - Auto-fallback to OpenAI on any auth, quota, or rate-limit error (transparent to user)
-- Tier-based model routing:
-  • Starter plan → gemini-2.5-flash-lite (cheapest, fastest)
-  • Pro plan → gemini-2.5-flash (balanced)
-  • Business plan → gemini-2.5-pro (most powerful)
-  • Pay-As-You-Go → gemini-2.5-pro (most powerful)
+- Provider/model routing is selected by server configuration; do not infer a live model from the user's plan.
 
 **Image Generation (Imagen 3)**
 - Primary: Google Imagen 3 — high-quality realistic and stylized images
@@ -1864,11 +1861,8 @@ Users tell Afro AI their experience level (Beginner / Intermediate / Expert) and
 - Aspect ratios: 1:1, 16:9, 9:16, 4:3, 3:4
 - POST /api/generate-image
 
-**Video Generation (Veo 2) — BUSINESS PLAN ONLY**
-- Google Veo 2 — generate short video clips from text or image prompts
-- Up to 5 seconds per clip
-- Business plan: 5 clips/day. Pay-As-You-Go: 50 clips/day. Starter & Pro: not included.
-- POST /api/generate-video — async (30-90 seconds per generation)
+**Video generation**
+- See the trusted product self-knowledge for the current /media jobs and readiness requirements. Do not treat this legacy endpoint description as proof of availability.
 
 **Daily Usage Caps (per user, per plan)**
 | Plan | Chats | Images | Audio | Videos |
@@ -1918,9 +1912,9 @@ When users ask "what's new?" or "what can you do?" — confidently mention:
 - "Afro Auth is our newest product — a complete login system for other developers' apps"
 - "Email API lets you send transactional emails (order confirmations, password resets) with full bounce protection"
 - "USSD Builder is for building those *123# menus that millions of African phones use"
-- "Video generation is now live for Business plan users — short clips from a text prompt"
+- "The Media page supports image/video jobs when the provider and storage migration are ready; check availability before promising generation"
 
-Be enthusiastic and specific. These are real, shipped, working features — not coming soon.`;
+Be specific about what is implemented versus what is configured and verified live.`;
 
 
 
@@ -2097,7 +2091,7 @@ export function registerChatRoutes(app: Express): void {
           res.write(`data: ${JSON.stringify({ type: "status", message: "Editing selected project file..." })}\n\n`);
           const result = await aiChatCompleteStream({
             messages: [
-              { role: "system", content: prompt },
+              { role: "system", content: prompt + productSelfKnowledge({ afroAuthorized: false }) },
               { role: "user", content: userContent },
             ],
             maxTokens,
@@ -2359,6 +2353,9 @@ You are now in EDITOR MODE. Your workflow:
 4. Return the COMPLETE updated HTML — every existing line must be preserved unless explicitly removed`;
       }
 
+      // Place trusted current capabilities after retrieved/user-specific context so
+      // stale or untrusted documentation cannot override product limits.
+      contextPrompt += productSelfKnowledge({ afroAuthorized: isFounderRequest });
       const systemMessage = {
         role: "system" as const,
         content: contextPrompt,

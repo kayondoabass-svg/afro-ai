@@ -7,6 +7,7 @@ import { FOUNDER_EMAILS } from "../auth/storage";
 import { storage } from "../../storage";
 import { aiChatComplete, hasAfroAiProvider } from "../../ai-chat-provider";
 import { AudioReservationError, reserveAudioUsage } from "../../audio-reservation";
+import { productSelfKnowledge } from "../../product-self-knowledge";
 
 // Body parser with 50MB limit for audio payloads
 const audioBodyParser = express.json({ limit: "7mb" });
@@ -43,6 +44,7 @@ export function registerAudioRoutes(app: Express): void {
         if (!authorized) return res.status(403).json({ message: "Afro test is restricted to administrators." });
         if (!hasAfroAiProvider()) return res.status(503).json({ message: "Afro test is unavailable." });
       }
+      const selfKnowledge = productSelfKnowledge({ afroAuthorized: authorized });
       // Normalize all inputs to a bounded two-minute mono stream.
       const normalized = await convertToWav(raw, controller.signal, 120);
       controller.signal.throwIfAborted();
@@ -55,12 +57,12 @@ export function registerAudioRoutes(app: Express): void {
       if (provider === "afro-test") {
         const result = await aiChatComplete({
           provider: "afro-test", afroAuthorized: authorized, signal: controller.signal, maxTokens: 600,
-          messages: [{ role: "user", content: transcript }],
+          messages: [{ role: "system", content: selfKnowledge }, { role: "user", content: transcript }],
         });
         reply = result.text;
       } else {
         const result = await openai.chat.completions.create({
-          model: "gpt-audio", messages: [{ role: "user", content: transcript }], max_completion_tokens: 600,
+          model: "gpt-audio", messages: [{ role: "system", content: selfKnowledge }, { role: "user", content: transcript }], max_completion_tokens: 600,
         }, { signal: controller.signal });
         reply = result.choices[0]?.message?.content || "";
       }
@@ -212,7 +214,7 @@ export function registerAudioRoutes(app: Express): void {
         model: "gpt-audio",
         modalities: ["text", "audio"],
         audio: { voice, format: "pcm16" },
-        messages: chatHistory,
+        messages: [{ role: "system" as const, content: productSelfKnowledge({ afroAuthorized: false }) }, ...chatHistory],
         stream: true,
         max_completion_tokens: 1200,
       }, { signal: controller.signal });

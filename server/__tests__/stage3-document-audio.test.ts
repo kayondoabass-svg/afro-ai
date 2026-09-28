@@ -86,12 +86,31 @@ describe("Afro audio pipeline", () => {
   it("reserves before founder STT → explicit Afro chat → existing alloy TTS", async () => {
     const res = response();
     await handler(registerAudioRoutes, "/api/audio/respond")(request("founder@example.test"), res);
-    expect(mocks.ai).toHaveBeenCalledWith(expect.objectContaining({ provider: "afro-test", afroAuthorized: true, messages: [{ role: "user", content: "Hello" }] }));
+    expect(mocks.ai).toHaveBeenCalledWith(expect.objectContaining({ provider: "afro-test", afroAuthorized: true, messages: [
+      expect.objectContaining({ role: "system", content: expect.stringContaining("Voice Lab") }),
+      { role: "user", content: "Hello" },
+    ] }));
     expect(mocks.tts).toHaveBeenCalledWith("Welcome", "alloy", "mp3", expect.any(AbortSignal));
     expect(mocks.reserve).toHaveBeenCalledWith("owner", "unique-request-key-123", "afro-test", Buffer.from("a"));
     expect(mocks.reserve.mock.invocationCallOrder[0]).toBeLessThan(mocks.stt.mock.invocationCallOrder[0]);
     expect(mocks.usage).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ transcript: "Hello", reply: "Welcome", mimeType: "audio/mpeg" }));
+  });
+  it("supplies trusted product context to the standalone default text reply without changing its provider", async () => {
+    const res = response();
+    mocks.stream.mockResolvedValue({ choices: [{ message: { content: "Hello back" } }] });
+    await handler(registerAudioRoutes, "/api/audio/respond")({
+      ...request(),
+      body: { ...request().body, provider: "default" },
+    }, res);
+    expect(mocks.stream).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-audio",
+      messages: [
+        expect.objectContaining({ role: "system", content: expect.stringContaining("no document retrieval") }),
+        { role: "user", content: "Hello" },
+      ],
+    }), expect.any(Object));
+    expect(mocks.ai).not.toHaveBeenCalled();
   });
   it("allows active full admins and sanitizes upstream failures", async () => {
     mocks.member.mockResolvedValue({ status: "active", tier: "full_admin" });
@@ -170,6 +189,9 @@ describe("legacy conversation audio limits and cancellation", () => {
     const res = response();
     res.write = vi.fn(); res.setHeader = vi.fn(); res.end = vi.fn();
     await handler(registerAudioRoutes, "/api/voice-conversations/:id/messages")(request(), res);
+    expect(mocks.stream.mock.calls[0][0].messages[0]).toEqual(expect.objectContaining({
+      role: "system", content: expect.stringContaining("legacy founder console /d1"),
+    }));
     expect(mocks.reserve).toHaveBeenCalledExactlyOnceWith("owner", "legacy-request-key-123", "conversation:1:voice:alloy", Buffer.from("a"), 1);
     expect(mocks.reserve.mock.invocationCallOrder[0]).toBeLessThan(mocks.stt.mock.invocationCallOrder[0]);
     expect(mocks.usage).not.toHaveBeenCalled();

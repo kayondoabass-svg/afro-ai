@@ -6,7 +6,7 @@ Scope: read-only source audit. No provider requests, paid generation, production
 |---|---|---|
 | Text providers | Implemented; runtime unverified | `server/ai-chat-provider.ts`: Gemini with OpenAI fallback. Reuse this abstraction. |
 | Streaming chat | Implemented; runtime unverified | Provider streaming, `server/replit_integrations/chat/routes.ts`, and `client/src/pages/ai-chat.tsx` SSE handling are present. |
-| Afro AI SLM provider | Not integrated | No HF/vLLM provider implementation found. Prior standalone endpoint test does not constitute app integration. |
+| Afro AI SLM provider | Integrated restricted pilot; runtime unverified | `server/ai-chat-provider.ts` provides an opt-in text adapter for authorized Knowledge Ask and Voice Lab requests only. It does not replace builder chat defaults or provide image/audio inference; configuration does not prove live inference. |
 | Knowledge retrieval | Implemented with UI limitations | `server/knowledge.ts`, `server/embeddings.ts`, `client/src/pages/knowledge.tsx`: text/URL ingestion, user-scoped vector retrieval, citations. Knowledge UI lacks a file-upload ingestion path. |
 | Tool calling | Partial | `server/ai-tools.ts`: bounded knowledge-search tool loop. No general tool suite. |
 | Web access | Partial | URL retrieval in `server/url-scrape.ts` and knowledge ingestion, with SSRF controls; no model-callable web-search/browser tool found. |
@@ -30,7 +30,7 @@ Scope: read-only source audit. No provider requests, paid generation, production
 
 ## Priority gap list
 
-1. Add the SLM as an internal test provider without changing the global default.
+1. Verify the restricted SLM pilot endpoint and answer quality before expanding access; keep the global default unchanged.
 2. Establish baseline end-to-end tests for current features before adding new providers.
 3. Add missing image/video generation UI and durable, user-owned media jobs/assets.
 4. Enforce atomic budget reservations, concurrency caps, and idempotent retries.
