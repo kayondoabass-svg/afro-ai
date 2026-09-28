@@ -15,3 +15,4 @@
 - [Paid provider uncertainty](paid-provider-uncertainty.md) — never automatically retry ambiguous paid jobs; cancellation does not prove provider billing stopped.
 - [Binary project storage](binary-project-storage.md) — bounded assets share the owned database transaction; LFS fails closed rather than pretending pointers are assets.
 - [SQLite CLI portability](sqlite-cli-portability.md) — error-path tests must not assume every CLI version continues through same-line statements.
+- [Binary test fixtures](binary-test-fixtures.md) — validate font fixtures before round-trips; dependency-bundled assets may already contain corrupted bytes.

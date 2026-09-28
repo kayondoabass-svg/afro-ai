@@ -5,30 +5,78 @@
  * application's user ID of an already-connected GitHub account:
  * RUN_LIVE_GITHUB_BINARY_E2E=1 GITHUB_E2E_USER_ID=... npx vitest run server/__tests__/github-binary-live.test.ts
  *
- * Uses the application's encrypted OAuth token, never a personal access token
- * supplied to the test. The connected OAuth grant must include BOTH repo
+ * By default uses the application's encrypted OAuth token. For an isolated
+ * workspace run, set GITHUB_E2E_USE_WORKSPACE_TOKEN=1 and
+ * GITHUB_E2E_EXPECTED_LOGIN to the explicitly approved GitHub login. This mode
+ * uses GITHUB_TOKEN with an in-memory token store; it never modifies app accounts.
+ * Either credential must include BOTH repo
  * (private repository creation/write) and delete_repo (cleanup). The normal
  * application OAuth flow requests only repo; do not broaden that flow for this
  * test. A failed cleanup fails the test.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 
-const enabled = process.env.RUN_LIVE_GITHUB_BINARY_E2E === "1" && !!process.env.GITHUB_E2E_USER_ID;
+const workspaceTokenMode = process.env.GITHUB_E2E_USE_WORKSPACE_TOKEN === "1";
+const enabled = process.env.RUN_LIVE_GITHUB_BINARY_E2E === "1" &&
+  (workspaceTokenMode || !!process.env.GITHUB_E2E_USER_ID);
 
 function blobSha(bytes: Buffer): string {
   return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 }
 
+// Real Inter fixtures from @fontsource/inter@5.2.5, distributed under the
+// accompanying SIL Open Font License. No network or package-internal dependency.
+function fontFixtures() {
+  return ["woff", "woff2"].map(extension => {
+    const bytes = readFileSync(resolve(process.cwd(), `server/__tests__/fixtures/fonts/inter-latin-400-normal.${extension}`));
+    return {
+      path: `assets/Inter-Regular.${extension}`, name: `Inter-Regular.${extension}`,
+      language: "binary", encoding: "base64" as const, content: bytes.toString("base64"), bytes,
+    };
+  });
+}
+
+describe("GitHub binary live-test font fixtures", () => {
+  it("loads real WOFF and WOFF2 assets for byte and SHA checks", () => {
+    for (const font of fontFixtures()) {
+      expect(font.bytes.subarray(0, 4).toString("ascii")).toBe(font.path.endsWith(".woff2") ? "wOF2" : "wOFF");
+      expect(font.bytes.readUInt32BE(8)).toBe(font.bytes.length);
+      expect(Buffer.from(font.content, "base64").equals(font.bytes)).toBe(true);
+    }
+  });
+});
+
 describe.skipIf(!enabled)("GitHub binary transfer (LIVE private repository)", () => {
   it("round-trips binary bytes and Git blob SHAs; never imports or overwrites LFS pointers", async () => {
+    let workspaceTokenRow: Record<string, unknown> | undefined;
+    if (workspaceTokenMode) {
+      if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_E2E_EXPECTED_LOGIN) {
+        throw new Error("Workspace mode requires GITHUB_TOKEN and an explicitly approved GITHUB_E2E_EXPECTED_LOGIN");
+      }
+      // Only credential persistence is replaced. All export/import functions
+      // and GitHub requests below remain real. No token is written to disk/DB.
+      vi.doMock("../db", () => ({
+        db: { select: () => ({ from: () => ({ where: async () => workspaceTokenRow ? [workspaceTokenRow] : [] }) }) },
+        pool: { end: async () => {} },
+      }));
+    }
     // Dynamic imports keep normal/mock-only test runs independent of the live DB.
     const { pool } = await import("../db");
-    const { getUserToken, decryptToken, previewGithubExport, exportGithubProject, importGithubProject } = await import("../github");
+    const { getUserToken, encryptToken, decryptToken, previewGithubExport, exportGithubProject, importGithubProject } = await import("../github");
     const { Octokit } = await import("@octokit/rest");
 
     const repoName = `afro-ai-binary-e2e-${randomUUID()}`;
-    const userId = process.env.GITHUB_E2E_USER_ID!;
+    const userId = workspaceTokenMode ? "isolated-live-github-test" : process.env.GITHUB_E2E_USER_ID!;
+    if (workspaceTokenMode) {
+      workspaceTokenRow = {
+        userId,
+        githubLogin: process.env.GITHUB_E2E_EXPECTED_LOGIN!,
+        accessTokenEnc: encryptToken(process.env.GITHUB_TOKEN!),
+      };
+    }
     let step = "checking connected account";
     let owner = "";
     let creationAttempted = false;
@@ -39,6 +87,7 @@ describe.skipIf(!enabled)("GitHub binary transfer (LIVE private repository)", ()
     const binaries = [
       { path: "assets/pixel.png", name: "pixel.png", language: "binary", encoding: "base64" as const, content: png.toString("base64"), bytes: png },
       { path: "assets/pixel.gif", name: "pixel.gif", language: "binary", encoding: "base64" as const, content: gif.toString("base64"), bytes: gif },
+      ...fontFixtures(),
     ];
     const files = [
       { path: "src/hello.txt", name: "hello.txt", language: "plaintext", content: "Live GitHub binary round-trip\n" },
@@ -163,6 +212,10 @@ describe.skipIf(!enabled)("GitHub binary transfer (LIVE private repository)", ()
         }
       }
       await pool.end();
+      if (workspaceTokenMode) {
+        workspaceTokenRow = undefined;
+        vi.doUnmock("../db");
+      }
     }
     if (failure) throw failure;
   }, 180_000);
