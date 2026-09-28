@@ -180,7 +180,7 @@ export default function WebhooksPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold">{w.name}</span>
                         {!w.isActive && <Badge variant="outline" className="text-xs">Inactive</Badge>}
-                        {w.secret && <Lock className="w-3.5 h-3.5 text-muted-foreground" title="HMAC signed" />}
+                        {w.secret && <span title="HMAC signed"><Lock className="w-3.5 h-3.5 text-muted-foreground" aria-label="HMAC signed" role="img" /></span>}
                       </div>
                       <p className="text-xs font-mono text-muted-foreground truncate bg-muted/50 px-2 py-1 rounded">{w.url}</p>
                       <div className="flex flex-wrap gap-1">
