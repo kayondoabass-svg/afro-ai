@@ -80,3 +80,31 @@ export async function deleteProjectFile(userId: string, fileId: string) {
   const file = await resolveProjectFileRecord(userId, fileId);
   await query("DELETE FROM project_files WHERE id = ? AND user_id = ? AND conversation_id = ?", [fileId, userId, file.conversation_id]);
 }
+
+/** Compare all touched files and insert the merge command in ONE SQLite statement.
+ * Unrelated paths (including binary assets) are never rewritten. */
+export async function applyProjectFileChanges(userId: string, conversationId: string, changes: { file: ProjectFile; before: ProjectFile | null }[]) {
+  const id = await assertProjectFileOwnership(userId, conversationId);
+  const edits = validateProjectFiles(changes.map(c => c.file));
+  if (!edits.length || edits.length > 8 || edits.some(f => f.encoding)) throw new ProjectFileError(400, "invalid text changes");
+  const current = await listProjectFiles(userId, id);
+  validateProjectFiles([...current.filter(f => !edits.some(e => e.path.toLowerCase() === f.path.toLowerCase())), ...edits]);
+  await initializeProjectFiles(current.some(f => f.encoding === "base64"));
+  const conditions: string[] = [];
+  const values: unknown[] = [userId, id, JSON.stringify(edits)];
+  for (const { file, before } of changes) {
+    if (before) {
+      conditions.push(`EXISTS (SELECT 1 FROM project_files WHERE user_id = ? AND conversation_id = ? AND path = ? COLLATE BINARY AND content = ? AND language = ? AND (encoding IS NULL OR encoding = 'utf8'))`);
+      values.push(userId, id, before.path, before.content, before.language);
+    } else {
+      conditions.push(`NOT EXISTS (SELECT 1 FROM project_files WHERE user_id = ? AND conversation_id = ? AND path = ? COLLATE NOCASE)`);
+      values.push(userId, id, file.path);
+    }
+  }
+  // RETURNING describes the inserted command even though its AFTER trigger
+  // consumes it; an empty result means the compare-and-swap did not match.
+  const result = await query(`INSERT INTO project_file_commands (user_id, conversation_id, mode, files)
+    SELECT ?, ?, 'merge', ? WHERE ${conditions.join(" AND ")} RETURNING id`, values);
+  if (!result.results.length) throw new ProjectFileError(409, "proposal is stale; no files saved");
+  return listProjectFiles(userId, id);
+}
