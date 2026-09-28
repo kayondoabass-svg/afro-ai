@@ -26,6 +26,18 @@ function getBaseUrl() {
   return `https://api.cloudflare.com/client/v4/accounts/${getCfAccountId()}/d1/database/${dbId}`;
 }
 
+/** Read-only identity check for operator migration preflight. Never log the API response. */
+export async function d1GetDatabaseInfo(): Promise<{ uuid: string; name: string }> {
+  if (!isD1Configured()) throw new Error("D1 is not configured");
+  const resp = await fetch(getBaseUrl(), { headers: getHeaders() });
+  if (!resp.ok) throw new Error("D1 database identity lookup failed");
+  const data = await resp.json() as any;
+  if (!data.success || typeof data.result?.uuid !== "string" || typeof data.result?.name !== "string") {
+    throw new Error("D1 database identity lookup failed");
+  }
+  return { uuid: data.result.uuid, name: data.result.name };
+}
+
 export async function d1Query(sql: string, params: any[] = []): Promise<{ results: any[]; meta: any }> {
   const resp = await fetch(`${getBaseUrl()}/query`, {
     method: "POST",

@@ -1,0 +1,77 @@
+import { d1Query, isD1Configured } from "./d1";
+import { chatStorage } from "./replit_integrations/chat/storage";
+import { ProjectFileError, validateProjectFiles, type ProjectFile } from "./project-file-policy";
+export { ProjectFileError, validateProjectFiles, type ProjectFile } from "./project-file-policy";
+
+export async function assertProjectFileOwnership(userId: string, conversationId: string | number): Promise<string> {
+  if (typeof userId !== "string" || !userId) throw new ProjectFileError(401, "authentication required");
+  const id = String(conversationId);
+  if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) throw new ProjectFileError(400, "invalid conversation");
+  const conversation = await chatStorage.getConversation(Number(id));
+  if (!conversation || conversation.userId !== userId) throw new ProjectFileError(404, "conversation not found");
+  return id;
+}
+
+async function query(sql: string, params: unknown[] = []) {
+  if (!isD1Configured()) throw new ProjectFileError(503, "project file storage unavailable");
+  try { return await d1Query(sql, params); }
+  catch { throw new ProjectFileError(503, "project file storage operation failed"); }
+}
+
+export async function initializeProjectFiles() {
+  // Requests must never perform DDL. Operators apply migration 002 separately;
+  // legacy reads/deletes remain available even when command writes are gated.
+  const { results } = await query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'project_file_command_apply'");
+  if (!results.length) throw new ProjectFileError(503, "project file migration 002 required");
+}
+
+export async function listProjectFileRecords(userId: string, conversationId: string | number) {
+  const id = await assertProjectFileOwnership(userId, conversationId);
+  const { results } = await query("SELECT * FROM project_files WHERE user_id = ? AND conversation_id = ? ORDER BY path", [userId, id]);
+  validateProjectFiles(results); // Export/read protection includes legacy stored files.
+  return results;
+}
+
+export async function listProjectFiles(userId: string, conversationId: string | number): Promise<ProjectFile[]> {
+  return validateProjectFiles(await listProjectFileRecords(userId, conversationId));
+}
+
+async function resolveProjectFileRecord(userId: string, fileId: string) {
+  if (!userId) throw new ProjectFileError(401, "authentication required");
+  if (!/^[1-9]\d*$/.test(fileId)) throw new ProjectFileError(400, "invalid file id");
+  const { results } = await query("SELECT * FROM project_files WHERE id = ? AND user_id = ?", [fileId, userId]);
+  if (!results.length) throw new ProjectFileError(404, "file not found");
+  await assertProjectFileOwnership(userId, results[0].conversation_id);
+  return results[0];
+}
+
+export async function getProjectFileRecord(userId: string, fileId: string) {
+  const record = await resolveProjectFileRecord(userId, fileId);
+  validateProjectFiles([record]);
+  return record;
+}
+
+// A command insert and its SQLite trigger execute atomically in one statement.
+// No multi-request transaction assumption or partial-save fallback is needed.
+export async function saveProjectFiles(userId: string, conversationId: string | number, input: unknown, mode: "merge" | "replace"): Promise<ProjectFile[]> {
+  const id = await assertProjectFileOwnership(userId, conversationId);
+  if (mode !== "merge" && mode !== "replace") throw new ProjectFileError(400, "invalid save mode");
+  const files = validateProjectFiles(input);
+  const previous = mode === "merge" ? await listProjectFiles(userId, id) : [];
+  const merged = new Map((mode === "merge" ? previous : []).map(file => [file.path.toLowerCase(), file]));
+  for (const file of files) merged.set(file.path.toLowerCase(), file);
+  const result = validateProjectFiles(Array.from(merged.values()));
+  await initializeProjectFiles();
+  // A single INSERT statement handles both modes via an AFTER INSERT trigger
+  // on a durable command table (migration below). SQLite rolls back all trigger
+  // effects if any limit/constraint fails.
+  await query("INSERT INTO project_file_commands (user_id, conversation_id, mode, files) VALUES (?, ?, ?, ?)",
+    [userId, id, mode, JSON.stringify(files)]);
+  return result;
+}
+
+export async function deleteProjectFile(userId: string, fileId: string) {
+  // Deletion must remain possible for legacy files rejected by export policy.
+  const file = await resolveProjectFileRecord(userId, fileId);
+  await query("DELETE FROM project_files WHERE id = ? AND user_id = ? AND conversation_id = ?", [fileId, userId, file.conversation_id]);
+}

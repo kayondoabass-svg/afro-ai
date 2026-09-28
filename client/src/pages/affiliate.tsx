@@ -7,38 +7,33 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  Users, DollarSign, Gift, Copy, Check, ExternalLink,
-  Globe, Smartphone, Star, TrendingUp, Shield, Zap
+  Users, DollarSign, Gift, Check,
+  Globe, Shield
 } from "lucide-react";
 
 export default function AffiliatePage() {
   const { toast } = useToast();
   const [form, setForm] = useState({ fullName: "", email: "", phone: "", country: "", promotionMethod: "", socialMedia: "" });
-  const [result, setResult] = useState<{ referralCode: string; referralLink: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const applyMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/affiliate/apply", form).then(r => r.json()),
     onSuccess: (data) => {
       if (data.success) {
-        setResult({ referralCode: data.referralCode, referralLink: data.referralLink });
+        setSubmitted(true);
       } else {
         toast({ title: "Error", description: data.message, variant: "destructive" });
       }
     },
-    onError: async (err: any) => {
-      let msg = "Something went wrong";
-      try { const d = await err.response?.json(); if (d?.referralCode) { setResult({ referralCode: d.referralCode, referralLink: `https://afroaigroup.com?ref=${d.referralCode}` }); return; } msg = d?.message || msg; } catch {}
-      toast({ title: "Error", description: msg, variant: "destructive" });
+    onError: (err: Error) => {
+      let msg = err.message || "Something went wrong";
+      const json = msg.match(/^\d+:\s*(\{[\s\S]*\})$/);
+      if (json) {
+        try { msg = JSON.parse(json[1]).message || msg; } catch { /* keep original error */ }
+      }
+      toast({ title: "Application not submitted", description: msg, variant: "destructive" });
     }
   });
-
-  const copyCode = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast({ title: "Copied!", description: "Copied to clipboard" });
-  };
 
   return (
     <div className="flex-1 overflow-auto min-h-0 bg-background">
@@ -60,12 +55,11 @@ export default function AffiliatePage() {
 
       {/* Stats / Benefits */}
       <section className="py-12 px-4 border-b">
-        <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { icon: DollarSign, label: "Commission Rate", value: "10%", desc: "Per paying referral" },
             { icon: Users, label: "Cookie Duration", value: "30 days", desc: "Tracking window" },
-            { icon: TrendingUp, label: "Min. Payout", value: "$10", desc: "Low threshold" },
-            { icon: Zap, label: "Instant Code", value: "Instant", desc: "Get code now" },
+            { icon: Shield, label: "Application", value: "Review", desc: "Approval required before referral tracking" },
           ].map((stat) => (
             <Card key={stat.label} className="text-center">
               <CardContent className="pt-5 pb-4">
@@ -85,8 +79,8 @@ export default function AffiliatePage() {
           <h2 className="text-2xl font-bold text-center">How It Works</h2>
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              { icon: Gift, step: "1", title: "Sign Up Below", desc: "Fill in your details and get your unique affiliate code instantly — no approval wait." },
-              { icon: Globe, step: "2", title: "Share Your Link", desc: "Share your link on social media, YouTube, WhatsApp groups, or your website. Every click is tracked." },
+              { icon: Gift, step: "1", title: "Apply Below", desc: "Submit your details for review. If approved, you will receive your affiliate link and portal access by email." },
+              { icon: Globe, step: "2", title: "Share Your Link", desc: "Once approved, share your link on social media, YouTube, WhatsApp groups, or your website." },
               { icon: DollarSign, step: "3", title: "Earn Commission", desc: "When someone signs up and pays for a plan through your link, you earn 10% of their payment." },
             ].map((step) => (
               <div key={step.step} className="text-center space-y-3">
@@ -104,12 +98,12 @@ export default function AffiliatePage() {
       {/* Signup Form */}
       <section className="py-12 px-4">
         <div className="max-w-lg mx-auto">
-          {!result ? (
+           {!submitted ? (
             <Card>
               <CardContent className="pt-6 space-y-5">
                 <div className="text-center space-y-1 mb-4">
                   <h2 className="text-xl font-bold">Join the Affiliate Program</h2>
-                  <p className="text-sm text-muted-foreground">Fill in your details to get your unique referral code instantly.</p>
+                   <p className="text-sm text-muted-foreground">Submit your details for review. Your link becomes active only after approval.</p>
                 </div>
 
                 <div className="space-y-1">
@@ -149,11 +143,11 @@ export default function AffiliatePage() {
                   disabled={!form.fullName || !form.email || applyMutation.isPending}
                   data-testid="button-affiliate-submit"
                 >
-                  {applyMutation.isPending ? "Generating your code..." : "Get My Affiliate Code"}
+                   {applyMutation.isPending ? "Submitting..." : "Submit Application"}
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center">
-                  By joining, you agree to our affiliate terms. Commission is paid in USD.
+                   By applying, you agree to our affiliate terms. Payouts are handled manually after review; submitting does not activate a referral link.
                 </p>
               </CardContent>
             </Card>
@@ -164,50 +158,9 @@ export default function AffiliatePage() {
                   <Check className="w-8 h-8 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold mb-1">You're in! Welcome to the team.</h2>
-                  <p className="text-sm text-muted-foreground">Your affiliate code has been generated. Share it and start earning.</p>
+                   <h2 className="text-xl font-bold mb-1">Application received</h2>
+                   <p className="text-sm text-muted-foreground">Your application is pending review. If approved, we will email your affiliate link and portal access. Please do not share a referral link until then.</p>
                 </div>
-
-                <div className="space-y-3">
-                  <div className="rounded-lg border bg-background p-3 space-y-1">
-                    <p className="text-xs text-muted-foreground">Your Affiliate Code</p>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-2xl font-bold tracking-widest text-primary" data-testid="text-affiliate-code">{result.referralCode}</span>
-                      <Button size="sm" variant="outline" onClick={() => copyCode(result.referralCode)} data-testid="button-copy-code">
-                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border bg-background p-3 space-y-1">
-                    <p className="text-xs text-muted-foreground">Your Referral Link</p>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-foreground break-all font-mono" data-testid="text-affiliate-link">{result.referralLink}</span>
-                      <Button size="sm" variant="outline" className="flex-shrink-0" onClick={() => copyCode(result.referralLink)} data-testid="button-copy-link">
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-left">
-                  {[
-                    { icon: Smartphone, tip: "Share on WhatsApp groups in your city" },
-                    { icon: Globe, tip: "Post demos on TikTok and Instagram Reels" },
-                    { icon: Star, tip: "Write a review blog or YouTube video" },
-                    { icon: Shield, tip: "Reach out to small businesses directly" },
-                  ].map((t, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                      <t.icon className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />
-                      <span>{t.tip}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <Button variant="outline" className="w-full gap-2" onClick={() => window.location.href = "/"} data-testid="button-affiliate-go-home">
-                  <ExternalLink className="w-4 h-4" />
-                  Explore Afro AI
-                </Button>
               </CardContent>
             </Card>
           )}

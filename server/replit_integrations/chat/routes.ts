@@ -12,6 +12,8 @@ import { aiQuotaGuard } from "../quota";
 import { aiChatCompleteStream } from "../../ai-chat-provider";
 import { buildLiveWebContext, extractUrls } from "../../url-scrape";
 import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
+import { listProjectFiles, saveProjectFiles } from "../../project-files";
+import { buildProjectEditContext, parseProjectEditResponse } from "./project-edit";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -2017,6 +2019,15 @@ export function registerChatRoutes(app: Express): void {
     try {
       const conversationId = parseInt(req.params.id as string);
       const { content: userContent, attachments, language: rawLanguage, mode: rawMode } = req.body;
+      const userId = (req as any).user?.claims?.sub || (req as any).user?.claims?.id;
+      const conversation = Number.isSafeInteger(conversationId) && conversationId > 0
+        ? await chatStorage.getConversation(conversationId) : undefined;
+      if (!conversation || !userId || conversation.userId !== userId) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      if (typeof userContent !== "string" || !userContent.trim() || userContent.length > 24_000) {
+        return res.status(400).json({ error: "Message must contain between 1 and 24000 characters" });
+      }
       const requestedMode = String(rawMode || "").toLowerCase() === "founder" ? "founder" : "builder";
       const LANG_MAP: Record<string, string> = {
         en: "English", sw: "Swahili (Kiswahili)", ar: "Arabic (العربية)",
@@ -2071,6 +2082,58 @@ export function registerChatRoutes(app: Express): void {
       }
 
       const { model, maxTokens } = getModelForPlan(userPlan);
+
+      // Explicit opt-in keeps legacy single-HTML/split-file generation unchanged.
+      // Selected-file mode never enters HTML extraction, web fetching, or attachment processing.
+      if (req.body.projectMode === true || req.body.selectedFilePath !== undefined) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        let saved = false;
+        try {
+          if (attachments?.length) throw new Error("Project file editing does not support attachments.");
+          const files = await listProjectFiles(userId, conversationId);
+          const { selected, prompt } = buildProjectEditContext(files, req.body.selectedFilePath, userContent);
+          res.write(`data: ${JSON.stringify({ type: "status", message: "Editing selected project file..." })}\n\n`);
+          const result = await aiChatCompleteStream({
+            messages: [
+              { role: "system", content: prompt },
+              { role: "user", content: userContent },
+            ],
+            maxTokens,
+            // Buffer untrusted model output: no code or secrets reach the client before validation.
+            onChunk: () => {},
+          });
+          const edit = parseProjectEditResponse(result.fullText, selected);
+          const current = await listProjectFiles(userId, conversationId);
+          if (current.find(file => file.path === selected.path)?.content !== selected.content) {
+            throw new Error("Selected file changed while AI was editing. Retry using the latest version.");
+          }
+          await saveProjectFiles(userId, conversationId, [edit.file], "merge");
+          saved = true;
+          res.write(`data: ${JSON.stringify({ type: "project-files-saved", saved: true, paths: [edit.file.path] })}\n\n`);
+          // Persist only the summary, not another copy of project source in chat history.
+          await chatStorage.createMessage(conversationId, "user", userContent);
+          await chatStorage.createMessage(conversationId, "assistant", edit.summary);
+          res.write(`data: ${JSON.stringify({ content: edit.summary })}\n\n`);
+          const { storage } = await import("../../storage");
+          await storage.createUsageLog({
+            userId, conversationId, model, tokensUsed: result.completionTokens, kind: "chat",
+            costCents: paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0,
+          });
+          if (paygUserId === userId) await storage.deductPaygBalance(userId, PAYG_COST_PER_GENERATION_CENTS);
+        } catch {
+          // Never echo model text, source, credentials, or provider/storage errors.
+          const error = saved
+            ? "File saved, but chat history or usage recording failed. Reload files before retrying."
+            : "Project edit failed. Select an existing file under 24 KB, remove credentials and attachments, and retry. No AI edit was saved.";
+          res.write(`data: ${JSON.stringify({ type: "project-files-saved", saved, error })}\n\n`);
+          res.write(`data: ${JSON.stringify({ error })}\n\n`);
+        }
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        res.end();
+        return;
+      }
 
       const messageContent = attachments && attachments.length > 0
         ? JSON.stringify({ text: userContent, attachments })

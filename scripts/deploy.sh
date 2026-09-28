@@ -293,6 +293,14 @@ main() {
     exit 1
   fi
 
+  # Read-only D1 identity/schema/duplicate preflight. Missing migration is
+  # allowed: the app gates command writes (503) while legacy reads/deletes work.
+  # Identity mismatch, duplicate paths, or connectivity failure halt deployment.
+  log "Checking project-files D1 prerequisite (read-only)..."
+  if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/project-files-d1-preflight.ts" --require-ready; then
+    die "Project-files D1 preflight failed; no D1 changes made. Existing service remains running."
+  fi
+
   if ! run_build; then
     log "Build FAILED — entering recovery"
     emergency_recovery "$previous_sha"

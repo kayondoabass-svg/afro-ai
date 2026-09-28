@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient, inspectQuota } from "@/lib/queryClient";
 import { FileTreeSidebar, saveProjectFiles, type ProjectFile } from "@/components/file-tree-sidebar";
+import { GithubProjectDialog, githubRepositoryUrl } from "@/components/github-project-dialog";
 import { VibePanel, parseVibeMarkers } from "@/components/vibe-chips";
 import { NextStepsCard } from "@/components/next-steps-card";
 import { useLocation } from "wouter";
@@ -1100,7 +1101,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   onShowHistory?: () => void;
   historyCount?: number;
   onAddAuth?: () => void;
-  onGithubExport?: (mode: "gist" | "repo") => void;
+  onGithubExport?: (mode: "repo") => void;
   onSelectElement?: (sel: { selector: string; tagName: string; textPreview: string; outerHtmlPreview: string }) => void;
   isSelectMode?: boolean;
   onToggleSelectMode?: () => void;
@@ -1252,9 +1253,6 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem onClick={() => onGithubExport("gist")} data-testid="menu-github-gist">
-                    <BookMarked className="w-4 h-4 mr-2 text-muted-foreground" />Export as Gist
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onGithubExport("repo")} data-testid="menu-github-repo">
                     <GitBranch className="w-4 h-4 mr-2 text-muted-foreground" />Push to Repository
                   </DropdownMenuItem>
@@ -1324,9 +1322,6 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
               {onGithubExport && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => onGithubExport("gist")} data-testid="menu-github-gist-mobile">
-                    <BookMarked className="w-4 h-4 mr-2" />Export as GitHub Gist
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onGithubExport("repo")} data-testid="menu-github-repo-mobile">
                     <GitBranch className="w-4 h-4 mr-2" />Push to Repository
                   </DropdownMenuItem>
@@ -1533,6 +1528,7 @@ function renderInline(text: string): React.ReactNode[] {
 }
 
 export default function AIChatPage() {
+  const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { t, language } = useLanguage();
   const { toast } = useToast();
@@ -1574,6 +1570,8 @@ export default function AIChatPage() {
   const [editorDirty, setEditorDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generatedFileSave = useRef<Promise<void>>(Promise.resolve());
+  const editorRevision = useRef(0);
   const qcMain = useQueryClient();
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importUrl, setImportUrl] = useState("");
@@ -1581,35 +1579,24 @@ export default function AIChatPage() {
   const [importZipFile, setImportZipFile] = useState<File | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const importZipRef = useRef<HTMLInputElement>(null);
-  const [githubToken, setGithubToken] = useState(() => localStorage.getItem("afroai_github_token") || "");
+  const [projectMode, setProjectMode] = useState(false);
+  const [projectFilesConversation, setProjectFilesConversation] = useState<number | null>(null);
+  const projectFilesReady = !!activeConversation && projectFilesConversation === activeConversation;
+  const [projectGithubMode, setProjectGithubMode] = useState<"import" | "export">("export");
   const [showGithubModal, setShowGithubModal] = useState(false);
-  const [githubExportMode, setGithubExportMode] = useState<"gist" | "repo">("gist");
-  const [githubRepoName, setGithubRepoName] = useState("");
-  const [githubExporting, setGithubExporting] = useState(false);
-  const [githubResultUrl, setGithubResultUrl] = useState<string | null>(null);
   const [githubImportUrl, setGithubImportUrl] = useState("");
   // OAuth-based push: server stores the token, the user just clicks Connect.
-  const [githubStatus, setGithubStatus] = useState<{ connected: boolean; login: string | null; configured: boolean } | null>(null);
-  const [githubVisibility, setGithubVisibility] = useState<"public" | "private" | "">("");
-  const refreshGithubStatus = useCallback(async () => {
-    try {
-      const r = await fetch("/api/github/status", { credentials: "include" });
-      if (r.ok) setGithubStatus(await r.json());
-    } catch {}
-  }, []);
-  useEffect(() => { refreshGithubStatus(); }, [refreshGithubStatus]);
   // After OAuth callback redirects back with ?github=connected, refresh state.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gh = params.get("github");
     if (gh === "connected") {
-      refreshGithubStatus();
       toast({ title: "GitHub connected!", description: "You can now push your app to a new repo." });
       params.delete("github");
       const qs = params.toString();
       window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
       setShowGithubModal(true);
-      setGithubExportMode("repo");
+      setProjectGithubMode("export");
     } else if (gh === "error") {
       const reason = params.get("reason") || "Unknown error";
       toast({ title: "Could not connect to GitHub", description: reason, variant: "destructive" });
@@ -1953,7 +1940,25 @@ export default function AIChatPage() {
   }, [activeConvo?.messages, streamingContent]);
 
   useEffect(() => {
-    if (streamingContent) {
+    let cancelled = false;
+    setProjectFilesConversation(null);
+    setOpenedFile(null); setEditorDirty(false); setPreviewCode(""); setShowPreview(false);
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    if (activeConversation) {
+      fetch(`/api/d1/project-files?conversationId=${activeConversation}`, { credentials: "include" })
+        .then(async r => { if (!r.ok) throw new Error("Could not load project files"); return r.json(); })
+        .then(files => {
+          if (cancelled) return;
+          setProjectMode(files.length > 0);
+          if (files.length > 0) setShowFileTree(true);
+          setProjectFilesConversation(activeConversation);
+        }).catch(e => { if (!cancelled) toast({ title: "Project files unavailable", description: e.message, variant: "destructive" }); });
+    }
+    return () => { cancelled = true; if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [activeConversation]);
+
+  useEffect(() => {
+    if (streamingContent && projectFilesReady && !projectMode) {
       const code = extractAllCodeBlocks(streamingContent);
       if (code) {
         if (previewCode && previewCode !== code) {
@@ -1965,10 +1970,10 @@ export default function AIChatPage() {
         setMobileView("preview");
       }
     }
-  }, [streamingContent]);
+  }, [streamingContent, projectMode, projectFilesReady]);
 
   useEffect(() => {
-    if (activeConvo?.messages) {
+    if (activeConvo?.messages && projectFilesReady && !projectMode) {
       const lastAssistantMsg = [...(activeConvo.messages || [])].reverse().find(m => m.role === "assistant");
       if (lastAssistantMsg) {
         const code = extractAllCodeBlocks(lastAssistantMsg.content);
@@ -1978,18 +1983,25 @@ export default function AIChatPage() {
         }
       }
     }
-  }, [activeConvo?.messages]);
+  }, [activeConvo?.messages, projectMode, projectFilesReady]);
 
   // Auto-save project files to D1 whenever new code is generated
   useEffect(() => {
-    if (previewCode && activeConversation) {
-      saveProjectFiles(activeConversation, previewCode).then(() => {
+    if (previewCode && activeConversation && projectFilesReady && !projectMode && !isStreaming) {
+      generatedFileSave.current = generatedFileSave.current.then(() => saveProjectFiles(activeConversation, previewCode)).then(() => {
         qcMain.invalidateQueries({ queryKey: ["/api/d1/project-files", activeConversation] });
-      });
+      }).catch(e => { toast({ title: "Could not save generated files", description: e.message, variant: "destructive" }); });
     }
-  }, [previewCode, activeConversation]);
+  }, [previewCode, activeConversation, projectMode, projectFilesReady, isStreaming]);
 
   const handleFileOpen = (file: ProjectFile) => {
+    if (isStreaming) return;
+    if (editorDirty) {
+      toast({ title: "Save the current file before switching", variant: "destructive" });
+      return;
+    }
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    setProjectMode(true);
     setOpenedFile(file);
     setEditorContent(file.content || "");
     setEditorDirty(false);
@@ -1998,26 +2010,30 @@ export default function AIChatPage() {
   const handleEditorSave = useCallback(async (contentToSave?: string) => {
     if (!openedFile) return;
     const saveContent = contentToSave ?? editorContent;
+    const revision = editorRevision.current;
     try {
       setAutoSaveStatus("saving");
       await apiRequest("PUT", `/api/d1/project-files/${openedFile.id}`, { content: saveContent });
-      setEditorDirty(false);
+      if (revision === editorRevision.current) setEditorDirty(false);
       setAutoSaveStatus("saved");
-      setOpenedFile(prev => prev ? { ...prev, content: saveContent } : null);
+      setOpenedFile(prev => prev?.id === openedFile.id ? { ...prev, content: saveContent } : prev);
       qcMain.invalidateQueries({ queryKey: ["/api/d1/project-files", activeConversation] });
       setTimeout(() => setAutoSaveStatus("idle"), 2000);
-    } catch {
+    } catch (e: any) {
       setAutoSaveStatus("idle");
+      toast({ title: "File save failed", description: e.message, variant: "destructive" });
+      throw e;
     }
   }, [openedFile, editorContent, activeConversation, qcMain]);
 
   const handleEditorChange = useCallback((value: string) => {
+    editorRevision.current++;
     setEditorContent(value);
     setEditorDirty(true);
     setAutoSaveStatus("idle");
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
-      handleEditorSave(value);
+      handleEditorSave(value).catch(() => {});
     }, 2000);
   }, [handleEditorSave]);
 
@@ -2342,6 +2358,11 @@ export default function AIChatPage() {
 
   const handleImportUrl = async () => {
     if (!importUrl.trim()) return;
+    const repository = githubRepositoryUrl(importUrl);
+    if (repository) {
+      setGithubImportUrl(repository); setProjectGithubMode("import"); setShowImportDialog(false); setShowGithubModal(true);
+      return;
+    }
     setImportLoading(true);
     try {
       const res = await apiRequest("POST", "/api/import/url", { url: importUrl.trim() });
@@ -2379,119 +2400,15 @@ export default function AIChatPage() {
     }
   };
 
-  const handleGithubExport = (mode: "gist" | "repo") => {
-    setGithubExportMode(mode);
-    setGithubResultUrl(null);
+  const handleGithubExport = (mode: "repo") => {
+    setProjectGithubMode("export");
     setShowGithubModal(true);
   };
 
-  const handleGistExport = async () => {
-    if (!previewCode) return;
-    setGithubExporting(true);
-    try {
-      const titleMatch = previewCode.match(/<title>([^<]+)<\/title>/i);
-      const title = titleMatch?.[1]?.trim() || "My Afro AI App";
-      const filename = title.replace(/[^a-z0-9]/gi, "-").toLowerCase() + ".html";
-      const res = await fetch("https://api.github.com/gists", {
-        method: "POST",
-        headers: { "Authorization": `token ${githubToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description: `${title} — built with Afro AI`,
-          public: true,
-          files: { [filename]: { content: previewCode } },
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to create Gist");
-      setGithubResultUrl(data.html_url);
-      localStorage.setItem("afroai_github_token", githubToken);
-    } catch (e: any) {
-      toast({ title: "Export failed", description: e.message, variant: "destructive" });
-    } finally {
-      setGithubExporting(false);
-    }
-  };
-
-  const handleRepoExport = async () => {
-    if (!previewCode || !githubRepoName.trim()) return;
-    if (githubVisibility !== "public" && githubVisibility !== "private") {
-      toast({ title: "Pick public or private", description: "Choose who can see your repo before pushing.", variant: "destructive" });
-      return;
-    }
-    setGithubExporting(true);
-    try {
-      const titleMatch = previewCode.match(/<title>([^<]+)<\/title>/i);
-      const title = titleMatch?.[1]?.trim() || "My Afro AI App";
-      const res = await fetch("/api/github/push", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          repoName: githubRepoName.trim(),
-          htmlContent: previewCode,
-          title,
-          visibility: githubVisibility,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to push to GitHub");
-      setGithubResultUrl(data.repoUrl);
-    } catch (e: any) {
-      const msg = e?.message || "Export failed";
-      if (/not connected/i.test(msg)) {
-        await refreshGithubStatus();
-        toast({ title: "Connect GitHub first", description: "Click 'Connect GitHub' in the dialog to authorize.", variant: "destructive" });
-      } else {
-        toast({ title: "Export failed", description: msg, variant: "destructive" });
-      }
-    } finally {
-      setGithubExporting(false);
-    }
-  };
-
   const handleGithubImport = async () => {
-    if (!githubImportUrl.trim()) return;
-    setImportLoading(true);
-    try {
-      let rawUrl = githubImportUrl.trim();
-      let filename = "app.html";
-
-      if (/gist\.github\.com\/[^/]+\/[a-f0-9]+/.test(rawUrl)) {
-        const match = rawUrl.match(/gist\.github\.com\/[^/]+\/([a-f0-9]+)/);
-        if (match) {
-          const gistRes = await fetch(`https://api.github.com/gists/${match[1]}`);
-          const gistData = await gistRes.json();
-          if (!gistRes.ok) throw new Error("Could not fetch Gist");
-          const files = Object.values(gistData.files) as any[];
-          const htmlFile = files.find(f => f.filename?.endsWith(".html")) || files[0];
-          filename = htmlFile.filename;
-          const html = htmlFile.content || await fetch(htmlFile.raw_url).then(r => r.text());
-          setPreviewCode(html);
-          setShowPreview(true);
-          setImportSuccess(`Loaded "${filename}" from GitHub Gist`);
-          setInput(`I've imported my app from a GitHub Gist. Please help me continue building it.`);
-          return;
-        }
-      }
-
-      if (rawUrl.includes("github.com") && rawUrl.includes("/blob/")) {
-        rawUrl = rawUrl.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
-      }
-
-      if (!rawUrl.startsWith("http")) throw new Error("Please enter a valid GitHub URL");
-      const res = await fetch(rawUrl);
-      if (!res.ok) throw new Error("Could not fetch file from GitHub");
-      const html = await res.text();
-      filename = rawUrl.split("/").pop()?.split("?")[0] || "app.html";
-      setPreviewCode(html);
-      setShowPreview(true);
-      setImportSuccess(`Loaded "${filename}" from GitHub`);
-      setInput(`I've imported my app from GitHub. Please help me continue building it.`);
-    } catch (e: any) {
-      toast({ title: "Import failed", description: e.message, variant: "destructive" });
-    } finally {
-      setImportLoading(false);
-    }
+    setProjectGithubMode("import");
+    setShowImportDialog(false);
+    setShowGithubModal(true);
   };
 
   const handleVerify = () => {
@@ -2503,8 +2420,32 @@ export default function AIChatPage() {
   };
 
   // === FIX 1: Auto-Fix sends directly to AI without requiring user to press Send ===
+  const handleProjectFilesEvent = (data: any) => {
+    if (data.type !== "project-files-saved") return;
+    if (!data.saved) {
+      toast({ title: "AI file changes were not saved", description: data.error || "Please try again.", variant: "destructive" });
+      return;
+    }
+    qcMain.invalidateQueries({ queryKey: ["/api/d1/project-files", activeConversation] });
+    if (openedFile) {
+      fetch(`/api/d1/project-files/${openedFile.id}`, { credentials: "include" })
+        .then(async r => { if (!r.ok) throw new Error("Could not reload edited file"); return r.json(); })
+        .then(file => { setOpenedFile(file); setEditorContent(file.content); setEditorDirty(false); })
+        .catch(e => toast({ title: "Refresh file to see AI changes", description: e.message, variant: "destructive" }));
+    }
+    toast({ title: "AI changes saved", description: (data.paths || []).join(", ") });
+  };
+  const readyForProjectChat = () => {
+    if (!projectFilesReady || (projectMode && (!openedFile || editorDirty))) {
+      setShowFileTree(true);
+      toast({ title: "Select and save a file first", description: "AI edits apply to the selected project file. Select other files for subsequent edits.", variant: "destructive" });
+      return false;
+    }
+    return true;
+  };
   const sendDirectMessage = async (text: string) => {
     if (!activeConversation || isStreaming) return;
+    if (!readyForProjectChat()) return;
     setIsStreaming(true);
     setStreamingContent("");
 
@@ -2525,7 +2466,7 @@ export default function AIChatPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content: text, language }),
+         body: JSON.stringify({ content: text, language, projectMode, selectedFilePath: projectMode ? openedFile?.path : undefined }),
       });
       if (!response.ok) {
         const errText = await response.text();
@@ -2548,6 +2489,10 @@ export default function AIChatPage() {
           if (!line.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(line.slice(6));
+            handleProjectFilesEvent(data);
+             if (data.error && data.type !== "project-files-saved") {
+               toast({ title: "AI request failed", description: data.error, variant: "destructive" });
+             }
             if (data.content) { fullResponse += data.content; setStreamingContent(fullResponse); }
             if (data.done) {
               setStreamingContent("");
@@ -2555,7 +2500,7 @@ export default function AIChatPage() {
               queryClient.invalidateQueries({ queryKey: ["/api/conversations", activeConversation] });
               queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
               const generatedCode = extractAllCodeBlocks(fullResponse);
-              if (generatedCode) runAutoTestAndPublish(generatedCode);
+              if (generatedCode && !projectMode) runAutoTestAndPublish(generatedCode);
             }
           } catch {}
         }
@@ -2574,6 +2519,12 @@ export default function AIChatPage() {
 
   const handleSend = async () => {
     if ((!input.trim() && pendingAttachments.length === 0) || !activeConversation || isStreaming) return;
+    const repository = githubRepositoryUrl(input);
+    if (repository) {
+      setGithubImportUrl(repository); setProjectGithubMode("import"); setShowGithubModal(true);
+      return;
+    }
+    if (!readyForProjectChat()) return;
 
     const baseMessage = input.trim() || "Check these attachments";
     const currentAttachments = [...pendingAttachments];
@@ -2614,6 +2565,8 @@ export default function AIChatPage() {
         credentials: "include",
         body: JSON.stringify({
           content: userMessage,
+           projectMode,
+          selectedFilePath: projectMode ? openedFile?.path : undefined,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
           language,
         }),
@@ -2649,6 +2602,10 @@ export default function AIChatPage() {
               fullResponse += data.content;
               setStreamingContent(fullResponse);
             }
+            handleProjectFilesEvent(data);
+             if (data.error && data.type !== "project-files-saved") {
+               toast({ title: "AI request failed", description: data.error, variant: "destructive" });
+             }
             if (data.done) {
               setStreamingContent("");
               setIsStreaming(false);
@@ -2656,7 +2613,7 @@ export default function AIChatPage() {
               queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
 
               const generatedCode = extractAllCodeBlocks(fullResponse);
-              if (generatedCode) {
+              if (generatedCode && !projectMode) {
                 runAutoTestAndPublish(generatedCode);
                 // Refetch version history after a short delay to allow server to finish saving
                 setTimeout(() => {
@@ -2967,7 +2924,7 @@ export default function AIChatPage() {
           conversationId={activeConversation}
           openedFileId={openedFile?.id ?? null}
           onFileOpen={handleFileOpen}
-          onClose={() => { setShowFileTree(false); setOpenedFile(null); }}
+          onClose={() => { if (!editorDirty && !isStreaming) { setShowFileTree(false); setOpenedFile(null); } }}
         />
       )}
 
@@ -2975,6 +2932,13 @@ export default function AIChatPage() {
         <div className={`flex flex-col ${previewCode && showPreview ? `${mobileView === "preview" ? "hidden" : "flex"} lg:flex lg:w-1/2 lg:min-w-[320px]` : "flex-1"} ${previewCode ? "pb-14 lg:pb-0" : ""}`}>
           {activeConversation ? (
             <>
+              <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b text-xs">
+                <Button size="sm" variant="outline" onClick={() => setShowFileTree(v => !v)}>Files</Button>
+                <Button size="sm" variant="outline" disabled={isStreaming || editorDirty || !projectFilesReady} onClick={() => { setGithubImportUrl(""); setProjectGithubMode("import"); setShowGithubModal(true); }}>Import repository</Button>
+                <Button size="sm" variant="outline" disabled={isStreaming || !projectFilesReady} onClick={() => handleGithubExport("repo")}>Export repository</Button>
+                {projectMode && <p className="text-muted-foreground">{openedFile ? `AI editing: ${openedFile.path}. Save before asking AI.` : "Select a file for AI editing. Edit additional files one at a time."}</p>}
+                {githubRepositoryUrl(input) && <p className="text-muted-foreground">Repository link detected. Send to review an import, not scrape a website.</p>}
+              </div>
               {previewCode && (
                 <div className="hidden lg:flex items-center justify-between gap-2 px-4 py-2 border-b bg-card/50">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -3307,7 +3271,7 @@ export default function AIChatPage() {
                   ta: { hi: "வணக்கம்", ask: "என்ன உருவாக்க விரும்புகிறீர்கள்?", beginnerAsk: "இன்று என்ன கட்டுவோம்? உங்கள் வார்த்தைகளில் சொல்லுங்கள்." },
                 };
                 const g = greetings[language] || greetings.en;
-                const firstName = user?.name?.split(" ")[0] || "";
+                const firstName = user?.firstName || "";
                 return (
                   <div className="text-center space-y-2">
                     <h1 className={`${isBeginner ? "text-4xl md:text-5xl" : "text-3xl md:text-4xl"} font-light text-foreground/90 tracking-tight`} data-testid="text-chat-welcome">
@@ -3387,7 +3351,7 @@ export default function AIChatPage() {
                       <label className="cursor-pointer p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground" title="Attach image">
                         <input type="file" className="hidden" accept="image/*" onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) { const reader = new FileReader(); reader.onload = (ev) => { const base64 = (ev.target?.result as string)?.split(",")[1]; if (base64) setPendingAttachments([{ type: "image", data: base64, mimeType: file.type, name: file.name }]); }; reader.readAsDataURL(file); }
+                          if (file) void uploadFiles([file]);
                         }} />
                         <Plus className="w-5 h-5" />
                       </label>
@@ -3571,7 +3535,7 @@ export default function AIChatPage() {
             <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-card/80 flex-shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <Code2 className="w-4 h-4 text-primary flex-shrink-0" />
-                <span className="text-sm font-mono font-medium truncate">{openedFile.name}</span>
+                <span className="text-sm font-mono font-medium truncate">{openedFile.path}</span>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {autoSaveStatus === "saving" && (
@@ -3587,20 +3551,21 @@ export default function AIChatPage() {
                 {autoSaveStatus === "idle" && editorDirty && (
                   <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="Unsaved changes" data-testid="indicator-unsaved" />
                 )}
-                <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => handleEditorSave()} disabled={!editorDirty || autoSaveStatus === "saving"} data-testid="button-save-file">
+                <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => handleEditorSave().catch(() => {})} disabled={!editorDirty || autoSaveStatus === "saving"} data-testid="button-save-file">
                   Save now
                 </Button>
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setOpenedFile(null); setEditorDirty(false); setAutoSaveStatus("idle"); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); }} data-testid="button-close-editor">
+                <Button size="icon" variant="ghost" className="h-7 w-7" disabled={editorDirty || isStreaming} onClick={() => { setOpenedFile(null); setEditorDirty(false); setAutoSaveStatus("idle"); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); }} data-testid="button-close-editor">
                   <X className="w-4 h-4" />
                 </Button>
               </div>
             </div>
             <div className="flex-1 overflow-auto">
               <textarea
+                disabled={isStreaming}
                 className="w-full h-full min-h-full resize-none bg-[#1e1e1e] text-[#d4d4d4] font-mono text-xs p-4 focus:outline-none leading-relaxed"
                 value={editorContent}
                 onChange={e => handleEditorChange(e.target.value)}
-                onKeyDown={e => { if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); handleEditorSave(); } }}
+                onKeyDown={e => { if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); handleEditorSave().catch(() => {}); } }}
                 spellCheck={false}
                 data-testid="textarea-code-editor"
               />
@@ -4093,16 +4058,16 @@ export default function AIChatPage() {
                     id="github-import-url"
                     value={githubImportUrl}
                     onChange={(e) => setGithubImportUrl(e.target.value)}
-                    placeholder="https://gist.github.com/user/abc123 or raw GitHub URL"
+                    placeholder="https://github.com/owner/repository"
                     data-testid="input-github-import-url"
                     onKeyDown={(e) => e.key === "Enter" && githubImportUrl.trim() && handleGithubImport()}
                   />
                   <div className="text-xs text-muted-foreground space-y-1">
                     <p className="font-medium">Supported formats:</p>
                     <ul className="ml-3 space-y-0.5 list-disc">
-                      <li>GitHub Gist URL — gist.github.com/user/id</li>
-                      <li>GitHub file URL — github.com/user/repo/blob/main/index.html</li>
-                      <li>Raw file URL — raw.githubusercontent.com/...</li>
+                      <li>Import full repository source files from a branch.</li>
+                      <li>Binary, generated, oversized and sensitive files are excluded by server policy.</li>
+                      <li>Import does not run scripts. Review files and exclusions after import.</li>
                     </ul>
                   </div>
                 </div>
@@ -4124,177 +4089,28 @@ export default function AIChatPage() {
       </Dialog>
 
       {/* GitHub Export Modal */}
-      <Dialog open={showGithubModal} onOpenChange={(o) => { setShowGithubModal(o); if (!o) { setGithubResultUrl(null); setGithubRepoName(""); } }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Github className="w-5 h-5" />
-              {githubExportMode === "gist" ? "Export as GitHub Gist" : "Push to GitHub Repository"}
-            </DialogTitle>
-            <DialogDescription>
-              {githubExportMode === "gist"
-                ? "Create a public shareable Gist with your app's code on GitHub."
-                : "Push your app's code to a GitHub repository. Enable GitHub Pages to get a free live URL."}
-            </DialogDescription>
-          </DialogHeader>
-
-          {githubResultUrl ? (
-            <div className="space-y-4 py-2">
-              <div className="flex flex-col items-center gap-3 text-center py-2">
-                <CheckCircle2 className="w-12 h-12 text-green-500" />
-                <div>
-                  <p className="font-semibold">{githubExportMode === "gist" ? "Gist created!" : "Pushed to GitHub!"}</p>
-                  <p className="text-sm text-muted-foreground mt-1">Your app code is now on GitHub.</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border text-sm">
-                <span className="flex-1 truncate text-xs font-mono">{githubResultUrl}</span>
-                <Button size="icon" variant="ghost" className="shrink-0 h-7 w-7" onClick={() => { navigator.clipboard.writeText(githubResultUrl); toast({ title: "Copied!" }); }} data-testid="button-copy-github-url">
-                  <Copy className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-              {githubExportMode === "repo" && (
-                <div className="rounded-lg border border-amber-400/30 bg-amber-50/5 p-3 text-xs text-muted-foreground space-y-1">
-                  <p className="font-semibold text-amber-500">Get a free live URL with GitHub Pages:</p>
-                  <ol className="ml-3 list-decimal space-y-0.5">
-                    <li>Open your repo on GitHub</li>
-                    <li>Settings → Pages → Deploy from branch → main</li>
-                    <li>App goes live at <span className="font-mono">username.github.io/repo-name</span></li>
-                  </ol>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => setShowGithubModal(false)} data-testid="button-github-close">Done</Button>
-                <Button className="flex-1 gap-2" onClick={() => window.open(githubResultUrl, "_blank")} data-testid="button-github-open">
-                  <ExternalLink className="w-4 h-4" /> View on GitHub
-                </Button>
-              </div>
-            </div>
-          ) : githubExportMode === "repo" ? (
-            // ===== REPO MODE — one-click OAuth, no token paste =====
-            <div className="space-y-4 py-2">
-              {!githubStatus?.configured ? (
-                <div className="rounded-lg border border-amber-400/30 bg-amber-50/5 p-3 text-xs text-amber-500">
-                  GitHub push isn't set up on this server yet. Ask the admin to add the GitHub OAuth credentials.
-                </div>
-              ) : !githubStatus?.connected ? (
-                <>
-                  <div className="rounded-lg border bg-muted/30 p-4 text-center space-y-3">
-                    <Github className="w-8 h-8 mx-auto text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-semibold">Connect your GitHub account</p>
-                      <p className="text-xs text-muted-foreground mt-1">One-time authorization. After that, every push is one click.</p>
-                    </div>
-                    <Button
-                      className="w-full gap-2"
-                      onClick={() => { window.location.href = `/api/github/connect?returnTo=${encodeURIComponent(window.location.pathname)}`; }}
-                      data-testid="button-github-connect"
-                    >
-                      <Github className="w-4 h-4" /> Connect GitHub
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-green-500" />
-                      <span>Connected as <span className="font-semibold">@{githubStatus.login}</span></span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-xs"
-                      onClick={async () => {
-                        await fetch("/api/github/disconnect", { method: "POST", credentials: "include" });
-                        await refreshGithubStatus();
-                        toast({ title: "Disconnected from GitHub" });
-                      }}
-                      data-testid="button-github-disconnect"
-                    >
-                      Disconnect
-                    </Button>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">Repository name <span className="text-red-400">*</span></Label>
-                    <Input
-                      value={githubRepoName}
-                      onChange={(e) => setGithubRepoName(e.target.value)}
-                      placeholder="my-afro-ai-app"
-                      data-testid="input-github-repo-name"
-                    />
-                    <p className="text-xs text-muted-foreground">Created automatically if it doesn't exist. We'll add index.html, README.md and .gitignore.</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">Who can see this repo? <span className="text-red-400">*</span></Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setGithubVisibility("public")}
-                        className={`rounded-lg border p-3 text-left transition ${githubVisibility === "public" ? "border-primary bg-primary/10" : "hover:bg-muted/50"}`}
-                        data-testid="button-github-visibility-public"
-                      >
-                        <p className="text-sm font-semibold">Public</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Anyone can see and clone. Shareable.</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGithubVisibility("private")}
-                        className={`rounded-lg border p-3 text-left transition ${githubVisibility === "private" ? "border-primary bg-primary/10" : "hover:bg-muted/50"}`}
-                        data-testid="button-github-visibility-private"
-                      >
-                        <p className="text-sm font-semibold">Private</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Only you (and people you invite) can see it.</p>
-                      </button>
-                    </div>
-                  </div>
-
-                  <Button
-                    className="w-full gap-2"
-                    disabled={!githubRepoName.trim() || !githubVisibility || githubExporting}
-                    onClick={handleRepoExport}
-                    data-testid="button-github-export-submit"
-                  >
-                    {githubExporting
-                      ? <><Loader2 className="w-4 h-4 animate-spin" />Pushing to GitHub…</>
-                      : <><Github className="w-4 h-4" />Push to GitHub</>}
-                  </Button>
-                </>
-              )}
-            </div>
-          ) : (
-            // ===== GIST MODE — keep the existing PAT flow, lightweight share =====
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label className="text-sm">GitHub Personal Access Token <span className="text-red-400">*</span></Label>
-                <Input
-                  type="password"
-                  value={githubToken}
-                  onChange={(e) => setGithubToken(e.target.value)}
-                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                  data-testid="input-github-token"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Get one at <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-primary underline">github.com/settings/tokens</a> — needs <strong>gist</strong> scope. Saved in your browser only, never sent to Afro AI.
-                </p>
-              </div>
-
-              <Button
-                className="w-full gap-2"
-                disabled={!githubToken || githubExporting}
-                onClick={handleGistExport}
-                data-testid="button-github-export-submit"
-              >
-                {githubExporting
-                  ? <><Loader2 className="w-4 h-4 animate-spin" />Creating Gist…</>
-                  : <><Github className="w-4 h-4" />Create Gist</>}
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <GithubProjectDialog open={showGithubModal} mode={projectGithubMode} url={githubImportUrl} conversationId={activeConversation}
+        onClose={() => setShowGithubModal(false)}
+        prepareImport={async () => {
+          if (isStreaming || editorDirty || autoSaveStatus === "saving") throw new Error("Finish AI generation and save open edits before importing.");
+          if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+          setProjectMode(true);
+          await generatedFileSave.current;
+        }}
+        prepareExport={async () => {
+          if (!projectFilesReady || isStreaming) throw new Error("Wait for project files and AI generation to finish.");
+          if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+          if (editorDirty) await handleEditorSave();
+          await generatedFileSave.current;
+          if (!projectMode && previewCode && activeConversation) await saveProjectFiles(activeConversation, previewCode);
+        }}
+        onImported={() => {
+          if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+          setProjectMode(true); setOpenedFile(null); setEditorDirty(false);
+          setPreviewCode(""); setShowPreview(false); setShowFileTree(true);
+          qcMain.invalidateQueries({ queryKey: ["/api/d1/project-files", activeConversation] });
+        }}
+      />
 
     </div>
   );

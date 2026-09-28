@@ -2,6 +2,8 @@ import crypto from "crypto";
 import { db } from "./db";
 import { userGithubTokens, type UserGithubToken } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import type { ProjectFile } from "./project-files";
+import { validateProjectFiles, ProjectFileError, PROJECT_FILE_LIMITS } from "./project-file-policy";
 
 // @octokit/rest v22 is ESM-only. Our prod build outputs CommonJS, so a static
 // `import { Octokit } from "@octokit/rest"` becomes a `require()` at runtime
@@ -211,68 +213,302 @@ export async function pushHtmlToRepo(opts: {
   commitMessage?: string;
   publishedUrl?: string;
 }): Promise<PushResult> {
+  // The legacy single-HTML endpoint is create-only. Existing repositories must
+  // use the preview + expectedSha + atomic export flow instead.
+  if (typeof opts.title !== "string" || !opts.title.trim() || opts.title.length > 200 ||
+      /[\x00-\x1f\x7f]/.test(opts.title)) {
+    throw new GithubProjectError(400, "Title must contain 1–200 characters on one line.");
+  }
+  if (opts.commitMessage !== undefined &&
+      (typeof opts.commitMessage !== "string" || !opts.commitMessage.trim() ||
+       opts.commitMessage.length > 500 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(opts.commitMessage))) {
+    throw new GithubProjectError(400, "Commit message must contain 1–500 characters.");
+  }
+  if (opts.publishedUrl !== undefined) {
+    if (typeof opts.publishedUrl !== "string" || opts.publishedUrl.length > 2048 ||
+        /[\x00-\x20\x7f]/.test(opts.publishedUrl)) {
+      throw new GithubProjectError(400, "Published URL must be a valid HTTP(S) URL of at most 2048 characters.");
+    }
+    let url: URL;
+    try { url = new URL(opts.publishedUrl); }
+    catch { throw new GithubProjectError(400, "Published URL must be a valid HTTP(S) URL of at most 2048 characters."); }
+    if (!["https:", "http:"].includes(url.protocol) || !url.hostname || url.username || url.password) {
+      throw new GithubProjectError(400, "Published URL must be a valid HTTP(S) URL of at most 2048 characters.");
+    }
+  }
+  if (opts.commitMessage) assertSafeGithubFiles([{ path: "message.txt", content: opts.commitMessage }]);
+  // Scan every generated file before any remote mutation (including repo creation).
+  assertSafeGithubFiles([
+    { path: "index.html", content: opts.htmlContent },
+    { path: "README.md", content: README_TEMPLATE(opts.title, opts.publishedUrl) },
+    { path: ".gitignore", content: GITIGNORE },
+  ]);
   const tokenRow = await getUserToken(opts.userId);
-  if (!tokenRow) throw new Error("GitHub account not connected");
+  if (!tokenRow) throw new GithubProjectError(401, "GitHub account not connected.");
   const token = decryptToken(tokenRow.accessTokenEnc);
   const octokit = await getOctokit(token);
 
-  const owner = tokenRow.githubLogin;
+  const { data: identity } = await octokit.users.getAuthenticated();
+  const owner = identity.login;
   const repo = sanitizeRepoName(opts.repoName);
   if (!repo) throw new Error("Repository name is empty after cleaning");
 
-  // 1. Ensure the repo exists. If not, create it.
-  let created = false;
+  // 1. Refuse all existing repositories: Contents API updates are not atomic
+  // and cannot be tied to a reviewed branch SHA.
   try {
     await octokit.repos.get({ owner, repo });
   } catch (e: any) {
     if (e.status !== 404) throw e;
+    // A concurrent creation fails rather than turning into an overwrite.
     await octokit.repos.createForAuthenticatedUser({
-      name: repo,
-      description: `${opts.title} — built with Afro AI`,
-      private: opts.visibility === "private",
-      auto_init: false,
+      name: repo, description: `${opts.title} — built with Afro AI`,
+      private: opts.visibility === "private", auto_init: false,
     });
-    created = true;
-  }
-
-  // 2. PUT each file via the Contents API. We have to fetch the existing sha
-  //    for updates (otherwise GitHub rejects with 422).
-  const commitMessage = opts.commitMessage || (created ? "Initial commit — built with Afro AI" : "Update from Afro AI");
-  const files: Array<{ path: string; content: string }> = [
-    { path: "index.html", content: opts.htmlContent },
-    { path: "README.md", content: README_TEMPLATE(opts.title, opts.publishedUrl) },
-    { path: ".gitignore", content: GITIGNORE },
-  ];
-
-  let firstHtmlUrl = "";
-  for (const f of files) {
-    let sha: string | undefined;
-    try {
-      const existing = await octokit.repos.getContent({ owner, repo, path: f.path });
-      if (!Array.isArray(existing.data) && "sha" in existing.data) {
-        sha = existing.data.sha;
-      }
-    } catch (e: any) {
-      if (e.status !== 404) throw e;
+    // Only this successful create may proceed to write contents.
+    const commitMessage = opts.commitMessage || "Initial commit — built with Afro AI";
+    const files: Array<{ path: string; content: string }> = [
+      { path: "index.html", content: opts.htmlContent },
+      { path: "README.md", content: README_TEMPLATE(opts.title, opts.publishedUrl) },
+      { path: ".gitignore", content: GITIGNORE },
+    ];
+    let firstHtmlUrl = "";
+    for (const f of files) {
+      const put = await octokit.repos.createOrUpdateFileContents({
+        owner, repo, path: f.path, message: commitMessage,
+        content: Buffer.from(f.content, "utf8").toString("base64"),
+      });
+      if (f.path === "index.html") firstHtmlUrl = put.data.content?.html_url || "";
     }
-    const put = await octokit.repos.createOrUpdateFileContents({
-      owner,
-      repo,
-      path: f.path,
-      message: commitMessage,
-      content: Buffer.from(f.content, "utf8").toString("base64"),
-      sha,
-    });
-    if (f.path === "index.html") {
-      firstHtmlUrl = put.data.content?.html_url || "";
-    }
+    return {
+      repoUrl: `https://github.com/${owner}/${repo}`,
+      htmlUrl: firstHtmlUrl || `https://github.com/${owner}/${repo}`,
+      owner, repo, created: true,
+    };
   }
+  throw new GithubProjectError(409, "Repository already exists. Review changed files in the project export flow before pushing.");
+}
 
+export class GithubProjectError extends Error {
+  constructor(public status: number, message: string) { super(message); }
+}
+
+/** Never return Octokit request objects/messages: they can contain credentials or file contents. */
+export function githubErrorResponse(error: unknown): { status: number; error: string } {
+  if (error instanceof ProjectFileError) return { status: error.status, error: error.message };
+  if (error instanceof GithubProjectError) return { status: error.status, error: error.message };
+  const status = (error as any)?.status;
+  if (status === 401) return { status: 401, error: "GitHub authorization expired. Reconnect GitHub." };
+  if (status === 403 || status === 429) return { status, error: "GitHub denied this request or its rate limit was reached." };
+  if (status === 404) return { status: 404, error: "GitHub repository or branch not found, or access denied." };
+  if (status === 409 || status === 422) return { status: 409, error: "Remote repository changed. Preview again before exporting." };
+  return { status: 502, error: "GitHub operation failed. Please retry." };
+}
+
+const MAX_FILES = PROJECT_FILE_LIMITS.count;
+const MAX_FILE_BYTES = 1_000_000;
+const MAX_TOTAL_BYTES = 5_000_000;
+
+/** Defense in depth for legacy HTML push as well as full project export. */
+export function assertSafeGithubFiles(files: Array<{ path: string; content: string }>): void {
+  validateProjectFiles(files.map(file => ({ ...file, name: file.path?.split("/").pop(), language: "plaintext" })));
+  let bytes = 0;
+  if (!files.length || files.length > MAX_FILES) throw new GithubProjectError(413, `Project must contain 1–${MAX_FILES} files.`);
+  const seen = new Set<string>();
+  for (const file of files) {
+    if (typeof file.path !== "string" || typeof file.content !== "string" ||
+        !file.path || file.path.length > 512 || /[\\\x00-\x1f]/.test(file.path) ||
+        file.path.startsWith("/") || file.path.split("/").some(p => !p || p === "." || p === "..") ||
+        seen.has(file.path.toLowerCase())) {
+      throw new GithubProjectError(400, "Project contains an invalid or duplicate file path.");
+    }
+    seen.add(file.path.toLowerCase());
+    if (/(^|\/)(?:\.git|node_modules)(\/|$)/i.test(file.path) ||
+        /(^|\/)(?:\.env(?!\.example$)(?:\..*)?|id_rsa|id_ed25519|credentials(?:\.json)?|\.npmrc|\.pypirc)$/i.test(file.path) ||
+        /\.(?:pem|key|p12|pfx)$/i.test(file.path)) {
+      throw new GithubProjectError(400, "Project contains a sensitive or excluded file. Remove it before exporting.");
+    }
+    if (/-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-(?:proj-)?[A-Za-z0-9_-]{20,})/.test(file.content) ||
+        /(?:api[_-]?key|secret|password|access[_-]?token|auth[_-]?token)\s*["']?\s*[:=]\s*["'][^"'\s]{8,}["']/i.test(file.content)) {
+      throw new GithubProjectError(400, "Potential secret detected. Remove credentials before exporting.");
+    }
+    const size = Buffer.byteLength(file.content);
+    bytes += size;
+    if (size > MAX_FILE_BYTES || bytes > MAX_TOTAL_BYTES) throw new GithubProjectError(413, "Project exceeds the GitHub transfer size limit.");
+    if (file.content.includes("\0")) throw new GithubProjectError(400, "Binary files are not supported.");
+  }
+}
+
+async function githubClient(userId: string) {
+  const token = await getUserToken(userId);
+  if (!token) throw new GithubProjectError(401, "GitHub account not connected.");
+  return getOctokit(decryptToken(token.accessTokenEnc));
+}
+
+function repoName(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_.-]{1,100}$/.test(value) || value === "." || value === "..") {
+    throw new GithubProjectError(400, "Invalid repository name.");
+  }
+  return value;
+}
+
+function branchName(value: unknown): string {
+  if (typeof value !== "string" || !value || value.length > 200 ||
+      /[\s~^:?*\[\\\x00-\x1f]/.test(value) || value.includes("..") || value.includes("@{") ||
+      value.split("/").some(p => !p || p.startsWith(".") || p.endsWith(".") || p.endsWith(".lock"))) {
+    throw new GithubProjectError(400, "Invalid branch name.");
+  }
+  return value;
+}
+
+export function parseGithubRepository(input: unknown): { owner: string; repo: string } {
+  if (typeof input !== "string") throw new GithubProjectError(400, "A GitHub repository URL is required.");
+  let url: URL;
+  try { url = new URL(input); } catch { throw new GithubProjectError(400, "Invalid GitHub repository URL."); }
+  const match = url.pathname.match(/^\/([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)\/?$/);
+  if (url.protocol !== "https:" || url.hostname !== "github.com" || url.port || url.username || url.password || url.search || url.hash || !match) {
+    throw new GithubProjectError(400, "Use an https://github.com/owner/repository URL.");
+  }
+  return { owner: match[1], repo: repoName(match[2].replace(/\.git$/, "")) };
+}
+
+function languageFor(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  return ({ ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript", html: "html", css: "css", json: "json", md: "markdown", py: "python", yml: "yaml", yaml: "yaml" } as Record<string, string>)[ext] || "plaintext";
+}
+
+export async function importGithubProject(opts: { userId: string; url: string; branch?: string }) {
+  const { owner, repo } = parseGithubRepository(opts.url);
+  const api = await githubClient(opts.userId);
+  const { data: repository } = await api.repos.get({ owner, repo });
+  const branch = branchName(opts.branch ?? repository.default_branch);
+  const { data: ref } = await api.git.getRef({ owner, repo, ref: `heads/${branch}` });
+  const sha = ref.object.sha;
+  const { data: commit } = await api.git.getCommit({ owner, repo, commit_sha: sha });
+  const { data: tree } = await api.git.getTree({ owner, repo, tree_sha: commit.tree.sha, recursive: "1" });
+  if (tree.truncated || tree.tree.length > 5000) throw new GithubProjectError(413, "Repository tree is too large; import was not saved.");
+  const files: ProjectFile[] = [];
+  const excluded: Array<{ path: string; reason: string }> = [];
+  let total = 0;
+  let blobCount = 0;
+  for (const entry of tree.tree) {
+    if (entry.type === "tree") continue;
+    const path = entry.path;
+    let reason = "";
+    if (entry.type === "commit" || entry.mode === "160000") reason = "Submodule is not imported";
+    else if (entry.mode === "120000") reason = "Symbolic link is not imported";
+    else if (entry.type !== "blob") reason = "Unsupported tree entry";
+    else if (/(^|\/)(?:\.git|node_modules|vendor|dist|build)(\/|$)/i.test(path)) reason = "Dependency or generated directory";
+    else if (/\.(?:png|jpe?g|gif|webp|ico|pdf|zip|gz|woff2?|ttf|mp[34]|exe|dll|sqlite|wasm)$/i.test(path)) reason = "Binary file";
+    else if (entry.size > MAX_FILE_BYTES) reason = "File exceeds 1 MB limit";
+    if (reason) { excluded.push({ path, reason }); continue; }
+    if (++blobCount > MAX_FILES) throw new GithubProjectError(413, `Repository exceeds ${MAX_FILES} text files; import was not saved.`);
+    const { data: blob } = await api.git.getBlob({ owner, repo, file_sha: entry.sha });
+    if (blob.encoding !== "base64") throw new GithubProjectError(502, "Unsupported GitHub blob encoding; import was not saved.");
+    const buffer = Buffer.from(blob.content, "base64");
+    total += buffer.length;
+    if (total > MAX_TOTAL_BYTES || buffer.length > MAX_FILE_BYTES) throw new GithubProjectError(413, "Repository exceeds transfer size limits; import was not saved.");
+    let content: string;
+    try { content = new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
+    catch { excluded.push({ path, reason: "Non-UTF-8 or binary file" }); continue; }
+    if (content.includes("\0")) { excluded.push({ path, reason: "Binary file" }); continue; }
+    if (content.startsWith("version https://git-lfs.github.com/spec/v1")) { excluded.push({ path, reason: "Git LFS pointer (object not imported)" }); continue; }
+    try { assertSafeGithubFiles([{ path, content }]); }
+    catch (error) {
+      if (!(error instanceof GithubProjectError) && !(error instanceof ProjectFileError)) throw error;
+      excluded.push({ path: /^[A-Za-z0-9_./@()+ -]{1,240}$/.test(path) ? path : "[redacted path]", reason: "Sensitive content or unsafe project file excluded" }); continue;
+    }
+    files.push({ path, name: path.split("/").pop()!, language: languageFor(path), content });
+  }
+  if (!files.length) throw new GithubProjectError(400, "Repository contains no supported, safe text files.");
+  validateProjectFiles(files);
   return {
-    repoUrl: `https://github.com/${owner}/${repo}`,
-    htmlUrl: firstHtmlUrl || `https://github.com/${owner}/${repo}`,
-    owner,
-    repo,
-    created,
+    files, repo: { owner, name: repo, branch, sha },
+    excluded: excluded.map(entry => ({
+      ...entry,
+      path: /^[A-Za-z0-9_./@()+ -]{1,240}$/.test(entry.path) &&
+        !/(?:gh[pousr]_|github_pat_|AKIA|ASIA|sk-|AIza|eyJ)/.test(entry.path) ? entry.path : "[redacted path]",
+    })),
   };
+}
+
+type ExportOptions = { userId: string; repoName: string; branch?: string; visibility: "public" | "private"; files: ProjectFile[] };
+
+async function exportContext(opts: ExportOptions) {
+  assertSafeGithubFiles(opts.files);
+  const repo = repoName(opts.repoName);
+  if (!["public", "private"].includes(opts.visibility)) throw new GithubProjectError(400, "Visibility must be public or private.");
+  const api = await githubClient(opts.userId);
+  const { data: identity } = await api.users.getAuthenticated();
+  const owner = identity.login;
+  let repository: any;
+  try { repository = (await api.repos.get({ owner, repo })).data; }
+  catch (error: any) { if (error.status !== 404) throw error; }
+  if (repository && repository.owner.login.toLowerCase() !== owner.toLowerCase()) throw new GithubProjectError(403, "Only repositories owned by your connected account can be exported.");
+  const branch = branchName(opts.branch ?? repository?.default_branch ?? "main");
+  let baseSha: string | null = null;
+  let baseTree: string | undefined;
+  let entries: any[] = [];
+  if (repository) {
+    // Missing branches are deliberately not created on existing repositories.
+    baseSha = (await api.git.getRef({ owner, repo, ref: `heads/${branch}` })).data.object.sha;
+    const commit = (await api.git.getCommit({ owner, repo, commit_sha: baseSha })).data;
+    baseTree = commit.tree.sha;
+    const tree = (await api.git.getTree({ owner, repo, tree_sha: baseTree, recursive: "1" })).data;
+    if (tree.truncated || tree.tree.length > 5000) throw new GithubProjectError(413, "Remote tree is too large to safely preview.");
+    entries = tree.tree;
+  }
+  for (const file of opts.files) {
+    if (entries.some(entry => (entry.path === file.path && (entry.type !== "blob" || entry.mode === "120000")) ||
+        (file.path.startsWith(`${entry.path}/`) && entry.type !== "tree") || entry.path.startsWith(`${file.path}/`))) {
+      throw new GithubProjectError(409, "A project path conflicts with a remote directory, symlink, or submodule.");
+    }
+  }
+  return { api, owner, repo, branch, baseSha, baseTree, entries, repository };
+}
+
+export async function previewGithubExport(opts: ExportOptions) {
+  const ctx = await exportContext(opts);
+  return {
+    owner: ctx.owner, repoName: ctx.repo, branch: ctx.branch, baseSha: ctx.baseSha,
+    files: opts.files.map(file => {
+      const existing = ctx.entries.find(entry => entry.path === file.path);
+      const bytes = Buffer.from(file.content);
+      const sha = crypto.createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+      return { path: file.path, bytes: bytes.length, change: !existing ? "add" : existing.sha === sha ? "unchanged" : "update" };
+    }),
+  };
+}
+
+export async function exportGithubProject(opts: ExportOptions & { expectedSha: string | null; message: string }) {
+  if (opts.expectedSha !== null && (typeof opts.expectedSha !== "string" || !/^[a-f0-9]{40}$/i.test(opts.expectedSha))) throw new GithubProjectError(400, "expectedSha must be the preview baseSha (or null for a new repository).");
+  if (typeof opts.message !== "string" || !opts.message.trim() || opts.message.length > 500) throw new GithubProjectError(400, "Commit message must contain 1–500 characters.");
+  // Commit messages can contain secrets too.
+  assertSafeGithubFiles([{ path: "message.txt", content: opts.message }]);
+  const ctx = await exportContext(opts);
+  const { api, owner, repo, branch } = ctx;
+  if (ctx.baseSha !== opts.expectedSha) throw new GithubProjectError(409, "Remote branch changed. Preview again before exporting.");
+  let parent = ctx.baseSha;
+  let baseTree = ctx.baseTree;
+  const created = !ctx.repository;
+  if (created) {
+    // GitHub Git Database APIs require an initialized repository.
+    const result = await api.repos.createForAuthenticatedUser({ name: repo, private: opts.visibility === "private", auto_init: true });
+    const initialBranch = result.data.default_branch;
+    parent = (await api.git.getRef({ owner, repo, ref: `heads/${initialBranch}` })).data.object.sha;
+    baseTree = (await api.git.getCommit({ owner, repo, commit_sha: parent })).data.tree.sha;
+    if (branch !== initialBranch) await api.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: parent });
+  }
+  const tree: any[] = [];
+  for (const file of opts.files) {
+    const blob = await api.git.createBlob({ owner, repo, content: Buffer.from(file.content).toString("base64"), encoding: "base64" });
+    const existing = ctx.entries.find(entry => entry.path === file.path);
+    tree.push({ path: file.path, mode: existing?.mode === "100755" ? "100755" : "100644", type: "blob", sha: blob.data.sha });
+  }
+  const resultTree = await api.git.createTree({ owner, repo, base_tree: baseTree, tree });
+  const commit = await api.git.createCommit({ owner, repo, message: opts.message, tree: resultTree.data.sha, parents: [parent] });
+  // Recheck immediately before update, then rely on non-force fast-forward semantics for races.
+  const current = await api.git.getRef({ owner, repo, ref: `heads/${branch}` });
+  if (current.data.object.sha !== parent) throw new GithubProjectError(409, "Remote branch changed during export. Preview again.");
+  await api.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.data.sha, force: false });
+  return { owner, repoName: repo, branch, sha: commit.data.sha, created, repoUrl: `https://github.com/${owner}/${repo}` };
 }

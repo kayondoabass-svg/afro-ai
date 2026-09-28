@@ -306,6 +306,7 @@ function AffiliateDrilldown({
           <Wallet className="w-3 h-3 mr-1" /> Mark paid
         </Button>
       </div>
+      <p className="text-[10px] text-muted-foreground">Only click after you have sent payment manually. Mark paid updates records only; it does not send money.</p>
 
       <div>
         <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-1">Referrals ({data.referrals?.length ?? 0})</p>
@@ -485,7 +486,15 @@ export default function FounderDashboardPage() {
     onSuccess: (data, id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications", id] });
-      toast({ title: "Marked paid", description: `Paid out ${(data.paidCents / 100).toFixed(2)} in commissions` });
+      toast({ title: "Payment recorded", description: `${affMoney(data.paidCents)} marked paid. No money was sent by this action.` });
+    },
+    onError: (err: Error) => {
+      let message = err.message || "Could not mark commissions paid.";
+      const json = message.match(/^\d+:\s*(\{[\s\S]*\})$/);
+      if (json) {
+        try { message = JSON.parse(json[1]).message || message; } catch { /* keep original error */ }
+      }
+      toast({ title: "Payment not recorded", description: message, variant: "destructive" });
     },
   });
 

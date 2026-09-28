@@ -38,6 +38,7 @@ import fs from "fs";
 import express from "express";
 import { SESClient, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIdentityVerificationAttributesCommand, SetIdentityMailFromDomainCommand } from "@aws-sdk/client-ses";
 import bcrypt from "bcryptjs";
+import { affiliateApplicationInput } from "./affiliate-application";
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -591,23 +592,18 @@ export async function registerRoutes(
   });
 
   // ---- Project Files (D1) ----
+  // All legacy CRUD endpoints delegate to the same authorized file service.
+  const projectFileFailure = (res: any, error: any) => {
+    const safe = error?.name === "ProjectFileError";
+    res.status(safe ? error.status : 503).json({ message: safe ? error.message : "REDACTED: [project]: project file operation failed" });
+  };
   app.post("/api/d1/project-files/init", isAuthenticated, async (_req, res) => {
     try {
-      const { d1Query } = await import("./d1");
-      await d1Query(`CREATE TABLE IF NOT EXISTS project_files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        conversation_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        path TEXT NOT NULL,
-        language TEXT DEFAULT 'html',
-        content TEXT DEFAULT '',
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      )`);
+      const { initializeProjectFiles } = await import("./project-files");
+      await initializeProjectFiles();
       res.json({ success: true });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      projectFileFailure(res, error);
     }
   });
 
@@ -615,30 +611,22 @@ export async function registerRoutes(
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { conversationId } = req.query;
-      if (!conversationId) return res.status(400).json({ message: "conversationId required" });
-      const { d1Query } = await import("./d1");
-      const { results } = await d1Query(
-        `SELECT id, name, path, language, updated_at FROM project_files WHERE conversation_id = ? AND user_id = ? ORDER BY path ASC`,
-        [String(conversationId), userId]
-      );
-      res.json(results);
+      const { listProjectFileRecords } = await import("./project-files");
+      res.json(await listProjectFileRecords(userId, conversationId));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      projectFileFailure(res, error);
     }
   });
 
   app.get("/api/d1/project-files/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
-      const { d1Query } = await import("./d1");
-      const { results } = await d1Query(
-        `SELECT * FROM project_files WHERE id = ? AND user_id = ?`,
-        [req.params.id, userId]
-      );
-      if (!results.length) return res.status(404).json({ message: "File not found" });
-      res.json(results[0]);
+      const { getProjectFileRecord, validateProjectFiles } = await import("./project-files");
+      const file = await getProjectFileRecord(userId, req.params.id);
+      validateProjectFiles([file]);
+      res.json(file);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      projectFileFailure(res, error);
     }
   });
 
@@ -646,42 +634,14 @@ export async function registerRoutes(
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { conversationId, name, path, language, content } = req.body;
-      if (!conversationId || !name) return res.status(400).json({ message: "conversationId and name required" });
-      const { d1Query } = await import("./d1");
-      await d1Query(`CREATE TABLE IF NOT EXISTS project_files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        conversation_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        path TEXT NOT NULL,
-        language TEXT DEFAULT 'html',
-        content TEXT DEFAULT '',
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      )`);
-      const existing = await d1Query(
-        `SELECT id FROM project_files WHERE conversation_id = ? AND user_id = ? AND path = ?`,
-        [conversationId, userId, path || name]
-      );
-      if (existing.results.length > 0) {
-        await d1Query(
-          `UPDATE project_files SET content = ?, updated_at = datetime('now') WHERE id = ?`,
-          [content || "", existing.results[0].id]
-        );
-        res.json({ id: existing.results[0].id, updated: true });
-      } else {
-        await d1Query(
-          `INSERT INTO project_files (conversation_id, user_id, name, path, language, content) VALUES (?, ?, ?, ?, ?, ?)`,
-          [conversationId, userId, name, path || name, language || "html", content || ""]
-        );
-        const inserted = await d1Query(
-          `SELECT id FROM project_files WHERE conversation_id = ? AND user_id = ? AND path = ? ORDER BY id DESC LIMIT 1`,
-          [conversationId, userId, path || name]
-        );
-        res.json({ id: inserted.results[0]?.id, created: true });
-      }
+      const { saveProjectFiles, listProjectFileRecords } = await import("./project-files");
+      const files = await saveProjectFiles(userId, conversationId, req.body.files ?? [
+        { name, path: path ?? name, language: language ?? "html", content: content ?? "" },
+      ], req.body.mode ?? "merge");
+      const records = await listProjectFileRecords(userId, conversationId);
+      res.json({ success: true, files, id: records.find((file: any) => file.path === (path ?? name))?.id });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      projectFileFailure(res, error);
     }
   });
 
@@ -689,55 +649,23 @@ export async function registerRoutes(
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { content } = req.body;
-      const { d1Query } = await import("./d1");
-
-      // Fetch file metadata for R2 path
-      const { results } = await d1Query(
-        `SELECT name, conversation_id FROM project_files WHERE id = ? AND user_id = ?`,
-        [req.params.id, userId]
-      );
-      if (!results.length) return res.status(404).json({ message: "File not found" });
-
-      const { name, conversation_id } = results[0] as { name: string; conversation_id: string };
-
-      // Upload content to R2 for durable backup
-      let r2Url: string | null = null;
-      try {
-        const { uploadToR2, isR2Configured } = await import("./r2");
-        if (isR2Configured()) {
-          const buf = Buffer.from(content || "", "utf-8");
-          const mimeMap: Record<string, string> = {
-            html: "text/html", css: "text/css", js: "application/javascript",
-            ts: "application/typescript", json: "application/json", md: "text/markdown",
-          };
-          const ext = name.split(".").pop()?.toLowerCase() || "txt";
-          const mime = mimeMap[ext] || "text/plain";
-          r2Url = await uploadToR2(buf, `project-files/${conversation_id}/${name}`, mime);
-        }
-      } catch (r2Err: any) {
-        console.warn("R2 backup failed for project file:", r2Err?.message);
-      }
-
-      // Update D1 — content + timestamp (+ r2_url if column exists)
-      await d1Query(
-        `UPDATE project_files SET content = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`,
-        [content || "", req.params.id, userId]
-      );
-
-      res.json({ success: true, r2Url, updatedAt: new Date().toISOString() });
+      const { getProjectFileRecord, saveProjectFiles } = await import("./project-files");
+      const file = await getProjectFileRecord(userId, req.params.id);
+      await saveProjectFiles(userId, file.conversation_id, [{ ...file, content }], "merge");
+      res.json({ success: true, updatedAt: new Date().toISOString() });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      projectFileFailure(res, error);
     }
   });
 
   app.delete("/api/d1/project-files/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
-      const { d1Query } = await import("./d1");
-      await d1Query(`DELETE FROM project_files WHERE id = ? AND user_id = ?`, [req.params.id, userId]);
+      const { deleteProjectFile } = await import("./project-files");
+      await deleteProjectFile(userId, req.params.id);
       res.json({ success: true });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      projectFileFailure(res, error);
     }
   });
 
@@ -3020,6 +2948,14 @@ export async function registerRoutes(
 
   // === AFFILIATE PROGRAM ===
 
+  const affiliateApplyLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many affiliate applications. Please try again later." },
+  });
+
   // View-access gate for affiliate management. Allows the founder AND active
   // manager-level team members (e.g. country/regional managers) to *read*
   // affiliate stats. Write actions (approve/reject/pay) stay founder-only.
@@ -3038,17 +2974,21 @@ export async function registerRoutes(
     return res.status(403).json({ message: "Forbidden: manager access required" });
   };
 
-  app.post("/api/affiliate/apply", async (req, res) => {
+  app.post("/api/affiliate/apply", affiliateApplyLimiter, async (req, res) => {
     try {
-      const { fullName, email, phone, country, promotionMethod, socialMedia } = req.body;
-      if (!fullName || !email) return res.status(400).json({ message: "Name and email are required" });
+      const parsed = affiliateApplicationInput.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Please provide a valid name and email, and keep optional fields within their length limits." });
+      const { fullName, email, phone, country, promotionMethod, socialMedia } = parsed.data;
       const existing = await storage.getAffiliateApplicationByEmail(email);
-      if (existing) return res.status(409).json({ message: "This email is already registered as an affiliate", referralCode: existing.referralCode });
+      if (existing) return res.status(409).json({ message: "An application already exists for this email." });
       const code = "AFF" + Math.random().toString(36).slice(2, 8).toUpperCase();
       const portalToken = crypto.randomBytes(24).toString("hex");
-      const application = await storage.createAffiliateApplication({ fullName, email, phone: phone || null, country: country || null, promotionMethod: promotionMethod || null, socialMedia: socialMedia || null, referralCode: code, status: "pending", portalToken });
-      res.json({ success: true, referralCode: application.referralCode, referralLink: `https://afroaigroup.com?ref=${application.referralCode}` });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+      await storage.createAffiliateApplication({ fullName, email, phone, country, promotionMethod, socialMedia, referralCode: code, status: "pending", portalToken });
+      res.json({ success: true, status: "pending" });
+    } catch (e: any) {
+      console.error("[affiliate-apply] failed:", e);
+      res.status(500).json({ message: "Could not submit application. Please try again later." });
+    }
   });
 
   // Public: record a click when a visitor lands on a ?ref= affiliate link.
@@ -3147,12 +3087,20 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  // Founder: mark all pending commissions for an affiliate as paid out.
+  // Founder: record a manually completed payment; this does not transfer funds.
   app.patch("/api/affiliate/applications/:id/pay", isFounder, async (req: any, res) => {
     try {
-      const paidCents = await storage.markAffiliateCommissionsPaid(parseInt(req.params.id));
-      res.json({ success: true, paidCents });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+      const id = Number(req.params.id);
+      if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid affiliate ID." });
+      const affiliate = await storage.getAffiliateApplicationById(id);
+      if (!affiliate) return res.status(404).json({ message: "Affiliate not found." });
+      const paidCents = await storage.markAffiliateCommissionsPaid(id);
+      if (paidCents <= 0) return res.status(409).json({ message: "No pending commissions to mark paid." });
+      res.json({ success: true, paidCents, message: "Payment recorded. No money was sent by this action." });
+    } catch (e: any) {
+      console.error("[affiliate-pay] failed:", e);
+      res.status(500).json({ message: "Could not mark commissions paid. Please try again." });
+    }
   });
 
   // ============ COUNTRY/RESELLER PARTNER PROGRAM ============
@@ -5864,12 +5812,48 @@ Authorization: Bearer YOUR_API_KEY</pre>
   });
 
   // ========================================================================
-  // GitHub OAuth + Push-to-Repo
+  // GitHub OAuth + reviewed project export (legacy HTML push is create-only)
   // One-click flow: user clicks "Connect GitHub" → bounces through GitHub
   // OAuth → token saved encrypted → "Push to GitHub" creates/updates the repo
   // via the GitHub REST API (no shell, no git binary needed).
   // ========================================================================
   const github = await import("./github");
+  const githubProjectFiles = await import("./project-files");
+  const githubFailure = (res: any, error: unknown) => {
+    const failure = github.githubErrorResponse(error);
+    return res.status(failure.status).json({ error: failure.error });
+  };
+
+  app.post("/api/github/import", isAuthenticated, async (req: any, res) => {
+    try {
+      const { conversationId, url, branch, mode } = req.body || {};
+      if (mode !== "merge" && mode !== "replace") return res.status(400).json({ error: "mode must be merge or replace" });
+      const userId = req.user.claims.sub;
+      await githubProjectFiles.assertProjectFileOwnership(userId, conversationId);
+      const result = await github.importGithubProject({ userId, url, branch });
+      const files = await githubProjectFiles.saveProjectFiles(userId, conversationId, result.files, mode);
+      res.json({ ...result, files });
+    } catch (error) { githubFailure(res, error); }
+  });
+
+  app.post("/api/github/export/preview", isAuthenticated, async (req: any, res) => {
+    try {
+      const { conversationId, repoName, branch, visibility } = req.body || {};
+      const userId = req.user.claims.sub;
+      const files = await githubProjectFiles.listProjectFiles(userId, conversationId);
+      res.json(await github.previewGithubExport({ userId, repoName, branch, visibility, files }));
+    } catch (error) { githubFailure(res, error); }
+  });
+
+  app.post("/api/github/export", isAuthenticated, async (req: any, res) => {
+    try {
+      const { conversationId, repoName, branch, visibility, message, expectedSha } = req.body || {};
+      const userId = req.user.claims.sub;
+      if (typeof branch !== "string") return res.status(400).json({ error: "branch from preview is required" });
+      const files = await githubProjectFiles.listProjectFiles(userId, conversationId);
+      res.json(await github.exportGithubProject({ userId, repoName, branch, visibility, files, message, expectedSha }));
+    } catch (error) { githubFailure(res, error); }
+  });
 
   app.get("/api/github/status", isAuthenticated, async (req: any, res) => {
     try {
@@ -5882,7 +5866,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
         connectedAt: row?.connectedAt || null,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "Failed" });
+      githubFailure(res, e);
     }
   });
 
@@ -5912,8 +5896,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
       await github.saveUserToken(req.user.claims.sub, accessToken, scopes);
       res.redirect(`${returnTo}?github=connected`);
     } catch (e: any) {
-      console.error("[github/callback]", e?.message || e);
-      res.redirect(`/ai-chat?github=error&reason=${encodeURIComponent(e?.message || "Failed")}`);
+      res.redirect(`/ai-chat?github=error&reason=${encodeURIComponent("GitHub authorization failed. Please reconnect.")}`);
     }
   });
 
@@ -5922,7 +5905,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
       await github.deleteUserToken(req.user.claims.sub);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "Failed" });
+      githubFailure(res, e);
     }
   });
 
@@ -5938,16 +5921,14 @@ Authorization: Bearer YOUR_API_KEY</pre>
         userId: req.user.claims.sub,
         repoName,
         htmlContent,
-        title: title || "My Afro AI App",
+        title: title === undefined ? "My Afro AI App" : title,
         visibility,
         commitMessage,
         publishedUrl,
       });
       res.json(result);
     } catch (e: any) {
-      const msg = e?.message || "Push failed";
-      const status = msg.includes("not connected") ? 401 : 500;
-      res.status(status).json({ error: msg });
+      githubFailure(res, e);
     }
   });
 
