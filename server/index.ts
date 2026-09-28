@@ -11,6 +11,10 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { securityHeaders } from "./security";
 import { storage } from "./storage";
+import passport from "passport";
+import { getSession } from "./replit_integrations/auth";
+import { cfAuthBridge } from "./replit_integrations/auth/cfBridge";
+import { hasShellAccess, isAllowedShellOrigin } from "./shell-security";
 
 const app = express();
 
@@ -199,7 +203,7 @@ httpServer.listen(
   startChatbotAutoScanScheduler();
 
   // ─── Sandboxed Interactive Shell via Socket.io + node-pty ───────────────────
-  // Strategy: Docker first (afro-terminal-box image), ulimit/nice fallback.
+  // Docker isolation is mandatory. Never run commands on the host.
   //
   // Docker mode (when daemon is available):
   //   docker run --rm -it --name shell-<id>
@@ -207,19 +211,26 @@ httpServer.listen(
   //     --network=none --read-only --tmpfs /home/afro-user --tmpfs /tmp
   //     afro-terminal-box
   //
-  // Fallback mode (no Docker daemon):
-  //   nice -n 15 bash -c "ulimit -v 262144 -u 60 -n 64 -f 102400 && exec bash"
-  //   + isolated /tmp/shell-<uuid> HOME directory
-  //
-  // Both modes: 30-min idle timeout, max 5 concurrent sessions, cleanup on exit.
+  // 30-min idle timeout, max 5 concurrent sessions, cleanup on exit.
   // ─────────────────────────────────────────────────────────────────────────────
   const io = new SocketIOServer(httpServer, {
     path: "/shell-ws",
-    cors: { origin: "*", credentials: true },
+    cors: {
+      origin: (origin, callback) => callback(null, isAllowedShellOrigin(origin)),
+      credentials: true,
+    },
+    // CORS response headers alone do not protect WebSocket upgrades.
+    allowRequest: (req, callback) => callback(null, isAllowedShellOrigin(req.headers.origin)),
   });
 
+  // Engine.IO requests bypass Express, so replay the same existing Passport +
+  // Cloudflare Worker session middleware used by setupAuth(app).
+  io.engine.use(getSession());
+  io.engine.use(passport.initialize());
+  io.engine.use(passport.session());
+  io.engine.use(cfAuthBridge());
+
   const { randomUUID } = await import("crypto");
-  const { existsSync, rmSync, mkdirSync } = await import("fs");
   const { execSync } = await import("child_process");
 
   // ── Build Docker image on startup ──────────────────────────────────────────
@@ -236,7 +247,7 @@ httpServer.listen(
     dockerAvailable = true;
     log(`[Shell] ✓ Docker image '${DOCKER_IMAGE}' ready`, "shell");
   } catch {
-    log("[Shell] Docker daemon not available — using process isolation fallback", "shell");
+    log("[Shell] DISABLED — Docker daemon or shell image unavailable", "shell");
   }
 
   let activeSessions = 0;
@@ -245,8 +256,7 @@ httpServer.listen(
   const SESSION_HARD_MAX_MS = 60 * 60 * 1000;   // 60 minutes wall-clock cap
 
   // ── Hard-fail if SHELL_SECRET is missing or weak ──────────────────────────
-  // The shell endpoint runs commands as the host process. Without a strong
-  // secret, anyone who finds /shell-ws can take over the box.
+  // The shell remains disabled without a strong shared secret.
   const SHELL_SECRET = process.env.SHELL_SECRET || "";
   const SHELL_ENABLED = SHELL_SECRET.length >= 32;
   if (!SHELL_ENABLED) {
@@ -256,23 +266,19 @@ httpServer.listen(
       "shell"
     );
   } else {
-    log("[Shell] Admin shell enabled (gated by SHELL_SECRET)", "shell");
+    log("[Shell] Admin shell enabled (founder session + SHELL_SECRET + Docker required)", "shell");
   }
 
+  io.use((socket, next) => {
+    if (!dockerAvailable) return next(new Error("Sandbox unavailable"));
+    if (!SHELL_ENABLED) return next(new Error("Shell disabled by server config"));
+    if (!hasShellAccess(socket.request as any, socket.handshake.auth?.adminKey, SHELL_SECRET, dockerAvailable)) {
+      return next(new Error("Access denied"));
+    }
+    next();
+  });
+
   io.on("connection", (socket) => {
-    if (!SHELL_ENABLED) {
-      socket.emit("output", "\r\n\x1b[31m[Afro AI Shell] Disabled by server config.\x1b[0m\r\n");
-      socket.disconnect(true);
-      return;
-    }
-
-    const adminKey = socket.handshake.auth?.adminKey;
-    if (typeof adminKey !== "string" || adminKey.length !== SHELL_SECRET.length || adminKey !== SHELL_SECRET) {
-      socket.emit("output", "\r\n\x1b[31m[Afro AI Shell] Access denied. Invalid admin key.\x1b[0m\r\n");
-      socket.disconnect(true);
-      return;
-    }
-
     if (activeSessions >= MAX_SESSIONS) {
       socket.emit("output", "\r\n\x1b[33m[Afro AI Shell] Max concurrent sessions reached. Try again shortly.\x1b[0m\r\n");
       socket.disconnect(true);
@@ -282,22 +288,20 @@ httpServer.listen(
     activeSessions++;
     const sessionId = randomUUID().slice(0, 8);
     const containerName = `afroai-shell-${sessionId}`;
-    const sessionDir = `/tmp/shell-${sessionId}`;
     let ptyProcess: any = null;
     let idleTimer: NodeJS.Timeout | null = null;
     let hardTimer: NodeJS.Timeout | null = null;
+    let cleanedUp = false;
     log(`[Shell] Session ${sessionId} started (active=${activeSessions})`, "shell");
 
     const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
       if (idleTimer) clearTimeout(idleTimer);
       if (hardTimer) clearTimeout(hardTimer);
       try { ptyProcess?.kill("SIGKILL"); } catch (_) {}
       // Remove Docker container if it is still running
-      if (dockerAvailable) {
-        try { execSync(`docker rm -f ${containerName}`, { stdio: "ignore", timeout: 5000 }); } catch (_) {}
-      }
-      // Remove isolated session directory (fallback mode)
-      try { if (existsSync(sessionDir)) rmSync(sessionDir, { recursive: true, force: true }); } catch (_) {}
+      try { execSync(`docker rm -f ${containerName}`, { stdio: "ignore", timeout: 5000 }); } catch (_) {}
       activeSessions = Math.max(0, activeSessions - 1);
     };
 
@@ -321,9 +325,9 @@ httpServer.listen(
     try {
       const pty = require("node-pty");
 
-      if (dockerAvailable) {
+      {
         // ── Docker container session ────────────────────────────────────────
-        // Each user gets an isolated alpine container:
+        // Each connection gets an isolated alpine container:
         //   --memory="256m"    hard RAM cap
         //   --cpus=".5"        half a CPU core
         //   --network=none     no internet access from inside the box
@@ -357,49 +361,6 @@ httpServer.listen(
           "╚══════════════════════════════════════════════╝\x1b[0m\r\n\r\n",
         ].join("\r\n"));
 
-      } else {
-        // ── Fallback: Linux process isolation ───────────────────────────────
-        mkdirSync(sessionDir, { recursive: true });
-
-        const initCmd = [
-          `ulimit -v 262144 -u 60 -n 64 -f 102400 2>/dev/null`,
-          `export HOME="${sessionDir}" TMPDIR="${sessionDir}"`,
-          `export PS1='\\[\\033[1;32m\\]afroai\\[\\033[0m\\]:\\[\\033[1;34m\\]\\w\\[\\033[0m\\]\\$ '`,
-          `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"`,
-          `cd "${sessionDir}"`,
-          `exec bash --norc --noprofile`,
-        ].join(" && ");
-
-        ptyProcess = pty.spawn("nice", ["-n", "15", "bash", "--norc", "-c", initCmd], {
-          name: "xterm-256color",
-          cols: 80,
-          rows: 24,
-          cwd: sessionDir,
-          env: {
-            TERM: "xterm-256color",
-            SHELL: "/bin/bash",
-            HOME: sessionDir,
-            TMPDIR: sessionDir,
-            AFRO_SESSION: sessionId,
-            PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            LANG: "en_US.UTF-8",
-          },
-        });
-
-        socket.emit("output", [
-          "\r\n\x1b[33m╔══════════════════════════════════════════════╗",
-          "║   Afro AI Shell  •  ADMIN MODE (limited)     ║",
-          "║   RAM: 256 MB cap  •  Procs: 60 max          ║",
-          "║   Files: 100 MB max  •  FDs: 64              ║",
-          "║   Isolated $HOME at /tmp/shell-<id>          ║",
-          "║                                              ║",
-          "║   ⚠  No kernel-level isolation on this host  ║",
-          "║      Do NOT expose this to untrusted users.  ║",
-          "║                                              ║",
-          "║   Idle: 30 min  •  Hard cap: 60 min          ║",
-          "║   Type 'exit' to end session                 ║",
-          "╚══════════════════════════════════════════════╝\x1b[0m\r\n\r\n",
-        ].join("\r\n"));
       }
 
       resetIdle();
