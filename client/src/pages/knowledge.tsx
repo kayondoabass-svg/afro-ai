@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, inspectQuota, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ import {
   Send,
   CheckCircle2,
   AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import type { KnowledgeDocument } from "@shared/schema";
 
@@ -45,6 +47,24 @@ interface AskResult {
   answer: string;
   sources: AskSource[];
   usedTools: string[];
+  webSources?: Array<{ title: string; url: string; snippet?: string }>;
+  toolResults?: Array<{ tool: string; ok: boolean; error?: { code: string; message: string }; data?: unknown }>;
+}
+
+interface KnowledgeCapabilities {
+  afroAvailable: boolean;
+  webSearchAvailable: boolean;
+}
+
+type AskProvider = "default" | "afro-test";
+
+function safeWebUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function KnowledgePage() {
@@ -59,6 +79,25 @@ export default function KnowledgePage() {
 
   const [question, setQuestion] = useState("");
   const [askResult, setAskResult] = useState<AskResult | null>(null);
+  const [provider, setProvider] = useState<AskProvider>("default");
+  const [searchKnowledge, setSearchKnowledge] = useState(true);
+  const [calculate, setCalculate] = useState(false);
+  const [webSearch, setWebSearch] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState("");
+  const askController = useRef<AbortController | null>(null);
+
+  useEffect(() => () => askController.current?.abort(), []);
+
+  const { data: capabilities, isError: capabilitiesError } = useQuery<KnowledgeCapabilities>({
+    queryKey: ["/api/knowledge/capabilities"],
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!capabilities?.afroAvailable) setProvider("default");
+    if (!capabilities?.webSearchAvailable) setWebSearch(false);
+  }, [capabilities]);
 
   const { data: docs, isLoading } = useQuery<KnowledgeDocument[]>({
     queryKey: ["/api/knowledge"],
@@ -105,14 +144,55 @@ export default function KnowledgePage() {
     onError: (e: any) => toast({ title: t("knowledge.error"), description: e.message, variant: "destructive" }),
   });
 
-  const askMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/knowledge/ask", { question: question.trim() });
-      return (await res.json()) as AskResult;
-    },
-    onSuccess: (data) => setAskResult(data),
-    onError: (e: any) => toast({ title: t("knowledge.error"), description: e.message, variant: "destructive" }),
-  });
+  async function ask() {
+    if (asking || !question.trim() || (searchKnowledge && readyDocs === 0)) return;
+    const controller = new AbortController();
+    askController.current = controller;
+    setAsking(true);
+    setAskResult(null);
+    setAskError("");
+    try {
+      const enabledTools = [
+        ...(searchKnowledge ? ["search_knowledge"] : []),
+        ...(calculate ? ["calculate"] : []),
+        ...(webSearch && capabilities?.webSearchAvailable ? ["web_search"] : []),
+      ];
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/knowledge/ask`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: question.trim(),
+          provider: provider === "afro-test" && capabilities?.afroAvailable ? "afro-test" : "default",
+          enabledTools,
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        inspectQuota(res, text);
+        let message = text || res.statusText;
+        try { message = JSON.parse(text).message || message; } catch { /* plain-text response */ }
+        throw new Error(message);
+      }
+      inspectQuota(res);
+      const result = (await res.json()) as AskResult;
+      if (!controller.signal.aborted) setAskResult(result);
+    } catch (e) {
+      if (!controller.signal.aborted) setAskError(e instanceof Error ? e.message : t("knowledge.error"));
+    } finally {
+      if (askController.current === controller) {
+        askController.current = null;
+        setAsking(false);
+      }
+    }
+  }
+
+  function cancelAsk() {
+    askController.current?.abort();
+    askController.current = null;
+    setAsking(false);
+  }
 
   const readyDocs = (docs || []).filter((d) => d.status === "ready").length;
 
@@ -212,7 +292,7 @@ export default function KnowledgePage() {
         </Dialog>
       </div>
 
-      {/* Ask your knowledge (tool-calling demo) */}
+      {/* Ask your knowledge */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -221,31 +301,94 @@ export default function KnowledgePage() {
           <CardDescription>{t("knowledge.askDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="knowledge-provider">{t("knowledge.model")}</Label>
+            <select
+              id="knowledge-provider"
+              data-testid="select-knowledge-provider"
+              className="flex h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as AskProvider)}
+              disabled={asking}
+            >
+              <option value="default">{t("knowledge.defaultModel")}</option>
+              {capabilities?.afroAvailable && <option value="afro-test">{t("knowledge.afroTestModel")}</option>}
+            </select>
+            {!capabilities?.afroAvailable && (
+              <p className="text-xs text-muted-foreground">{t("knowledge.afroUnavailable")}</p>
+            )}
+            {capabilitiesError && (
+              <p className="text-xs text-destructive" role="alert">{t("knowledge.capabilitiesError")}</p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-3">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="knowledge-search"
+                data-testid="toggle-search-knowledge"
+                checked={searchKnowledge}
+                onCheckedChange={(checked) => setSearchKnowledge(checked === true)}
+                disabled={asking}
+              />
+              <Label htmlFor="knowledge-search">{t("knowledge.searchTool")}</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="knowledge-calculate"
+                data-testid="toggle-calculate"
+                checked={calculate}
+                onCheckedChange={(checked) => setCalculate(checked === true)}
+                disabled={asking}
+              />
+              <Label htmlFor="knowledge-calculate">{t("knowledge.calculateTool")}</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="knowledge-web-search"
+                data-testid="toggle-web-search"
+                checked={webSearch}
+                onCheckedChange={(checked) => setWebSearch(checked === true)}
+                disabled={asking || !capabilities?.webSearchAvailable}
+              />
+              <Label htmlFor="knowledge-web-search">{t("knowledge.webSearchTool")}</Label>
+              {!capabilities?.webSearchAvailable && (
+                <span className="text-xs text-muted-foreground">{t("knowledge.webUnavailable")}</span>
+              )}
+            </div>
+          </div>
           <div className="flex gap-2">
             <Input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && question.trim() && !askMutation.isPending) askMutation.mutate();
+                if (e.key === "Enter") void ask();
               }}
               placeholder={t("knowledge.askPlaceholder")}
               data-testid="input-question"
-              disabled={readyDocs === 0}
+              disabled={asking}
             />
             <Button
-              onClick={() => askMutation.mutate()}
-              disabled={askMutation.isPending || !question.trim() || readyDocs === 0}
+              onClick={() => void ask()}
+              disabled={asking || !question.trim() || (searchKnowledge && readyDocs === 0)}
               data-testid="button-ask"
               className="gap-2"
             >
-              {askMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {asking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <span>{t("knowledge.askSubmit")}</span>
             </Button>
+            {asking && (
+              <Button variant="outline" onClick={cancelAsk} data-testid="button-cancel-ask">
+                {t("knowledge.cancel")}
+              </Button>
+            )}
           </div>
-          {readyDocs === 0 && <p className="text-sm text-muted-foreground">{t("knowledge.askEmpty")}</p>}
+          {readyDocs === 0 && searchKnowledge && <p className="text-sm text-muted-foreground">{t("knowledge.askEmpty")}</p>}
+          {asking && <p className="text-sm text-muted-foreground" role="status">{t("knowledge.searching")}</p>}
+          {askError && <p className="text-sm text-destructive" role="alert">{askError}</p>}
           {askResult && (
             <div className="space-y-3 rounded-lg border p-4 bg-muted/30" data-testid="text-answer">
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{askResult.answer}</p>
-              {askResult.sources.length > 0 && (
+              {(askResult.sources || []).length > 0 && (
                 <div className="space-y-2 pt-2 border-t">
                   <p className="text-xs font-medium text-muted-foreground">{t("knowledge.sources")}</p>
                   {askResult.sources.map((s, i) => (
@@ -253,6 +396,40 @@ export default function KnowledgePage() {
                       <span className="font-medium">{s.title}</span>{" "}
                       <span className="text-muted-foreground">({Math.round(s.score * 100)}%)</span>
                       <p className="text-muted-foreground mt-0.5 line-clamp-2">{s.excerpt}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(askResult.webSources || []).length > 0 && (
+                <div className="space-y-2 pt-2 border-t">
+                  <p className="text-xs font-medium text-muted-foreground">{t("knowledge.webSources")}</p>
+                  {askResult.webSources?.map((source, i) => {
+                    const href = safeWebUrl(source.url);
+                    return (
+                      <div key={i} className="text-xs rounded bg-background p-2 border" data-testid={`web-source-${i}`}>
+                        {href ? (
+                          <a href={href} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline inline-flex items-center gap-1 break-all">
+                            {source.title || href} <ExternalLink className="h-3 w-3 shrink-0" />
+                          </a>
+                        ) : <span className="font-medium">{source.title}</span>}
+                        {source.snippet && <p className="text-muted-foreground mt-0.5">{source.snippet}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {(askResult.toolResults || []).length > 0 && (
+                <div className="space-y-2 pt-2 border-t">
+                  <p className="text-xs font-medium text-muted-foreground">{t("knowledge.toolResults")}</p>
+                  {askResult.toolResults?.map((tool, i) => (
+                    <div key={i} className="text-xs rounded bg-background p-2 border" data-testid={`tool-result-${i}`}>
+                      <span className="font-medium">{tool.tool || t("knowledge.toolResult")}</span>
+                      {tool.error && <p className="text-destructive mt-1" role="alert">{tool.error.message || tool.error.code}</p>}
+                      {tool.data != null && (
+                        <p className="text-muted-foreground mt-1 whitespace-pre-wrap break-words">
+                          {typeof tool.data === "string" ? tool.data : JSON.stringify(tool.data)}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>

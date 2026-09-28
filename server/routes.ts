@@ -4097,13 +4097,69 @@ Never invent features or pricing not listed above.`;
     } catch (error: any) { res.status(500).json({ message: error.message }); }
   });
 
+  // This decision must come from the authenticated server identity, not a client flag.
+  const canTestAfro = async (req: any): Promise<boolean> => {
+    const email = req.user?.claims?.email;
+    if (email && FOUNDER_EMAILS.includes(email)) return true;
+    const userId = req.user?.claims?.sub || req.user?.claims?.id;
+    if (!userId) return false;
+    const member = await storage.getTeamMemberByUserId(userId);
+    return member?.status === "active" && member.tier === "full_admin";
+  };
+
+  app.get("/api/knowledge/capabilities", isAuthenticated, async (req: any, res) => {
+    try {
+      const { hasAfroAiProvider } = await import("./ai-chat-provider");
+      res.json({
+        afroAvailable: await canTestAfro(req) && hasAfroAiProvider(),
+        webSearchAvailable: Boolean(process.env.JINA_API_KEY?.trim()),
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: "Unable to check knowledge capabilities." });
+    }
+  });
+
   // Tool-calling demo: the model calls search_knowledge to answer over the user's content.
-  app.post("/api/knowledge/ask", isAuthenticated, aiQuotaGuard("chat"), async (req: any, res) => {
+  app.post("/api/knowledge/ask", isAuthenticated, aiBurstLimiters.chat, aiQuotaGuard("chat"), async (req: any, res) => {
+    const ctx = req.aiContext as { userId: string; plan: import("./replit_integrations/quota").UserPlan; cost: number; kind: "chat" } | undefined;
+    if (!ctx) return res.status(503).json({ message: "Unable to verify AI quota." });
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 45_000);
+    const onClose = () => { if (!res.writableEnded) controller.abort(); };
+    res.on("close", onClose);
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
-      const question = String(req.body?.question || "").trim();
-      if (!question) return res.status(400).json({ message: "question required" });
-      const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : [];
+      const body = req.body || {};
+      if (typeof body.question !== "string" || !body.question.trim() || body.question.length > 4000) {
+        return res.status(400).json({ message: "question must be a non-empty string of at most 4000 characters" });
+      }
+      const question = body.question.trim();
+      if (body.provider !== undefined && body.provider !== "default" && body.provider !== "afro-test") {
+        return res.status(400).json({ message: "Invalid provider" });
+      }
+      if (body.provider === "afro-test" && !(await canTestAfro(req))) {
+        return res.status(403).json({ message: "Afro AI test provider is restricted to administrators." });
+      }
+      const { hasAfroAiProvider } = await import("./ai-chat-provider");
+      if (body.provider === "afro-test" && !hasAfroAiProvider()) {
+        return res.status(503).json({ message: "Afro AI test provider is not configured." });
+      }
+      if (body.history !== undefined && (!Array.isArray(body.history) || body.history.length > 8 ||
+        !body.history.every((m: any) => m && (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" && m.content.length <= 4000))) {
+        return res.status(400).json({ message: "history must contain at most 8 user/assistant messages (4000 characters each)" });
+      }
+      const allowedTools = ["search_knowledge", "calculate", "web_search"];
+      if (body.enabledTools !== undefined && (!Array.isArray(body.enabledTools) ||
+        body.enabledTools.length > allowedTools.length || !body.enabledTools.every((t: any) => typeof t === "string" && allowedTools.includes(t)) ||
+        new Set(body.enabledTools).size !== body.enabledTools.length)) {
+        return res.status(400).json({ message: "Invalid enabledTools" });
+      }
+      if (body.enabledTools?.includes("web_search") && !process.env.JINA_API_KEY?.trim()) {
+        return res.status(503).json({ message: "Web search is not configured." });
+      }
+      const history = body.history || [];
       const user = await storage.getUser(userId);
       const plan = String(user?.plan || "starter");
       const tier = (["starter", "pro", "business", "payg"].includes(plan) ? plan : "starter") as any;
@@ -4111,12 +4167,17 @@ Never invent features or pricing not listed above.`;
       const { runChatWithTools } = await import("./ai-tools");
       const system = {
         role: "system",
-        content: "You are Afro AI's knowledge assistant. Answer the user's questions using their own knowledge base. ALWAYS call the search_knowledge tool to find relevant passages before answering. If the knowledge base has no answer, say so plainly instead of inventing facts. Be concise and friendly.",
+        content: body.enabledTools === undefined || body.enabledTools.includes("search_knowledge")
+          ? "You are Afro AI's knowledge assistant. Answer the user's questions using their own knowledge base. ALWAYS call the search_knowledge tool to find relevant passages before answering. If the knowledge base has no answer, say so plainly instead of inventing facts. Be concise and friendly."
+          : "You are Afro AI's assistant. Use only enabled tools when useful. Cite actual search results, never invent facts or sources. Be concise and friendly.",
       };
       const result = await runChatWithTools({
-        messages: [system, ...history.map((m: any) => ({ role: m.role, content: String(m.content || "") })), { role: "user", content: question }],
+        messages: [system, ...history.map((m: any) => ({ role: m.role, content: m.content })), { role: "user", content: question }],
         tier,
-        ctx: { userId },
+        ctx: { userId, afroAuthorized: body.provider === "afro-test" },
+        provider: body.provider || "default",
+        signal: controller.signal,
+        ...(body.enabledTools !== undefined ? { enabledTools: body.enabledTools } : {}),
       });
 
       const docs = await storage.getKnowledgeDocumentsByUser(userId);
@@ -4127,8 +4188,28 @@ Never invent features or pricing not listed above.`;
         score: Number(s.score.toFixed(3)),
         excerpt: s.content.slice(0, 240),
       }));
-      res.json({ answer: result.text, sources, usedTools: result.usedTools });
-    } catch (error: any) { res.status(500).json({ message: error.message }); }
+      if (!controller.signal.aborted && !res.headersSent && !res.destroyed) {
+        // Charge one successful ask, not each internal model/tool round. No token
+        // count is provided by the tool loop, so record 0 rather than an estimate.
+        await recordAiUsage({
+          userId: ctx.userId,
+          kind: "chat",
+          model: body.provider === "afro-test" ? process.env.AFRO_AI_MODEL! : "knowledge-assistant",
+          tokensUsed: 0,
+          costCents: ctx.cost,
+          plan: ctx.plan,
+        });
+        if (!res.headersSent && !res.destroyed) res.json({ answer: result.text, sources, usedTools: result.usedTools, webSources: result.webSources || [], toolResults: result.toolResults || [] });
+      }
+    } catch (error: any) {
+      if (!res.headersSent && !res.destroyed) {
+        res.status(timedOut ? 504 : controller.signal.aborted ? 499 : error?.status === 403 ? 403 : error?.status === 400 ? 400 : error?.status === 429 ? 429 : error?.status === 503 ? 503 : 502)
+          .json({ message: timedOut ? "Knowledge request timed out." : controller.signal.aborted ? "Knowledge request cancelled." : error?.message || "Knowledge request failed." });
+      }
+    } finally {
+      clearTimeout(timeout);
+      res.off("close", onClose);
+    }
   });
 
   // ============ CHATBOT WIDGETS ============

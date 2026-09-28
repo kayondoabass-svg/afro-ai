@@ -9,6 +9,11 @@ export type UserTier = "starter" | "pro" | "business" | "payg";
 
 export interface ChatCompleteOptions {
   messages: ChatMessage[];
+  /** Opt-in test provider; never selected by the default provider order. */
+  provider?: "default" | "afro-test";
+  /** Must be set by a server-side authorization check, never from the request body. */
+  afroAuthorized?: boolean;
+  signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;
   responseFormat?: { type: "json_object" } | { type: "text" };
@@ -51,9 +56,15 @@ export function maxOutputTokensForTier(tier?: UserTier): number {
   return MAX_OUTPUT_TOKENS_BY_TIER[tier || "starter"];
 }
 
+function validMaxTokens(value: number | undefined): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw Object.assign(new Error("maxTokens must be a finite positive integer."), { status: 400 });
+  }
+}
+
 export interface ChatCompleteResult {
   text: string;
-  provider: "openai" | "gemini";
+  provider: "openai" | "gemini" | "afro-test";
   model: string;
   /** Present when the model decided to call one or more tools. */
   toolCalls?: any[];
@@ -61,6 +72,41 @@ export interface ChatCompleteResult {
 }
 
 type Provider = "openai" | "gemini";
+
+export function hasAfroAiProvider(): boolean {
+  return Boolean(process.env.HF_TOKEN?.trim() && process.env.AFRO_AI_BASE_URL?.trim() && process.env.AFRO_AI_MODEL?.trim());
+}
+
+async function afroChatComplete(opts: ChatCompleteOptions, effectiveMax: number): Promise<ChatCompleteResult> {
+  if (!opts.afroAuthorized) {
+    throw Object.assign(new Error("Afro AI test provider is restricted to administrators."), { status: 403 });
+  }
+  if (!hasAfroAiProvider()) {
+    throw Object.assign(new Error("Afro AI test provider is not configured."), { status: 503 });
+  }
+  const client = new OpenAI({
+    apiKey: process.env.HF_TOKEN!,
+    baseURL: process.env.AFRO_AI_BASE_URL!,
+    maxRetries: 0,
+  });
+  // No fallback: failures in the test provider must remain visible to the caller.
+  const completion = await client.chat.completions.create({
+    model: process.env.AFRO_AI_MODEL!,
+    messages: opts.messages as any,
+    max_tokens: effectiveMax,
+    temperature: opts.temperature ?? 0.4,
+    ...(opts.responseFormat ? { response_format: opts.responseFormat as any } : {}),
+    ...(opts.tools ? { tools: opts.tools as any, tool_choice: (opts.toolChoice ?? "auto") as any } : {}),
+  }, { signal: opts.signal });
+  const choice = completion.choices?.[0];
+  return {
+    text: choice?.message?.content?.trim() || "",
+    provider: "afro-test",
+    model: process.env.AFRO_AI_MODEL!,
+    toolCalls: (choice?.message as any)?.tool_calls || undefined,
+    finishReason: choice?.finish_reason,
+  };
+}
 
 function geminiKey(): string | undefined {
   // Accept either env name. GOOGLE_API_KEY is the modern name in
@@ -133,6 +179,13 @@ function getProviderOrder(): Provider[] {
 }
 
 export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCompleteResult> {
+  validMaxTokens(opts.maxTokens);
+  if (opts.provider && opts.provider !== "default" && opts.provider !== "afro-test") {
+    throw Object.assign(new Error("Invalid AI provider."), { status: 400 });
+  }
+  const tierCap = maxOutputTokensForTier(opts.tier);
+  const effectiveMax = opts.maxTokens ? Math.min(opts.maxTokens, tierCap) : tierCap;
+  if (opts.provider === "afro-test") return afroChatComplete(opts, effectiveMax);
   const order = getProviderOrder();
   if (order.length === 0) {
     throw new Error("No AI provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY.");
@@ -140,11 +193,6 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
 
   // Cap output tokens at the tier ceiling — even if a caller asks for more,
   // never exceed what the user's plan allows.
-  const tierCap = maxOutputTokensForTier(opts.tier);
-  const effectiveMax = opts.maxTokens
-    ? Math.min(opts.maxTokens, tierCap)
-    : tierCap;
-
   let lastErr: any = null;
   for (let i = 0; i < order.length; i++) {
     const provider = order[i];
@@ -157,12 +205,13 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
         temperature: opts.temperature ?? 0.4,
         ...(opts.responseFormat ? { response_format: opts.responseFormat as any } : {}),
         ...(opts.tools ? { tools: opts.tools as any, tool_choice: (opts.toolChoice ?? "auto") as any } : {}),
-      });
+      }, { signal: opts.signal });
       const choice = completion.choices?.[0];
       const text = choice?.message?.content?.trim() || "";
       const toolCalls = (choice?.message as any)?.tool_calls || undefined;
       return { text, provider, model, toolCalls, finishReason: choice?.finish_reason };
     } catch (err: any) {
+      if (opts.signal?.aborted) throw err;
       lastErr = err;
       const fatal = isFatalAuthOrQuotaError(err);
       const hasFallback = i < order.length - 1;
@@ -206,6 +255,7 @@ export interface ChatStreamResult {
  *   (we cannot safely splice two providers' output mid-stream).
  */
 export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<ChatStreamResult> {
+  validMaxTokens(opts.maxTokens);
   const order = getProviderOrder();
   if (order.length === 0) {
     throw new Error("No AI provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY.");
