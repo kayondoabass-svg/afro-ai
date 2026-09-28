@@ -41,3 +41,11 @@ Scope: read-only source audit. No provider requests, paid generation, production
 ## Scope choices still to confirm
 
 Suggested first text jobs: business writing, document-based customer support, and general assistance. Target African languages and acceptance thresholds have not been chosen by the user. Runtime verification and those choices remain open; the code inventory itself is complete.
+
+## Audit refresh — 2026-09-28
+
+The source inventory was rechecked. Chat supports uploaded document attachments; the missing upload flow above refers specifically to the dedicated Knowledge page, not the whole app. The existing knowledge tool is wired through `/api/knowledge/ask` and defaults to four rounds, but this is not a total call-count limit. Quota burst limits are in-memory; daily/PAYG checks still need atomic reservation to resist concurrent overspend.
+
+No direct tests were found for provider fallback/SSE, knowledge isolation, tool execution, media routes, generated-asset persistence, or quota concurrency. Existing nearby tests cover other concerns, such as authentication user-ID conventions and chatbot autoscan parsing. No provider calls or runtime tests were run for this refresh.
+
+**Audit deliverable complete at source level.** Production functionality remains unverified. Suggested text tasks are provisional, and target-language selection is carried forward to item 5 rather than blocking the source inventory.

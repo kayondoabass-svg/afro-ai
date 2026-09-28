@@ -51,23 +51,25 @@ Marked complete at the user's request after the initial infrastructure/budget di
 
 **Done when:** a costed hardware shortlist and approved spending ceiling exist. No upgrade is purchased merely to troubleshoot a disabled UI option.
 
-#### 2. Audit existing Afro AI features — IN PROGRESS
+#### 2. Audit existing Afro AI features — DONE (source audit)
 - [x] Inventory chat providers, streaming, document retrieval, tools, image/audio/video routes, storage, authentication, and background jobs.
 - [x] Mark each capability: implemented, partial, not found, or runtime unverified.
-- [ ] Select three priority text jobs and the languages to evaluate.
+- [ ] Select three priority text jobs and the languages to evaluate — carried forward to item 5; provisional jobs are recorded in the audit.
 - [x] Document which existing modules can be reused and which require work.
 
-Source audit saved in [Afro AI feature audit](afro-ai-feature-audit.md). No application code changed or paid API tests performed. Runtime verification and user confirmation of task/language scope remain open.
+Source audit saved in [Afro AI feature audit](afro-ai-feature-audit.md), rechecked 2026-09-28. No application code changed or paid API tests performed. Source-level inventory is complete; runtime verification and user confirmation of task/language scope remain open. This status does not certify working production features.
 
 **Done when:** there is a short gap list based on code and behavior, not assumptions.
 
 ### Day 2 — tool/security research and evaluation data
 
-#### 3. Research tool use from the screenshot
-- [ ] Compare browser/search, calculators, isolated code execution, and media tools.
-- [ ] Specify each tool's schema, permissions, timeout, cost, and output format.
-- [ ] Define the loop: model proposes → server validates/authorizes → executes → returns bounded output → model answers.
-- [ ] Bound tool-call count, retries, result size, and recursion.
+#### 3. Research tool use from the screenshot — DONE (research and proposed contract)
+- [x] Compare browser/search, calculators, isolated code execution, and media tools.
+- [x] Specify each tool's schema, permissions, timeout, cost, and output format.
+- [x] Define the loop: model proposes → server validates/authorizes → executes → returns bounded output → model answers.
+- [x] Bound tool-call count, retries, result size, and recursion.
+
+Saved in [Tool-use research and proposed contract](afro-ai-tool-use-research.md). Limits are proposed defaults, not implemented controls; monetary quotes and budgets remain open. Paid tools stay disabled until those are agreed. Implementation and acceptance testing belong to later items.
 
 **Done when:** a reviewed tool contract exists. Begin with document search and a calculator; defer general code execution until isolation is verified.
 
