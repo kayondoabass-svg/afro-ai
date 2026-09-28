@@ -101,6 +101,9 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Conversation, Message } from "@shared/schema";
+import { extractWebsiteHtml } from "@shared/html-extraction";
+import type { ChatSearchActivity } from "@shared/chat-search";
+import { ChatSearchCard, ChatSearchToggle, parseSearchActivity } from "@/components/chat-search";
 
 interface Attachment {
   filename: string;
@@ -120,8 +123,7 @@ interface ConversationWithMessages extends Conversation {
 }
 
 function extractHtmlCode(text: string): string | null {
-  const match = text.match(/```html\s*\n([\s\S]*?)```/);
-  return match ? match[1].trim() : null;
+  return extractWebsiteHtml(text);
 }
 
 function looksLikeSecret(text: string): boolean {
@@ -146,16 +148,12 @@ function looksLikeSecret(text: string): boolean {
 }
 
 function extractAllCodeBlocks(text: string): string | null {
-  const htmlMatch = text.match(/```html\s*\n([\s\S]*?)```/);
-  if (htmlMatch) return htmlMatch[1].trim();
-  const genericMatch = text.match(/```\s*\n([\s\S]*?)```/);
-  if (genericMatch && (genericMatch[1].includes("<!DOCTYPE") || genericMatch[1].includes("<html"))) {
-    return genericMatch[1].trim();
-  }
-  return null;
+  return extractWebsiteHtml(text);
 }
 
 function removeCodeBlock(text: string): string {
+  const website = extractWebsiteHtml(text);
+  if (website) text = text.replace(website, "");
   // Strip closed code fences first.
   let out = text.replace(/```(?:html)?\s*\n[\s\S]*?```/g, "");
   // Then strip any DANGLING open fence (truncated reply or mid-stream): everything from
@@ -367,7 +365,7 @@ function LiveActivityTimeline({ code, isComplete, onStepClick }: LiveActivityTim
       </div>
       {onStepClick && (doneCount > 0 || isComplete) && (
         <div className="text-[10px] text-muted-foreground/70 pt-0.5 italic">
-          {isComplete ? "Tap any step to see what was built" : "Tap a step to peek at what's been built so far"}
+          Tap a step to open the project preview
         </div>
       )}
     </div>
@@ -1535,6 +1533,13 @@ export default function AIChatPage() {
   const [activeConversation, setActiveConversation] = useState<number | null>(null);
   const [input, setInput] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
+  const [webSearch, setWebSearch] = useState(false);
+  const [searchActivity, setSearchActivity] = useState<ChatSearchActivity | null>(null);
+  const streamAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setSearchActivity(null);
+    return () => { streamAbort.current?.abort(); };
+  }, [activeConversation]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [previewCode, setPreviewCode] = useState<string | null>(null);
   const [previousCode, setPreviousCode] = useState<string | null>(null);
@@ -2456,6 +2461,9 @@ export default function AIChatPage() {
     if (!readyForProjectChat()) return;
     setIsStreaming(true);
     setStreamingContent("");
+    setSearchActivity(null);
+    const controller = new AbortController();
+    streamAbort.current = controller;
 
     const optimisticMsg: Message = {
       id: Date.now(),
@@ -2474,7 +2482,8 @@ export default function AIChatPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-         body: JSON.stringify({ content: text, language, projectMode, selectedFilePath: projectMode ? openedFile?.path : undefined }),
+        signal: controller.signal,
+         body: JSON.stringify({ content: text, language, webSearch: webSearch && !projectMode, projectMode, selectedFilePath: projectMode ? openedFile?.path : undefined }),
       });
       if (!response.ok) {
         const errText = await response.text();
@@ -2497,6 +2506,8 @@ export default function AIChatPage() {
           if (!line.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(line.slice(6));
+            const activity = parseSearchActivity(data);
+            if (activity) setSearchActivity(activity);
             handleProjectFilesEvent(data);
              if (data.error && data.type !== "project-files-saved") {
                toast({ title: "AI request failed", description: data.error, variant: "destructive" });
@@ -2514,9 +2525,13 @@ export default function AIChatPage() {
         }
       }
     } catch {
-      toast({ title: "Error", description: "Auto-fix failed. Please try again.", variant: "destructive" });
+      if (!controller.signal.aborted) toast({ title: "Error", description: "Auto-fix failed. Please try again.", variant: "destructive" });
       setIsStreaming(false);
       setStreamingContent("");
+    } finally {
+      setIsStreaming(false);
+      setSearchActivity(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", activeConversation] });
     }
   };
 
@@ -2545,6 +2560,9 @@ export default function AIChatPage() {
     setSelectedElement(null);
     setIsStreaming(true);
     setStreamingContent("");
+    setSearchActivity(null);
+    const controller = new AbortController();
+    streamAbort.current = controller;
 
     const messageContent = currentAttachments.length > 0
       ? JSON.stringify({ text: userMessage, attachments: currentAttachments })
@@ -2571,8 +2589,10 @@ export default function AIChatPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        signal: controller.signal,
         body: JSON.stringify({
           content: userMessage,
+          webSearch: webSearch && !projectMode,
            projectMode,
           selectedFilePath: projectMode ? openedFile?.path : undefined,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
@@ -2606,6 +2626,8 @@ export default function AIChatPage() {
           if (!line.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(line.slice(6));
+            const activity = parseSearchActivity(data);
+            if (activity) setSearchActivity(activity);
             if (data.content) {
               fullResponse += data.content;
               setStreamingContent(fullResponse);
@@ -2633,9 +2655,13 @@ export default function AIChatPage() {
         }
       }
     } catch (error) {
-      toast({ title: t("dashboard.error"), description: t("chat.error"), variant: "destructive" });
+      if (!controller.signal.aborted) toast({ title: t("dashboard.error"), description: t("chat.error"), variant: "destructive" });
       setIsStreaming(false);
       setStreamingContent("");
+    } finally {
+      setIsStreaming(false);
+      setSearchActivity(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", activeConversation] });
     }
   };
 
@@ -2990,7 +3016,9 @@ export default function AIChatPage() {
                       ))}
                     </div>
                   ) : (
-                    messages.map((msg) => (
+                    messages.map((msg) => msg.role === "web-search" ? (
+                      parseSearchActivity(msg.content) && <ChatSearchCard key={msg.id} activity={parseSearchActivity(msg.content)!} />
+                    ) : (
                       <div key={msg.id} className="flex gap-3" data-testid={`message-${msg.id}`}>
                         <Avatar className="w-8 h-8 flex-shrink-0">
                           <AvatarFallback className={msg.role === "assistant" ? "bg-primary/10 text-primary" : "bg-secondary"}>
@@ -3013,6 +3041,7 @@ export default function AIChatPage() {
                     ))
                   )}
 
+                  {searchActivity && <ChatSearchCard activity={searchActivity} />}
                   {streamingContent && (
                     <div className="flex gap-3">
                       <Avatar className="w-8 h-8 flex-shrink-0">
@@ -3074,7 +3103,7 @@ export default function AIChatPage() {
                     </div>
                   )}
 
-                  {isStreaming && !streamingContent && (
+                  {isStreaming && !streamingContent && searchActivity?.status !== "searching" && (
                     <div className="flex gap-3">
                       <Avatar className="w-8 h-8 flex-shrink-0">
                         <AvatarFallback className="bg-primary/10 text-primary">
@@ -3113,6 +3142,11 @@ export default function AIChatPage() {
                   </div>
                 )}
                 <div className="max-w-2xl mx-auto space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ChatSearchToggle enabled={webSearch} disabled={isStreaming || projectMode} onChange={setWebSearch} />
+                    <span className="text-xs text-muted-foreground">{projectMode ? "Search is separate from file editing" : "Or ask to search in your message"}</span>
+                    {isStreaming && !projectMode && <Button type="button" size="sm" variant="outline" aria-label="Stop response" onClick={() => streamAbort.current?.abort()}>Stop</Button>}
+                  </div>
                   {pendingAttachments.some(a => a.mimetype.startsWith("image/")) && (
                     <div
                       className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300"
@@ -3172,7 +3206,8 @@ export default function AIChatPage() {
                           )}
                           <button
                             onClick={() => removePendingAttachment(i)}
-                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label={`Remove ${att.originalName}`}
+                            className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
                             data-testid={`button-remove-attachment-${i}`}
                           >
                             <X className="w-3 h-3" />
@@ -3206,6 +3241,7 @@ export default function AIChatPage() {
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isStreaming || isUploading}
                       data-testid="button-attach-file"
+                      aria-label="Attach a file"
                       title="Attach photo, video, or screenshot"
                     >
                       {isUploading ? (
@@ -3220,7 +3256,8 @@ export default function AIChatPage() {
                       onClick={() => scanFileInputRef.current?.click()}
                       disabled={isStreaming || analyzingImage}
                       data-testid="button-scan-image"
-                      title="Scan & identify an image (Google Lens-like)"
+                      title="Upload an image for analysis (not reverse image search)"
+                      aria-label="Upload image for analysis"
                       className="text-primary"
                     >
                       {analyzingImage ? (
@@ -3229,7 +3266,7 @@ export default function AIChatPage() {
                         <ScanSearch className="w-4 h-4" />
                       )}
                     </Button>
-                    <div className="flex-1 flex flex-col gap-1.5">
+                    <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                       {showSecretWarning && SecretWarningBanner}
                       <Textarea
                         ref={textareaRef}
@@ -3247,6 +3284,7 @@ export default function AIChatPage() {
                       onClick={handleSend}
                       disabled={(!input.trim() && pendingAttachments.length === 0) || isStreaming}
                       data-testid="button-send-message"
+                      aria-label="Send message"
                     >
                       <Send className="w-4 h-4" />
                     </Button>
@@ -3319,6 +3357,7 @@ export default function AIChatPage() {
               {/* Main input box */}
               <div className="w-full max-w-xl">
                 <div className="rounded-2xl border border-border/60 bg-card/50 backdrop-blur-sm p-4 space-y-3 shadow-lg">
+                  <ChatSearchToggle enabled={webSearch} onChange={setWebSearch} />
                   {showSecretWarning && SecretWarningBanner}
                   <Textarea
                     value={input}
@@ -3379,6 +3418,7 @@ export default function AIChatPage() {
                       disabled={!input.trim() || createConvoMutation.isPending}
                       className="rounded-xl px-4"
                       data-testid="button-welcome-send"
+                      aria-label="Send message"
                     >
                       <Send className="w-4 h-4" />
                     </Button>
@@ -3714,7 +3754,7 @@ export default function AIChatPage() {
                           <button
                             onClick={() => {
                               setPreviewingVersionId(ver.id);
-                              setPreviewCode(ver.htmlContent);
+                              setPreviewCode(extractWebsiteHtml(ver.htmlContent) ?? ver.htmlContent);
                               setShowPreview(true);
                               setShowHistoryPanel(false);
                               toast({ title: `Previewing ${ver.label || "version"}`, description: "Click Restore to make it your current version, or keep browsing." });
@@ -3730,7 +3770,7 @@ export default function AIChatPage() {
                               onClick={() => {
                                 setPreviousCode(previewCode);
                                 setNextCode(null);
-                                setPreviewCode(ver.htmlContent);
+                                setPreviewCode(extractWebsiteHtml(ver.htmlContent) ?? ver.htmlContent);
                                 setPreviewingVersionId(null);
                                 setShowPreview(true);
                                 setShowHistoryPanel(false);

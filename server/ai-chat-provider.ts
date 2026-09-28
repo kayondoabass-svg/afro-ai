@@ -233,6 +233,7 @@ export function hasAnyAiProvider(): boolean {
 
 export interface ChatStreamOptions {
   messages: any[]; // allows rich content (vision parts, etc.)
+  signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;
   onChunk: (text: string) => void;
@@ -255,6 +256,7 @@ export interface ChatStreamResult {
  *   (we cannot safely splice two providers' output mid-stream).
  */
 export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<ChatStreamResult> {
+  opts.signal?.throwIfAborted();
   validMaxTokens(opts.maxTokens);
   const order = getProviderOrder();
   if (order.length === 0) {
@@ -278,11 +280,12 @@ export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<Cha
         stream: true,
         max_tokens: effectiveMax,
         temperature: opts.temperature ?? 0.4,
-      } as any);
+      } as any, { signal: opts.signal });
 
       let fullText = "";
       let completionTokens = 0;
       for await (const chunk of stream as any) {
+        opts.signal?.throwIfAborted();
         const content = chunk.choices?.[0]?.delta?.content || "";
         if (content) {
           fullText += content;
@@ -296,6 +299,7 @@ export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<Cha
       if (!completionTokens) completionTokens = Math.ceil(fullText.length / 4);
       return { fullText, provider, model, completionTokens };
     } catch (err: any) {
+      if (opts.signal?.aborted) throw err;
       lastErr = err;
       // If we already streamed bytes to the client, we can't fall back cleanly.
       if (receivedAnyChunk) throw err;
