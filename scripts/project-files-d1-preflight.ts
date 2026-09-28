@@ -25,7 +25,7 @@ export async function preflightProjectFilesD1(
   }
 
   const schema = (await query(
-    "SELECT type, name, sql FROM sqlite_master WHERE name IN ('project_files', 'project_files_owner_path', 'project_file_commands', 'project_file_command_apply')",
+    "SELECT type, name, sql FROM sqlite_master WHERE name IN ('project_files', 'project_files_owner_path', 'project_file_commands', 'project_file_command_apply', 'project_file_command_apply_binary')",
   )).results;
   const table = schema.find(r => r.type === "table" && r.name === "project_files");
   if (!table) return "migration-required";
@@ -40,12 +40,14 @@ export async function preflightProjectFilesD1(
 
   const index = schema.find(r => r.type === "index" && r.name === "project_files_owner_path");
   const commands = schema.find(r => r.type === "table" && r.name === "project_file_commands");
-  const trigger = schema.find(r => r.type === "trigger" && r.name === "project_file_command_apply");
+  const trigger = schema.find(r => r.type === "trigger" && r.name === "project_file_command_apply_binary");
   if (index && (!/CREATE\s+UNIQUE\s+INDEX/i.test(index.sql ?? "") ||
     !/\buser_id\s*,\s*conversation_id\s*,\s*path\s+COLLATE\s+NOCASE\b/i.test(index.sql ?? ""))) {
     throw new Error("Project-files index has unexpected definition; inspect manually");
   }
-  return index && commands && trigger ? "ready" : "migration-required";
+  if (!index || !commands || !trigger) return "migration-required";
+  const columns = (await query("SELECT name FROM pragma_table_info('project_files')")).results;
+  return columns.some(row => row.name === "encoding") ? "ready" : "migration-required";
 }
 
 async function main() {
@@ -61,9 +63,9 @@ async function main() {
     d1GetDatabaseInfo,
     d1Query,
   );
-  if (status === "ready") console.log("Project-files D1 migration 002 is present. No changes made.");
+  if (status === "ready") console.log("Project-files D1 migrations 002 and 003 are present. No changes made.");
   else {
-    console.log("Project-files D1 migration 002 is missing. Command writes must remain gated; legacy reads/deletes remain available. No changes made.");
+    console.log("Project-files D1 migration 002 or 003 is missing. Binary writes require 003; existing text writes remain available with 002. No changes made.");
     if (requireReady) process.exitCode = 1;
   }
 }

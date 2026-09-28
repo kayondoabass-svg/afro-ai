@@ -12,3 +12,4 @@
 - [Caddy shared-log-dir outage](caddy-log-permission-outage.md) — whole-site "Host Error" with healthy Node = Caddy can't write /srv/afro-ai/logs/access.log after dir/file chowned to afro; status=1 ≠ OOM (check dmesg).
 - [AutoTrain SFT smoke test](autotrain-sft-smoke-test.md) — tiny Qwen 1.5B LoRA tests need short block sizes; expand the dataset before a real 512-token run.
 - [Afro AI pilot scope](afro-provider-pilot.md) — serving success is not tool-call or production-quality evidence; keep the trained model opt-in until evaluated.
+- [Binary project storage](binary-project-storage.md) — bounded assets share the owned database transaction; LFS fails closed rather than pretending pointers are assets.

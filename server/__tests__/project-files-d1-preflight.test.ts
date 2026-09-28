@@ -7,7 +7,7 @@ const schema = [
   { type: "table", name: "project_files" },
   { type: "index", name: "project_files_owner_path", sql: "CREATE UNIQUE INDEX project_files_owner_path ON project_files(user_id, conversation_id, path COLLATE NOCASE)" },
   { type: "table", name: "project_file_commands" },
-  { type: "trigger", name: "project_file_command_apply" },
+  { type: "trigger", name: "project_file_command_apply_binary" },
 ];
 
 describe("read-only project-files migration preflight", () => {
@@ -31,7 +31,12 @@ describe("read-only project-files migration preflight", () => {
   it("requires trigger, command table and unique index for readiness", async () => {
     const query = vi.fn().mockResolvedValueOnce({ results: schema.slice(0, 2) }).mockResolvedValueOnce({ results: [{ n: 0 }] });
     await expect(preflightProjectFilesD1(config, info, query)).resolves.toBe("migration-required");
-    const readyQuery = vi.fn().mockResolvedValueOnce({ results: schema }).mockResolvedValueOnce({ results: [{ n: 0 }] });
+    const legacyQuery = vi.fn().mockResolvedValueOnce({ results: [...schema.slice(0, 3), { type: "trigger", name: "project_file_command_apply" }] })
+      .mockResolvedValueOnce({ results: [{ n: 0 }] });
+    await expect(preflightProjectFilesD1(config, info, legacyQuery)).resolves.toBe("migration-required");
+    const readyQuery = vi.fn().mockResolvedValueOnce({ results: schema }).mockResolvedValueOnce({ results: [{ n: 0 }] })
+      .mockResolvedValueOnce({ results: [{ name: "content" }, { name: "encoding" }] });
     await expect(preflightProjectFilesD1(config, info, readyQuery)).resolves.toBe("ready");
+    expect(readyQuery.mock.calls.every(([sql]) => sql.startsWith("SELECT "))).toBe(true);
   });
 });

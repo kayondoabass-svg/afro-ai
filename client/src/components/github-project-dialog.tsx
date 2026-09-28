@@ -4,6 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+export function githubFileKind(file: { encoding?: string; language?: string }): "binary asset" | "text" {
+  return file.encoding === "base64" || file.language === "binary" ? "binary asset" : "text";
+}
+
 export function githubRepositoryUrl(text: string): string | null {
   // Extract a complete link, never a root-looking prefix of a /tree or /blob
   // URL. The import API only accepts repository roots.
@@ -73,7 +77,7 @@ export function GithubProjectDialog({ open, mode, url = "", conversationId, onCl
   return <Dialog open={open} onOpenChange={v => { if (!v && !busy) onClose(); }}>
     <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
       <DialogHeader><DialogTitle>{mode === "import" ? "Import GitHub project" : "Review GitHub export"}</DialogTitle>
-        <DialogDescription>Project source files are stored securely. Unsupported binary files and blocked paths are excluded. Importing does not run code.</DialogDescription>
+        <DialogDescription>Safe images and fonts are supported as binary assets alongside text files (up to 1 MB per file and 5 MB per project). Git LFS pointers are excluded; Git LFS objects are not imported or exported. Blocked paths are excluded. Importing does not run code.</DialogDescription>
       </DialogHeader>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {!conversationId && <p role="alert">Create or open a conversation first.</p>}
@@ -105,7 +109,7 @@ export function GithubProjectDialog({ open, mode, url = "", conversationId, onCl
         <p className="font-semibold">{imported ? "Imported files" : "Changes to commit"} ({files.length})</p>
         <p className="font-mono break-all">{imported ? `${imported.repo?.owner}/${imported.repo?.name} · ${imported.repo?.branch}` : `${review.owner}/${review.repoName} · ${review.branch}`}</p>
         <p className="text-xs font-mono break-all">Base commit: {imported?.repo?.sha || review?.baseSha || "New repository"}</p>
-        <ul className="max-h-48 overflow-auto border rounded p-2">{files.map((f: any, i: number) => <li key={i} className="font-mono break-all">{f.change || f.status || f.action || ""} {typeof f === "string" ? f : f.path || f.name}</li>)}</ul>
+         <ul className="max-h-48 overflow-auto border rounded p-2">{files.map((f: any, i: number) => <li key={i} className="font-mono break-all">{f.change || f.status || f.action || ""} {typeof f === "string" ? f : f.path || f.name}{typeof f !== "string" && <> <span className="text-muted-foreground">({githubFileKind(f)}{typeof f.bytes === "number" ? `, ${f.bytes} B` : ""})</span></>}</li>)}</ul>
         {(imported?.excluded || review?.excluded)?.length > 0 && <><p>Excluded / unsupported files</p><ul className="max-h-40 overflow-auto">{(imported?.excluded || review?.excluded).map((f: any) => <li key={f.path}>{f.path}: {f.reason}</li>)}</ul></>}
         {review && !result && <>
           <p>One atomic commit. Remote branch changes require a fresh review. Existing repository visibility is not changed.</p>
