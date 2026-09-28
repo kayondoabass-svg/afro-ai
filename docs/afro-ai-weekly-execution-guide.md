@@ -15,7 +15,7 @@ Original supplied blueprint, preserved unchanged:
 
 - A Qwen2.5-1.5B LoRA smoke test completed using three examples.
 - The merged model was uploaded and an authenticated vLLM chat request succeeded.
-- The endpoint has not been integrated as the app's provider in the work covered by this guide.
+- The adapter is now integrated as a restricted, opt-in text pilot in Knowledge Ask and Voice Lab, not as the global default or an image/audio provider. Configuration alone does not prove successful live inference.
 - Serving success is not evidence of production answer quality.
 - Verify current infrastructure, app capabilities, and endpoint status before execution; these can change.
 

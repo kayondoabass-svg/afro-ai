@@ -40,6 +40,7 @@ import express from "express";
 import { SESClient, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIdentityVerificationAttributesCommand, SetIdentityMailFromDomainCommand } from "@aws-sdk/client-ses";
 import bcrypt from "bcryptjs";
 import { affiliateApplicationInput } from "./affiliate-application";
+import { productSelfKnowledge } from "./product-self-knowledge";
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -4129,9 +4130,10 @@ Never invent features or pricing not listed above.`;
       const system = {
         role: "system",
         content: body.enabledTools === undefined || body.enabledTools.includes("search_knowledge")
-          ? "You are Afro AI's knowledge assistant. Answer the user's questions using their own knowledge base. ALWAYS call the search_knowledge tool to find relevant passages before answering. If the knowledge base has no answer, say so plainly instead of inventing facts. Be concise and friendly."
+          ? "You are Afro AI's knowledge assistant. For questions about the user's own documents, ALWAYS call the search_knowledge tool before answering. If their knowledge base has no answer, say so plainly. For questions about Afro AI itself, use the trusted product self-knowledge below; a missing user document is not evidence that product information is missing. Be concise and friendly."
           : "You are Afro AI's assistant. Use only enabled tools when useful. Cite actual search results, never invent facts or sources. Be concise and friendly.",
       };
+      system.content += productSelfKnowledge({ afroAuthorized: body.provider === "afro-test" });
       const result = await runChatWithTools({
         messages: [system, ...history.map((m: any) => ({ role: m.role, content: m.content })), { role: "user", content: question }],
         tier,

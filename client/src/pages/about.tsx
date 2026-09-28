@@ -232,6 +232,12 @@ export default function AboutPage() {
               <div className="space-y-4">
                 <Card>
                   <CardContent className="p-6 space-y-1">
+                    <p className="text-sm font-semibold text-primary">Recently</p>
+                    <p className="text-sm text-muted-foreground" data-testid="text-milestone-language-model">Afro AI recently fine-tuned its own language model. Testing and evaluation are ongoing as we continue its development.</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-6 space-y-1">
                     <p className="text-sm font-semibold text-primary">May 2026</p>
                     <p className="text-sm text-muted-foreground">Afro AI now reads the web live — paste any link in chat and the AI fetches and reads the real page content. Upload PDFs, spreadsheets, and documents and the AI extracts and answers questions about them.</p>
                   </CardContent>
