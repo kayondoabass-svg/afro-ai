@@ -33,13 +33,15 @@ import { projectToolSession, runProjectTools } from "../project-tools";
 
 describe("project agent credential boundary", () => {
   const file = { path: "src/index.ts", name: "index.ts", language: "typescript", content: "const x = 1" };
-  it("does not expose historic file credentials to tool reads or allow credential proposals", () => {
+  it("rejects secret-bearing source files at the existing file-policy boundary and credential proposals", () => {
     const token = "sk_live_" + "b".repeat(32);
-    const session = projectToolSession([{ ...file, content: `const token = "${token}"` }]);
-    expect(JSON.stringify(session.execute("read_file", { path: file.path }))).not.toContain(token);
+    expect(() => projectToolSession([{ ...file, content: `const token = "${token}"` }]))
+      .toThrow("embedded credential forbidden");
+    const session = projectToolSession([file]);
+    session.execute("read_file", { path: file.path });
     expect(() => session.execute("propose_edits", {
       files: [{ path: file.path, content: `const token = "${token}"`, language: "typescript" }],
-    })).toThrow();
+    })).toThrow("embedded credential forbidden");
   });
 
   it("sends bounded redacted trusted-role follow-ups to the provider", async () => {
