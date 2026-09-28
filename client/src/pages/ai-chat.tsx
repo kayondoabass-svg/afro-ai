@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient, inspectQuota } from "@/lib/queryClient";
-import { FileTreeSidebar, saveProjectFiles, type ProjectFile } from "@/components/file-tree-sidebar";
+import { FileTreeSidebar, saveProjectFiles, isBinaryProjectFile, type ProjectFile } from "@/components/file-tree-sidebar";
 import { GithubProjectDialog, githubRepositoryUrl } from "@/components/github-project-dialog";
 import { VibePanel, parseVibeMarkers } from "@/components/vibe-chips";
 import { NextStepsCard } from "@/components/next-steps-card";
@@ -1995,6 +1995,7 @@ export default function AIChatPage() {
   }, [previewCode, activeConversation, projectMode, projectFilesReady, isStreaming]);
 
   const handleFileOpen = (file: ProjectFile) => {
+    if (isBinaryProjectFile(file)) return; // Assets are downloaded by the sidebar, never opened in the source editor.
     if (isStreaming) return;
     if (editorDirty) {
       toast({ title: "Save the current file before switching", variant: "destructive" });
@@ -2008,7 +2009,7 @@ export default function AIChatPage() {
   };
 
   const handleEditorSave = useCallback(async (contentToSave?: string) => {
-    if (!openedFile) return;
+    if (!openedFile || isBinaryProjectFile(openedFile)) return;
     const saveContent = contentToSave ?? editorContent;
     const revision = editorRevision.current;
     try {
@@ -2430,7 +2431,14 @@ export default function AIChatPage() {
     if (openedFile) {
       fetch(`/api/d1/project-files/${openedFile.id}`, { credentials: "include" })
         .then(async r => { if (!r.ok) throw new Error("Could not reload edited file"); return r.json(); })
-        .then(file => { setOpenedFile(file); setEditorContent(file.content); setEditorDirty(false); })
+        .then(file => {
+          if (isBinaryProjectFile(file)) {
+            setOpenedFile(null);
+            setEditorDirty(false);
+            return;
+          }
+          setOpenedFile(file); setEditorContent(file.content); setEditorDirty(false);
+        })
         .catch(e => toast({ title: "Refresh file to see AI changes", description: e.message, variant: "destructive" }));
     }
     toast({ title: "AI changes saved", description: (data.paths || []).join(", ") });

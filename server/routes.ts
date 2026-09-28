@@ -635,10 +635,10 @@ export async function registerRoutes(
   app.post("/api/d1/project-files", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
-      const { conversationId, name, path, language, content } = req.body;
+      const { conversationId, name, path, language, content, encoding } = req.body;
       const { saveProjectFiles, listProjectFileRecords } = await import("./project-files");
       const files = await saveProjectFiles(userId, conversationId, req.body.files ?? [
-        { name, path: path ?? name, language: language ?? "html", content: content ?? "" },
+        { name, path: path ?? name, language: language ?? (encoding === "base64" ? "binary" : "html"), content: content ?? "", encoding },
       ], req.body.mode ?? "merge");
       const records = await listProjectFileRecords(userId, conversationId);
       res.json({ success: true, files, id: records.find((file: any) => file.path === (path ?? name))?.id });

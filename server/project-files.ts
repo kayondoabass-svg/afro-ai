@@ -18,18 +18,22 @@ async function query(sql: string, params: unknown[] = []) {
   catch { throw new ProjectFileError(503, "project file storage operation failed"); }
 }
 
-export async function initializeProjectFiles() {
-  // Requests must never perform DDL. Operators apply migration 002 separately;
+export async function initializeProjectFiles(binary = false) {
+  // Requests must never perform DDL. Operators apply migrations separately;
   // legacy reads/deletes remain available even when command writes are gated.
-  const { results } = await query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'project_file_command_apply'");
+  const { results } = await query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name IN ('project_file_command_apply', 'project_file_command_apply_binary')");
   if (!results.length) throw new ProjectFileError(503, "project file migration 002 required");
+  if (binary && !results.some(row => row.name === "project_file_command_apply_binary")) {
+    throw new ProjectFileError(503, "project file migration 003 required");
+  }
 }
 
 export async function listProjectFileRecords(userId: string, conversationId: string | number) {
   const id = await assertProjectFileOwnership(userId, conversationId);
   const { results } = await query("SELECT * FROM project_files WHERE user_id = ? AND conversation_id = ? ORDER BY path", [userId, id]);
-  validateProjectFiles(results); // Export/read protection includes legacy stored files.
-  return results;
+  const records = results.map(row => row.encoding === null ? { ...row, encoding: undefined } : row);
+  validateProjectFiles(records); // Export/read protection includes legacy stored files.
+  return records;
 }
 
 export async function listProjectFiles(userId: string, conversationId: string | number): Promise<ProjectFile[]> {
@@ -47,8 +51,9 @@ async function resolveProjectFileRecord(userId: string, fileId: string) {
 
 export async function getProjectFileRecord(userId: string, fileId: string) {
   const record = await resolveProjectFileRecord(userId, fileId);
-  validateProjectFiles([record]);
-  return record;
+  const normalized = record.encoding === null ? { ...record, encoding: undefined } : record;
+  validateProjectFiles([normalized]);
+  return normalized;
 }
 
 // A command insert and its SQLite trigger execute atomically in one statement.
@@ -61,7 +66,7 @@ export async function saveProjectFiles(userId: string, conversationId: string | 
   const merged = new Map((mode === "merge" ? previous : []).map(file => [file.path.toLowerCase(), file]));
   for (const file of files) merged.set(file.path.toLowerCase(), file);
   const result = validateProjectFiles(Array.from(merged.values()));
-  await initializeProjectFiles();
+  await initializeProjectFiles(result.some(file => file.encoding === "base64"));
   // A single INSERT statement handles both modes via an AFTER INSERT trigger
   // on a durable command table (migration below). SQLite rolls back all trigger
   // effects if any limit/constraint fails.

@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
-  FileCode2, FileText, FileCog, FileJson, FolderOpen,
+  FileCode2, FileText, FileCog, FileJson, FileImage, FolderOpen,
   Plus, Trash2, ChevronRight, ChevronDown, RefreshCw, X,
 } from "lucide-react";
 
@@ -17,6 +17,44 @@ export interface ProjectFile {
   language: string;
   updated_at: string;
   content?: string;
+  encoding?: "utf8" | "base64";
+  size?: number;
+  byteSize?: number;
+}
+
+export function isBinaryProjectFile(file: ProjectFile): boolean {
+  return file.encoding === "base64" || file.language === "binary";
+}
+
+export function projectFileBytes(file: ProjectFile): number | null {
+  if (typeof file.content === "string") {
+    if (isBinaryProjectFile(file)) {
+      if (file.encoding !== "base64" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.content)) return null;
+      return file.content.length * 3 / 4 - (file.content.endsWith("==") ? 2 : file.content.endsWith("=") ? 1 : 0);
+    }
+    return new TextEncoder().encode(file.content).length;
+  }
+  return typeof file.byteSize === "number" ? file.byteSize : typeof file.size === "number" ? file.size : null;
+}
+
+export function downloadBinaryProjectFile(file: ProjectFile): void {
+  if (file.encoding !== "base64" || typeof file.content !== "string" || projectFileBytes(file) === null) {
+    throw new Error("Asset data is not valid base64.");
+  }
+  const raw = atob(file.content);
+  const data = Uint8Array.from(raw, char => char.charCodeAt(0));
+  const blob = new Blob([data], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 interface FileTreeSidebarProps {
@@ -26,7 +64,8 @@ interface FileTreeSidebarProps {
   onClose: () => void;
 }
 
-function getFileIcon(name: string) {
+function getFileIcon(name: string, binary: boolean) {
+  if (binary) return <FileImage className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />;
   if (name.endsWith(".html")) return <FileCode2 className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />;
   if (name.endsWith(".css")) return <FileCog className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />;
   if (name.endsWith(".js") || name.endsWith(".ts")) return <FileText className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />;
@@ -80,12 +119,16 @@ export function FileTreeSidebar({ conversationId, openedFileId, onFileOpen, onCl
   });
 
   const handleFileClick = async (file: ProjectFile) => {
-    if (file.id === openedFileId) return;
+    if (file.id === openedFileId && !isBinaryProjectFile(file)) return;
     try {
       const res = await fetch(`/api/d1/project-files/${file.id}`, { credentials: "include" });
       if (!res.ok) throw new Error("Could not open file");
       const full = await res.json();
-      if (typeof full.content !== "string" || full.content.includes("\0")) throw new Error("Binary or unsupported file cannot be edited.");
+      if (isBinaryProjectFile(full) || isBinaryProjectFile(file)) {
+        downloadBinaryProjectFile(full);
+        return;
+      }
+      if (typeof full.content !== "string" || full.content.includes("\0")) throw new Error("Unsupported file cannot be edited.");
       onFileOpen(full);
     } catch (e: any) {
       toast({ title: "Cannot open file", description: e.message, variant: "destructive" });
@@ -179,8 +222,10 @@ export function FileTreeSidebar({ conversationId, openedFileId, onFileOpen, onCl
                   onClick={() => handleFileClick(file)}
                   data-testid={`file-item-${file.id}`}
                 >
-                  {getFileIcon(file.name)}
+                  {getFileIcon(file.name, isBinaryProjectFile(file))}
                   <span title={file.path} className="truncate flex-1 font-mono">{file.path}</span>
+                  {isBinaryProjectFile(file) && <span className="flex-shrink-0 text-[10px]" title="Download binary asset">asset</span>}
+                  {projectFileBytes(file) !== null && <span className="flex-shrink-0 text-[10px]" title={`${projectFileBytes(file)} bytes`}>{projectFileBytes(file)} B</span>}
                   <Button
                     variant="ghost"
                     size="icon"

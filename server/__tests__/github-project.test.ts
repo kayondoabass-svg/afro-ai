@@ -22,6 +22,8 @@ import {
 
 const base = "a".repeat(40);
 const file = { path: "src/app.ts", name: "app.ts", language: "typescript", content: "export const app = 1;" };
+const png = { path: "assets/icon.png", name: "icon.png", language: "binary", encoding: "base64" as const,
+  content: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YkWEL8AAAAASUVORK5CYII=" };
 const opts = { userId: "u1", repoName: "app", branch: "main", visibility: "private" as const, files: [file] };
 
 beforeEach(() => {
@@ -74,6 +76,46 @@ describe("GitHub project transfers (mock APIs only)", () => {
     expect(result.repo).toEqual({ owner: "real-owner", name: "app", branch: "main", sha: base });
     expect(result.excluded).toHaveLength(5);
     expect(mock.api.git.getCommit).toHaveBeenCalledWith(expect.objectContaining({ commit_sha: base }));
+  });
+  it("imports validated binary assets and exports raw bytes with matching git blob SHA", async () => {
+    const raw = Buffer.from(png.content, "base64");
+    mock.api.git.getTree.mockResolvedValue({ data: { tree: [{ path: png.path, sha: "img", type: "blob", mode: "100644", size: raw.length }] } });
+    mock.api.git.getBlob.mockResolvedValue({ data: { encoding: "base64", content: png.content.replace(/.{60}/g, "$&\n") } });
+    const imported = await importGithubProject({ userId: "u1", url: "https://github.com/a/b" });
+    expect(imported.files).toEqual([png]);
+    const { createHash } = await import("node:crypto");
+    const sha = createHash("sha1").update(`blob ${raw.length}\0`).update(raw).digest("hex");
+    mock.api.git.getTree.mockResolvedValue({ data: { truncated: false, tree: [{ path: png.path, type: "blob", mode: "100644", sha }] } });
+    expect((await previewGithubExport({ ...opts, files: [png] })).files).toEqual([
+      { path: png.path, bytes: raw.length, encoding: "base64", change: "unchanged" },
+    ]);
+    await exportGithubProject({ ...opts, files: [png], expectedSha: base, message: "Add image" });
+    expect(mock.api.git.createBlob).toHaveBeenCalledWith(expect.objectContaining({ content: png.content, encoding: "base64" }));
+  });
+  it("rejects remote LFS attributes before creating blobs or repositories", async () => {
+    mock.api.git.getTree.mockResolvedValue({ data: { truncated: false, tree: [
+      { path: ".gitattributes", type: "blob", mode: "100644", sha: "attrs", size: 42 },
+    ] } });
+    mock.api.git.getBlob.mockResolvedValue({ data: { encoding: "base64", content: Buffer.from("*.png filter=lfs diff=lfs merge=lfs -text").toString("base64") } });
+    await expect(previewGithubExport({ ...opts, files: [png] })).rejects.toThrow("LFS");
+    await expect(exportGithubProject({ ...opts, files: [png], expectedSha: base, message: "Add" })).rejects.toThrow("LFS");
+    expect(mock.api.git.createBlob).not.toHaveBeenCalled();
+  });
+  it("excludes binary-named LFS pointers and unsafe remote attributes on import", async () => {
+    mock.api.git.getTree.mockResolvedValue({ data: { tree: [
+      { path: png.path, sha: "pointer", type: "blob", mode: "100644" },
+      { path: ".gitattributes", sha: "attrs", type: "blob", mode: "100644" },
+      { path: file.path, sha: "text", type: "blob", mode: "100644" },
+    ] } });
+    mock.api.git.getBlob.mockImplementation(async ({ file_sha }) => ({ data: { encoding: "base64", content: Buffer.from(
+      file_sha === "pointer" ? "version https://git-lfs.github.com/spec/v1\noid sha256:abc" :
+        file_sha === "attrs" ? "*.png filter=lfs diff=lfs merge=lfs -text" : file.content,
+    ).toString("base64") } }));
+    const result = await importGithubProject({ userId: "u1", url: "https://github.com/a/b" });
+    expect(result.files).toEqual([file]);
+    expect(result.excluded.map(item => item.reason)).toEqual(expect.arrayContaining([
+      expect.stringContaining("LFS pointer"), expect.stringContaining("LFS tracking"),
+    ]));
   });
   it("fails truncated trees instead of claiming a complete import", async () => {
     mock.api.git.getTree.mockResolvedValue({ data: { truncated: true, tree: [] } });

@@ -3,7 +3,7 @@ import { db } from "./db";
 import { userGithubTokens, type UserGithubToken } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import type { ProjectFile } from "./project-files";
-import { validateProjectFiles, ProjectFileError, PROJECT_FILE_LIMITS } from "./project-file-policy";
+import { validateProjectFiles, ProjectFileError, PROJECT_FILE_LIMITS, projectFileBytes, isBinaryProjectPath } from "./project-file-policy";
 
 // @octokit/rest v22 is ESM-only. Our prod build outputs CommonJS, so a static
 // `import { Octokit } from "@octokit/rest"` becomes a `require()` at runtime
@@ -309,12 +309,15 @@ const MAX_FILE_BYTES = 1_000_000;
 const MAX_TOTAL_BYTES = 5_000_000;
 
 /** Defense in depth for legacy HTML push as well as full project export. */
-export function assertSafeGithubFiles(files: Array<{ path: string; content: string }>): void {
-  validateProjectFiles(files.map(file => ({ ...file, name: file.path?.split("/").pop(), language: "plaintext" })));
+export function assertSafeGithubFiles(files: Array<{ path: string; content: string; encoding?: "base64"; name?: string; language?: string }>): void {
+  const checked = validateProjectFiles(files.map(file => ({
+    ...file, name: file.name ?? file.path?.split("/").pop(),
+    language: file.language ?? (file.encoding === "base64" ? "binary" : "plaintext"),
+  })));
   let bytes = 0;
   if (!files.length || files.length > MAX_FILES) throw new GithubProjectError(413, `Project must contain 1–${MAX_FILES} files.`);
   const seen = new Set<string>();
-  for (const file of files) {
+  for (const file of checked) {
     if (typeof file.path !== "string" || typeof file.content !== "string" ||
         !file.path || file.path.length > 512 || /[\\\x00-\x1f]/.test(file.path) ||
         file.path.startsWith("/") || file.path.split("/").some(p => !p || p === "." || p === "..") ||
@@ -327,14 +330,16 @@ export function assertSafeGithubFiles(files: Array<{ path: string; content: stri
         /\.(?:pem|key|p12|pfx)$/i.test(file.path)) {
       throw new GithubProjectError(400, "Project contains a sensitive or excluded file. Remove it before exporting.");
     }
-    if (/-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-(?:proj-)?[A-Za-z0-9_-]{20,})/.test(file.content) ||
-        /(?:api[_-]?key|secret|password|access[_-]?token|auth[_-]?token)\s*["']?\s*[:=]\s*["'][^"'\s]{8,}["']/i.test(file.content)) {
+    const data = projectFileBytes(file);
+    const scan = file.encoding === "base64" ? data.toString("latin1") + "\n" + data.toString("utf8") : file.content;
+    if (/-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-(?:proj-)?[A-Za-z0-9_-]{20,})/.test(scan) ||
+        /(?:api[_-]?key|secret|password|access[_-]?token|auth[_-]?token)\s*["']?\s*[:=]\s*["'][^"'\s]{8,}["']/i.test(scan)) {
       throw new GithubProjectError(400, "Potential secret detected. Remove credentials before exporting.");
     }
-    const size = Buffer.byteLength(file.content);
+    const size = data.length;
     bytes += size;
     if (size > MAX_FILE_BYTES || bytes > MAX_TOTAL_BYTES) throw new GithubProjectError(413, "Project exceeds the GitHub transfer size limit.");
-    if (file.content.includes("\0")) throw new GithubProjectError(400, "Binary files are not supported.");
+    if (!file.encoding && file.content.includes("\0")) throw new GithubProjectError(400, "Unsupported binary file.");
   }
 }
 
@@ -398,28 +403,47 @@ export async function importGithubProject(opts: { userId: string; url: string; b
     else if (entry.mode === "120000") reason = "Symbolic link is not imported";
     else if (entry.type !== "blob") reason = "Unsupported tree entry";
     else if (/(^|\/)(?:\.git|node_modules|vendor|dist|build)(\/|$)/i.test(path)) reason = "Dependency or generated directory";
-    else if (/\.(?:png|jpe?g|gif|webp|ico|pdf|zip|gz|woff2?|ttf|mp[34]|exe|dll|sqlite|wasm)$/i.test(path)) reason = "Binary file";
+    else if (/\.(?:pdf|zip|gz|mp[34]|exe|dll|sqlite|wasm)$/i.test(path)) reason = "Unsupported binary file";
     else if (entry.size > MAX_FILE_BYTES) reason = "File exceeds 1 MB limit";
     if (reason) { excluded.push({ path, reason }); continue; }
-    if (++blobCount > MAX_FILES) throw new GithubProjectError(413, `Repository exceeds ${MAX_FILES} text files; import was not saved.`);
+    if (++blobCount > MAX_FILES) throw new GithubProjectError(413, `Repository exceeds ${MAX_FILES} supported files; import was not saved.`);
     const { data: blob } = await api.git.getBlob({ owner, repo, file_sha: entry.sha });
-    if (blob.encoding !== "base64") throw new GithubProjectError(502, "Unsupported GitHub blob encoding; import was not saved.");
-    const buffer = Buffer.from(blob.content, "base64");
+    if (blob.encoding !== "base64" || typeof blob.content !== "string") throw new GithubProjectError(502, "Unsupported GitHub blob encoding; import was not saved.");
+    if (blob.content.length > MAX_FILE_BYTES * 2) throw new GithubProjectError(413, "Repository exceeds transfer size limits; import was not saved.");
+    const encoded = blob.content.replace(/\s/g, "");
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+      throw new GithubProjectError(502, "Invalid GitHub blob encoding; import was not saved.");
+    }
+    const buffer = Buffer.from(encoded, "base64");
+    if (buffer.toString("base64") !== encoded) throw new GithubProjectError(502, "Invalid GitHub blob encoding; import was not saved.");
     total += buffer.length;
     if (total > MAX_TOTAL_BYTES || buffer.length > MAX_FILE_BYTES) throw new GithubProjectError(413, "Repository exceeds transfer size limits; import was not saved.");
+    // Pointer detection precedes extension-based binary handling: an image.png
+    // containing an LFS pointer must never be treated as the image itself.
+    if (buffer.toString("utf8", 0, 64).startsWith("version https://git-lfs.github.com/spec/v1")) {
+      excluded.push({ path, reason: "Git LFS pointer (object not imported)" }); continue;
+    }
     let content: string;
-    try { content = new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
-    catch { excluded.push({ path, reason: "Non-UTF-8 or binary file" }); continue; }
-    if (content.includes("\0")) { excluded.push({ path, reason: "Binary file" }); continue; }
-    if (content.startsWith("version https://git-lfs.github.com/spec/v1")) { excluded.push({ path, reason: "Git LFS pointer (object not imported)" }); continue; }
-    try { assertSafeGithubFiles([{ path, content }]); }
+    let candidate: ProjectFile;
+    if (isBinaryProjectPath(path)) {
+      candidate = { path, name: path.split("/").pop()!, language: "binary", encoding: "base64", content: buffer.toString("base64") };
+    } else {
+      try { content = new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
+      catch { excluded.push({ path, reason: "Non-UTF-8 or unsupported binary file" }); continue; }
+      if (content.includes("\0")) { excluded.push({ path, reason: "Unsupported binary file" }); continue; }
+      candidate = { path, name: path.split("/").pop()!, language: languageFor(path), content };
+    }
+    try { assertSafeGithubFiles([candidate]); }
     catch (error) {
       if (!(error instanceof GithubProjectError) && !(error instanceof ProjectFileError)) throw error;
-      excluded.push({ path: /^[A-Za-z0-9_./@()+ -]{1,240}$/.test(path) ? path : "[redacted path]", reason: "Sensitive content or unsafe project file excluded" }); continue;
+      const reason = path.split("/").at(-1)?.toLowerCase() === ".gitattributes" &&
+        /(?:^|\s)filter\s*=\s*lfs(?:\s|$)/im.test(buffer.toString("utf8"))
+        ? "Git LFS tracking attributes are unsupported" : "Sensitive content or unsafe project file excluded";
+      excluded.push({ path: /^[A-Za-z0-9_./@()+ -]{1,240}$/.test(path) ? path : "[redacted path]", reason }); continue;
     }
-    files.push({ path, name: path.split("/").pop()!, language: languageFor(path), content });
+    files.push(candidate);
   }
-  if (!files.length) throw new GithubProjectError(400, "Repository contains no supported, safe text files.");
+  if (!files.length) throw new GithubProjectError(400, "Repository contains no supported, safe files.");
   validateProjectFiles(files);
   return {
     files, repo: { owner, name: repo, branch, sha },
@@ -456,6 +480,26 @@ async function exportContext(opts: ExportOptions) {
     const tree = (await api.git.getTree({ owner, repo, tree_sha: baseTree, recursive: "1" })).data;
     if (tree.truncated || tree.tree.length > 5000) throw new GithubProjectError(413, "Remote tree is too large to safely preview.");
     entries = tree.tree;
+    // A remote LFS attribute rule can silently turn raw blob uploads into LFS
+    // pointers on subsequent clones. Refuse the export before any mutation.
+    for (const entry of entries) {
+      if (entry.type !== "blob" || !/(^|\/)\.gitattributes$/i.test(entry.path)) continue;
+      if (entry.mode !== "100644" && entry.mode !== "100755") {
+        throw new GithubProjectError(409, "Remote Git attributes are unsafe for project export.");
+      }
+      if (entry.size > MAX_FILE_BYTES) throw new GithubProjectError(409, "Remote Git attributes are too large to verify.");
+      const { data: blob } = await api.git.getBlob({ owner, repo, file_sha: entry.sha });
+      if (blob.encoding !== "base64" || typeof blob.content !== "string") throw new GithubProjectError(409, "Remote Git attributes cannot be verified.");
+      const encoded = blob.content.replace(/\s/g, "");
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+        throw new GithubProjectError(409, "Remote Git attributes cannot be verified.");
+      }
+      const data = Buffer.from(encoded, "base64");
+      if (data.toString("base64") !== encoded) throw new GithubProjectError(409, "Remote Git attributes cannot be verified.");
+      if (data.length > MAX_FILE_BYTES || /(?:^|\s)filter\s*=\s*lfs(?:\s|$)/im.test(data.toString("utf8"))) {
+        throw new GithubProjectError(409, "Remote Git LFS tracking is unsupported.");
+      }
+    }
   }
   for (const file of opts.files) {
     if (entries.some(entry => (entry.path === file.path && (entry.type !== "blob" || entry.mode === "120000")) ||
@@ -472,9 +516,10 @@ export async function previewGithubExport(opts: ExportOptions) {
     owner: ctx.owner, repoName: ctx.repo, branch: ctx.branch, baseSha: ctx.baseSha,
     files: opts.files.map(file => {
       const existing = ctx.entries.find(entry => entry.path === file.path);
-      const bytes = Buffer.from(file.content);
+       const bytes = projectFileBytes(file);
       const sha = crypto.createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
-      return { path: file.path, bytes: bytes.length, change: !existing ? "add" : existing.sha === sha ? "unchanged" : "update" };
+       return { path: file.path, bytes: bytes.length, ...(file.encoding ? { encoding: file.encoding } : {}),
+         change: !existing ? "add" : existing.sha === sha ? "unchanged" : "update" };
     }),
   };
 }
@@ -500,7 +545,7 @@ export async function exportGithubProject(opts: ExportOptions & { expectedSha: s
   }
   const tree: any[] = [];
   for (const file of opts.files) {
-    const blob = await api.git.createBlob({ owner, repo, content: Buffer.from(file.content).toString("base64"), encoding: "base64" });
+     const blob = await api.git.createBlob({ owner, repo, content: projectFileBytes(file).toString("base64"), encoding: "base64" });
     const existing = ctx.entries.find(entry => entry.path === file.path);
     tree.push({ path: file.path, mode: existing?.mode === "100755" ? "100755" : "100644", type: "blob", sha: blob.data.sha });
   }

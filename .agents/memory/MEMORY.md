@@ -13,3 +13,4 @@
 - [AutoTrain SFT smoke test](autotrain-sft-smoke-test.md) — tiny Qwen 1.5B LoRA tests need short block sizes; expand the dataset before a real 512-token run.
 - [Afro AI pilot scope](afro-provider-pilot.md) — serving success is not tool-call or production-quality evidence; keep the trained model opt-in until evaluated.
 - [Paid provider uncertainty](paid-provider-uncertainty.md) — never automatically retry ambiguous paid jobs; cancellation does not prove provider billing stopped.
+- [Binary project storage](binary-project-storage.md) — bounded assets share the owned database transaction; LFS fails closed rather than pretending pointers are assets.

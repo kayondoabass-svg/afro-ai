@@ -41,6 +41,19 @@ describe("GitHub project workflow", () => {
     expect(document.querySelector("iframe")).toBeNull();
   });
 
+  it("labels safe binary assets separately and explains transfer limits and LFS exclusion", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => String(url).endsWith("/status")
+      ? reply({ connected: true })
+      : reply({ files: [{ path: "assets/logo.png", language: "binary", encoding: "base64", content: "AP8B" }, { path: "index.html", language: "html", content: "hi" }], repo: { owner: "team", name: "app", branch: "main" }, excluded: [{ path: "large.psd", reason: "Unsupported binary file" }] }));
+    render(<GithubProjectDialog {...props} mode="import" url="https://github.com/team/app" />);
+    expect(screen.getByText(/1 MB per file and 5 MB per project/)).toHaveTextContent("Git LFS objects are not imported or exported");
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Import project files" }));
+    expect(await screen.findByText(/assets\/logo.png/)).toHaveTextContent("binary asset");
+    expect(screen.getByText(/index.html/)).toHaveTextContent("(text)");
+    expect(screen.getByText(/large.psd/)).toHaveTextContent("Unsupported binary file");
+  });
+
   it("defaults to private, reviews only changed paths, and binds push to reviewed SHA", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
       if (String(url).endsWith("/status")) return reply({ connected: true });
