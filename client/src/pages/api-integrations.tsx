@@ -248,7 +248,7 @@ export default function ApiIntegrationsPage() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <p className="text-sm">No integrations with "{AUTH_TYPES.find(a => a.value === filterAuth)?.label}" auth.</p>
-            <Button variant="link" size="sm" onClick={() => setFilterAuth(null)}>Clear filter</Button>
+            <Button variant="ghost" size="sm" className="text-primary underline underline-offset-4" onClick={() => setFilterAuth(null)}>Clear filter</Button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -539,7 +539,7 @@ export default function ApiIntegrationsPage() {
               </div>
 
               {/* In-dialog test result */}
-              {testResult?.id === editing?.id && (
+              {testResult && editing && testResult.id === editing.id && (
                 <div className={`p-3 rounded-lg text-xs font-mono border ${testResult.data.error ? "bg-red-500/10 text-red-400 border-red-500/20" : (testResult.data.status >= 200 && testResult.data.status < 300) ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"}`}>
                   {testResult.data.error ? (
                     <span>Error: {testResult.data.error}</span>
