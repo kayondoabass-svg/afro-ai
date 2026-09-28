@@ -187,23 +187,8 @@ health_check() {
 }
 
 purge_cdn() {
-  if [ -z "${CLOUDFLARE_ZONE_ID:-}" ] || [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-    log "Cloudflare credentials missing — skipping cache purge"
-    return 0
-  fi
   log "Purging Cloudflare cache..."
-  local result
-  result=$(curl -s --max-time 15 -X POST \
-    "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
-    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-    -H "Content-Type: application/json" \
-    --data '{"purge_everything":true}' 2>/dev/null)
-  if echo "$result" | grep -q '"success":true'; then
-    log "Cloudflare cache purged"
-  else
-    log "WARN: Cloudflare purge did not return success — users may see stale content"
-    log "Response: $result"
-  fi
+  node "$APP_DIR/scripts/purge-cloudflare.mjs" 2>&1 | tee -a "$LOG_FILE"
 }
 
 emergency_recovery() {
@@ -270,15 +255,22 @@ main() {
   new_sha=$(git -C "$APP_DIR" rev-parse HEAD)
   log "New SHA: $new_sha"
 
-  # If dist/ already reflects the current HEAD, nothing to do.
+  # If dist/ already reflects HEAD, skip rebuilding but still verify health
+  # and purge. The prior run may have failed after stamping the build SHA.
   # Otherwise (no dist, or dist built from an older SHA — e.g. user ran
   # `git pull` manually before invoking this script) we MUST rebuild,
   # even if previous_sha == new_sha.
   local deployed_sha=""
   [ -f "$APP_DIR/dist/.deployed_sha" ] && deployed_sha=$(cat "$APP_DIR/dist/.deployed_sha" 2>/dev/null || echo "")
   if [ "$previous_sha" = "$new_sha" ] && [ "$deployed_sha" = "$new_sha" ]; then
-    log "Already at latest commit AND dist/ matches. Nothing to deploy."
-    log "==== DEPLOY END (no-op) ===="
+    log "Already at latest commit AND dist/ matches. Verifying health and retrying cache purge."
+    if ! health_check || ! post_start_stability_check; then
+      die "Existing release is unhealthy; cache purge not attempted."
+    fi
+    if ! purge_cdn; then
+      die "DEPLOY INCOMPLETE — cache purge failed; rerun deployment to retry without rebuilding."
+    fi
+    log "==== DEPLOY SUCCESS (existing build verified and cache purged) ===="
     exit 0
   fi
   if [ "$previous_sha" = "$new_sha" ] && [ "$deployed_sha" != "$new_sha" ]; then
@@ -340,9 +332,15 @@ main() {
   echo "$new_sha" > "$APP_DIR/dist/.deployed_sha"
   chown "$SERVICE_USER:$SERVICE_USER" "$APP_DIR/dist/.deployed_sha" 2>/dev/null || true
 
-  purge_cdn
+  if ! purge_cdn; then
+    log "DEPLOY INCOMPLETE — application is healthy, but cache purge failed; users may see stale content."
+    log "Fix the dedicated purge credential and rerun scripts/purge-cloudflare.mjs with the shared environment loaded. No application rollback performed."
+    exit 1
+  fi
 
   log "==== DEPLOY SUCCESS — now on $new_sha ===="
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" = "$0" ]]; then
+  main "$@"
+fi

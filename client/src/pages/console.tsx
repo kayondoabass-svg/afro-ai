@@ -11,8 +11,6 @@ import {
   SquareTerminal, LayoutList, Rocket, Search, Trash2,
 } from "lucide-react";
 
-const SHELL_SECRET = import.meta.env.VITE_SHELL_SECRET || "afroai-shell-secret";
-
 function timeAgo(date: string) {
   const diff = Date.now() - new Date(date).getTime();
   const mins = Math.floor(diff / 60000);
@@ -154,7 +152,7 @@ function TerminalTab() {
   const socketRef = useRef<any>(null);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [adminKey, setAdminKey] = useState(SHELL_SECRET);
+  const [adminKey, setAdminKey] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -219,7 +217,7 @@ function TerminalTab() {
             <Shield className="w-6 h-6 text-amber-500" />
           </div>
           <p className="text-sm font-medium">Admin access required</p>
-          <p className="text-xs text-zinc-500 max-w-xs">Enter your shell access key to start an interactive bash session on the server.</p>
+          <p className="text-xs text-zinc-500 max-w-xs">Sign in as the founder and enter your shell access key to start an isolated container session.</p>
         </div>
         <div className="flex gap-2 w-full max-w-sm">
           <Input type="password" placeholder="Shell access key" value={adminKey} onChange={(e) => setAdminKey(e.target.value)}

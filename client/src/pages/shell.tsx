@@ -4,8 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 
-const SHELL_SECRET = import.meta.env.VITE_SHELL_SECRET || "afroai-shell-secret";
-
 export default function ShellPage() {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<any>(null);
@@ -13,7 +11,7 @@ export default function ShellPage() {
   const socketRef = useRef<any>(null);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [adminKey, setAdminKey] = useState(SHELL_SECRET);
+  const [adminKey, setAdminKey] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -177,7 +175,7 @@ export default function ShellPage() {
             Interactive Shell
           </h1>
           <p className="text-muted-foreground text-xs mt-0.5">
-            Real bash shell — runs commands directly on the server
+            Sandboxed shell — runs commands in an isolated container
           </p>
         </div>
         <div className="flex items-center gap-2">

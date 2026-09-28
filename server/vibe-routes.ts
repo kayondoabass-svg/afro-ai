@@ -4,25 +4,40 @@
 import type { Express, Request, Response } from "express";
 import path from "path";
 import fs from "fs/promises";
+import { constants as fsConstants } from "fs";
 import { spawn } from "child_process";
 import { db } from "./db";
-import { isAuthenticated } from "./replit_integrations/auth";
+import { isAuthenticated, isFounder } from "./replit_integrations/auth";
 import { vibeSteps, vibeFileRefs } from "@shared/models/vibe";
 import { messages, appVersions } from "@shared/models/chat";
 import { eq, asc, desc } from "drizzle-orm";
 
 const PROJECT_ROOT = process.cwd();
 
-// --- Whitelist file access to the project sandbox only ---
-function safeResolve(rel: string): string | null {
-  const abs = path.resolve(PROJECT_ROOT, rel.replace(/^\/+/, ""));
-  if (!abs.startsWith(PROJECT_ROOT + path.sep) && abs !== PROJECT_ROOT) return null;
-  // Block dotfiles & secrets dirs
-  const forbidden = [".env", ".local", ".git", "node_modules", "attached_assets/secrets"];
-  for (const f of forbidden) {
-    if (abs.includes(`${path.sep}${f}${path.sep}`) || abs.endsWith(`${path.sep}${f}`)) return null;
-  }
-  return abs;
+// Host source is founder-only. Do not expose credentials even to the file-chip viewer.
+// Validate both the requested path and its canonical target to prevent symlink escapes.
+function restrictedPath(rel: string): boolean {
+  return rel.split(path.sep).some(part =>
+    part.startsWith(".") ||
+    /^(?:node_modules|secrets|credentials)$/i.test(part) ||
+    /^(?:id_rsa|id_ed25519|service-account(?:\..*)?)$/i.test(part) ||
+    /\.(?:pem|key|p12|pfx)$/i.test(part));
+}
+
+function withinRoot(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+async function safeResolve(rel: string): Promise<string | null> {
+  if (!rel || path.isAbsolute(rel) || rel.includes("\\") || rel.includes("\0") ||
+      rel.split("/").some(part => !part || part === "." || part === "..")) return null;
+  const abs = path.resolve(PROJECT_ROOT, rel);
+  if (!withinRoot(PROJECT_ROOT, abs) || restrictedPath(path.relative(PROJECT_ROOT, abs))) return null;
+  const root = await fs.realpath(PROJECT_ROOT);
+  const canonical = await fs.realpath(abs);
+  if (!withinRoot(root, canonical) || restrictedPath(path.relative(root, canonical))) return null;
+  return canonical;
 }
 
 // --- Marker parsers ---
@@ -81,20 +96,37 @@ export function scanForSecrets(code: string): string[] {
 }
 
 export function registerVibeRoutes(app: Express): void {
-  // ---- 1. FILE CHIPS: serve a snippet of any project file ----
-  app.get("/api/vibe/file", isAuthenticated, async (req: Request, res: Response) => {
+  // ---- 1. FILE CHIPS: founder-only host project source (not user app files) ----
+  app.get("/api/vibe/file", isFounder, async (req: Request, res: Response) => {
     try {
       const rel = String(req.query.path || "");
       const start = req.query.start ? parseInt(String(req.query.start)) : 1;
       const end = req.query.end ? parseInt(String(req.query.end)) : start + 200;
       if (!rel) return res.status(400).json({ error: "path required" });
-      const abs = safeResolve(rel);
+      let abs: string | null;
+      try {
+        abs = await safeResolve(rel);
+      } catch (e: any) {
+        if (e?.code === "ENOENT" || e?.code === "ENOTDIR") return res.status(404).json({ error: "Not found" });
+        throw e;
+      }
       if (!abs) return res.status(403).json({ error: "Path is outside project sandbox or restricted" });
-      let stat;
-      try { stat = await fs.stat(abs); } catch { return res.status(404).json({ error: "Not found" }); }
-      if (!stat.isFile()) return res.status(400).json({ error: "Not a file" });
-      if (stat.size > 2_000_000) return res.status(413).json({ error: "File too large" });
-      const content = await fs.readFile(abs, "utf8");
+      let content: string;
+      // O_NOFOLLOW prevents the final component changing into a symlink between
+      // validation and open. Only read from the validated, canonical path.
+      const handle = await fs.open(abs, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      try {
+        // On Linux, verify the *opened descriptor* too: an intermediate directory
+        // could have been replaced after realpath() but before open().
+        if (process.platform === "linux" && await fs.realpath(`/proc/self/fd/${handle.fd}`) !== abs)
+          return res.status(403).json({ error: "Path changed while opening" });
+        const stat = await handle.stat();
+        if (!stat.isFile()) return res.status(400).json({ error: "Not a file" });
+        if (stat.size > 2_000_000) return res.status(413).json({ error: "File too large" });
+        content = await handle.readFile({ encoding: "utf8" });
+      } finally {
+        await handle.close();
+      }
       const lines = content.split("\n");
       const sliceStart = Math.max(1, start);
       const sliceEnd = Math.min(lines.length, Math.max(sliceStart, end));
