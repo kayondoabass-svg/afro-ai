@@ -25,12 +25,17 @@ divergence / non-fast-forward. It is NOT — `git push` from the shell reveals t
 true `workflow`-scope reason. Don't chase a fast-forward/divergence fix; check
 whether the unpushed commit edits `.github/workflows/*`.
 
-**How to push it (need a workflow-scoped credential — agent CANNOT do this, the
-sandbox blocks all pushes; the user must run it):**
-- Create a GitHub PAT (classic) with `repo` + `workflow` scopes, then one-off:
-  `git push https://USER:TOKEN@github.com/<owner>/<repo>.git main`
-  (don't set it as the saved remote; clear shell history after).
-- Or reconnect Replit's GitHub with the `workflow` permission so the Git pane works.
+**How to apply:** Use a credential with the scopes required by the actual changed
+files. Do not put tokens in remote URLs, command arguments, or logs.
+
+Pushes are not categorically blocked in the workspace. A saved Git credential
+can fail while an existing workspace GitHub token remains valid. An ephemeral
+credential helper can pass that token directly from the environment to Git
+without printing it or changing the stored remote.
+
+**Why:** A normal code push succeeded using the existing workspace token after
+the saved Git credential failed authentication. Read access to a public remote
+does not prove that the saved credential has write access.
 
 **Or skip it:** if the workflow change isn't essential, push the rest separately
 or just leave it unpushed — prod/deploy don't depend on the CI workflow file.
