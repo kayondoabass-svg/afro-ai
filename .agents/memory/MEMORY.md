@@ -14,3 +14,4 @@
 - [Afro AI pilot scope](afro-provider-pilot.md) — serving success is not tool-call or production-quality evidence; keep the trained model opt-in until evaluated.
 - [Paid provider uncertainty](paid-provider-uncertainty.md) — never automatically retry ambiguous paid jobs; cancellation does not prove provider billing stopped.
 - [Binary project storage](binary-project-storage.md) — bounded assets share the owned database transaction; LFS fails closed rather than pretending pointers are assets.
+- [Binary test fixtures](binary-test-fixtures.md) — validate font fixtures before round-trips; dependency-bundled assets may already contain corrupted bytes.

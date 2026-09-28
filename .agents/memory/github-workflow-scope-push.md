@@ -33,9 +33,9 @@ can fail while an existing workspace GitHub token remains valid. An ephemeral
 credential helper can pass that token directly from the environment to Git
 without printing it or changing the stored remote.
 
-**Why:** A normal code push succeeded using the existing workspace token after
-the saved Git credential failed authentication. Read access to a public remote
-does not prove that the saved credential has write access.
+**Why:** Stored Git credentials and workspace tokens have independent validity
+and permissions. Read access to a public remote does not prove write access,
+and repository write permission does not imply permission to delete test repositories.
 
 **Or skip it:** if the workflow change isn't essential, push the rest separately
 or just leave it unpushed — prod/deploy don't depend on the CI workflow file.

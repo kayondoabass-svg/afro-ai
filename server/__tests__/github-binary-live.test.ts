@@ -12,6 +12,8 @@
  * test. A failed cleanup fails the test.
  */
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const enabled = process.env.RUN_LIVE_GITHUB_BINARY_E2E === "1" && !!process.env.GITHUB_E2E_USER_ID;
@@ -19,6 +21,28 @@ const enabled = process.env.RUN_LIVE_GITHUB_BINARY_E2E === "1" && !!process.env.
 function blobSha(bytes: Buffer): string {
   return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 }
+
+// Real Inter fixtures from @fontsource/inter@5.2.5, distributed under the
+// accompanying SIL Open Font License. No network or package-internal dependency.
+function fontFixtures() {
+  return ["woff", "woff2"].map(extension => {
+    const bytes = readFileSync(resolve(process.cwd(), `server/__tests__/fixtures/fonts/inter-latin-400-normal.${extension}`));
+    return {
+      path: `assets/Inter-Regular.${extension}`, name: `Inter-Regular.${extension}`,
+      language: "binary", encoding: "base64" as const, content: bytes.toString("base64"), bytes,
+    };
+  });
+}
+
+describe("GitHub binary live-test font fixtures", () => {
+  it("loads real WOFF and WOFF2 assets for byte and SHA checks", () => {
+    for (const font of fontFixtures()) {
+      expect(font.bytes.subarray(0, 4).toString("ascii")).toBe(font.path.endsWith(".woff2") ? "wOF2" : "wOFF");
+      expect(font.bytes.readUInt32BE(8)).toBe(font.bytes.length);
+      expect(Buffer.from(font.content, "base64").equals(font.bytes)).toBe(true);
+    }
+  });
+});
 
 describe.skipIf(!enabled)("GitHub binary transfer (LIVE private repository)", () => {
   it("round-trips binary bytes and Git blob SHAs; never imports or overwrites LFS pointers", async () => {
@@ -39,6 +63,7 @@ describe.skipIf(!enabled)("GitHub binary transfer (LIVE private repository)", ()
     const binaries = [
       { path: "assets/pixel.png", name: "pixel.png", language: "binary", encoding: "base64" as const, content: png.toString("base64"), bytes: png },
       { path: "assets/pixel.gif", name: "pixel.gif", language: "binary", encoding: "base64" as const, content: gif.toString("base64"), bytes: gif },
+      ...fontFixtures(),
     ];
     const files = [
       { path: "src/hello.txt", name: "hello.txt", language: "plaintext", content: "Live GitHub binary round-trip\n" },
