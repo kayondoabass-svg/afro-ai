@@ -5,9 +5,11 @@ Migration `cloudflare/migrations/002_project_files.sql` belongs to the **Express
 Required environment names (values stay in the production secret store; do **not** paste values into logs or commits):
 
 - `CLOUDFLARE_D1_DATABASE_ID` — UUID of the existing project-files D1 used by Express, **not** the auth D1.
-- `PROJECT_FILES_D1_DATABASE_NAME` — exact Cloudflare dashboard name for that UUID (the D1 console currently labels it `production-db`; confirm the real name in Cloudflare before setting). Must not be `afro-ai-auth`.
+- `PROJECT_FILES_D1_DATABASE_NAME` — exact Cloudflare dashboard name for that UUID (`afro-ai-project-files` for the dedicated project-files target). Must not be `afro-ai-auth`.
 - `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_D1_TOKEN` — scoped to read the D1 database and its metadata. For manual migration, use a separately authorized token with D1 write permission. The adapter prefers `CLOUDFLARE_API_TOKEN` if both exist; Wrangler normally uses `CLOUDFLARE_API_TOKEN`.
 - `CLOUDFLARE_ACCOUNT_ID` (or `R2_ACCOUNT_ID`) — account used by the Express adapter. Confirm it is the intended Cloudflare account; the adapter otherwise uses its existing default account.
+
+The founder D1 console and PostgreSQL sync **do not** use `CLOUDFLARE_D1_DATABASE_ID`. They require `CLOUDFLARE_LEGACY_D1_DATABASE_ID` (UUID of the legacy/general database) and `LEGACY_D1_DATABASE_NAME` (exact dashboard name, expected `production-db` in production), plus the Cloudflare token/account above. Console requests verify both UUID and name against Cloudflare metadata before any SQL or export; unset, shared, or auth/project-files identities fail closed with 503. The auth worker uses its own `afro-ai-auth` D1 binding in `cloudflare/wrangler.toml`; canonical owner IDs remain in PostgreSQL.
 
 ## Before deploying
 

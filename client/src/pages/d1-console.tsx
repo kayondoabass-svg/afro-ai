@@ -19,12 +19,12 @@ export default function D1ConsolePage() {
   const [queryResult, setQueryResult] = useState<{ results: any[]; meta: any } | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
 
-  const { data: status } = useQuery<{ configured: boolean }>({
+  const { data: status, isError: statusError } = useQuery<{ configured: boolean; role: string; name: string }>({
     queryKey: ["/api/d1/status"],
     enabled: isFounder,
   });
 
-  const { data: tablesData, isLoading: tablesLoading, refetch: refetchTables } = useQuery<{ tables: string[] }>({
+  const { data: tablesData, isLoading: tablesLoading, isError: tablesError, refetch: refetchTables } = useQuery<{ tables: string[] }>({
     queryKey: ["/api/d1/tables"],
     enabled: isFounder && status?.configured === true,
   });
@@ -109,13 +109,16 @@ export default function D1ConsolePage() {
       <div className="p-6 max-w-4xl mx-auto">
         <div className="flex items-center gap-2 mb-6">
           <Database className="w-6 h-6 text-primary" />
-          <h1 className="text-2xl font-bold">D1 Console</h1>
+           <h1 className="text-2xl font-bold">Legacy/general D1 Console</h1>
         </div>
         <Card>
           <CardContent className="pt-6 text-center py-12">
             <AlertCircle className="w-10 h-10 mx-auto mb-3 text-amber-500" />
-            <p className="font-medium">D1 not configured</p>
-            <p className="text-sm text-muted-foreground mt-1">Add CLOUDFLARE_D1_TOKEN and CLOUDFLARE_D1_DATABASE_ID to your secrets.</p>
+             <p className="font-medium">{statusError ? "Legacy D1 identity unavailable" : "Checking legacy D1 target…"}</p>
+             <p className="text-sm text-muted-foreground mt-1">
+               This console requires CLOUDFLARE_LEGACY_D1_DATABASE_ID and LEGACY_D1_DATABASE_NAME (plus a Cloudflare API token).
+               It does not connect to the project-files or auth D1 databases.
+             </p>
           </CardContent>
         </Card>
       </div>
@@ -127,10 +130,10 @@ export default function D1ConsolePage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Database className="w-6 h-6 text-primary" /> D1 Console
+             <Database className="w-6 h-6 text-primary" /> Legacy/general D1 Console
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Cloudflare D1 — production-db · Query, browse, and sync your edge database.
+             Cloudflare D1 — {status.name} (legacy/general target). Query, browse, and sync this database only; project files and auth use separate databases.
           </p>
         </div>
         <div className="flex gap-2">
@@ -158,7 +161,9 @@ export default function D1ConsolePage() {
               <div className="p-3 space-y-2">
                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
               </div>
-            ) : tables.length === 0 ? (
+             ) : tablesError ? (
+               <p className="text-xs text-destructive text-center py-6 px-3">Legacy D1 unavailable. Verify its configured identity before browsing.</p>
+             ) : tables.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-6 px-3">No tables yet. Create one using the SQL editor.</p>
             ) : (
               <div className="py-1">
@@ -184,7 +189,7 @@ export default function D1ConsolePage() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">SQL Editor</CardTitle>
-              <CardDescription>Write and run SQL queries against your D1 database.</CardDescription>
+               <CardDescription>Write and run SQL queries against the verified legacy/general D1 target ({status.name}), not project files.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <Textarea
