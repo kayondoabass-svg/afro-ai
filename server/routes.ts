@@ -527,21 +527,31 @@ export async function registerRoutes(
     }
   });
 
-  // ============ CLOUDFLARE D1 (Admin Console — Founder only) ============
-  // The raw D1 console exposes the full database. Restrict to founder to
+  // ============ LEGACY/GENERAL D1 (Admin Console — Founder only) ============
+  // The raw console exposes the full legacy database, never project files. Restrict to founder to
   // prevent any logged-in user from reading other users' rows or schema.
+  const legacyD1Failure = (res: any, error: any) => {
+    if (error?.name === "LegacyD1IdentityError") {
+      return res.status(503).json({ message: "Legacy D1 target is not configured or its identity could not be verified" });
+    }
+    return res.status(502).json({ message: "Legacy D1 operation failed" });
+  };
   app.get("/api/d1/status", isFounder, async (_req, res) => {
-    const { isD1Configured } = await import("./d1");
-    res.json({ configured: isD1Configured() });
+    try {
+      const { legacyD1Status } = await import("./legacy-d1");
+      res.json(await legacyD1Status());
+    } catch (error: any) {
+      legacyD1Failure(res, error);
+    }
   });
 
   app.get("/api/d1/tables", isFounder, async (_req, res) => {
     try {
-      const { d1ListTables } = await import("./d1");
-      const tables = await d1ListTables();
+      const { legacyD1ListTables } = await import("./legacy-d1");
+      const tables = await legacyD1ListTables();
       res.json({ tables });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      legacyD1Failure(res, error);
     }
   });
 
@@ -551,11 +561,11 @@ export async function registerRoutes(
       if (!sql) return res.status(400).json({ message: "SQL is required" });
       const forbidden = /^\s*(drop\s+table|delete\s+from|truncate|drop\s+database)/i;
       if (forbidden.test(sql)) return res.status(400).json({ message: "Destructive statements require explicit confirmation" });
-      const { d1Query } = await import("./d1");
-      const result = await d1Query(sql, params || []);
+      const { legacyD1Query } = await import("./legacy-d1");
+      const result = await legacyD1Query(sql, params || []);
       res.json(result);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      legacyD1Failure(res, error);
     }
   });
 
@@ -563,21 +573,21 @@ export async function registerRoutes(
     try {
       const { sql, params } = req.body;
       if (!sql) return res.status(400).json({ message: "SQL is required" });
-      const { d1Query } = await import("./d1");
-      const result = await d1Query(sql, params || []);
+      const { legacyD1Query } = await import("./legacy-d1");
+      const result = await legacyD1Query(sql, params || []);
       res.json(result);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      legacyD1Failure(res, error);
     }
   });
 
   app.get("/api/d1/tables/:name/info", isFounder, async (req, res) => {
     try {
-      const { d1GetTableInfo } = await import("./d1");
-      const info = await d1GetTableInfo(req.params.name);
+      const { legacyD1GetTableInfo } = await import("./legacy-d1");
+      const info = await legacyD1GetTableInfo(req.params.name);
       res.json({ columns: info });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      legacyD1Failure(res, error);
     }
   });
 
@@ -585,11 +595,11 @@ export async function registerRoutes(
     try {
       const limit = parseInt((req.query.limit as string) || "100");
       const offset = parseInt((req.query.offset as string) || "0");
-      const { d1GetTableRows } = await import("./d1");
-      const result = await d1GetTableRows(req.params.name, limit, offset);
+      const { legacyD1GetTableRows } = await import("./legacy-d1");
+      const result = await legacyD1GetTableRows(req.params.name, limit, offset);
       res.json(result);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      legacyD1Failure(res, error);
     }
   });
 
@@ -673,9 +683,10 @@ export async function registerRoutes(
 
   app.post("/api/d1/sync", isFounder, async (_req, res) => {
     try {
-      const { d1Query } = await import("./d1");
+      const { legacyD1Query, legacyD1Status } = await import("./legacy-d1");
+      await legacyD1Status();
       const users = await storage.getAllUsersForSync?.() || [];
-      await d1Query(`CREATE TABLE IF NOT EXISTS synced_users (
+      await legacyD1Query(`CREATE TABLE IF NOT EXISTS synced_users (
         id TEXT PRIMARY KEY,
         email TEXT,
         name TEXT,
@@ -683,14 +694,14 @@ export async function registerRoutes(
         created_at TEXT
       )`);
       for (const u of users) {
-        await d1Query(
+        await legacyD1Query(
           `INSERT OR REPLACE INTO synced_users (id, email, name, plan, created_at) VALUES (?, ?, ?, ?, ?)`,
           [u.id, u.email || "", u.name || u.firstName || "", u.plan || "free", u.createdAt ? String(u.createdAt) : ""]
         );
       }
       res.json({ success: true, synced: users.length });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      legacyD1Failure(res, error);
     }
   });
 
