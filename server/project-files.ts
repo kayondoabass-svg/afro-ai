@@ -85,8 +85,17 @@ export async function deleteProjectFile(userId: string, fileId: string) {
  * Unrelated paths (including binary assets) are never rewritten. */
 export async function applyProjectFileChanges(userId: string, conversationId: string, changes: { file: ProjectFile; before: ProjectFile | null }[]) {
   const id = await assertProjectFileOwnership(userId, conversationId);
+  if (!Array.isArray(changes) || changes.length < 1 || changes.length > 8) throw new ProjectFileError(400, "invalid text changes");
   const edits = validateProjectFiles(changes.map(c => c.file));
-  if (!edits.length || edits.length > 8 || edits.some(f => f.encoding)) throw new ProjectFileError(400, "invalid text changes");
+  if (edits.some(f => f.encoding || f.language === "binary" || Buffer.byteLength(f.content) > 16000)) throw new ProjectFileError(400, "invalid text changes");
+  for (const { file, before } of changes) {
+    if (before) {
+      validateProjectFiles([before]);
+      if (before.path !== file.path || before.encoding || before.language === "binary" ||
+          Buffer.byteLength(before.content) > 16000 ||
+          (before.content === file.content && before.language === file.language)) throw new ProjectFileError(400, "invalid prior file snapshot");
+    }
+  }
   const current = await listProjectFiles(userId, id);
   validateProjectFiles([...current.filter(f => !edits.some(e => e.path.toLowerCase() === f.path.toLowerCase())), ...edits]);
   await initializeProjectFiles(current.some(f => f.encoding === "base64"));
@@ -94,8 +103,10 @@ export async function applyProjectFileChanges(userId: string, conversationId: st
   const values: unknown[] = [userId, id, JSON.stringify(edits)];
   for (const { file, before } of changes) {
     if (before) {
-      conditions.push(`EXISTS (SELECT 1 FROM project_files WHERE user_id = ? AND conversation_id = ? AND path = ? COLLATE BINARY AND content = ? AND language = ? AND (encoding IS NULL OR encoding = 'utf8'))`);
+       conditions.push(`EXISTS (SELECT 1 FROM project_files WHERE user_id = ? AND conversation_id = ? AND path = ? COLLATE BINARY AND content = ? AND language = ? AND (encoding IS NULL OR encoding = 'utf8'))`);
       values.push(userId, id, before.path, before.content, before.language);
+       conditions.push(`NOT EXISTS (SELECT 1 FROM project_files WHERE user_id = ? AND conversation_id = ? AND path = ? COLLATE NOCASE AND path <> ? COLLATE BINARY)`);
+       values.push(userId, id, file.path, file.path);
     } else {
       conditions.push(`NOT EXISTS (SELECT 1 FROM project_files WHERE user_id = ? AND conversation_id = ? AND path = ? COLLATE NOCASE)`);
       values.push(userId, id, file.path);

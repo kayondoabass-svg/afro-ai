@@ -6,7 +6,7 @@ export const PROJECT_TOOL_LIMITS = { rounds: 5, calls: 10, edits: 8, fileBytes: 
 const bytes = (value: unknown) => Buffer.byteLength(typeof value === "string" ? value : JSON.stringify(value), "utf8");
 const schema = (properties: object, required: string[]) => ({ type: "object", properties, required, additionalProperties: false });
 export const PROJECT_TOOL_DEFINITIONS = [
-  { name: "list_files", description: "List available text file paths. Binary files are not accessible.", parameters: schema({}, []) },
+  { name: "list_files", description: "List up to 40 text file paths starting at offset (default 0). Repeat with nextOffset to page. Binary files are not accessible.", parameters: schema({ offset: { type: "integer", minimum: 0, maximum: 200 } }, []) },
   { name: "read_file", description: "Read one complete text file (maximum 16 KB).", parameters: schema({ path: { type: "string" } }, ["path"]) },
   { name: "search_files", description: "Literal case-sensitive substring search of text files; not regex. Bounded results.", parameters: schema({ query: { type: "string", maxLength: 200 } }, ["query"]) },
   { name: "propose_edits", description: "Propose up to eight complete text file creates/updates for explicit user review. Existing files must first be read. Never writes files.", parameters: schema({ files: { type: "array", maxItems: 8, items: schema({ path: { type: "string" }, content: { type: "string" }, language: { type: "string" } }, ["path", "content", "language"]) } }, ["files"]) },
@@ -27,8 +27,11 @@ export function projectToolSession(input: ProjectFile[]) {
       const a = args as Record<string, unknown>;
       const keys = Object.keys(a);
       if (name === "list_files") {
-        if (keys.length) throw new Error("list_files accepts no arguments.");
-        return { paths: text.map(f => f.path), binaryFilesExcluded: files.length - text.length };
+        if (keys.some(k => k !== "offset") || (a.offset !== undefined && (!Number.isInteger(a.offset) || (a.offset as number) < 0 || (a.offset as number) > 200))) throw new Error("list_files offset must be 0–200.");
+        const offset = (a.offset as number | undefined) ?? 0;
+        return { paths: text.slice(offset, offset + 40).map(f => f.path),
+          nextOffset: offset + 40 < text.length ? offset + 40 : null,
+          binaryFilesExcluded: files.length - text.length };
       }
       if (name === "read_file") {
         if (keys.length !== 1 || typeof a.path !== "string") throw new Error("Provide only a path.");
@@ -83,6 +86,7 @@ export function projectToolSession(input: ProjectFile[]) {
 
 export async function runProjectTools(opts: {
   files: ProjectFile[]; request: string; signal: AbortSignal;
+  tier?: "starter" | "pro" | "business" | "payg";
   onActivity: (event: ProjectActivity) => void;
 }) {
   if (typeof opts.request !== "string" || !opts.request.trim() || bytes(opts.request) > 8000) throw new Error("Project request must be 1–8000 bytes.");
@@ -97,7 +101,7 @@ export async function runProjectTools(opts: {
   for (let round = 0; round < PROJECT_TOOL_LIMITS.rounds; round++) {
     opts.signal.throwIfAborted();
     if (bytes(messages) > PROJECT_TOOL_LIMITS.contextBytes) throw new Error("Project context limit reached; narrow your request.");
-    const result = await aiChatComplete({ messages, tools: PROJECT_TOOL_DEFINITIONS, toolChoice: "auto", maxTokens: 4000, signal: opts.signal });
+    const result = await aiChatComplete({ messages, tools: PROJECT_TOOL_DEFINITIONS, toolChoice: "auto", maxTokens: 4000, tier: opts.tier, signal: opts.signal });
     opts.signal.throwIfAborted();
     if (bytes(result) > 48000) throw new Error("Model response exceeded project limits.");
     if (!result.toolCalls?.length) {

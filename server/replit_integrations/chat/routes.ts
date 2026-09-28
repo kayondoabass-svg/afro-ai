@@ -15,6 +15,9 @@ import { planChatSearch, runChatSearch, searchEvidence, needsImageSearchContext 
 import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
 import { listProjectFiles, saveProjectFiles } from "../../project-files";
+import { runProjectTools } from "../../project-tools";
+import { createProjectProposal, finishProjectProposal, pendingProjectProposal } from "../../project-proposals";
+import { ProjectFileError } from "../../project-file-policy";
 import { buildProjectEditContext, parseProjectEditResponse } from "./project-edit";
 import { productSelfKnowledge } from "../../product-self-knowledge";
 import { extractWebsiteHtml } from "../../../shared/html-extraction";
@@ -2012,6 +2015,25 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/conversations/:id/project-proposal", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const owner = (req as any).user?.claims?.sub || (req as any).user?.claims?.id;
+      res.json(await pendingProjectProposal(owner, String(req.params.id)));
+    } catch (error) {
+      res.status(error instanceof ProjectFileError ? error.status : 500).json({ error: error instanceof ProjectFileError ? error.message : "Could not load project proposal" });
+    }
+  });
+
+  app.post("/api/conversations/:id/project-proposal", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      if (typeof req.body?.cancel !== "boolean") return res.status(400).json({ error: "Specify whether to cancel the proposal" });
+      const owner = (req as any).user?.claims?.sub || (req as any).user?.claims?.id;
+      res.json(await finishProjectProposal(owner, String(req.params.id), req.body?.token, req.body.cancel));
+    } catch (error) {
+      res.status(error instanceof ProjectFileError ? error.status : 500).json({ error: error instanceof ProjectFileError ? error.message : "Could not apply proposal; reload files before retrying" });
+    }
+  });
+
   app.post("/api/conversations/:id/messages", isAuthenticated, chatLimiter, aiQuotaGuard("chat"), async (req: Request, res: Response) => {
     try {
       const conversationId = parseInt(req.params.id as string);
@@ -2079,6 +2101,52 @@ export function registerChatRoutes(app: Express): void {
       }
 
       const { model, maxTokens } = getModelForPlan(userPlan);
+
+      if (req.body.projectAgent === true) {
+        if (attachments?.length || req.body.selectedFilePath !== undefined || Buffer.byteLength(userContent, "utf8") > 8000) {
+          return res.status(400).json({ error: "Project agent requires text only (up to 8000 bytes)." });
+        }
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 90_000);
+        const onClose = () => { if (!res.writableEnded) controller.abort(); };
+        res.on("close", onClose);
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        const event = (value: unknown) => { if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(value)}\n\n`); };
+        try {
+          const files = await listProjectFiles(userId, conversationId);
+          event({ type: "status", message: "Reviewing project files (no changes saved)..." });
+          const result = await runProjectTools({
+            files, request: userContent, tier: userPlan, signal: controller.signal,
+            onActivity: activity => event(activity),
+          });
+          controller.signal.throwIfAborted();
+          const proposal = result.changes?.length
+            ? await createProjectProposal(userId, String(conversationId), result.changes)
+            : null;
+          controller.signal.throwIfAborted();
+          await chatStorage.createMessage(conversationId, "user", userContent);
+          await chatStorage.createMessage(conversationId, "assistant", result.text);
+          const { storage } = await import("../../storage");
+          await storage.createUsageLog({
+            userId, conversationId, model, tokensUsed: 0, kind: "chat",
+            costCents: paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0,
+          });
+          if (paygUserId === userId) await storage.deductPaygBalance(userId, PAYG_COST_PER_GENERATION_CENTS);
+          event({ type: "text", content: result.text });
+          if (proposal) event({ type: "project-proposal", proposal });
+        } catch (error) {
+          event({ type: "error", message: controller.signal.aborted
+            ? "Project review stopped or timed out. No files were saved."
+            : "Project review failed. No files were saved. Please retry with a smaller request." });
+        } finally {
+          clearTimeout(timeout);
+          res.off("close", onClose);
+          event({ done: true });
+          res.end();
+        }
+        return;
+      }
 
       // Explicit opt-in keeps legacy single-HTML/split-file generation unchanged.
       // Selected-file mode never enters HTML extraction, web fetching, or attachment processing.

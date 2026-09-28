@@ -18,7 +18,7 @@ export function signProjectProposal(proposal: Proposal): string {
   return `${body}.${createHmac("sha256", secret()).update(body).digest("base64url")}`;
 }
 export function verifyProjectProposal(token: unknown, owner: string, conversation: string): Proposal {
-  if (typeof token !== "string" || token.length > 100000) throw new ProjectFileError(400, "invalid proposal");
+  if (typeof token !== "string" || token.length > 100000 || !token.length) throw new ProjectFileError(400, "invalid proposal");
   const parts = token.split(".");
   if (parts.length !== 2) throw new ProjectFileError(400, "invalid proposal");
   const mac = createHmac("sha256", secret()).update(parts[0]).digest();
@@ -27,16 +27,31 @@ export function verifyProjectProposal(token: unknown, owner: string, conversatio
   let p: Proposal;
   try { p = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8")); }
   catch { throw new ProjectFileError(400, "invalid proposal"); }
-  if (p.version !== 1 || p.owner !== owner || p.conversation !== conversation || typeof p.id !== "string") throw new ProjectFileError(403, "proposal ownership mismatch");
+  if (!p || p.version !== 1 || p.owner !== owner || p.conversation !== conversation || typeof p.id !== "string" || !/^[0-9a-f-]{36}$/.test(p.id)) throw new ProjectFileError(403, "proposal ownership mismatch");
   if (!Number.isFinite(p.expires) || p.expires <= Date.now()) throw new ProjectFileError(410, "proposal expired; request a new review");
   if (!Array.isArray(p.changes) || !p.changes.length || p.changes.length > 8) throw new ProjectFileError(400, "invalid proposal changes");
-  validateProjectFiles(p.changes.map(c => c.file));
+  if (p.changes.some(c => !c || typeof c !== "object" || !c.file ||
+    !Object.hasOwn(c, "before") || (c.before !== null && (typeof c.before !== "object" || !c.before)))) {
+    throw new ProjectFileError(400, "invalid proposal changes");
+  }
+  const edits = validateProjectFiles(p.changes.map(c => c.file));
+  for (let i = 0; i < edits.length; i++) {
+    const { file, before } = p.changes[i];
+    if (file.encoding || file.language === "binary" || Buffer.byteLength(file.content) > 16000 ||
+        (before !== null && (validateProjectFiles([before]).length !== 1 ||
+          before.path !== file.path || before.encoding || before.language === "binary" ||
+          Buffer.byteLength(before.content) > 16000 ||
+          (before.content === file.content && before.language === file.language)))) {
+      throw new ProjectFileError(400, "invalid proposal changes");
+    }
+  }
   return p;
 }
 export async function createProjectProposal(owner: string, conversation: string, changes: ProjectChange[]) {
   await assertProjectFileOwnership(owner, conversation);
   const proposal: Proposal = { version: 1, id: randomUUID(), owner, conversation, expires: Date.now() + 15 * 60 * 1000, changes };
   const token = signProjectProposal(proposal);
+  verifyProjectProposal(token, owner, conversation);
   await chatStorage.createMessage(Number(conversation), "project-proposal", JSON.stringify({ token, proposal }));
   return { token, id: proposal.id, expires: proposal.expires, changes };
 }
@@ -52,6 +67,8 @@ export async function finishProjectProposal(owner: string, conversation: string,
   try {
     await connection.query("SELECT pg_advisory_lock(hashtext($1))", [`project-proposal:${p.id}`]);
     locked = true;
+    const issued = await connection.query("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'project-proposal' AND content::jsonb->>'token' = $2 LIMIT 1", [conversation, token]);
+    if (!issued.rows.length) throw new ProjectFileError(404, "proposal not found");
     const prior = await connection.query("SELECT content FROM messages WHERE conversation_id = $1 AND role = 'project-proposal-receipt' AND content::jsonb->>'id' = $2 ORDER BY id DESC LIMIT 1", [conversation, p.id]);
     if (prior.rows.length) {
       const receipt = JSON.parse(prior.rows[0].content);

@@ -19,3 +19,4 @@
 - [Cloudflare purge permissions](cloudflare-purge-permissions.md) — active tokens and D1 access do not prove purge permission; keep purge authorization separate.
 - [SSH key line wrapping](ssh-key-format.md) — check single-line key formatting before treating parse failures as invalid credentials.
 - [Generated website boundary](generated-website-boundary.md) — assistant narration is not website HTML; enforce extraction across preview/publish/serve and repair legacy contamination on read.
+- [Project agent scope](project-agent-scope.md) — cost-sensitive, existing-services-only coding assistance with explicit review; execution and pilot-model activation need separate approval.

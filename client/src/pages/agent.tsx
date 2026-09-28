@@ -23,6 +23,7 @@ import { PublishDialog } from "@/pages/ai-chat";
 import type { ChatSearchActivity } from "@shared/chat-search";
 import { ChatSearchCard, ChatSearchToggle, parseSearchActivity } from "@/components/chat-search";
 import { extractWebsiteHtml } from "@shared/html-extraction";
+import { FileTreeSidebar, type ProjectFile } from "@/components/file-tree-sidebar";
 
 // ---------- Types ----------
 
@@ -62,6 +63,16 @@ interface AppVersion {
   htmlContent: string;
   label: string | null;
   createdAt: string;
+}
+
+interface ProjectProposal {
+  token: string;
+  id: string;
+  expires: number;
+  changes: { file: Pick<ProjectFile, "path" | "content" | "language">; before: Pick<ProjectFile, "path" | "content" | "language"> | null }[];
+}
+interface ProjectToolActivity {
+  tool: string; callId: string; status: "started" | "completed" | "failed";
 }
 
 const ACTION_ICON: Record<ActionKind, any> = {
@@ -159,6 +170,47 @@ export default function AgentPage() {
   const prevVersionsLenRef = useRef(0);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishCode, setPublishCode] = useState("");
+  const [projectAgent, setProjectAgent] = useState(false);
+  const [projectPanelOpen, setProjectPanelOpen] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [toolActivity, setToolActivity] = useState<ProjectToolActivity[]>([]);
+  const [openedProjectFile, setOpenedProjectFile] = useState<ProjectFile | null>(null);
+  const conversationRef = useRef<number | null>(null);
+  conversationRef.current = conversationId;
+  const loadSequenceRef = useRef(0);
+  const { data: projectProposal, error: proposalLoadError } = useQuery<ProjectProposal | null>({
+    queryKey: ["/api/conversations", conversationId, "project-proposal"],
+    enabled: !!user && !!conversationId,
+    queryFn: async () => {
+      const response = await fetch(`/api/conversations/${conversationId}/project-proposal`, { credentials: "include" });
+      if (!response.ok) throw new Error("Could not load pending project review");
+      return response.json();
+    },
+  });
+
+  const finishReview = async (cancel: boolean) => {
+    if (!conversationId || !projectProposal || reviewBusy || working) return;
+    const id = conversationId;
+    setReviewBusy(true);
+    try {
+      const response = await fetch(`/api/conversations/${id}/project-proposal`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: projectProposal.token, cancel }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not complete review");
+      qc.setQueryData(["/api/conversations", id, "project-proposal"], null);
+      if (!cancel) {
+        qc.invalidateQueries({ queryKey: ["/api/d1/project-files", id] });
+        if (conversationRef.current === id) setOpenedProjectFile(null);
+      }
+      toast({ title: cancel ? "Proposal cancelled" : "Project files saved" });
+    } catch (error: any) {
+      toast({ title: "Project review failed", description: error.message, variant: "destructive" });
+      qc.invalidateQueries({ queryKey: ["/api/conversations", id, "project-proposal"] });
+      qc.invalidateQueries({ queryKey: ["/api/d1/project-files", id] });
+    } finally { setReviewBusy(false); }
+  };
 
   const abortRef = useRef<AbortController | null>(null);
   const activeRequestRef = useRef(0);
@@ -341,6 +393,10 @@ export default function AgentPage() {
 
   const sendMessage = async (text: string, attachments: Attachment[] = [], search = webSearch) => {
     if ((!text.trim() && attachments.length === 0) || working) return;
+    if (projectAgent && attachments.length) {
+      toast({ title: "Project agent accepts text only", variant: "destructive" });
+      return;
+    }
 
     // Make sure we have a conversation; if mount-time creation failed, retry now.
     const convoId = await ensureConversation();
@@ -360,6 +416,7 @@ export default function AgentPage() {
     setWorkingStatus(t("chat.statusThinking"));
     setSearchActivity(null);
     setStreamingContent("");
+    setToolActivity([]);
 
     const ctrl = new AbortController();
     const requestId = ++activeRequestRef.current;
@@ -370,10 +427,20 @@ export default function AgentPage() {
     let currentSearchActivity: ChatSearchActivity | null = null;
 
     const handlePayload = (payload: string) => {
+      if (requestId !== activeRequestRef.current || ctrl.signal.aborted) return;
       if (!payload || payload === "[DONE]") return;
       let evt: any;
       try { evt = JSON.parse(payload); }
       catch { serverError = "Invalid response from the server"; return; }
+      if (evt?.type === "project-tool") {
+        setToolActivity(list => [...list.filter(a => a.callId !== evt.callId), evt].slice(-10));
+        return;
+      }
+      if (evt?.type === "project-proposal") {
+        qc.setQueryData(["/api/conversations", convoId, "project-proposal"], evt.proposal);
+        setProjectPanelOpen(true);
+        return;
+      }
       const activity = parseSearchActivity(evt);
       if (activity) { currentSearchActivity = activity; setSearchActivity(activity); return; }
       if (evt && evt.type === "error") { serverError = evt.message || t("chat.toastAgentError"); return; }
@@ -399,7 +466,8 @@ export default function AgentPage() {
     };
 
     try {
-      const body: any = { content: planMode ? `[PLAN MODE] ${text}` : text, webSearch: search };
+      const body: any = { content: projectAgent ? text : planMode ? `[PLAN MODE] ${text}` : text, webSearch: projectAgent ? false : search };
+      if (projectAgent) body.projectAgent = true;
       if (attachments.length > 0) body.attachments = attachments;
 
       const res = await fetch(`/api/conversations/${convoId}/messages`, {
@@ -480,7 +548,7 @@ export default function AgentPage() {
 
     // Detect publish/deploy intent → open the publish dialog directly
     // instead of asking the AI for instructions.
-    if (text && pendingAttachments.length === 0 && isPublishIntent(text)) {
+    if (!projectAgent && text && pendingAttachments.length === 0 && isPublishIntent(text)) {
       const html = latestAssistantHtml();
       if (html) {
         setPublishCode(html);
@@ -518,6 +586,7 @@ export default function AgentPage() {
     setWorkingStatus("");
     setStreamingContent("");
     setSearchActivity(null);
+    setToolActivity([]);
   };
 
   // ---------- Attachments ----------
@@ -585,10 +654,12 @@ export default function AgentPage() {
   // ---------- History ----------
 
   const loadConversation = async (id: number) => {
+    const sequence = ++loadSequenceRef.current;
     try {
       const res = await fetch(`/api/conversations/${id}`, { credentials: "include" });
       if (!res.ok) throw new Error(t("chat.errFailedLoad"));
       const data = await res.json();
+      if (sequence !== loadSequenceRef.current) return;
       const msgs = mapAgentMessages(data.messages || []);
       // Abort any in-flight generation from the previous conversation so its
       // streaming chunks don't bleed into the one we're loading.
@@ -598,6 +669,9 @@ export default function AgentPage() {
       setWorking(false);
       setWorkingStatus("");
       setSearchActivity(null);
+      setToolActivity([]);
+      setOpenedProjectFile(null);
+      setProjectAgent(false);
       setMessages(msgs);
       setConversationId(id);
       setHistoryOpen(false);
@@ -623,6 +697,7 @@ export default function AgentPage() {
   };
 
   const startNewChat = async () => {
+    ++loadSequenceRef.current;
     try {
       const res = await fetch("/api/conversations", {
         method: "POST",
@@ -639,6 +714,9 @@ export default function AgentPage() {
         setWorking(false);
         setWorkingStatus("");
         setSearchActivity(null);
+        setToolActivity([]);
+        setOpenedProjectFile(null);
+        setProjectAgent(false);
         setConversationId(conv.id);
         setMessages([]);
         setQueue([]);
@@ -915,6 +993,53 @@ export default function AgentPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant={projectAgent ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={projectAgent}
+            onClick={() => { setProjectAgent(value => !value); setProjectPanelOpen(true); }}
+            title="Opt in to review-only project tools. No files are saved until you apply."
+            data-testid="button-project-agent"
+          >Project agent {projectAgent ? "on" : "off"}</Button>
+          <Sheet open={projectPanelOpen} onOpenChange={setProjectPanelOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="sm" data-testid="button-project-files">Files {projectProposal ? "• Review" : ""}</Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="bg-zinc-950 text-zinc-100 border-zinc-800 w-full sm:w-[560px] flex flex-col overflow-hidden">
+              <SheetHeader><SheetTitle className="text-zinc-100">Project files &amp; review</SheetTitle></SheetHeader>
+              <p className="text-xs text-zinc-400">Project agent only reads and proposes text changes. It never runs commands or saves automatically.</p>
+              {proposalLoadError && <p role="alert" className="text-xs text-red-400">{proposalLoadError.message}</p>}
+              <div className="min-h-0 flex-1 overflow-y-auto space-y-4">
+                <div className="h-64 border border-zinc-800 rounded-md overflow-hidden">
+                  <FileTreeSidebar conversationId={conversationId} openedFileId={openedProjectFile?.id ?? null}
+                    onFileOpen={setOpenedProjectFile} onClose={() => setProjectPanelOpen(false)} />
+                </div>
+                {openedProjectFile && <div className="text-xs">
+                  <strong>{openedProjectFile.path}</strong>
+                  <pre className="whitespace-pre-wrap break-all max-h-40 overflow-auto border border-zinc-800 p-2">{openedProjectFile.encoding === "base64" ? "Binary asset (not readable by project agent)" : openedProjectFile.content}</pre>
+                </div>}
+                {toolActivity.length > 0 && <section aria-label="Project tool activity" className="text-xs space-y-1">
+                  <strong>Tool activity</strong>
+                  {toolActivity.map(item => <div key={item.callId}>{item.tool}: {item.status}</div>)}
+                </section>}
+                {projectProposal && <section aria-label="Pending project proposal" className="space-y-3">
+                  <strong>Review changes before saving</strong>
+                  <p className="text-xs text-zinc-400">Expires {new Date(projectProposal.expires).toLocaleString()}. A changed file will block the entire apply.</p>
+                  {projectProposal.changes.map(change => <div key={change.file.path} className="border border-zinc-800 rounded p-2 text-xs">
+                    <strong>{change.file.path} ({change.before ? "update" : "new"})</strong>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div><span>Before</span><pre className="whitespace-pre-wrap break-all overflow-auto max-h-64 bg-zinc-900 p-2">{change.before?.content ?? "(new file)"}</pre></div>
+                      <div><span>After</span><pre className="whitespace-pre-wrap break-all overflow-auto max-h-64 bg-zinc-900 p-2">{change.file.content}</pre></div>
+                    </div>
+                  </div>)}
+                  <div className="flex gap-2">
+                    <Button disabled={reviewBusy || working} onClick={() => finishReview(false)} data-testid="button-apply-proposal">Apply changes</Button>
+                    <Button variant="outline" disabled={reviewBusy || working} onClick={() => finishReview(true)} data-testid="button-cancel-proposal">Cancel proposal</Button>
+                  </div>
+                </section>}
+              </div>
+            </SheetContent>
+          </Sheet>
           <div className="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
             <Sparkles className="w-3 h-3 text-violet-400" />
           </div>

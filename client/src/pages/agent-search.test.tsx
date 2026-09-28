@@ -7,12 +7,13 @@ vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({
   t: (key: string) => key,
 }) }));
 vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()] }));
+vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>Project file tree</div> }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
-    data: queryKey[0] === "/api/auth/user" ? { firstName: "Test" } : [],
+    data: queryKey[0] === "/api/auth/user" ? { firstName: "Test" } : queryKey[2] === "project-proposal" ? null : [],
     refetch: vi.fn(),
   }),
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: vi.fn(), setQueryData: vi.fn() }),
 }));
 
 import AgentPage from "./agent";
@@ -25,6 +26,33 @@ const activity = {
 };
 
 describe("active /chat Agent search", () => {
+  it("opts into review-only project tools and displays actual activity", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/conversations" && init?.method === "POST") return Response.json({ id: 45 });
+      if (url === "/api/conversations/45/messages") return new Response(
+        `data: ${JSON.stringify({ type: "project-tool", tool: "list_files", callId: "1", status: "completed" })}\n\n` +
+        `data: ${JSON.stringify({ type: "text", content: "No edits needed." })}\n\n` +
+        `data: ${JSON.stringify({ done: true })}\n\n`,
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+      if (url === "/api/conversations/45") return Response.json({ messages: [
+        { id: 1, role: "assistant", content: "No edits needed." },
+      ] });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    render(<AgentPage />);
+    fireEvent.click(screen.getByTestId("button-project-agent"));
+    fireEvent.change(screen.getByTestId("input-prompt"), { target: { value: "Review my project" } });
+    fireEvent.click(screen.getByTestId("button-send"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/conversations/45/messages", expect.objectContaining({
+        body: JSON.stringify({ content: "Review my project", webSearch: false, projectAgent: true }),
+      }),
+    ));
+    await waitFor(() => expect(screen.getByText("list_files: completed")).toBeInTheDocument());
+  });
   it("sends explicit opt-in, displays server activity, and restores persisted citations from history", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/conversations" && init?.method === "POST") return Response.json({ id: 42 });
