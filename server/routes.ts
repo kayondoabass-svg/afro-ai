@@ -41,6 +41,7 @@ import { SESClient, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIde
 import bcrypt from "bcryptjs";
 import { affiliateApplicationInput } from "./affiliate-application";
 import { productSelfKnowledge } from "./product-self-knowledge";
+import { extractWebsiteHtml } from "@shared/html-extraction";
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -260,7 +261,7 @@ export async function registerRoutes(
               const r2Body = await getBlobText(publishedApp.htmlR2Key);
               if (r2Body) body = r2Body;
             }
-            return res.send(injectFeedbackWidget(body, publishedApp.subdomain));
+            return res.send(injectFeedbackWidget(extractWebsiteHtml(body) ?? body, publishedApp.subdomain));
           }
           return serveNotFoundPage(res);
         } catch (err) {
@@ -279,7 +280,7 @@ export async function registerRoutes(
             const r2Body = await getBlobText(publishedApp.htmlR2Key);
             if (r2Body) body = r2Body;
           }
-          return res.send(injectFeedbackWidget(body, publishedApp.subdomain));
+          return res.send(injectFeedbackWidget(extractWebsiteHtml(body) ?? body, publishedApp.subdomain));
         }
       } catch (err) {
         console.error("Custom domain routing error:", err);
@@ -893,7 +894,7 @@ export async function registerRoutes(
       res.json({
         project: { id: project.id, name: project.name, description: project.description, type: project.type },
         hasContent: !!latestVersion,
-        htmlContent: latestVersion?.htmlContent || "",
+        htmlContent: latestVersion?.htmlContent ? (extractWebsiteHtml(latestVersion.htmlContent) ?? latestVersion.htmlContent) : "",
         label: latestVersion?.label || null,
         updatedAt: latestVersion?.createdAt || null,
         publishedUrl,
@@ -928,7 +929,10 @@ export async function registerRoutes(
       const guard = await assertConversationOwner(conversationId, req);
       if (!guard.ok) return res.status(guard.status).json({ message: guard.message });
       const versions = await storage.getAppVersions(conversationId);
-      res.json(versions);
+      res.json(versions.map(version => ({
+        ...version,
+        htmlContent: extractWebsiteHtml(version.htmlContent) ?? version.htmlContent,
+      })));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch versions" });
     }
@@ -940,7 +944,7 @@ export async function registerRoutes(
       if (!version) return res.status(404).json({ message: "Version not found" });
       const guard = await assertConversationOwner(version.conversationId, req);
       if (!guard.ok) return res.status(guard.status).json({ message: guard.message });
-      res.json(version);
+      res.json({ ...version, htmlContent: extractWebsiteHtml(version.htmlContent) ?? version.htmlContent });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch version" });
     }
@@ -1059,7 +1063,12 @@ export async function registerRoutes(
       // / "© KEYO TECHNOLOGIES" attributions the AI may have invented on a CLIENT
       // site. KEYO is the platform vendor — they did NOT build this end-user's
       // page, and a phishing-style impersonation footer is the #1 risk vector.
-      const sanitizedHtml = sanitizeKeyoImpersonation(htmlContent);
+      const websiteHtml = extractWebsiteHtml(htmlContent);
+      if (!websiteHtml && /\[(?:BUILD PLAN|REQUIREMENTS CHECK)\]|```/i.test(htmlContent)) {
+        sendStep("validate", "error", "No website HTML found");
+        return sendError("No valid website HTML found. Generate a website before publishing.");
+      }
+      const sanitizedHtml = sanitizeKeyoImpersonation(websiteHtml ?? htmlContent);
       const scanResult = scanHtmlContent(sanitizedHtml);
       if (scanResult.blocked) {
         sendStep("validate", "error", "Safety check");
@@ -1648,7 +1657,7 @@ export async function registerRoutes(
       storage.recordAppView(publishedApp.id).catch(() => {});
       // Inject SEO tags if configured
       const seo = await storage.getAppSeo(publishedApp.id).catch(() => null);
-      let html = publishedApp.htmlContent;
+      let html = extractWebsiteHtml(publishedApp.htmlContent) ?? publishedApp.htmlContent;
       if (seo && (seo.seoTitle || seo.seoDescription || seo.seoKeywords || seo.ogImage)) {
         const seoTags: string[] = [];
         if (seo.seoTitle) seoTags.push(`<title>${seo.seoTitle}</title>`);
@@ -2705,7 +2714,7 @@ export async function registerRoutes(
       const listing = await storage.getMarketplaceListing(id);
       if (!listing) return res.status(404).json({ message: "Not found" });
       await storage.incrementListingDownloads(id);
-      res.json({ htmlContent: listing.htmlContent, title: listing.title });
+      res.json({ htmlContent: extractWebsiteHtml(listing.htmlContent) ?? listing.htmlContent, title: listing.title });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

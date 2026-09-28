@@ -11,10 +11,13 @@ import { isAuthenticated, FOUNDER_EMAIL } from "../auth/replitAuth";
 import { aiQuotaGuard } from "../quota";
 import { aiChatCompleteStream } from "../../ai-chat-provider";
 import { buildLiveWebContext, extractUrls } from "../../url-scrape";
+import { planChatSearch, runChatSearch, searchEvidence, needsImageSearchContext } from "./search";
+import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
 import { listProjectFiles, saveProjectFiles } from "../../project-files";
 import { buildProjectEditContext, parseProjectEditResponse } from "./project-edit";
 import { productSelfKnowledge } from "../../product-self-knowledge";
+import { extractWebsiteHtml } from "../../../shared/html-extraction";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -2136,10 +2139,11 @@ export function registerChatRoutes(app: Express): void {
 
       const messages = await chatStorage.getMessagesByConversation(conversationId);
 
+      const dialogueMessages = messages.filter(m => m.role !== "web-search");
       const RECENT_IMAGE_WINDOW = 6;
-      const recentStartIndex = Math.max(0, messages.length - RECENT_IMAGE_WINDOW);
+      const recentStartIndex = Math.max(0, dialogueMessages.length - RECENT_IMAGE_WINDOW);
 
-      const chatMessages: any[] = messages.map((m, idx) => {
+      const chatMessages: any[] = dialogueMessages.map((m, idx) => {
         if (m.role === "user") {
           try {
             const parsed = JSON.parse(m.content);
@@ -2192,6 +2196,32 @@ export function registerChatRoutes(app: Express): void {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
+
+      const requestAbort = new AbortController();
+      res.on("close", () => { if (!res.writableEnded) requestAbort.abort(); });
+      if (res.destroyed) requestAbort.abort();
+      const emitSearch = (activity: ChatSearchActivity) => {
+        if (!res.destroyed) res.write(`data: ${JSON.stringify(activity)}\n\n`);
+      };
+      const priorMessages = messages.slice(0, -1);
+      const searchQuery = planChatSearch(userContent, req.body.webSearch === true, priorMessages);
+      let searchContext = "";
+      for (const previous of priorMessages.filter(m => m.role === "web-search").slice(-2)) {
+        try {
+          searchContext += searchEvidence(JSON.parse(previous.content));
+        } catch { /* Ignore malformed legacy metadata. */ }
+      }
+      if (searchQuery) {
+        const unknownImage = needsImageSearchContext(userContent,
+          Boolean(attachments?.some((a: any) => a?.mimetype?.startsWith("image/"))), priorMessages);
+        const activity: ChatSearchActivity = unknownImage
+          ? { type: "web-search", status: "needs-context", query: "", sources: [] }
+          : await runChatSearch(searchQuery, requestAbort.signal, emitSearch);
+        if (unknownImage) emitSearch(activity);
+        await chatStorage.createMessage(conversationId, "web-search", JSON.stringify(activity));
+        searchContext += searchEvidence(activity);
+      }
+      if (requestAbort.signal.aborted) return;
 
       // Helper: append extra text context to the LAST user message in
       // chatMessages, handling both string and array (multimodal) content.
@@ -2355,6 +2385,7 @@ You are now in EDITOR MODE. Your workflow:
 
       // Place trusted current capabilities after retrieved/user-specific context so
       // stale or untrusted documentation cannot override product limits.
+      contextPrompt += searchContext;
       contextPrompt += productSelfKnowledge({ afroAuthorized: isFounderRequest });
       const systemMessage = {
         role: "system" as const,
@@ -2364,6 +2395,7 @@ You are now in EDITOR MODE. Your workflow:
       const streamResult = await aiChatCompleteStream({
         messages: [systemMessage, ...chatMessages],
         maxTokens,
+        signal: requestAbort.signal,
         onChunk: (content) => {
           res.write(`data: ${JSON.stringify({ content })}\n\n`);
         },
@@ -2385,43 +2417,8 @@ You are now in EDITOR MODE. Your workflow:
       let versionSaveResult: { saved: boolean; reason: string; versionId?: number; label?: string } =
         { saved: false, reason: "no-html-detected" };
       try {
-        let extracted: string | null = null;
-        let detectedVia = "";
-
-        const fullDoc = fullResponse.match(/<!DOCTYPE html[\s\S]*?<\/html>/i);
-        if (fullDoc) {
-          extracted = fullDoc[0];
-          detectedVia = "doctype-block";
-        } else {
-          const htmlTag = fullResponse.match(/<html[\s\S]*?<\/html>/i);
-          if (htmlTag) {
-            extracted = htmlTag[0];
-            detectedVia = "html-tag-block";
-          } else {
-            // Fence detection — tolerate optional newline after lang ("```html" with no \n)
-            const fences: { lang: string; code: string }[] = [];
-            const fenceRe = /```([\w-]*)\s*\n?([\s\S]*?)```/g;
-            let fm: RegExpExecArray | null;
-            while ((fm = fenceRe.exec(fullResponse)) !== null) {
-              fences.push({ lang: (fm[1] || "").toLowerCase(), code: fm[2] });
-            }
-            const htmlFence = fences.find(f => f.lang === "html" || f.lang === "htm");
-            if (htmlFence) {
-              extracted = htmlFence.code.trim();
-              detectedVia = "html-lang-fence";
-            } else {
-              const looksHtml = fences.find(f => /<!doctype|<html\b|<body\b|<head\b|<div\b|<section\b|<main\b|<style\b/i.test(f.code));
-              if (looksHtml) {
-                extracted = looksHtml.code.trim();
-                detectedVia = "looks-html-fence";
-              } else if (/<!doctype html|<html\b|<body\b/i.test(fullResponse)) {
-                // No fence at all — accept the raw response if it looks like a page
-                extracted = fullResponse.trim();
-                detectedVia = "raw-html";
-              }
-            }
-          }
-        }
+        const extracted = extractWebsiteHtml(fullResponse);
+        const detectedVia = "shared-html-extraction";
 
         if (extracted && extracted.length > 50) {
           const { storage } = await import("../../storage");

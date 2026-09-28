@@ -9,7 +9,7 @@ vi.mock("openai", () => ({
   },
 }));
 
-import { aiChatComplete, hasAfroAiProvider } from "../ai-chat-provider";
+import { aiChatComplete, aiChatCompleteStream, hasAfroAiProvider } from "../ai-chat-provider";
 
 const original = {
   HF_TOKEN: process.env.HF_TOKEN,
@@ -20,6 +20,30 @@ const original = {
   GEMINI_API: process.env.GEMINI_API,
   AI_PRIMARY_PROVIDER: process.env.AI_PRIMARY_PROVIDER,
 };
+
+describe("default chat streaming cancellation", () => {
+  it("does not start an already cancelled inference", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(aiChatCompleteStream({ messages: [], signal: controller.signal, onChunk: vi.fn() })).rejects.toThrow();
+  });
+  it("forwards cancellation and does not fall back to another paid model", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-only");
+    vi.stubEnv("GEMINI_API_KEY", "test-only");
+    const controller = new AbortController();
+    create.mockReset().mockImplementation(async (_body, options) => {
+      expect(options.signal).toBe(controller.signal);
+      controller.abort();
+      throw new Error("cancelled");
+    });
+    try {
+      await expect(aiChatCompleteStream({ messages: [], signal: controller.signal, onChunk: vi.fn() })).rejects.toThrow("cancelled");
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
 const messages = [{ role: "user" as const, content: "hello" }];
 
 describe("knowledge AI provider opt-in", () => {

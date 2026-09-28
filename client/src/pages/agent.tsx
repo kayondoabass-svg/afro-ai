@@ -20,6 +20,9 @@ import {
   Rocket, Undo2, Redo2, RotateCcw, Eye, Clock, CheckCircle2, Layers,
 } from "lucide-react";
 import { PublishDialog } from "@/pages/ai-chat";
+import type { ChatSearchActivity } from "@shared/chat-search";
+import { ChatSearchCard, ChatSearchToggle, parseSearchActivity } from "@/components/chat-search";
+import { extractWebsiteHtml } from "@shared/html-extraction";
 
 // ---------- Types ----------
 
@@ -36,14 +39,15 @@ interface Attachment {
 
 interface AgentMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "web-search";
   content: string;
   timestamp: number;
   actions?: ActionChip[];
   attachments?: Attachment[];
+  searchActivity?: ChatSearchActivity;
 }
 
-interface QueuedPrompt { id: string; text: string; }
+interface QueuedPrompt { id: string; text: string; webSearch: boolean; }
 
 interface ConversationSummary {
   id: number;
@@ -83,6 +87,34 @@ function getQueryParam(name: string): string | null {
   return new URLSearchParams(window.location.search).get(name);
 }
 
+function mapAgentMessages(records: any[]): AgentMessage[] {
+  return records.flatMap((m: any): AgentMessage[] => {
+    if (m.role === "web-search") {
+      const activity = parseSearchActivity(m.content);
+      return activity ? [{
+        id: `db-${m.id}`, role: "web-search", content: "",
+        timestamp: new Date(m.createdAt || Date.now()).getTime(), searchActivity: activity,
+      }] : [];
+    }
+    if (m.role !== "user" && m.role !== "assistant") return [];
+    let content = m.content;
+    let attachments: Attachment[] | undefined;
+    if (m.role === "user") {
+      try {
+        const parsed = JSON.parse(m.content);
+        if (typeof parsed.text === "string" && Array.isArray(parsed.attachments)) {
+          content = parsed.text;
+          attachments = parsed.attachments;
+        }
+      } catch {}
+    }
+    return [{
+      id: `db-${m.id}`, role: m.role, content,
+      timestamp: new Date(m.createdAt || Date.now()).getTime(), attachments,
+    }];
+  });
+}
+
 // ---------- Component ----------
 
 export default function AgentPage() {
@@ -111,6 +143,8 @@ export default function AgentPage() {
   const [queue, setQueue] = useState<QueuedPrompt[]>([]);
   const [queueOpen, setQueueOpen] = useState(true);
   const [planMode, setPlanMode] = useState(false);
+  const [webSearch, setWebSearch] = useState(false);
+  const [searchActivity, setSearchActivity] = useState<ChatSearchActivity | null>(null);
   const [powerMode, setPowerMode] = useState<"Power" | "Standard" | "Eco">("Power");
   const [working, setWorking] = useState(false);
   const [workingStatus, setWorkingStatus] = useState("");
@@ -123,11 +157,11 @@ export default function AgentPage() {
   // Undo increments, Redo decrements. Reset to 0 whenever a brand-new version lands.
   const [historyCursor, setHistoryCursor] = useState(0);
   const prevVersionsLenRef = useRef(0);
-  const [progressStep, setProgressStep] = useState(0); // 0..4
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishCode, setPublishCode] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
+  const activeRequestRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialDescriptionSentRef = useRef(false);
@@ -299,13 +333,13 @@ export default function AgentPage() {
     if (queueDrainTrigger === 0 || working || queue.length === 0) return;
     const next = queue[0];
     setQueue(q => q.slice(1));
-    sendMessage(next.text);
+    sendMessage(next.text, [], next.webSearch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueDrainTrigger]);
 
   // ---------- Send message ----------
 
-  const sendMessage = async (text: string, attachments: Attachment[] = []) => {
+  const sendMessage = async (text: string, attachments: Attachment[] = [], search = webSearch) => {
     if ((!text.trim() && attachments.length === 0) || working) return;
 
     // Make sure we have a conversation; if mount-time creation failed, retry now.
@@ -324,55 +358,48 @@ export default function AgentPage() {
     setPendingAttachments([]);
     setWorking(true);
     setWorkingStatus(t("chat.statusThinking"));
-    setProgressStep(0);
+    setSearchActivity(null);
     setStreamingContent("");
 
     const ctrl = new AbortController();
+    const requestId = ++activeRequestRef.current;
     abortRef.current = ctrl;
-
-    // Step 0: Thinking, 1: Reading, 2: Drafting, 3: Polishing, 4: Done
-    const statusUpdates = [
-      { step: 1, label: t("chat.progReading") },
-      { step: 2, label: t("chat.progDrafting") },
-      { step: 3, label: t("chat.progPolishing") },
-    ];
-    let statusIdx = 0;
-    const statusTimer = setInterval(() => {
-      if (statusIdx < statusUpdates.length) {
-        const s = statusUpdates[statusIdx++];
-        setProgressStep(s.step);
-        setWorkingStatus(s.label);
-      }
-    }, 1100);
 
     let assistantText = "";
     let serverError: string | null = null;
+    let currentSearchActivity: ChatSearchActivity | null = null;
 
     const handlePayload = (payload: string) => {
       if (!payload || payload === "[DONE]") return;
       let evt: any;
       try { evt = JSON.parse(payload); }
-      catch { assistantText += payload; setStreamingContent(assistantText); if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus(t("chat.statusWriting")); } return; }
+      catch { serverError = "Invalid response from the server"; return; }
+      const activity = parseSearchActivity(evt);
+      if (activity) { currentSearchActivity = activity; setSearchActivity(activity); return; }
       if (evt && evt.type === "error") { serverError = evt.message || t("chat.toastAgentError"); return; }
       if (evt && typeof evt.error === "string") { serverError = evt.error; return; }
+      if (evt?.type === "status" && typeof evt.message === "string") {
+        setWorkingStatus(evt.message);
+        return;
+      }
       if (evt && evt.type === "version-saved") {
         // Server tells us whether a snapshot was saved. Refetch immediately so
         // Undo lights up without waiting for the 3s panel poll.
         if (evt.saved) refetchVersions();
-        console.log("[version-saved]", evt);
         return;
       }
+      if (evt?.done) return;
       if (typeof evt === "string") assistantText += evt;
       else if (evt && (evt.type === "text" || evt.type === "chunk" || evt.type === "delta")) assistantText += evt.content || evt.text || evt.delta || "";
       else if (evt && typeof evt.content === "string") assistantText += evt.content;
       else if (evt && typeof evt.text === "string") assistantText += evt.text;
       else if (evt && typeof evt.delta === "string") assistantText += evt.delta;
       setStreamingContent(assistantText);
-      if (assistantText.length > 0) { setProgressStep(4); setWorkingStatus(t("chat.statusWriting")); }
+      if (assistantText.length > 0) setWorkingStatus(t("chat.statusWriting"));
     };
 
     try {
-      const body: any = { content: planMode ? `[PLAN MODE] ${text}` : text };
+      const body: any = { content: planMode ? `[PLAN MODE] ${text}` : text, webSearch: search };
       if (attachments.length > 0) body.attachments = attachments;
 
       const res = await fetch(`/api/conversations/${convoId}/messages`, {
@@ -382,7 +409,12 @@ export default function AgentPage() {
         credentials: "include",
         signal: ctrl.signal,
       });
-      if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok || !res.body) {
+        const errorText = await res.text().catch(() => "");
+        let detail = errorText;
+        try { detail = JSON.parse(errorText).message || JSON.parse(errorText).error || errorText; } catch {}
+        throw new Error(detail.slice(0, 200) || `Request failed (${res.status})`);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -390,7 +422,8 @@ export default function AgentPage() {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) { buffer += decoder.decode(); break; }
+        if (ctrl.signal.aborted || requestId !== activeRequestRef.current) return;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
@@ -403,26 +436,41 @@ export default function AgentPage() {
       }
       if (!serverError && buffer.startsWith("data:")) handlePayload(buffer.slice(5).trim());
       if (serverError) throw new Error(serverError);
+      if (ctrl.signal.aborted || requestId !== activeRequestRef.current) return;
 
-      setMessages(m => [...m, {
-        id: `a-${Date.now()}`,
-        role: "assistant",
-        content: assistantText || t("chat.noResponse"),
-        timestamp: Date.now(),
-        actions: inferActions(assistantText),
-      }]);
+      // Reload authoritative history: the server persists the web-search role
+      // separately and the model's complete answer (which may differ from chunks).
+      let reloaded = false;
+      try {
+        const historyRes = await fetch(`/api/conversations/${convoId}`, { credentials: "include", signal: ctrl.signal });
+        if (historyRes.ok) {
+          const history = await historyRes.json();
+          if (Array.isArray(history.messages) && requestId === activeRequestRef.current && !ctrl.signal.aborted) {
+            setMessages(mapAgentMessages(history.messages));
+            reloaded = true;
+          }
+        }
+      } catch (historyError) {
+        if (ctrl.signal.aborted) return;
+      }
+      if (!reloaded && !ctrl.signal.aborted && requestId === activeRequestRef.current) {
+        setMessages(m => [...m, ...(currentSearchActivity ? [{ id: `s-${Date.now()}`, role: "web-search" as const, content: "", timestamp: Date.now(), searchActivity: currentSearchActivity }] : []), {
+          id: `a-${Date.now()}`, role: "assistant", content: assistantText || t("chat.noResponse"), timestamp: Date.now(),
+        }]);
+      }
       setQueueDrainTrigger(t => t + 1);
     } catch (e: any) {
-      if (e.name !== "AbortError") {
+      if (e.name !== "AbortError" && !ctrl.signal.aborted && requestId === activeRequestRef.current) {
         toast({ title: t("chat.toastAgentError"), description: e.message, variant: "destructive" });
       }
     } finally {
-      clearInterval(statusTimer);
-      setStreamingContent("");
-      setWorking(false);
-      setWorkingStatus("");
-      setProgressStep(0);
-      abortRef.current = null;
+      if (requestId === activeRequestRef.current) {
+        setStreamingContent("");
+        setSearchActivity(null);
+        setWorking(false);
+        setWorkingStatus("");
+        abortRef.current = null;
+      }
     }
   };
 
@@ -444,7 +492,7 @@ export default function AgentPage() {
     }
 
     if (working) {
-      setQueue(q => [...q, { id: `q-${Date.now()}`, text }]);
+      setQueue(q => [...q, { id: `q-${Date.now()}`, text, webSearch }]);
       setInput("");
       toast({ title: t("chat.toastQueued"), description: t("chat.toastQueuedDesc") });
       return;
@@ -463,9 +511,13 @@ export default function AgentPage() {
   };
 
   const stopAgent = () => {
+    ++activeRequestRef.current;
     abortRef.current?.abort();
+    abortRef.current = null;
     setWorking(false);
     setWorkingStatus("");
+    setStreamingContent("");
+    setSearchActivity(null);
   };
 
   // ---------- Attachments ----------
@@ -503,7 +555,7 @@ export default function AgentPage() {
     const item = queue.find(x => x.id === id);
     if (!item || working) return;
     setQueue(q => q.filter(x => x.id !== id));
-    sendMessage(item.text);
+    sendMessage(item.text, [], item.webSearch);
   };
   const moveQueueItem = (id: string, dir: -1 | 1) => {
     setQueue(q => {
@@ -537,28 +589,15 @@ export default function AgentPage() {
       const res = await fetch(`/api/conversations/${id}`, { credentials: "include" });
       if (!res.ok) throw new Error(t("chat.errFailedLoad"));
       const data = await res.json();
-      const msgs: AgentMessage[] = (data.messages || []).map((m: any) => {
-        let content = m.content;
-        let attachments: Attachment[] | undefined;
-        try {
-          const parsed = JSON.parse(m.content);
-          if (parsed.text && parsed.attachments) {
-            content = parsed.text;
-            attachments = parsed.attachments;
-          }
-        } catch {}
-        return {
-          id: `db-${m.id}`,
-          role: m.role,
-          content,
-          timestamp: new Date(m.createdAt || Date.now()).getTime(),
-          actions: m.role === "assistant" ? inferActions(content) : undefined,
-          attachments,
-        };
-      });
+      const msgs = mapAgentMessages(data.messages || []);
       // Abort any in-flight generation from the previous conversation so its
       // streaming chunks don't bleed into the one we're loading.
+      ++activeRequestRef.current;
       abortRef.current?.abort();
+      abortRef.current = null;
+      setWorking(false);
+      setWorkingStatus("");
+      setSearchActivity(null);
       setMessages(msgs);
       setConversationId(id);
       setHistoryOpen(false);
@@ -594,7 +633,12 @@ export default function AgentPage() {
       if (res.ok) {
         const conv = await res.json();
         // Abort any in-flight generation from the prior chat first.
+        ++activeRequestRef.current;
         abortRef.current?.abort();
+        abortRef.current = null;
+        setWorking(false);
+        setWorkingStatus("");
+        setSearchActivity(null);
         setConversationId(conv.id);
         setMessages([]);
         setQueue([]);
@@ -837,7 +881,7 @@ export default function AgentPage() {
                           <button
                             onClick={() => {
                               const w = window.open("", "_blank", "noopener,noreferrer");
-                              if (w) { w.document.open(); w.document.write(ver.htmlContent); w.document.close(); }
+                              if (w) { w.document.open(); w.document.write(extractWebsiteHtml(ver.htmlContent) ?? ver.htmlContent); w.document.close(); }
                             }}
                             className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-700 hover:border-violet-500/40 hover:text-violet-300 text-xs font-medium text-zinc-300 transition-all"
                             data-testid={`button-preview-version-${ver.id}`}
@@ -946,8 +990,11 @@ export default function AgentPage() {
           </div>
         )}
 
-        {messages.map(msg => <MessageBlock key={msg.id} msg={msg} onPublish={openPublishFor} />)}
+        {messages.map(msg => msg.role === "web-search" ? (
+          msg.searchActivity && <ChatSearchCard key={msg.id} activity={msg.searchActivity} />
+        ) : <MessageBlock key={msg.id} msg={msg} onPublish={openPublishFor} />)}
 
+        {working && searchActivity && <ChatSearchCard activity={searchActivity} />}
         {working && streamingContent && (
           <div data-testid="text-streaming">
             <MarkdownText text={streamingContent} />
@@ -955,7 +1002,9 @@ export default function AgentPage() {
         )}
 
         {working && (
-          <ProgressSteps step={progressStep} status={workingStatus} hasStreamed={streamingContent.length > 0} />
+          <div className="text-sm text-violet-400" role="status" data-testid="text-working-status">
+            {workingStatus || t("chat.working")}
+          </div>
         )}
       </div>
 
@@ -1044,6 +1093,7 @@ export default function AgentPage() {
               <Checkbox checked={planMode} onCheckedChange={(v) => setPlanMode(!!v)} className="h-3.5 w-3.5 border-zinc-600 data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" data-testid="checkbox-plan-mode" />
               <span>{t("chat.plan")}</span>
             </label>
+            <ChatSearchToggle enabled={webSearch} onChange={setWebSearch} />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1113,22 +1163,7 @@ export default function AgentPage() {
 // ---------- Helpers ----------
 
 function extractHtml(content: string): string | null {
-  // Look for triple-backtick code blocks; prefer html/htm fenced
-  const fenceRe = /```(\w+)?\n([\s\S]*?)```/g;
-  const candidates: { lang: string; code: string }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = fenceRe.exec(content)) !== null) {
-    candidates.push({ lang: (m[1] || "").toLowerCase(), code: m[2] });
-  }
-  // Prefer explicit html block
-  const htmlBlock = candidates.find(c => c.lang === "html" || c.lang === "htm");
-  if (htmlBlock) return htmlBlock.code.trim();
-  // Otherwise any block whose body looks like HTML (contains <html or <!doctype)
-  const looksHtml = candidates.find(c => /<!doctype html|<html\b/i.test(c.code));
-  if (looksHtml) return looksHtml.code.trim();
-  // No fence: maybe the message itself is raw HTML
-  if (/<!doctype html|<html\b/i.test(content)) return content.trim();
-  return null;
+  return extractWebsiteHtml(content);
 }
 
 function messageHasWebsite(content: string): boolean {
