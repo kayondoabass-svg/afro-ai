@@ -14,3 +14,4 @@
 - [Afro AI pilot scope](afro-provider-pilot.md) — serving success is not tool-call or production-quality evidence; keep the trained model opt-in until evaluated.
 - [Paid provider uncertainty](paid-provider-uncertainty.md) — never automatically retry ambiguous paid jobs; cancellation does not prove provider billing stopped.
 - [Binary project storage](binary-project-storage.md) — bounded assets share the owned database transaction; LFS fails closed rather than pretending pointers are assets.
+- [SQLite CLI portability](sqlite-cli-portability.md) — error-path tests must not assume every CLI version continues through same-line statements.

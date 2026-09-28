@@ -212,7 +212,7 @@ describe("SQLite migration atomicity (local, no network)", () => {
   const migration = readFileSync("cloudflare/migrations/002_project_files.sql", "utf8");
   const binaryMigration = readFileSync("cloudflare/migrations/003_project_file_binary.sql", "utf8");
   const command = (files: Array<ReturnType<typeof file> | ReturnType<typeof png>>, mode = "merge") =>
-    `INSERT INTO project_file_commands(user_id,conversation_id,mode,files) VALUES ('owner','1','${mode}','${JSON.stringify(files).replace(/'/g, "''")}');`;
+    `\nINSERT INTO project_file_commands(user_id,conversation_id,mode,files) VALUES ('owner','1','${mode}','${JSON.stringify(files).replace(/'/g, "''")}');\n`;
   it("merges, replaces, preserves IDs, consumes commands, and is rerunnable", () => {
     const sql = migration + migration + command([file()]) + command([file("other.ts")]) +
       command([file("src/app.ts", "updated")], "replace") +
