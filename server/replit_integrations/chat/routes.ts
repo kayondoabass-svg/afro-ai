@@ -21,6 +21,7 @@ import { ProjectFileError } from "../../project-file-policy";
 import { buildProjectEditContext, parseProjectEditResponse } from "./project-edit";
 import { productSelfKnowledge } from "../../product-self-knowledge";
 import { extractWebsiteHtml } from "../../../shared/html-extraction";
+import { CHAT_CREDENTIAL_POLICY, containsPrivateCredential, redactPrivateCredentials, safeAssistantText } from "../../chat-credential-safety";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -633,14 +634,14 @@ Use these pre-written guides for common integrations:
 OR for the Maps JavaScript API:
 1. Go to console.cloud.google.com → APIs & Services → Enable "Maps JavaScript API"
 2. Create an API Key
-3. Come back and say: "My Maps API key is [paste it]" — I will integrate it.
+3. Configure the key in your server environment; never paste it into chat or browser code.
 
 **PESAPAL PAYMENTS (Best for Africa — Uganda, Kenya, Tanzania, Rwanda, Zambia, Zimbabwe, Malawi, South Africa):**
 🔑 To activate real Pesapal payments:
 1. Create a business account at pesapal.com
 2. Go to Dashboard → API Integration → Register IPN URL
 3. Copy your Consumer Key and Consumer Secret
-4. Come back and say: "My Pesapal Consumer Key is [key] and Consumer Secret is [secret]" — I will integrate M-Pesa, Airtel, MTN MoMo, Visa, and Mastercard payments.
+4. Configure the Consumer Key and Consumer Secret server-side; do not share them in chat.
 Pesapal supports: M-Pesa, Airtel Money, MTN Mobile Money, Visa, Mastercard, bank transfer — no dollar card required for most African users.
 
 **FLUTTERWAVE PAYMENTS (Pan-African — 30+ African countries):**
@@ -662,14 +663,14 @@ DPO supports: Kenya, Uganda, Tanzania, Rwanda, Zambia, Zimbabwe, Malawi, South A
 1. Register at momodeveloper.mtn.com
 2. Subscribe to the Collections API
 3. Copy your API User ID, API Key, and Subscription Key
-4. Come back with those details — I will build a direct MTN MoMo payment flow.
+4. Configure private credentials server-side; do not share them in chat.
 Available in: Uganda, Ghana, Cameroon, Côte d'Ivoire, Zambia, Rwanda, Benin.
 
 **M-PESA DARAJA API (Safaricom Kenya):**
 🔑 To integrate M-Pesa directly:
 1. Go to developer.safaricom.co.ke and create an app
 2. Get your Consumer Key, Consumer Secret, and Shortcode (Paybill or Till number)
-3. Come back with those details — I will build the STK Push payment flow (customers pay directly from their phone prompt).
+3. Configure private credentials server-side; do not share them in chat.
 Available in: Kenya primarily.
 
 **FIREBASE / FIRESTORE (database + auth):**
@@ -705,7 +706,7 @@ For the full WhatsApp Business API (auto-replies, chatbots): this requires a Met
 1. Create a free account at twilio.com
 2. Get a Twilio phone number
 3. From the Console, copy: Account SID, Auth Token, and your Twilio number
-4. Come back with those details — I will build the SMS integration.
+4. Configure the Auth Token server-side; do not share it in chat.
 
 **GENERAL RULE FOR ANY OTHER API:**
 If the user asks for an integration not listed above, always:
@@ -713,7 +714,7 @@ If the user asks for an integration not listed above, always:
 2. Identify exactly what credentials are needed (API key? Client ID? Secret?)
 3. Tell the user the exact website to visit to get those credentials
 4. Give exact numbered steps
-5. End with: "Once you have [credential name], come back and share it — I will integrate it immediately."
+5. For private credentials, describe server-side configuration without asking for values in chat.
 
 IMPORTANT: Never build a "simulated" integration without also giving the real integration guide. The user deserves to know the path to making it work for real, every single time.
 
@@ -1959,7 +1960,7 @@ export function registerChatRoutes(app: Express): void {
         return res.status(404).json({ error: "Conversation not found" });
       }
       const messages = await chatStorage.getMessagesByConversation(id);
-      res.json({ ...conversation, messages });
+      res.json({ ...conversation, messages: messages.map(m => ({ ...m, content: redactPrivateCredentials(m.content) })) });
     } catch (error) {
       console.error("Error fetching conversation:", error);
       res.status(500).json({ error: "Failed to fetch conversation" });
@@ -2047,6 +2048,10 @@ export function registerChatRoutes(app: Express): void {
       if (typeof userContent !== "string" || !userContent.trim() || userContent.length > 24_000) {
         return res.status(400).json({ error: "Message must contain between 1 and 24000 characters" });
       }
+      // Reject before persisting, calling search/RAG, or sending any content to a provider.
+      if (containsPrivateCredential(userContent) || (attachments && containsPrivateCredential(JSON.stringify(attachments)))) {
+        return res.status(400).json({ error: "Private credentials cannot be sent in chat. Remove them and use server-only configuration instead." });
+      }
       const requestedMode = String(rawMode || "").toLowerCase() === "founder" ? "founder" : "builder";
       const LANG_MAP: Record<string, string> = {
         en: "English", sw: "Swahili (Kiswahili)", ar: "Arabic (العربية)",
@@ -2115,9 +2120,12 @@ export function registerChatRoutes(app: Express): void {
         const event = (value: unknown) => { if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(value)}\n\n`); };
         try {
           const files = await listProjectFiles(userId, conversationId);
+          const history = (await chatStorage.getMessagesByConversation(conversationId))
+            .filter(m => m.role === "user" || m.role === "assistant").slice(-8)
+            .map(m => ({ role: m.role as "user" | "assistant", content: redactPrivateCredentials(m.content).slice(0, 3000) }));
           event({ type: "status", message: "Reviewing project files (no changes saved)..." });
           const result = await runProjectTools({
-            files, request: userContent, tier: userPlan, signal: controller.signal,
+            files, request: userContent, history, tier: userPlan, signal: controller.signal,
             onActivity: activity => event(activity),
           });
           controller.signal.throwIfAborted();
@@ -2126,14 +2134,15 @@ export function registerChatRoutes(app: Express): void {
             : null;
           controller.signal.throwIfAborted();
           await chatStorage.createMessage(conversationId, "user", userContent);
-          await chatStorage.createMessage(conversationId, "assistant", result.text);
+          const safeText = safeAssistantText(result.text);
+          await chatStorage.createMessage(conversationId, "assistant", safeText);
           const { storage } = await import("../../storage");
           await storage.createUsageLog({
-            userId, conversationId, model, tokensUsed: 0, kind: "chat",
+            userId, conversationId, model: result.model, tokensUsed: 0, kind: "chat",
             costCents: paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0,
           });
           if (paygUserId === userId) await storage.deductPaygBalance(userId, PAYG_COST_PER_GENERATION_CENTS);
-          event({ type: "text", content: result.text });
+          event({ type: "text", content: safeText });
           if (proposal) event({ type: "project-proposal", proposal });
         } catch (error) {
           event({ type: "error", message: controller.signal.aborted
@@ -2159,10 +2168,11 @@ export function registerChatRoutes(app: Express): void {
           if (attachments?.length) throw new Error("Project file editing does not support attachments.");
           const files = await listProjectFiles(userId, conversationId);
           const { selected, prompt } = buildProjectEditContext(files, req.body.selectedFilePath, userContent);
+          if (containsPrivateCredential(prompt)) throw new Error("Private credential in selected file");
           res.write(`data: ${JSON.stringify({ type: "status", message: "Editing selected project file..." })}\n\n`);
           const result = await aiChatCompleteStream({
             messages: [
-              { role: "system", content: prompt + productSelfKnowledge({ afroAuthorized: false }) },
+              { role: "system", content: prompt + productSelfKnowledge({ afroAuthorized: false }) + CHAT_CREDENTIAL_POLICY },
               { role: "user", content: userContent },
             ],
             maxTokens,
@@ -2170,6 +2180,8 @@ export function registerChatRoutes(app: Express): void {
             onChunk: () => {},
           });
           const edit = parseProjectEditResponse(result.fullText, selected);
+          if (containsPrivateCredential(edit.file.content)) throw new Error("Private credential in generated file");
+          const safeSummary = safeAssistantText(edit.summary);
           const current = await listProjectFiles(userId, conversationId);
           if (current.find(file => file.path === selected.path)?.content !== selected.content) {
             throw new Error("Selected file changed while AI was editing. Retry using the latest version.");
@@ -2179,11 +2191,11 @@ export function registerChatRoutes(app: Express): void {
           res.write(`data: ${JSON.stringify({ type: "project-files-saved", saved: true, paths: [edit.file.path] })}\n\n`);
           // Persist only the summary, not another copy of project source in chat history.
           await chatStorage.createMessage(conversationId, "user", userContent);
-          await chatStorage.createMessage(conversationId, "assistant", edit.summary);
-          res.write(`data: ${JSON.stringify({ content: edit.summary })}\n\n`);
+          await chatStorage.createMessage(conversationId, "assistant", safeSummary);
+          res.write(`data: ${JSON.stringify({ content: safeSummary })}\n\n`);
           const { storage } = await import("../../storage");
           await storage.createUsageLog({
-            userId, conversationId, model, tokensUsed: result.completionTokens, kind: "chat",
+            userId, conversationId, model: result.model, tokensUsed: result.completionTokens, kind: "chat",
             costCents: paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0,
           });
           if (paygUserId === userId) await storage.deductPaygBalance(userId, PAYG_COST_PER_GENERATION_CENTS);
@@ -2207,7 +2219,8 @@ export function registerChatRoutes(app: Express): void {
 
       const messages = await chatStorage.getMessagesByConversation(conversationId);
 
-      const dialogueMessages = messages.filter(m => m.role !== "web-search");
+      const dialogueMessages = messages.filter(m => m.role === "user" || m.role === "assistant")
+        .map(m => ({ ...m, content: redactPrivateCredentials(m.content) }));
       const RECENT_IMAGE_WINDOW = 6;
       const recentStartIndex = Math.max(0, dialogueMessages.length - RECENT_IMAGE_WINDOW);
 
@@ -2271,7 +2284,8 @@ export function registerChatRoutes(app: Express): void {
       const emitSearch = (activity: ChatSearchActivity) => {
         if (!res.destroyed) res.write(`data: ${JSON.stringify(activity)}\n\n`);
       };
-      const priorMessages = messages.slice(0, -1);
+      const priorMessages = messages.slice(0, -1)
+        .map(m => ({ ...m, content: redactPrivateCredentials(m.content) }));
       const searchQuery = planChatSearch(userContent, req.body.webSearch === true, priorMessages);
       let searchContext = "";
       for (const previous of priorMessages.filter(m => m.role === "web-search").slice(-2)) {
@@ -2324,7 +2338,7 @@ export function registerChatRoutes(app: Express): void {
             res.write(`data: ${JSON.stringify({ type: "status", message: `Reading ${parseable.length} file${parseable.length > 1 ? "s" : ""}...` })}\n\n`);
           } catch { /* ignore */ }
           const attachmentContext = await buildAttachmentContext(parseable);
-          if (attachmentContext) appendToLastUserMessage(attachmentContext);
+          if (attachmentContext) appendToLastUserMessage(redactPrivateCredentials(attachmentContext));
         }
       } catch (attErr) {
         console.error("[attachment-parse] failed (non-fatal):", attErr);
@@ -2342,7 +2356,7 @@ export function registerChatRoutes(app: Express): void {
             res.write(`data: ${JSON.stringify({ type: "status", message: `Fetching ${urlsInTurn.length} link${urlsInTurn.length > 1 ? "s" : ""} live from the web...` })}\n\n`);
           } catch { /* ignore write errors */ }
           const liveContext = await buildLiveWebContext(userContent);
-          if (liveContext) appendToLastUserMessage(liveContext);
+          if (liveContext) appendToLastUserMessage(redactPrivateCredentials(liveContext));
         }
       } catch (webErr) {
         console.error("[live-web] scrape failed (non-fatal):", webErr);
@@ -2453,8 +2467,10 @@ You are now in EDITOR MODE. Your workflow:
 
       // Place trusted current capabilities after retrieved/user-specific context so
       // stale or untrusted documentation cannot override product limits.
-      contextPrompt += searchContext;
+      contextPrompt = redactPrivateCredentials(contextPrompt);
+      contextPrompt += redactPrivateCredentials(searchContext);
       contextPrompt += productSelfKnowledge({ afroAuthorized: isFounderRequest });
+      contextPrompt += CHAT_CREDENTIAL_POLICY;
       const systemMessage = {
         role: "system" as const,
         content: contextPrompt,
@@ -2464,12 +2480,12 @@ You are now in EDITOR MODE. Your workflow:
         messages: [systemMessage, ...chatMessages],
         maxTokens,
         signal: requestAbort.signal,
-        onChunk: (content) => {
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
-        },
+        // Buffer until complete: credentials and solicitation can span chunks.
+        onChunk: () => {},
       });
 
-      const fullResponse = streamResult.fullText;
+      const fullResponse = safeAssistantText(streamResult.fullText);
+      res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
       const completionTokens = streamResult.completionTokens;
 
       await chatStorage.createMessage(conversationId, "assistant", fullResponse);
@@ -2523,7 +2539,7 @@ You are now in EDITOR MODE. Your workflow:
           await storage.createUsageLog({
             userId: authUser.claims.sub,
             conversationId,
-            model,
+            model: streamResult.model,
             tokensUsed: completionTokens,
             kind: "chat",
             costCents: paygUserId === authUser.claims.sub ? PAYG_COST_PER_GENERATION_CENTS : 0,

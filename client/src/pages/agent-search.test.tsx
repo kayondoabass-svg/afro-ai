@@ -26,6 +26,26 @@ const activity = {
 };
 
 describe("active /chat Agent search", () => {
+  it("keeps builder modes exclusive and exposes review and navigation through the mobile menu", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/conversations") return Response.json({ id: 47 });
+      throw new Error(`Unexpected request ${url}`);
+    }));
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    render(<AgentPage />);
+    expect(screen.getByTestId("agent-shell")).toHaveClass("agent-shell");
+    expect(screen.getByTestId("agent-messages")).toHaveClass("agent-scroll");
+    fireEvent.click(screen.getByRole("button", { name: "Search the web" }));
+    fireEvent.click(screen.getByTestId("button-project-agent"));
+    expect(screen.getByRole("button", { name: "Search the web" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("button-project-agent")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByTestId("checkbox-plan-mode"));
+    expect(screen.getByTestId("button-project-agent")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("checkbox-plan-mode")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByTestId("button-mobile-menu"));
+    expect(await screen.findByRole("button", { name: "Project files & review" })).toBeInTheDocument();
+    expect(screen.getByTestId("button-mobile-project-agent")).toHaveAttribute("aria-pressed", "false");
+  });
   it("opts into review-only project tools and displays actual activity", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/conversations" && init?.method === "POST") return Response.json({ id: 45 });
@@ -52,6 +72,10 @@ describe("active /chat Agent search", () => {
       }),
     ));
     await waitFor(() => expect(screen.getByText("list_files: completed")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /Project activity/ })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: /Project activity/ }));
+    expect(screen.getByText("list files")).toBeInTheDocument();
+    expect(screen.getByText("Show less")).toBeInTheDocument();
   });
   it("sends explicit opt-in, displays server activity, and restores persisted citations from history", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
