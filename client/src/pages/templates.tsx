@@ -220,7 +220,7 @@ export default function TemplatesPage() {
                 Templates
               </h1>
               <p className="text-sm text-muted-foreground">
-                Choose a template to quickly start building your African business website
+                Choose an editable prompt to start building your website with AI. Review it in the builder before sending.
               </p>
             </div>
           </div>

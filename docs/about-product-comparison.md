@@ -23,6 +23,17 @@ Afro Auth already existed. Its card now reflects `docs/tenant-auth-release.md`: 
 
 The Afro Auth landing page removes quality-equivalence, SMS OTP, auth webhook, SLA, and competitor-price claims. Its signup example no longer expects a signup token or recommends localStorage. Public documentation states release verification limits, not guaranteed production readiness.
 
+## Product-description refresh
+
+- Builder copy now distinguishes websites/browser-based apps from native app-store publishing; separate AI Agent description explains review of proposed changes.
+- Developer Email API and Email Marketing have separate cards and relevant links.
+- Media copy is provider-neutral and states that availability and usage limits apply.
+- USSD copy distinguishes menu design/simulation from provider activation.
+- Integrations/platform webhooks are not advertised as Afro Auth authentication webhooks.
+- Templates are **21 editable prompt starters**, not prebuilt functional websites. Automated component tests click all 21 buttons and cards and verify the encoded project title, website type, and description passed to `/chat`. The agent reads that description into an editable input before submission. These checks do not run paid generation or certify the resulting sites' payments/bookings.
+- Dev Console & Shell was explicitly excluded from this refresh and remains unchanged.
+- Email Audit has an unauthenticated backend audit endpoint but its current UI route requires sign-in; it was not advertised as a public tool.
+
 ## Not counted as new products
 
 Settings, billing, project overview, secrets, database console, checkout, auth recovery, and admin routes are supporting screens. Website Builder/App Designer are already covered by AI App & Website Builder. Email API documentation and Auth documentation are guides, not new products. GitHub Pages is an external hosting service, not an Afro AI product.

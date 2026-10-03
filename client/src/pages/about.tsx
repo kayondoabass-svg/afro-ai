@@ -127,8 +127,18 @@ export default function AboutPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold" data-testid="text-offer-builder">AI App & Website Builder</h3>
-                    <p className="text-sm text-muted-foreground">Describe what you want in plain English, Swahili, Luganda, or any of 12 supported languages. Afro AI builds it — websites, apps, dashboards, games, e-commerce stores, booking systems. Live preview, instant publishing to your own subdomain.</p>
+                    <h3 className="font-semibold" data-testid="text-offer-builder">AI Website & Web App Builder</h3>
+                    <p className="text-sm text-muted-foreground">Describe a website for your business or a browser-based web app, such as a dashboard or booking system. Review and refine the AI-generated result. Native app-store publishing is not included.</p>
+                    <Link href="/website-builder" className="inline-block text-sm text-primary hover:underline">Website Builder</Link>
+                    <span className="text-muted-foreground"> · </span>
+                    <Link href="/app-designer" className="inline-block text-sm text-primary hover:underline">Web App Designer</Link>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-6 space-y-2">
+                    <h3 className="font-semibold" data-testid="text-offer-agent">AI Agent</h3>
+                    <p className="text-sm text-muted-foreground">Work through prompts, ask for code explanations, and review proposed project changes before applying them. The agent does not automatically execute commands or save proposed changes.</p>
+                    <Link href="/agent" className="inline-block text-sm text-primary hover:underline">Explore AI Agent</Link>
                   </CardContent>
                 </Card>
                 <Card>
@@ -139,8 +149,9 @@ export default function AboutPage() {
                 </Card>
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold" data-testid="text-offer-templates">21 African Templates</h3>
-                    <p className="text-sm text-muted-foreground">Pre-built starting points for restaurants, salons, schools, churches, real estate, pharmacies, NGOs, hotels — designed with African businesses in mind.</p>
+                    <h3 className="font-semibold" data-testid="text-offer-templates">21 Template Prompt Starters</h3>
+                    <p className="text-sm text-muted-foreground">Start with a prompt for an African business, portfolio, community, or event website. These are editable prompts you submit for AI generation, not pre-built sites.</p>
+                    <Link href="/templates" className="inline-block text-sm text-primary hover:underline">Browse prompt starters</Link>
                   </CardContent>
                 </Card>
                 <Card>
@@ -160,8 +171,18 @@ export default function AboutPage() {
                 </Card>
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold" data-testid="text-offer-email-api">Email API & Marketing</h3>
-                    <p className="text-sm text-muted-foreground">Send transactional emails (order confirmations, password resets) through our hosted Email API. Plus a full email-marketing suite with subscriber lists, campaign builder, and AI-written campaigns.</p>
+                    <h3 className="font-semibold" data-testid="text-offer-email-api">Developer Email API</h3>
+                    <p className="text-sm text-muted-foreground">Integrate transactional emails, such as order confirmations and password resets, into your app through the hosted Email API. Sending requires a verified sender domain and is subject to your plan's limits.</p>
+                    <Link href="/developer-email" className="inline-block text-sm text-primary hover:underline">Explore Email API</Link>
+                    <span className="text-muted-foreground"> · </span>
+                    <Link href="/docs/email-api" className="inline-block text-sm text-primary hover:underline">API documentation</Link>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-6 space-y-2">
+                    <h3 className="font-semibold" data-testid="text-offer-email-marketing">Email Marketing</h3>
+                    <p className="text-sm text-muted-foreground">Manage subscribers and create and manage email campaigns. Campaign sending is subject to your configured sender and plan limits.</p>
+                    <Link href="/email" className="inline-block text-sm text-primary hover:underline">Manage email marketing</Link>
                   </CardContent>
                 </Card>
                 <Card>
@@ -173,13 +194,15 @@ export default function AboutPage() {
                 <Card>
                   <CardContent className="p-6 space-y-2">
                     <h3 className="font-semibold" data-testid="text-offer-ussd">USSD Builder</h3>
-                    <p className="text-sm text-muted-foreground">Build *123# menu applications for millions of feature-phone users across Africa. Perfect for mobile banking, farm price alerts, health hotlines, and education services.</p>
+                    <p className="text-sm text-muted-foreground">Design USSD menus and simulate their flows before going live. A live shortcode requires separate provider activation and setup; designing a menu does not activate a mobile-network service.</p>
+                    <Link href="/ussd-builder" className="inline-block text-sm text-primary hover:underline">Explore USSD Builder</Link>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-6 space-y-2">
                     <h3 className="font-semibold" data-testid="text-offer-media">Image & Video Generation</h3>
-                    <p className="text-sm text-muted-foreground">Generate stunning images with Google Imagen 3 and short video clips with Veo 2 — all from text prompts, all priced for African creators.</p>
+                    <p className="text-sm text-muted-foreground">Submit text prompts for image and short-video generation jobs and track their progress. Generation depends on provider availability and your plan's usage limits.</p>
+                    <Link href="/media" className="inline-block text-sm text-primary hover:underline">Explore media generation</Link>
                   </CardContent>
                 </Card>
                 <Card>
@@ -197,7 +220,10 @@ export default function AboutPage() {
                 <Card>
                   <CardContent className="p-6 space-y-2">
                     <h3 className="font-semibold" data-testid="text-offer-integrations">API Integrations & Webhooks</h3>
-                    <p className="text-sm text-muted-foreground">Connect any external REST API (WhatsApp Business, payment gateways, CRMs). Register webhooks for form submissions, app views, and marketplace events.</p>
+                    <p className="text-sm text-muted-foreground">Configure external API requests with the authentication and setup each service requires; compatibility depends on the service. Platform app webhooks cover form submissions, app views, and marketplace clones. Afro Auth authentication webhooks are not included.</p>
+                    <Link href="/integrations" className="inline-block text-sm text-primary hover:underline">API integrations</Link>
+                    <span className="text-muted-foreground"> · </span>
+                    <Link href="/webhooks" className="inline-block text-sm text-primary hover:underline">Platform webhooks</Link>
                   </CardContent>
                 </Card>
                 <Card>
