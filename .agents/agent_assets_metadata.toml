@@ -42,3 +42,17 @@ mtime_ms = 1791053209594
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/1a49cae3-8d0c-4fa5-baab-3f23ff8e6b6f/88333cfc-186a-4314-a3fa-f88ac0a000c5"
 storage_version_token = "1791053225188178"
 content_type = "image/png"
+
+[[outputs]]
+id = "Fkw7k77bYIE9q7yIdSyUx"
+uri = "file://attached_assets/generated_images/afro-ai-cover-2400x900.png"
+type = "image"
+title = "Afro AI — Building the Future We Want, 2063"
+description = "Wide 2400 × 900 black-and-gold cover featuring your original Africa logo, machinery, electricity and an AI robot. Includes “By us, to the world.” Download the PNG for your cover photo."
+logical_id = "df30bfe2-16cd-46ff-8d35-68a4982e2315"
+content_hash = "sha256:928ed2748a745d2e3c9c8884185e849204941519a38ddf379570916daa27230c"
+size = 4854411
+mtime_ms = 1791053692605
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/df30bfe2-16cd-46ff-8d35-68a4982e2315/e75f75d1-00cc-4480-a8fe-a8bdf7a30628"
+storage_version_token = "1791053720918890"
+content_type = "image/png"

@@ -26,3 +26,4 @@
 - [Auth developer audience](auth-developer-audience.md) — Afro Auth targets developers in Africa and worldwide, not an Africa-only market.
 - [Crypto test environments](crypto-test-environments.md) — use Node for real JWT tests; jsdom can mix incompatible typed-array realms.
 - [Upgrade recommendations](upgrade-recommendations.md) — user wants occasional, relevant upgrade suggestions without misleading free-hosting promises.
+- [Wide image delivery](wide-image-delivery.md) — verify image dimensions; editing may return square artwork despite a wide source and prompt.
