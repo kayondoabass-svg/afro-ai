@@ -57,6 +57,7 @@ import {
   ChevronRight,
   Wallet,
   MousePointerClick,
+  Download,
 } from "lucide-react";
 
 interface PlatformStats {
@@ -358,6 +359,11 @@ export default function FounderDashboardPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const isFounder = (user as any)?.isFounder === true;
+  const installStats = useQuery<{ total: number }>({
+    queryKey: ["/api/admin/app-installs"],
+    enabled: isFounder,
+    refetchInterval: 60_000,
+  });
   const { toast } = useToast();
 
   const [selectedPlan, setSelectedPlan] = useState<Record<string, string>>({});
@@ -600,7 +606,12 @@ export default function FounderDashboardPage() {
             <StatCard icon={Folder} label="Projects" value={stats?.totalProjects ?? 0} color="bg-primary/10 text-primary" />
             <StatCard icon={Globe} label="Published Apps" value={stats?.totalPublishedApps ?? 0} color="bg-green-500/10 text-green-500" />
             <StatCard icon={AlertTriangle} label="Suspended Apps" value={stats?.suspendedApps ?? 0} color="bg-red-500/10 text-red-500" />
+            <StatCard icon={Download} label="App Downloads" value={installStats.data?.total ?? "—"} color="bg-primary/10 text-primary" />
           </div>
+          <p className="text-xs text-muted-foreground">
+            {installStats.isError ? "Download count is temporarily unavailable. " : ""}
+            Downloads counts browser-reported installations and first detected installed-app launches since tracking began, not button clicks or unique people.
+          </p>
         </div>
 
         {/* AI & Revenue Stats */}

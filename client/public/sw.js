@@ -6,7 +6,7 @@
 //
 // Bump CACHE_VERSION on any change to force old clients to refresh.
 
-const CACHE_VERSION = "afroai-v1";
+const CACHE_VERSION = "afroai-gold-africa-v2";
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const PRECACHE = `${CACHE_VERSION}-precache`;
 

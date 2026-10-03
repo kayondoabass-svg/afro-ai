@@ -618,6 +618,11 @@ export type AppSecret = typeof appSecrets.$inferSelect;
 export type InsertAppSecret = z.infer<typeof insertAppSecretSchema>;
 
 // ============ ACTIVITY LOGS ============
+export const appInstallations = pgTable("app_installations", {
+  installationHash: varchar("installation_hash", { length: 64 }).primaryKey(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export const activityLogs = pgTable("activity_logs", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),

@@ -4,6 +4,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { InstallPwaBanner } from "@/components/install-pwa-button";
+import { AppInstallTracker } from "@/components/app-install-tracker";
 import { QuotaNotifications } from "@/components/quota-notifications";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -96,7 +97,7 @@ function RouteFallback() {
   return (
     <div className="flex-1 flex items-center justify-center p-8">
       <div className="space-y-4 text-center">
-        <Skeleton className="w-12 h-12 rounded-full mx-auto" />
+        <img src="/icons/icon-192.png?v=gold-africa" alt="Afro AI" className="w-16 h-16 rounded-full mx-auto motion-safe:animate-pulse" />
         <Skeleton className="h-4 w-32 mx-auto" />
       </div>
     </div>
@@ -455,7 +456,7 @@ function AppRouter() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="space-y-4 text-center">
-          <Skeleton className="w-16 h-16 rounded-full mx-auto" />
+          <img src="/icons/icon-192.png?v=gold-africa" alt="Afro AI" className="w-16 h-16 rounded-full mx-auto motion-safe:animate-pulse" />
           <Skeleton className="h-4 w-32 mx-auto" />
         </div>
       </div>
@@ -571,6 +572,7 @@ function App() {
             <AppRouter />
             <QuotaNotifications />
             <InstallPwaBanner />
+            <AppInstallTracker />
           </TooltipProvider>
         </LanguageProvider>
       </ThemeProvider>

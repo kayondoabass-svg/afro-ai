@@ -1,4 +1,5 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
+import { registerAppInstallRoutes } from "./app-installs";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
@@ -296,6 +297,7 @@ export async function registerRoutes(
   });
 
   await setupAuth(app);
+  registerAppInstallRoutes(app, isFounder);
   registerAuthRoutes(app);
 
   // ── Sentry pipeline test (founder-only) ─────────────────────────────────

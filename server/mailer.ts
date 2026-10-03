@@ -1,5 +1,6 @@
 import { isSuppressed } from "./ses-webhook";
 import { sendEmail, activeEmailProvider } from "./email-provider";
+import { platformEmailHeader } from "../shared/email-branding";
 
 const FROM = process.env.EMAIL_API_DEMO_FROM || "noreply@afroaigroup.com";
 const PLATFORM = "Afro AI";
@@ -8,9 +9,7 @@ const BRAND_COLOR = "#f5b400";
 function shell(title: string, bodyHtml: string, bodyText: string) {
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#0b0b0c;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
   <div style="max-width:560px;margin:0 auto;padding:32px 20px;color:#fff;">
-    <div style="text-align:center;margin-bottom:24px;">
-      <span style="font-size:22px;font-weight:700;color:${BRAND_COLOR};">${PLATFORM}</span>
-    </div>
+    ${platformEmailHeader}
     <div style="background:#18181b;border:1px solid #27272a;border-radius:14px;padding:28px;">
       <h2 style="margin:0 0 16px;color:#fff;font-size:20px;">${title}</h2>
       <div style="line-height:1.65;color:#e5e5e5;font-size:15px;">${bodyHtml}</div>

@@ -331,11 +331,13 @@ async function getCurrentUserId(c: any): Promise<string | null> {
 const BRAND_COLOR = '#facc15';
 const FALLBACK_FROM = 'Afro AI <noreply@afroaigroup.com>';
 
+import { platformEmailHeader } from "../../shared/email-branding";
+
 function emailShell(title: string, bodyHtml: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head>
 <body style="margin:0;padding:0;background:#0a0a0a;color:#e5e5e5;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
 <div style="max-width:560px;margin:0 auto;padding:32px 24px;">
-<h1 style="color:${BRAND_COLOR};font-size:22px;margin:0 0 18px;">Afro AI</h1>
+${platformEmailHeader}
 ${bodyHtml}
 <p style="font-size:12px;color:#71717a;margin-top:32px;border-top:1px solid #27272a;padding-top:16px;">
 Afro AI · Built for Africa · <a href="https://afroaigroup.com" style="color:${BRAND_COLOR};">afroaigroup.com</a>

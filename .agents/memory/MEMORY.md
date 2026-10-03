@@ -27,3 +27,4 @@
 - [Crypto test environments](crypto-test-environments.md) — use Node for real JWT tests; jsdom can mix incompatible typed-array realms.
 - [Upgrade recommendations](upgrade-recommendations.md) — user wants occasional, relevant upgrade suggestions without misleading free-hosting promises.
 - [Wide image delivery](wide-image-delivery.md) — verify image dimensions; editing may return square artwork despite a wide source and prompt.
+- [Branding scope](branding-scope.md) — Logo 1 is platform branding; the technology cover is an email background, not a homepage/login background.
