@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FULLSTACK_EXPORT_NOTICE } from "@/lib/fullstack-project";
 
 export function githubFileKind(file: { encoding?: string; language?: string }): "binary asset" | "text" {
   return file.encoding === "base64" || file.language === "binary" ? "binary asset" : "text";
@@ -79,6 +80,7 @@ export function GithubProjectDialog({ open, mode, url = "", conversationId, onCl
       <DialogHeader><DialogTitle>{mode === "import" ? "Import GitHub project" : "Review GitHub export"}</DialogTitle>
         <DialogDescription>Safe images and fonts are supported as binary assets alongside text files (up to 1 MB per file and 5 MB per project). Git LFS pointers are excluded; Git LFS objects are not imported or exported. Blocked paths are excluded. Importing does not run code.</DialogDescription>
       </DialogHeader>
+      {mode === "export" && <p role="note" className="rounded-md border border-primary/25 bg-primary/5 p-3 text-sm">{FULLSTACK_EXPORT_NOTICE}</p>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {!conversationId && <p role="alert">Create or open a conversation first.</p>}
       {!connected && <Button variant="outline" onClick={() => { window.location.href = `/api/github/connect?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`; }}>Connect GitHub with OAuth</Button>}

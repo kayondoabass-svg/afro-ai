@@ -12,11 +12,13 @@ vi.mock("../project-infrastructure/provider", () => ({
 import { fullstackStarterFiles } from "../fullstack-starter";
 import { provisionInfrastructure, deleteInfrastructure, infrastructureView, deleteFullstackProject } from "../project-infrastructure/service";
 import { checkInitialMigration, configuredWrangler, HOSTING } from "../project-infrastructure/policy";
+import * as policy from "../project-infrastructure/policy";
 let record: any;
 const name = "afro-project-12-123456789012345678901234";
 const id = "11111111-1111-4111-8111-111111111111";
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.spyOn(policy, "managedDatabaseSetupEnabled").mockReturnValue(true);
   record = { project_id: 12, user_id: "owner", database_name: name, database_id: null, state: "failed", create_attempted: false };
   m.end.mockResolvedValue(undefined);
   m.files.mockResolvedValue(fullstackStarterFiles());
@@ -34,6 +36,12 @@ beforeEach(() => {
   });
 });
 describe("infrastructure ownership and lifecycle", () => {
+  it("blocks resource creation while platform-funded setup is deferred", async () => {
+    vi.mocked(policy.managedDatabaseSetupEnabled).mockReturnValue(false);
+    await expect(provisionInfrastructure("owner", 12)).rejects.toMatchObject({ status: 503 });
+    expect(m.create).not.toHaveBeenCalled();
+    expect(m.find).not.toHaveBeenCalled();
+  });
   for (const [label, fn] of [
     ["read", () => infrastructureView("attacker", 12)],
     ["provision", () => provisionInfrastructure("attacker", 12)],

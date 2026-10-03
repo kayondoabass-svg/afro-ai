@@ -3,9 +3,11 @@ import { fullstackStarterFiles } from "../fullstack-starter";
 import { ProjectFileError, type ProjectFile } from "../project-file-policy";
 
 export const INFRASTRUCTURE_LIMITS = { databasesPerUser: 2, provisionsPerDay: 5 };
+// Owner deferred platform-funded resources. No request/body/plan can enable this.
+export function managedDatabaseSetupEnabled() { return false; }
 export const HOSTING = {
   available: false,
-  reason: "Database setup does not run your app. Isolated builds, Workers for Platforms hosting, separate app domains and traffic limits must be activated before preview or deployment.",
+  reason: "Paid managed database setup and full-stack hosting are deferred. Export the saved project to GitHub, then deploy it with your own hosting provider. Existing static websites can still publish at a subdomain of afroaigroup.com. A GitHub push alone does not deploy a backend.",
 };
 export const MIGRATION_PATH = "migrations/0001_initial.sql";
 export const INITIAL_SQL = fullstackStarterFiles().find(f => f.path === MIGRATION_PATH)!.content;

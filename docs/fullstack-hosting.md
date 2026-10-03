@@ -1,5 +1,16 @@
 # Full-stack database setup and Stage C hosting
 
+## Current owner decision: defer paid hosting
+
+Keep ordinary static websites on their existing `*.afroaigroup.com` addresses.
+Do not buy another domain or activate Workers for Platforms now. Full-stack users
+export their source to GitHub and arrange hosting/database resources themselves.
+Managed database creation is disabled server-side; existing resource status and
+confirmed deletion remain available. Source creation remains paid-only under the
+previous access rule. A push to GitHub does not deploy the app.
+
+The Stage C design and prices below are future reference, not enabled services.
+
 ## Existing services remain separate
 
 Afro AI's PostgreSQL stores project metadata and owner-bound infrastructure records.

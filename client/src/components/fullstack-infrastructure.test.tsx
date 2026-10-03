@@ -140,12 +140,14 @@ describe("FullstackInfrastructure", () => {
     expect(screen.queryByLabelText(/Type the exact project name/)).not.toBeInTheDocument();
   });
 
-  it("explains unavailable hosting, cost and isolation without runnable controls", async () => {
+  it("explains deferred managed hosting and customer deployment without runnable controls", async () => {
+    view = { ...view, canProvision: false, configured: false };
     mount();
-    await screen.findByRole("button", { name: "Provision database" });
-    expect(screen.getByText(/Isolated hosting has not been activated/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Provision database" })).toBeDisabled();
+    expect(screen.getByText(/Managed database provisioning is deferred/)).toBeInTheDocument();
     expect(screen.getByText(/D1 operations and storage may be billed to the platform/)).toBeInTheDocument();
-    expect(screen.getByText(/Stage C requires isolated Workers for Platforms hosting/)).toHaveTextContent("must never run on the Afro AI server");
+    expect(screen.getByText(/GitHub stores code/)).toHaveTextContent("does not host Workers or provision D1");
+    expect(screen.getByText(/Ordinary websites continue/)).toHaveTextContent("*.afroaigroup.com");
     expect(screen.queryByRole("button", { name: /publish|deploy|preview/i })).not.toBeInTheDocument();
   });
 

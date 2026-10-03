@@ -16,7 +16,7 @@ import {
   Trash2, ArrowUp, Pencil, X, Plus, ChevronDown, Square,
   Monitor, Sparkles, Globe, ListChecks, PanelRightOpen,
   Copy, Download, LogOut, Settings, Paperclip, Image as ImageIcon,
-  Rocket, Undo2, Redo2, RotateCcw, Eye, Clock, CheckCircle2, Layers,
+   Rocket, Undo2, Redo2, RotateCcw, Eye, Clock, CheckCircle2, Layers, Github,
 } from "lucide-react";
 import { PublishDialog } from "@/pages/ai-chat";
 import type { ChatSearchActivity } from "@shared/chat-search";
@@ -25,8 +25,9 @@ import { extractWebsiteHtml } from "@shared/html-extraction";
 import { FileTreeSidebar, type ProjectFile } from "@/components/file-tree-sidebar";
 import { AgentStructuredText } from "@/components/agent-structured-text";
 import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
+import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
-import { FULLSTACK_SOURCE_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
+import { FULLSTACK_SOURCE_NOTICE, FULLSTACK_EXPORT_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
 import "./agent.css";
 
 // ---------- Types ----------
@@ -185,6 +186,8 @@ export default function AgentPage() {
   const [historyCursor, setHistoryCursor] = useState(0);
   const prevVersionsLenRef = useRef(0);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [githubExportOpen, setGithubExportOpen] = useState(false);
+  useEffect(() => { setGithubExportOpen(false); }, [conversationId, activeProjectId, isFullstack]);
   const [publishCode, setPublishCode] = useState("");
   const [manualProjectAgent, setProjectAgent] = useState(false);
   const projectAgent = isFullstack || manualProjectAgent;
@@ -445,9 +448,23 @@ export default function AgentPage() {
 
   // ---------- Send message ----------
 
+  const exportBlocked = !isFullstack || projectBlocked || !conversationId || working || reviewBusy;
+  const openGithubExport = () => {
+    if (exportBlocked) {
+      toast({ title: "Export is not ready", description: projectBlocked ? "Verify project metadata and complete starter setup before exporting." : !conversationId ? "Create or open a saved conversation before exporting." : "Wait for the current operation to finish before exporting.", variant: "destructive" });
+      return false;
+    }
+    setGithubExportOpen(true);
+    return true;
+  };
+
   const sendMessage = async (text: string, attachments: Attachment[] = [], search = webSearch, mode: "chat" | "plan" | "project" = projectAgent ? "project" : planMode ? "plan" : "chat") => {
     if (projectBlocked) {
       toast({ title: "Project is not ready", description: setupBlocked ? "Return to the dashboard and use Retry setup on this project." : "Verify project metadata before sending. Retry the project check.", variant: "destructive" });
+      return;
+    }
+    if (isFullstack && isFullstackPublishIntent(text)) {
+      if (openGithubExport()) setInput("");
       return;
     }
     if (isFullstack) mode = "project";
@@ -605,6 +622,10 @@ export default function AgentPage() {
     if (projectBlocked) return;
     if (!input.trim() && pendingAttachments.length === 0) return;
     const text = input.trim();
+    if (isFullstack && isFullstackPublishIntent(text)) {
+      if (openGithubExport()) setInput("");
+      return;
+    }
     if (projectAgent && pendingAttachments.length) {
       toast({ title: "Project agent accepts text only", description: "Remove attachments or turn off Project agent.", variant: "destructive" });
       return;
@@ -1159,17 +1180,24 @@ export default function AgentPage() {
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
+          {isFullstack ? <Button
+            size="sm"
+            className="h-9 px-3 bg-violet-600 hover:bg-violet-500 text-white gap-1.5"
+            onClick={openGithubExport}
+            disabled={exportBlocked}
+            title={FULLSTACK_EXPORT_NOTICE}
+            data-testid="button-github-export"
+          ><Github className="w-4 h-4" />Export to GitHub</Button> :
           <Button
             size="sm"
             className="hidden md:inline-flex h-9 px-3 bg-violet-600 hover:bg-violet-500 text-white gap-1.5"
             onClick={openPublishFromLatest}
             disabled={staticControlsBlocked}
-            title={isFullstack ? "Database status is separate from runtime. Static Publish is unavailable pending isolated hosting." : undefined}
             data-testid="button-publish"
           >
             <Rocket className="w-4 h-4" />
             <span className="hidden sm:inline">{t("chat.publish")}</span>
-          </Button>
+          </Button>}
           <Button variant="ghost" size="icon" aria-label={t("chat.agentNewChat")} title={t("chat.agentNewChat")} data-hint="New chat" className="agent-tooltip hidden md:inline-flex h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-testid="button-new-chat" onClick={startNewChat}>
             <MessageSquarePlus className="w-4 h-4" />
           </Button>
@@ -1214,7 +1242,7 @@ export default function AgentPage() {
                   ["Undo previous version", handleUndo],
                   ["Redo version", handleRedo],
                   ["Project files & review", () => setProjectPanelOpen(true)],
-                  ["Publish site", openPublishFromLatest],
+                  [isFullstack ? "Export to GitHub" : "Publish site", isFullstack ? () => { openGithubExport(); } : openPublishFromLatest],
                   ["Classic builder", goToCode],
                   ["Open published site", goToWeb],
                   ["Shell", goToShell],
@@ -1224,7 +1252,7 @@ export default function AgentPage() {
                   ["Settings", () => setLocation("/settings")],
                   ["Sign out", handleLogout],
                 ] as [string, () => void][]).map(([label, action]) => (
-                  <Button key={label} variant="ghost" className="h-11 w-full justify-start text-zinc-200 hover:bg-zinc-800" disabled={(label === "Undo previous version" && !canUndo) || (label === "Redo version" && !canRedo) || (staticControlsBlocked && ["Undo previous version", "Redo version", "Publish site", "Open published site"].includes(label))} onClick={() => { setMobileMenuOpen(false); action(); }}>{label}</Button>
+                  <Button key={label} variant="ghost" className="h-11 w-full justify-start text-zinc-200 hover:bg-zinc-800" disabled={(label === "Export to GitHub" && exportBlocked) || (label === "Undo previous version" && !canUndo) || (label === "Redo version" && !canRedo) || (staticControlsBlocked && ["Undo previous version", "Redo version", "Publish site", "Open published site"].includes(label))} onClick={() => { setMobileMenuOpen(false); action(); }}>{label}</Button>
                 ))}
               </div>
             </SheetContent>
@@ -1233,7 +1261,7 @@ export default function AgentPage() {
       </header>
 
       {isFullstack && !projectBlocked && <div className="shrink-0 border-b border-amber-400/25 bg-amber-400/5 px-4 py-3 text-xs text-amber-200" role="note" data-testid="fullstack-source-notice">
-        <strong className="block mb-1">Full-stack project · source &amp; database, no runtime</strong>
+        <strong className="block mb-1">Full-stack project · source export, customer-managed hosting</strong>
         {FULLSTACK_SOURCE_NOTICE}
         <Button size="sm" variant="outline" className="ml-2 mt-2" onClick={() => setProjectPanelOpen(true)}>Database infrastructure</Button>
       </div>}
@@ -1448,6 +1476,17 @@ export default function AgentPage() {
         open={publishOpen && !staticControlsBlocked}
         onOpenChange={setPublishOpen}
       />
+      {isFullstack && !exportBlocked && <GithubProjectDialog
+        key={`${activeProjectId}-${conversationId}`}
+        open={githubExportOpen}
+        mode="export"
+        conversationId={conversationId}
+        onClose={() => setGithubExportOpen(false)}
+        onImported={() => {}}
+        prepareExport={async () => {
+          if (exportBlocked) throw new Error("Verify project metadata, complete setup and open a saved conversation before exporting.");
+        }}
+      />}
     </div>
   );
 }
@@ -1465,6 +1504,10 @@ function messageHasWebsite(content: string): boolean {
 const PUBLISH_INTENT_RE = /^\s*(please\s+)?(publish|deploy|go\s*live|make\s+(it|this)\s+live|put\s+(it|this)\s+(online|live|on\s+the\s+web)|launch\s+(it|this|the\s+(site|website|app))|ship\s+(it|this))\s*[!.?]*\s*$/i;
 function isPublishIntent(text: string): boolean {
   return PUBLISH_INTENT_RE.test(text);
+}
+
+function isFullstackPublishIntent(text: string): boolean {
+  return isPublishIntent(text) || /^\s*(?:(?:please|can you|could you)\s+)?(?:(?:publish|deploy|launch|ship)\s+(?:(?:my|the|this|our)\s+)?(?:app|application|project|site|website)(?:\s+(?:now|please|to\s+(?:production|github)))?|(?:make|put)\s+(?:(?:my|the|this|our)\s+)?(?:app|application|project|site|website)\s+(?:live|online)|go\s+live(?:\s+(?:now|please))?)\s*[!.?]*\s*$/i.test(text);
 }
 
 // ---------- Sub-components ----------

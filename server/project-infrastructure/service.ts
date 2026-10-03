@@ -5,7 +5,7 @@ import { fullstackAccess, requireFullstackAccess } from "../fullstack-access";
 import { ProjectFileError } from "../project-file-policy";
 import { listProjectFiles, applyProjectFileChanges } from "../project-files";
 import * as provider from "./provider";
-import { HOSTING, INFRASTRUCTURE_LIMITS, INITIAL_SQL, INITIAL_CHECKSUM, checkInitialMigration, configuredWrangler } from "./policy";
+import { HOSTING, INFRASTRUCTURE_LIMITS, INITIAL_SQL, INITIAL_CHECKSUM, checkInitialMigration, configuredWrangler, managedDatabaseSetupEnabled } from "./policy";
 
 type OwnerProject = { id: number; user_id: string; name: string; status: string };
 type Infra = {
@@ -34,7 +34,7 @@ export async function infrastructureView(userId: string, id: number) {
   return {
     state: item?.state ?? "not_provisioned", databaseName: item?.database_name ?? null,
     lastError: item?.last_error ?? null, migrationsApplied: item?.migrations_applied ?? 0,
-    canProvision: access.allowed, configured: provider.infrastructureConfigured(),
+    canProvision: access.allowed && managedDatabaseSetupEnabled(), setupAvailable: managedDatabaseSetupEnabled(), configured: provider.infrastructureConfigured(),
     limits: INFRASTRUCTURE_LIMITS, hosting: HOSTING,
   };
 }
@@ -63,6 +63,7 @@ async function updateState(sql: Sql, userId: string, id: number, state: string, 
 
 export async function provisionInfrastructure(userId: string, id: number) {
   await withProjectLock(userId, id, async (sql, project) => {
+    if (!managedDatabaseSetupEnabled()) throw new ProjectFileError(503, "Managed database setup is deferred. Export your project to GitHub and use your own hosting provider.");
     await requireFullstackAccess(userId);
     if (project.status !== "draft") throw new ProjectFileError(409, "Finish source-file setup before creating the database.");
     if (!provider.infrastructureConfigured()) throw new ProjectFileError(503, "Project database credentials are not configured.");

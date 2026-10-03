@@ -59,8 +59,7 @@ export function FullstackInfrastructure({ project }: { project: Pick<Project, "i
             {data.state === "deleting" && <p role="status">Permanent database deletion is in progress. Checking every 3 seconds; source files are retained.</p>}
             {data.state === "deleted" && <p>Database deleted. Existing project source files are retained.</p>}
             {data.lastError && <p role="alert" className="text-destructive break-words">{data.lastError}</p>}
-            {!data.configured && <p className="text-xs text-muted-foreground">Database provisioning is not configured on the platform.</p>}
-            {data.canProvision !== true && <p className="text-xs text-muted-foreground">New provisioning is unavailable. A paid plan and server eligibility are required. You can still view or delete an existing database if your subscription has lapsed.</p>}
+             {(!data.configured || data.canProvision !== true) && <p className="text-xs text-muted-foreground">Managed database provisioning is deferred. New provisioning is unavailable; existing database status and deletion controls remain available.</p>}
             {isSetupBlocked(project) && <p className="text-xs text-muted-foreground">Complete starter setup using Retry setup on the dashboard before provisioning.</p>}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -89,10 +88,10 @@ export function FullstackInfrastructure({ project }: { project: Pick<Project, "i
       ) : null}
       {mutationError && <p role="alert" className="text-destructive break-words">{projectRequestError(mutationError).message} No successful completion has been confirmed; check the status before retrying.</p>}
       <div className="border-t border-primary/15 pt-3 space-y-2 text-xs text-muted-foreground">
-        <p>Source is saved separately from database infrastructure. D1 operations and storage may be billed to the platform.</p>
-        <p className="flex items-center gap-2 font-medium"><ServerOff className="w-4 h-4 shrink-0" />Preview and deployment unavailable</p>
-        <p>{data?.hosting.reason || "Preview and deployment are pending isolated build and hosting activation."} Static Publish cannot deploy a working full-stack app.</p>
-        <p>Next: Stage C requires isolated Workers for Platforms hosting. Customer code must never run on the Afro AI server.</p>
+         <p>Source is saved separately from database infrastructure. Existing D1 operations and storage may be billed to the platform.</p>
+         <p className="flex items-center gap-2 font-medium"><ServerOff className="w-4 h-4 shrink-0" />Managed provisioning and hosting deferred</p>
+         <p>Static Publish cannot deploy a working full-stack app. Ordinary websites continue to publish at *.afroaigroup.com.</p>
+         <p>Export source to GitHub, review the changed files and confirm the commit. GitHub stores code; it does not host Workers or provision D1. Deploy externally with your own hosting and database accounts. No separate domain is required to export.</p>
       </div>
     </section>
   );
