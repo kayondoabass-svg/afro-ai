@@ -80,6 +80,9 @@ describe("main chat search route wiring", () => {
     expect(system).toContain("Continued hosting after the trial requires an upgrade");
     expect(system).toContain("state the one-app and 30-day limits in the same answer");
     expect(system).toContain("do not invent prices or assume the customer's plan");
+    expect(system).toContain("Occasionally offer a brief, relevant upgrade recommendation");
+    expect(system).toContain("last five assistant replies");
+    expect(system).toContain("payment does not fix technical bugs");
   });
   it("does not let a stale Plan toggle block generating and saving a website", async () => {
     mocks.inference.mockResolvedValue({ text: "<html><body><h1>A complete generated website</h1></body></html>", model: "test" });
