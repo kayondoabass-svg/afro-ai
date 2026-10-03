@@ -533,6 +533,11 @@ export default function AgentPage() {
         if (evt.saved) refetchVersions();
         return;
       }
+      if (evt?.type === "files-saved") {
+        if (evt.saved) qc.invalidateQueries({ queryKey: ["/api/d1/project-files", id] });
+        else toast({ title: "Files could not be updated", description: "The website version is saved, but index.html could not be saved to Files.", variant: "destructive" });
+        return;
+      }
       if (evt?.done) return;
       if (typeof evt === "string") assistantText += evt;
       else if (evt && (evt.type === "text" || evt.type === "chunk" || evt.type === "delta")) assistantText += evt.content || evt.text || evt.delta || "";

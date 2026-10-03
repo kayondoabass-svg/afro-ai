@@ -2521,6 +2521,21 @@ You are now in EDITOR MODE. Your workflow:
             htmlContent: extracted,
             label: `Version ${versionNum}`,
           });
+          if (!isFounderRequest) {
+            try {
+              // A generated static website is also a real workspace file.
+              // Merge updates index.html without removing CSS, assets or other files.
+              await saveProjectFiles(userId, conversationId, [
+                { path: "index.html", language: "html", content: extracted },
+              ], "merge");
+              res.write(`data: ${JSON.stringify({ type: "files-saved", saved: true, paths: ["index.html"] })}\n\n`);
+            } catch {
+              res.write(`data: ${JSON.stringify({ type: "files-saved", saved: false })}\n\n`);
+              const warning = "\n\nThe website version was saved, but updating index.html in Files failed. Your other files were not removed.";
+              fullResponse += warning;
+              res.write(`data: ${JSON.stringify({ content: warning })}\n\n`);
+            }
+          }
           versionSaveResult = { saved: true, reason: detectedVia, versionId: saved.id, label: saved.label || undefined };
           console.log(`[app-version] saved v${versionNum} (id=${saved.id}) for conversation ${conversationId} via ${detectedVia} (${extracted.length} bytes)`);
         } else {

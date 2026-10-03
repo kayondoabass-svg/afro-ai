@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getConversation: vi.fn(),
   search: vi.fn(),
   inference: vi.fn(),
+  saveFiles: vi.fn(),
 }));
 vi.mock("openai", () => ({ default: class {} }));
 vi.mock("./storage", () => ({ chatStorage: {
@@ -30,7 +31,7 @@ vi.mock("../../web-search", () => ({ searchWeb: mocks.search, webSearchConfigure
 vi.mock("../../search-policy", () => ({ searchAccountWeb: (_id: string, q: string, s: AbortSignal) => mocks.search(q, s) }));
 vi.mock("../../url-scrape", () => ({ extractUrls: () => [], buildLiveWebContext: vi.fn() }));
 vi.mock("../../attachment-parse", () => ({ isParseableAttachment: () => false, buildAttachmentContext: vi.fn() }));
-vi.mock("../../project-files", () => ({ listProjectFiles: vi.fn(), saveProjectFiles: vi.fn() }));
+vi.mock("../../project-files", () => ({ listProjectFiles: vi.fn(), saveProjectFiles: mocks.saveFiles }));
 vi.mock("../../product-self-knowledge", () => ({ productSelfKnowledge: () => "Current capabilities" }));
 vi.mock("../../knowledge", () => ({ retrieveKnowledge: async () => [], formatKnowledgeContext: () => "" }));
 import { registerChatRoutes } from "./routes";
@@ -58,6 +59,7 @@ const req = (content = "Search Kampala AI conference", webSearch = true) => ({
 });
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
+  mocks.saveFiles.mockReset().mockResolvedValue([]);
   mocks.rows = [];
   mocks.getConversation.mockResolvedValue({ id: 12, userId: "owner" });
   mocks.search.mockReset().mockResolvedValue([{ title: "Kampala AI Conference admission", url: "https://conference.ug/register", snippet: "Free; register first.", retrievedAt: "2026-05-01" }]);
@@ -78,6 +80,19 @@ describe("main chat search route wiring", () => {
     expect(mocks.rows.at(-1).content).toContain("Select **Publish**");
     expect(mocks.rows.at(-1).content).toContain("then open the published link");
     expect(mocks.rows.at(-1).content).not.toContain("[Link to your website]");
+    expect(mocks.saveFiles).toHaveBeenCalledWith("owner", 12, [
+      expect.objectContaining({ path: "index.html", language: "html" }),
+    ], "merge");
+    expect(res.write.mock.calls.join("")).toContain('"type":"files-saved","saved":true');
+  });
+  it("reports a workspace-file save failure without pretending Files was updated", async () => {
+    mocks.saveFiles.mockRejectedValue(new Error("storage unavailable"));
+    mocks.inference.mockResolvedValue({ text: "<html><body><h1>A complete generated website</h1></body></html>", model: "test" });
+    const res = response();
+    await handler()(req("Hello", false), res);
+    expect(res.write.mock.calls.join("")).toContain('"type":"files-saved","saved":false');
+    expect(mocks.rows.at(-1).content).toContain("updating index.html in Files failed");
+    expect(mocks.rows.at(-1).content).toContain("Select **Publish**");
   });
   it("lets the model clarify an unclear image instead of forcing search from an old UI flag", async () => {
     mocks.inference.mockResolvedValue({ text: "Please name the event in the image.", model: "test" });
