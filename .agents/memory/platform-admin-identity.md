@@ -13,3 +13,9 @@ Cloudflare's workerd runtime rejects `fetch(..., { redirect: "error" })` before 
 **Why:** Node-based mocked tests and a successful Worker build missed this incompatibility; live account checks returned 503 even for deliberately invalid sessions that should return 401.
 
 **How to apply:** Validate Worker fetch behavior in workerd/Miniflare, not just Node. Do not switch to automatic redirects when forwarding session cookies.
+
+Validate Worker installation from its own manifest and lockfile in a clean directory before giving VPS update instructions.
+
+**Why:** A successful build using existing dependencies hid an incomplete Worker lockfile, causing the user's `npm ci` to stop during publishing.
+
+**How to apply:** Check a clean install with development dependencies included (Wrangler is a build/deployment tool), not only a build from the existing workspace.
