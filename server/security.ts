@@ -95,6 +95,8 @@ export interface ScanResult {
 // model not to emit these, but a scammer could bypass the prompt by editing the
 // HTML directly before publishing. This runs server-side on every publish.
 const KEYO_IMPERSONATION_PATTERNS: RegExp[] = [
+  /\b(?:Built|Powered|Developed|Created)\s+by\s+Afro\s*AI\b[.,]?/gi,
+  /(?:©|&copy;|\(c\))\s*(?:\d{4}\s*)?Afro\s*AI\b[.,]?/gi,
   // "Built by KEYO TECHNOLOGIES" / "Built by <a>KEYO TECHNOLOGIES</a>" / "Built by KEYO"
   /\s*(?:Built|Powered|Developed|Made|Created)\s+by\s*(?:<[^>]+>\s*)*\s*KEYO(?:\s+TECHNOLOGIES)?\s*(?:<\/[^>]+>\s*)*[.,]?/gi,
   // Standalone "© KEYO TECHNOLOGIES" copyright line

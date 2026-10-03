@@ -46,6 +46,7 @@ import { registerProjectInfrastructureRoutes, isManagementOrigin } from "./proje
 import { deleteFullstackProject } from "./project-infrastructure/service";
 import { createFullstackProject, initializeFullstackProject, FullstackSetupError } from "./fullstack-projects";
 import { ProjectFileError } from "./project-file-policy";
+import { hasForbiddenCustomerBrand, applyCustomerPublishName } from "./customer-branding";
 import { ZodError } from "zod";
 import { extractWebsiteHtml } from "@shared/html-extraction";
 
@@ -1104,7 +1105,17 @@ export async function registerRoutes(
         sendStep("validate", "error", "No website HTML found");
         return sendError("No valid website HTML found. Generate a website before publishing.");
       }
-      const sanitizedHtml = sanitizeKeyoImpersonation(websiteHtml ?? htmlContent);
+      let namedHtml: string;
+      try { namedHtml = applyCustomerPublishName(websiteHtml ?? htmlContent, title); }
+      catch {
+        sendStep("validate", "error", "Preferred app name required");
+        return sendError("Enter your preferred customer app/business name, not Afro AI or KEYO, before publishing.");
+      }
+      const sanitizedHtml = sanitizeKeyoImpersonation(namedHtml);
+      if (hasForbiddenCustomerBrand(sanitizedHtml, String(title || ""))) {
+        sendStep("validate", "error", "Customer app name required");
+        return sendError("This page uses a platform/vendor name as its app brand. Choose your preferred customer app name and update its title and headings before publishing.");
+      }
       const scanResult = scanHtmlContent(sanitizedHtml);
       if (scanResult.blocked) {
         sendStep("validate", "error", "Safety check");

@@ -643,8 +643,11 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
       fetch("/api/published-apps")
         .then(res => res.ok ? res.json() : [])
         .then((apps: any[]) => {
-          if (apps.length > 0) {
-            const latest = apps[0];
+          // Never select another app merely because it was published most recently.
+          // Only exact saved source identity can safely prefill a republish target.
+          const matches = apps.filter(app => typeof app.htmlContent === "string" && app.htmlContent.trim() === code.trim());
+          if (matches.length === 1) {
+            const latest = matches[0];
             if (latest.title) setTitle(latest.title);
             if (latest.subdomain) {
               setSubdomain(latest.subdomain);
@@ -659,6 +662,10 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
         .finally(() => setLoadingExisting(false));
     }
     if (!open) {
+      setTitle("");
+      setSubdomain("");
+      setAvailable(null);
+      setExistingApp(null);
       loadedRef.current = false;
       setPublishedUrl(null);
       setPublishSteps([]);
