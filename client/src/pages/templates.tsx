@@ -1,4 +1,6 @@
 import { useLocation } from "wouter";
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useLanguage } from "@/hooks/use-language";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -197,6 +199,7 @@ const categories: TemplateCategory[] = [
 ];
 
 export default function TemplatesPage() {
+  const [preview, setPreview] = useState<Template | null>(null);
   const [, navigate] = useLocation();
   const { t } = useLanguage();
 
@@ -241,7 +244,7 @@ export default function TemplatesPage() {
                 <Card
                   key={template.title}
                   className="hover-elevate group cursor-pointer"
-                  onClick={() => handleUseTemplate(template)}
+                  onClick={() => setPreview(template)}
                   data-testid={`card-template-${template.title.toLowerCase().replace(/\s+/g, "-")}`}
                 >
                   <CardContent className="p-5 space-y-3">
@@ -258,6 +261,11 @@ export default function TemplatesPage() {
                         </p>
                       </div>
                     </div>
+                    <Button size="sm" variant="outline" className="w-full"
+                      data-testid={`button-preview-template-${template.title.toLowerCase().replace(/\s+/g, "-")}`}
+                      onClick={e => { e.stopPropagation(); setPreview(template); }}>
+                      View Template
+                    </Button>
                     <Button
                       size="sm"
                       className="w-full gap-2"
@@ -278,6 +286,21 @@ export default function TemplatesPage() {
           </div>
         ))}
       </div>
+      <Dialog open={preview !== null} onOpenChange={open => { if (!open) setPreview(null); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{preview?.title} template</DialogTitle>
+            <DialogDescription>Preview the starter brief. This is an AI prompt, not a prebuilt website; the final design is generated in the builder.</DialogDescription>
+          </DialogHeader>
+          {preview && <>
+            <p className="text-sm">{preview.description}</p>
+            <div className="rounded-md border bg-muted p-4 text-sm whitespace-pre-wrap">
+              Build a {preview.title.toLowerCase()} website: {preview.description}
+            </div>
+            <Button onClick={() => handleUseTemplate(preview)}>Use Template</Button>
+          </>}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

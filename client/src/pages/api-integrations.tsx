@@ -59,7 +59,10 @@ const emptyForm = {
 
 function parseAuthConfig(raw: string | null): Record<string, string> {
   if (!raw) return {};
-  try { return JSON.parse(raw); } catch { return {}; }
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch { return {}; }
 }
 
 export default function ApiIntegrationsPage() {
@@ -74,7 +77,20 @@ export default function ApiIntegrationsPage() {
   const [copied, setCopied] = useState(false);
   const [filterAuth, setFilterAuth] = useState<string | null>(null);
 
-  const { data: integrations = [], isLoading } = useQuery<ApiIntegration[]>({ queryKey: ["/api/integrations"] });
+  const { data, isLoading, error, refetch } = useQuery<ApiIntegration[]>({
+    queryKey: ["/api/integrations"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/integrations");
+      const items: unknown = await response.json();
+      if (!Array.isArray(items) || items.some(item =>
+        !item || typeof item !== "object" || typeof item.id !== "number" ||
+        typeof item.name !== "string" || typeof item.baseUrl !== "string" ||
+        typeof item.method !== "string" || typeof item.authType !== "string"
+      )) throw new Error("The integrations service returned an unexpected response.");
+      return items as ApiIntegration[];
+    },
+  });
+  const integrations = Array.isArray(data) ? data : [];
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/integrations", data),
@@ -230,7 +246,15 @@ export default function ApiIntegrationsPage() {
         </div>
 
         {/* Integration List */}
-        {isLoading ? (
+        {error || (data !== undefined && !Array.isArray(data)) ? (
+          <Card role="alert">
+            <CardContent className="p-6 space-y-3">
+              <h2 className="font-semibold">Could not load integrations</h2>
+              <p className="text-sm text-muted-foreground">{error?.message || "The integrations response was invalid."}</p>
+              <Button variant="outline" onClick={() => void refetch()}>Try again</Button>
+            </CardContent>
+          </Card>
+        ) : isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[1,2,3].map(i => <div key={i} className="h-40 rounded-xl bg-muted animate-pulse" />)}
           </div>

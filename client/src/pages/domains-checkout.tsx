@@ -25,7 +25,7 @@ export default function DomainsCheckoutPage() {
     city: "",
     state: "",
     zip: "",
-    country: "UG",
+    country: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const [years, setYears] = useState(1);
@@ -171,7 +171,7 @@ export default function DomainsCheckoutPage() {
                 </div>
                 <div>
                   <Label htmlFor="phone" className="text-xs">Phone (with country code) *</Label>
-                  <Input id="phone" required placeholder="+256700000000" value={contact.phone} onChange={e => setContact({ ...contact, phone: e.target.value })} data-testid="input-phone" />
+                  <Input id="phone" required placeholder="+ country code and phone number" value={contact.phone} onChange={e => setContact({ ...contact, phone: e.target.value })} data-testid="input-phone" />
                 </div>
                 <div>
                   <Label htmlFor="address" className="text-xs">Address *</Label>
@@ -201,6 +201,7 @@ export default function DomainsCheckoutPage() {
                     className="w-full mt-1 p-2 rounded border bg-background text-sm"
                     data-testid="select-country"
                   >
+                    <option value="" disabled>Select your country</option>
                     {[
                       ["UG", "Uganda"], ["KE", "Kenya"], ["TZ", "Tanzania"], ["RW", "Rwanda"],
                       ["NG", "Nigeria"], ["GH", "Ghana"], ["ZA", "South Africa"], ["ET", "Ethiopia"],

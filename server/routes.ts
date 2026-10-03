@@ -2870,6 +2870,8 @@ export async function registerRoutes(
     try {
       const { domainName, years, contact } = req.body;
       if (!domainName || !contact) return res.status(400).json({ message: "Domain name and contact info required" });
+      const country = typeof contact.country === "string" ? contact.country.trim().toUpperCase() : "";
+      if (!/^[A-Z]{2}$/.test(country)) return res.status(400).json({ message: "Enter your two-letter country code" });
 
       const yearsNum = Math.max(1, Math.min(10, parseInt(years) || 1));
 
@@ -2900,7 +2902,7 @@ export async function registerRoutes(
         contactCity: contact.city,
         contactState: contact.state,
         contactZip: contact.zip,
-        contactCountry: contact.country || "UG",
+        contactCountry: country,
       });
 
       // Create Pesapal payment — fail hard if it doesn't return a redirect URL
@@ -2916,7 +2918,7 @@ export async function registerRoutes(
         billing_address: {
           email_address: contact.email || req.user.email,
           phone_number: contact.phone || undefined,
-          country_code: contact.country || "UG",
+          country_code: country,
           first_name: contact.firstName || undefined,
           last_name: contact.lastName || undefined,
         },

@@ -66,8 +66,8 @@ export default function DomainsPage() {
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
   const [nsInput, setNsInput] = useState("");
   const [contact, setContact] = useState<ContactForm>({
-    firstName: "", lastName: "", email: "", phone: "+256",
-    address: "", city: "Kampala", state: "Central", zip: "00000", country: "UG",
+    firstName: "", lastName: "", email: "", phone: "",
+    address: "", city: "", state: "", zip: "", country: "",
   });
   const { toast } = useToast();
 
@@ -135,6 +135,9 @@ export default function DomainsPage() {
     if (!selectedDomain) return;
     if (!contact.firstName || !contact.lastName || !contact.email || !contact.phone) {
       return toast({ title: "Fill in all required fields", variant: "destructive" });
+    }
+    if (!/^[A-Za-z]{2}$/.test(contact.country.trim())) {
+      return toast({ title: "Enter your two-letter country code", variant: "destructive" });
     }
     orderMutation.mutate({
       domainName: selectedDomain.domainName,
@@ -549,7 +552,7 @@ export default function DomainsPage() {
                       data-testid="input-contact-phone"
                       value={contact.phone}
                       onChange={e => setContact(p => ({ ...p, phone: e.target.value }))}
-                      placeholder="+256700000000"
+                      placeholder="+ country code and phone number"
                       className="bg-white/5 border-white/10 mt-1 h-8 text-xs"
                     />
                   </div>
@@ -564,9 +567,9 @@ export default function DomainsPage() {
                     />
                   </div>
                   {[
-                    { key: "city", label: "City", placeholder: "Kampala" },
-                    { key: "state", label: "State/Region", placeholder: "Central" },
-                    { key: "zip", label: "ZIP/Postal Code", placeholder: "00000" },
+                    { key: "city", label: "City", placeholder: "Your city" },
+                    { key: "state", label: "State/Region", placeholder: "Your state or region" },
+                    { key: "zip", label: "ZIP/Postal Code", placeholder: "Your postal code" },
                   ].map(f => (
                     <div key={f.key}>
                       <Label className="text-xs">{f.label}</Label>
@@ -585,7 +588,7 @@ export default function DomainsPage() {
                       data-testid="input-contact-country"
                       value={contact.country}
                       onChange={e => setContact(p => ({ ...p, country: e.target.value.toUpperCase() }))}
-                      placeholder="UG"
+                      placeholder="Two-letter country code"
                       maxLength={2}
                       className="bg-white/5 border-white/10 mt-1 h-8 text-xs uppercase"
                     />

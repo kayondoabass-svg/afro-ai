@@ -988,14 +988,14 @@ export default function FounderDashboardPage() {
                           <Globe className="w-3.5 h-3.5 text-indigo-500" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate">{d.domain}</p>
-                          <p className="text-[10px] text-muted-foreground">${((d.amountUsd || 0)).toFixed(2)} · {new Date(d.createdAt).toLocaleDateString()}</p>
+                          <p className="text-xs font-medium truncate">{d.domainName}</p>
+                          <p className="text-[10px] text-muted-foreground">{typeof d.pricePaid === "number" ? `$${(d.pricePaid / 100).toFixed(2)}` : "Price unavailable"} · {new Date(d.createdAt).toLocaleDateString()}</p>
                         </div>
                         <Badge variant="outline" className={`text-[10px] px-1.5 flex-shrink-0 ${
                           d.status === "active" ? "text-green-400 border-green-500/30" :
-                          d.status === "pending" ? "text-yellow-400 border-yellow-500/30" : ""
+                          d.status === "pending_payment" ? "text-yellow-400 border-yellow-500/30" : ""
                         }`}>
-                          {d.status}
+                          {d.status === "pending_payment" ? "Pending payment" : d.status}
                         </Badge>
                       </div>
                     ))
