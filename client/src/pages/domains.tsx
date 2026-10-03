@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Globe, Search, CheckCircle2, XCircle, Loader2, ShoppingCart, Star,
-  Settings, RotateCcw, ExternalLink, Calendar, Server, ChevronDown, ChevronUp, AlertCircle
+  AlertCircle
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import DomainManager from "@/components/domain-manager";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -25,17 +26,6 @@ interface DomainAvailability {
   currency: string;
 }
 
-interface DomainOrder {
-  id: number;
-  domainName: string;
-  status: string;
-  pricePaid: number;
-  years: number;
-  expiryDate: string | null;
-  nameservers: string[] | null;
-  createdAt: string;
-}
-
 interface ContactForm {
   firstName: string; lastName: string; email: string; phone: string;
   address: string; city: string; state: string; zip: string; country: string;
@@ -43,37 +33,20 @@ interface ContactForm {
 
 const POPULAR_TLDS = [".com", ".net", ".org", ".io", ".co", ".africa", ".shop", ".tech", ".app"];
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "border-green-500/40 text-green-400",
-  pending_payment: "border-yellow-500/40 text-yellow-400",
-  failed: "border-red-500/40 text-red-400",
-  expired: "border-gray-500/40 text-gray-400",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  active: "Active",
-  pending_payment: "Pending Payment",
-  failed: "Registration Failed",
-  expired: "Expired",
-};
-
 export default function DomainsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<DomainAvailability | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [years, setYears] = useState("1");
-  const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
-  const [nsInput, setNsInput] = useState("");
   const [contact, setContact] = useState<ContactForm>({
     firstName: "", lastName: "", email: "", phone: "",
     address: "", city: "", state: "", zip: "", country: "",
   });
   const { toast } = useToast();
-
-  const { data: myDomains, isLoading: domainsLoading } = useQuery<DomainOrder[]>({
-    queryKey: ["/api/domains/my"],
-  });
+  const [selectedTab, setSelectedTab] = useState<string | null>(null);
+  const ownedQuery = useQuery<Array<{ domainName: string; status: string }>>({ queryKey: ["/api/domains/my"] });
+  const hasPurchases = Array.isArray(ownedQuery.data) && ownedQuery.data.length > 0;
 
   const checkMutation = useMutation({
     mutationFn: (query: string) => apiRequest("POST", "/api/domains/check", { query }).then(r => r.json()),
@@ -95,7 +68,7 @@ export default function DomainsPage() {
   const orderMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/domains/order", data).then(r => r.json()),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/domains/my"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/domain-manager"] });
       setRegisterOpen(false);
       if (data.paymentUrl) {
         window.location.href = data.paymentUrl;
@@ -106,25 +79,6 @@ export default function DomainsPage() {
     onError: (e: any) => toast({ title: "Order failed", description: e.message, variant: "destructive" }),
   });
 
-  const activateMutation = useMutation({
-    mutationFn: (orderId: number) => apiRequest("POST", `/api/domains/activate/${orderId}`, {}).then(r => r.json()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/domains/my"] });
-      toast({ title: "Domain activated!", description: "Your domain has been registered successfully." });
-    },
-    onError: (e: any) => toast({ title: "Activation failed", description: e.message, variant: "destructive" }),
-  });
-
-  const nsMutation = useMutation({
-    mutationFn: ({ orderId, nameservers }: { orderId: number; nameservers: string[] }) =>
-      apiRequest("POST", `/api/domains/nameservers/${orderId}`, { nameservers }).then(r => r.json()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/domains/my"] });
-      toast({ title: "Nameservers updated!" });
-    },
-    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
-  });
-
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
     setActiveSearch(searchQuery.trim());
@@ -133,8 +87,8 @@ export default function DomainsPage() {
 
   const handleRegister = () => {
     if (!selectedDomain) return;
-    if (!contact.firstName || !contact.lastName || !contact.email || !contact.phone) {
-      return toast({ title: "Fill in all required fields", variant: "destructive" });
+    if (![contact.firstName, contact.lastName, contact.email, contact.phone, contact.address, contact.city].every(value => value.trim())) {
+      return toast({ title: "Complete your name, email, phone, address, and city", variant: "destructive" });
     }
     if (!/^[A-Za-z]{2}$/.test(contact.country.trim())) {
       return toast({ title: "Enter your two-letter country code", variant: "destructive" });
@@ -160,25 +114,13 @@ export default function DomainsPage() {
             <div className="flex items-start gap-3">
               <CheckCircle2 className="w-6 h-6 text-yellow-400 mt-0.5 shrink-0" />
               <div>
-                <p className="font-semibold text-yellow-300">Payment received!</p>
+                 <p className="font-semibold text-yellow-300">Checkout returned</p>
                 <p className="text-sm text-yellow-200/70 mt-0.5">
-                  Your payment was processed. Click <strong>Activate Domain</strong> below to complete registration with the domain registrar.
+                   Check My Domains for the current payment and registration status. Returning from checkout alone does not confirm registration.
                 </p>
               </div>
             </div>
-            <Button
-              size="sm"
-              className="bg-yellow-500 hover:bg-yellow-400 text-black font-semibold shrink-0"
-              onClick={() => {
-                activateMutation.mutate(paymentReturnOrder);
-                setPaymentReturnOrder(null);
-              }}
-              disabled={activateMutation.isPending}
-              data-testid="button-activate-domain"
-            >
-              {activateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Activate Domain
-            </Button>
+             <Button size="sm" variant="outline" onClick={() => setPaymentReturnOrder(null)}>Dismiss</Button>
           </div>
         )}
 
@@ -191,13 +133,11 @@ export default function DomainsPage() {
           <p className="text-muted-foreground mt-1">Find and register your perfect domain — powered by name.com</p>
         </div>
 
-        <Tabs defaultValue="search">
+        <Tabs value={selectedTab ?? (hasPurchases || paymentReturnOrder ? "mydomains" : "search")} onValueChange={setSelectedTab}>
           <TabsList className="bg-white/5 border border-white/10">
             <TabsTrigger value="search" data-testid="tab-search">Find Domains</TabsTrigger>
             <TabsTrigger value="mydomains" data-testid="tab-mydomains">
-              My Domains {myDomains && myDomains.length > 0 && (
-                <Badge className="ml-2 bg-yellow-500/20 text-yellow-400 text-xs">{myDomains.length}</Badge>
-              )}
+               My Domains
             </TabsTrigger>
           </TabsList>
 
@@ -287,7 +227,11 @@ export default function DomainsPage() {
                               <Button
                                 data-testid={`button-register-${domain.domainName}`}
                                 size="sm"
-                                onClick={() => { setSelectedDomain(domain); setRegisterOpen(true); }}
+                                onClick={() => {
+                                  if (ownedQuery.data?.some(order => order.domainName.toLowerCase() === domain.domainName.toLowerCase())) {
+                                    setSelectedTab("mydomains");
+                                  } else { setSelectedDomain(domain); setRegisterOpen(true); }
+                                }}
                                 className="bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-semibold gap-1"
                               >
                                 <ShoppingCart className="w-3 h-3" />
@@ -337,123 +281,7 @@ export default function DomainsPage() {
 
           {/* My Domains Tab */}
           <TabsContent value="mydomains" className="mt-6 space-y-4">
-            {domainsLoading ? (
-              <div className="flex items-center gap-3 py-8 justify-center text-muted-foreground">
-                <Loader2 className="w-5 h-5 animate-spin text-yellow-400" />
-                Loading your domains...
-              </div>
-            ) : myDomains && myDomains.length > 0 ? (
-              myDomains.map(order => (
-                <Card key={order.id} data-testid={`card-order-${order.id}`} className="border-white/10 bg-white/5">
-                  <CardContent className="pt-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center flex-shrink-0">
-                          <Globe className="w-4 h-4 text-yellow-400" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-mono font-semibold text-sm truncate">{order.domainName}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <Badge variant="outline" className={`text-xs ${STATUS_COLORS[order.status] || "border-white/10"}`}>
-                              {STATUS_LABELS[order.status] || order.status}
-                            </Badge>
-                            {order.expiryDate && (
-                              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <Calendar className="w-3 h-3" /> Expires {order.expiryDate}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {order.status === "active" && (
-                          <Button
-                            variant="ghost" size="icon" className="w-8 h-8"
-                            data-testid={`button-expand-${order.id}`}
-                            onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
-                          >
-                            {expandedOrder === order.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </Button>
-                        )}
-                        {order.status === "pending_payment" && (
-                          <Button
-                            size="sm"
-                            data-testid={`button-activate-${order.id}`}
-                            onClick={() => activateMutation.mutate(order.id)}
-                            disabled={activateMutation.isPending}
-                            className="bg-green-600 hover:bg-green-500 text-white text-xs gap-1"
-                          >
-                            {activateMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                            Activate
-                          </Button>
-                        )}
-                        {order.status === "active" && (
-                          <Button
-                            variant="ghost" size="icon" className="w-8 h-8"
-                            onClick={() => window.open(`http://${order.domainName}`, "_blank")}
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Expanded: Nameservers */}
-                    {expandedOrder === order.id && order.status === "active" && (
-                      <div className="mt-4 border-t border-white/10 pt-4 space-y-4">
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
-                            <Server className="w-3 h-3" /> Nameservers
-                          </h4>
-                          {order.nameservers && order.nameservers.length > 0 && (
-                            <div className="space-y-1 mb-3">
-                              {order.nameservers.map((ns, i) => (
-                                <div key={i} className="text-xs font-mono bg-white/5 border border-white/10 rounded px-3 py-1.5 text-muted-foreground">
-                                  {ns}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex gap-2 mt-2">
-                            <Input
-                              placeholder="ns1.example.com, ns2.example.com (comma separated)"
-                              value={nsInput}
-                              onChange={e => setNsInput(e.target.value)}
-                              className="bg-white/5 border-white/10 text-xs h-8"
-                              data-testid={`input-ns-${order.id}`}
-                            />
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-white/10 bg-white/5 text-xs gap-1 h-8"
-                              data-testid={`button-update-ns-${order.id}`}
-                              disabled={nsMutation.isPending || !nsInput.trim()}
-                              onClick={() => {
-                                const ns = nsInput.split(",").map(s => s.trim()).filter(Boolean);
-                                nsMutation.mutate({ orderId: order.id, nameservers: ns });
-                              }}
-                            >
-                              <Settings className="w-3 h-3" /> Update NS
-                            </Button>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            To point this domain to your Afro AI app, set nameservers to your hosting provider's NS records. For Cloudflare: ns1.cloudflare.com, ns2.cloudflare.com
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              <Card className="border-white/10 bg-white/5">
-                <CardContent className="py-16 text-center">
-                  <Globe className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No domains yet</h3>
-                  <p className="text-muted-foreground text-sm">Search and register your first domain above.</p>
-                </CardContent>
-              </Card>
-            )}
+             <DomainManager />
           </TabsContent>
         </Tabs>
 
@@ -463,8 +291,8 @@ export default function DomainsPage() {
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
               <div className="text-xs text-muted-foreground leading-relaxed">
-                <strong className="text-yellow-400">How it works:</strong> Search for a domain → Register it → Pay via Pesapal (Mobile Money, Visa, Mastercard) → Your domain is live within minutes.
-                Domains are registered through name.com. After registration, you can point your domain to your Afro AI published app by updating the nameservers.
+                 <strong className="text-yellow-400">How it works:</strong> Search for a domain → Submit registration details → Pay via Pesapal (Mobile Money, Visa, Mastercard) → Check registration status in My Domains.
+                 After registration, choose your published app in My Domains, save its hostname, follow the DNS instructions and verify the website connection.
               </div>
             </div>
           </CardContent>

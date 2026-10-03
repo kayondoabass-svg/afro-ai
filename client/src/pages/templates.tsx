@@ -244,7 +244,7 @@ export default function TemplatesPage() {
                 <Card
                   key={template.title}
                   className="hover-elevate group cursor-pointer"
-                  onClick={() => setPreview(template)}
+                  onClick={() => handleUseTemplate(template)}
                   data-testid={`card-template-${template.title.toLowerCase().replace(/\s+/g, "-")}`}
                 >
                   <CardContent className="p-5 space-y-3">

@@ -2,11 +2,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), request: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), request: vi.fn(), toast: vi.fn(), user: { isFounder: true } }));
 vi.mock("wouter", () => ({ useLocation: () => ["/templates", mocks.navigate] }));
 vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({ t: (key: string) => key }) }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
-vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { isFounder: true }, isLoading: false }) }));
+vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: mocks.user, isLoading: false }) }));
 vi.mock("@/lib/queryClient", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   return { queryClient: new QueryClient(), apiRequest: mocks.request };

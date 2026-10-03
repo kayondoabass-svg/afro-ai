@@ -28,3 +28,5 @@
 - [Upgrade recommendations](upgrade-recommendations.md) — user wants occasional, relevant upgrade suggestions without misleading free-hosting promises.
 - [Wide image delivery](wide-image-delivery.md) — verify image dimensions; editing may return square artwork despite a wide source and prompt.
 - [Branding scope](branding-scope.md) — Logo 1 is platform branding; the technology cover is an email background, not a homepage/login background.
+- [MCP product scope](mcp-product-scope.md) — user requires AI discoverability through MCP across domains, chatbots, email, web/app design, and USSD.
+- [Domain purchase experience](domain-purchase-experience.md) — after purchase, prioritize management and app connection, not repeated purchase prompts.

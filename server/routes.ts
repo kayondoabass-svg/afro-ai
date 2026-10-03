@@ -1,5 +1,8 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
 import { registerAppInstallRoutes } from "./app-installs";
+import { registerDomainManagementRoutes, validateNameservers } from "./domain-management";
+import { completeDomainRegistration, RegistrationError } from "./domain-registration";
+import { verifyAppDomain } from "./domain-connection";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
@@ -298,6 +301,7 @@ export async function registerRoutes(
 
   await setupAuth(app);
   registerAppInstallRoutes(app, isFounder);
+  registerDomainManagementRoutes(app, isAuthenticated);
   registerAuthRoutes(app);
 
   // ── Sentry pipeline test (founder-only) ─────────────────────────────────
@@ -1474,13 +1478,8 @@ export async function registerRoutes(
       let dnsError = "";
 
       try {
-        const cnames = await resolver.resolveCname(app.customDomain);
-        verified = cnames.some((c) => c === target || c === `${target}.`);
-        if (!verified) {
-          const addresses = await resolver.resolve4(app.customDomain).catch(() => []);
-          verified = addresses.length > 0;
-          if (!verified) dnsError = `CNAME not pointing to ${target}. Found: ${cnames.join(", ")}`;
-        }
+        verified = await verifyAppDomain(app.customDomain, resolver, target);
+        if (!verified) dnsError = `DNS does not point to ${target}. Set the CNAME or apex ALIAS/flattened record at your DNS provider and allow time for propagation.`;
       } catch (dnsErr: any) {
         dnsError = dnsErr.code === "ENODATA" || dnsErr.code === "ENOTFOUND"
           ? `No CNAME record found for ${app.customDomain}`
@@ -2870,6 +2869,15 @@ export async function registerRoutes(
     try {
       const { domainName, years, contact } = req.body;
       if (!domainName || !contact) return res.status(400).json({ message: "Domain name and contact info required" });
+      const existingOrders = await storage.getDomainOrdersByUser(req.user.claims.sub);
+      if (existingOrders.some(order => order.domainName.toLowerCase() === String(domainName).trim().toLowerCase() &&
+        ["active", "registering", "registration_review", "pending_payment"].includes(order.status))) {
+        return res.status(409).json({ message: "This domain already has an order in My Domains. Manage or complete that order instead of paying again." });
+      }
+      if (["firstName", "lastName", "email", "phone", "address", "city"].some(key =>
+        typeof contact[key] !== "string" || !contact[key].trim())) {
+        return res.status(400).json({ message: "Complete your name, email, phone, address, and city before payment" });
+      }
       const country = typeof contact.country === "string" ? contact.country.trim().toUpperCase() : "";
       if (!/^[A-Z]{2}$/.test(country)) return res.status(400).json({ message: "Enter your two-letter country code" });
 
@@ -2939,42 +2947,20 @@ export async function registerRoutes(
 
   app.post("/api/domains/activate/:orderId", isAuthenticated, async (req: any, res) => {
     try {
-      const orderId = parseInt(req.params.orderId);
-      const order = await storage.getDomainOrder(orderId);
-      if (!order || order.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
-      if (order.status === "active") return res.json({ message: "Already active", order });
-
-      const contact = {
-        firstName: order.contactFirstName || "Admin",
-        lastName: order.contactLastName || "Admin",
-        email: order.contactEmail || req.user.email,
-        phone: order.contactPhone || "+256700000000",
-        address1: order.contactAddress || "Kampala",
-        city: order.contactCity || "Kampala",
-        state: order.contactState || "Central",
-        zip: order.contactZip || "00000",
-        country: order.contactCountry || "UG",
-      };
-
-      const costPriceDollars = order.costPrice / 100;
-      const result = await registerDomain(order.domainName, contact, costPriceDollars, order.years);
-      const expiryDate = result.domain?.expireDate || result.expireDate || "";
-      const nameservers = result.domain?.nameservers || result.nameservers || [];
-      const updated = await storage.updateDomainOrder(orderId, {
-        status: "active",
-        namecomOrderId: String(result.order?.orderId || result.orderId || ""),
-        expiryDate,
-        nameservers,
-      });
-      res.json({ success: true, order: updated });
+      const order = await completeDomainRegistration(Number(req.params.orderId), req.user.claims.sub);
+      res.json({ success: true, order });
     } catch (e: any) {
-      await storage.updateDomainOrder(parseInt(req.params.orderId), { status: "failed" }).catch(() => {});
-      res.status(500).json({ message: e.message });
+      res.status(e instanceof RegistrationError ? e.status : 503).json({
+        message: e instanceof RegistrationError ? e.message : "Payment verification unavailable. Try again shortly.",
+      });
     }
   });
 
   app.get("/api/domains/info/:domainName", isAuthenticated, async (req: any, res) => {
     try {
+      const orders = await storage.getDomainOrdersByUser(req.user.claims.sub);
+      const owned = orders.find(order => order.domainName.toLowerCase() === String(req.params.domainName).toLowerCase() && order.status === "active");
+      if (!owned) return res.status(404).json({ message: "Active domain not found" });
       const info = await getDomainInfo(req.params.domainName);
       res.json(info);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2985,7 +2971,10 @@ export async function registerRoutes(
       const orderId = parseInt(req.params.orderId);
       const order = await storage.getDomainOrder(orderId);
       if (!order || order.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
-      const { nameservers } = req.body;
+      if (order.status !== "active") return res.status(403).json({ message: "Domain must be active" });
+      let nameservers: string[];
+      try { nameservers = validateNameservers(req.body?.nameservers); }
+      catch (error: any) { return res.status(400).json({ message: error.message }); }
       await setNameservers(order.domainName, nameservers);
       await storage.updateDomainOrder(orderId, { nameservers });
       res.json({ success: true });

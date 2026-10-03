@@ -1,7 +1,7 @@
 export * from "./models/auth";
 export * from "./models/chat";
 
-import { pgTable, serial, bigserial, check, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index, customType } from "drizzle-orm/pg-core";
+import { pgTable, serial, bigserial, check, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index, customType, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -347,6 +347,15 @@ export const domainOrders = pgTable("domain_orders", {
 });
 
 export const insertDomainOrderSchema = createInsertSchema(domainOrders).omit({ id: true, createdAt: true });
+export const externalDomains = pgTable("external_domains", {
+  id: uuid("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  domainName: text("domain_name").notNull(),
+  registrar: text("registrar"),
+  verificationToken: text("verification_token").notNull(),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [uniqueIndex("external_domains_user_domain").on(table.userId, table.domainName)]);
 export type DomainOrder = typeof domainOrders.$inferSelect;
 export type InsertDomainOrder = z.infer<typeof insertDomainOrderSchema>;
 

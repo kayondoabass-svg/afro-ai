@@ -15,7 +15,9 @@ async function nameComRequest(method: string, path: string, body?: object): Prom
       "Content-Type": "application/json",
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(15000),
   });
+  if (res.status === 204) return {};
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.message || `name.com API error: ${res.status}`);
@@ -168,4 +170,27 @@ export async function getCostPrice(domainName: string): Promise<number | null> {
   const data = await nameComRequest("POST", "/domains:checkAvailability", { domainNames: [domainName] });
   const r = (data.results || [])[0];
   return r?.purchasePrice || null;
+}
+
+export async function listDomainRecords(domainName: string): Promise<any[]> {
+  const records: any[] = [];
+  let page = 1;
+  for (let count = 0; count < 100; count++) {
+    const data = await nameComRequest("GET", `/domains/${encodeURIComponent(domainName)}/records?page=${page}&perPage=100`);
+    if (data.records !== undefined && !Array.isArray(data.records)) throw new Error("Invalid DNS response from registrar");
+    records.push(...(data.records || []));
+    if (!data.nextPage) return records;
+    page = Number(data.nextPage);
+    if (!Number.isSafeInteger(page) || page < 1) throw new Error("Invalid DNS pagination");
+  }
+  throw new Error("Too many DNS record pages; contact support");
+}
+
+export async function writeDomainRecord(domainName: string, body: object, id?: number) {
+  return nameComRequest(id === undefined ? "POST" : "PUT",
+    `/domains/${encodeURIComponent(domainName)}/records${id === undefined ? "" : `/${id}`}`, body);
+}
+
+export async function deleteDomainRecord(domainName: string, id: number) {
+  return nameComRequest("DELETE", `/domains/${encodeURIComponent(domainName)}/records/${id}`);
 }
