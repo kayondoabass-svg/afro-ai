@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "test:runtime": "node --test scripts/admin-runtime.test.mjs",
     "db:create": "wrangler d1 create afro-ai-auth",
     "db:migrate": "wrangler d1 execute afro-ai-auth --remote --file=./schema.sql",
     "db:migrate-local": "wrangler d1 execute afro-ai-auth --local --file=./schema.sql",

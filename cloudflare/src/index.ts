@@ -738,7 +738,7 @@ app.post('/run-code', async (c) => {
   try {
     const identity = await fetch(new URL('/api/auth/user', c.env.EXPRESS_BASE_URL || c.env.APP_URL), {
       headers: { Cookie: c.req.header('Cookie') || '' },
-      redirect: 'error',
+      redirect: 'manual',
     });
     const user: any = identity.ok ? await identity.json() : null;
     if (!user?.emailVerified) {

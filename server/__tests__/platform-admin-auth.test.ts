@@ -41,7 +41,7 @@ it("accepts the dashboard session without a second Worker cookie and preserves e
   const names = (await listed.json() as any).tenants.map((t: any) => t.name);
   expect(names.sort()).toEqual(["Brightboardapp", "Existing"]);
   expect(upstream.mock.calls[0][1]).toMatchObject({
-    headers: { Cookie: "connect.sid=test-session" }, redirect: "error", cache: "no-store",
+    headers: { Cookie: "connect.sid=test-session" }, redirect: "manual", cache: "no-store",
   });
 });
 it("supports verified Passport accounts that have no D1 user mirror", async () => {

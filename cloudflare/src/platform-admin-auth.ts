@@ -11,7 +11,9 @@ export async function platformAdminIdentity(c: any): Promise<{ id: string; email
   try {
     const response = await fetch(new URL('/api/auth/user', c.env.EXPRESS_BASE_URL || c.env.APP_URL), {
       headers: { Cookie: cookie },
-      redirect: 'error',
+      // workerd rejects redirect:"error" before sending any request.
+      // Manual mode keeps cookies on the configured host; 3xx fails below.
+      redirect: 'manual',
       cache: 'no-store',
       signal: AbortSignal.timeout(8000),
     });
