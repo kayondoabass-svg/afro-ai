@@ -19,6 +19,8 @@ import { SignJWT, jwtVerify } from 'jose';
 import { deviceLabel, resetPasswordUrl, resetStatements } from '../../shared/device-sessions';
 import { PLATFORM_ISSUER, PLATFORM_AUDIENCE, PLATFORM_PURPOSE, verifyPlatformSession } from '../../shared/platform-session';
 import bcrypt from 'bcryptjs';
+import { tenantAuth } from './tenant-auth';
+import { parseTenantOrigins, validTenantOrigin } from '../../shared/tenant-origins';
 import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
@@ -54,9 +56,11 @@ interface Env {
 const root = new Hono<{ Bindings: Env }>();
 const app = root.basePath('/cf-auth');
 const enc = new TextEncoder();
+const tenantSecurity = tenantAuth({ hashPassword, checkThrottles, recordThrottleFailure });
 
 /* ------------------------------ CORS ------------------------------ */
 app.use('/*', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
   const origin = c.req.header('Origin');
   const path = c.req.path;
   // Afro Auth product surfaces (tenant end-user auth + Management API non-admin
@@ -85,13 +89,10 @@ app.use('/*', async (c, next) => {
           .bind(slug)
           .first<{ allowed_origins: string | null }>();
         if (t) {
-          const list = (t.allowed_origins || '')
-            .split(/[\s,]+/)
-            .map((s) => s.trim())
-            .filter(Boolean);
-          // If no origins configured, allow any (dev-friendly default).
-          // If configured, strict allowlist match required.
-          if (list.length === 0 || list.includes(origin)) {
+          const list = parseTenantOrigins(t.allowed_origins);
+          // Hosted verification/reset forms submit on the auth host itself.
+          const hostedForm = /\/(verify-email|reset-password)$/.test(path) && origin === new URL(c.env.APP_URL).origin;
+          if (list.includes(origin) || hostedForm) {
             allowOrigin = true;
           }
         }
@@ -99,6 +100,7 @@ app.use('/*', async (c, next) => {
         // On lookup failure, be conservative and skip origin header.
       }
     }
+    if (origin && !allowOrigin) return c.json({ message: 'Origin is not allowed for this project.' }, 403);
     if (allowOrigin && origin) {
       c.header('Access-Control-Allow-Origin', origin);
       c.header('Access-Control-Allow-Credentials', 'false');
@@ -1013,7 +1015,8 @@ async function makeStateToken(
   tenantId: string = 'platform',
 ): Promise<string> {
   const secret = enc.encode(c.env.JWT_SECRET);
-  return await new SignJWT({ provider, redirect: redirectTo, tenantId, nonce: uuid() })
+  return await new SignJWT({ provider, redirect: redirectTo, tenantId, nonce: uuid(),
+    challenge: tenantId !== 'platform' ? c.req.query('code_challenge') : undefined })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('10m')
@@ -1023,7 +1026,7 @@ async function makeStateToken(
 async function readStateToken(
   c: any,
   token: string,
-): Promise<{ provider: string; redirect: string; tenantId: string } | null> {
+): Promise<{ provider: string; redirect: string; tenantId: string; challenge?: string } | null> {
   try {
     const secret = enc.encode(c.env.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
@@ -1031,6 +1034,7 @@ async function readStateToken(
       provider: String(payload.provider || ''),
       redirect: String(payload.redirect || c.env.APP_URL),
       tenantId: String(payload.tenantId || 'platform'),
+      challenge: typeof payload.challenge === 'string' ? payload.challenge : undefined,
     };
   } catch {
     return null;
@@ -1046,7 +1050,7 @@ async function resolveTenantIdFromQuery(c: any): Promise<string> {
     .prepare('SELECT id FROM tenants WHERE slug = ?')
     .bind(slug)
     .first<{ id: string }>();
-  return row?.id || 'platform';
+  return row?.id || '';
 }
 
 /** Look up or create a user for an OAuth identity. Links by email if possible. */
@@ -1060,14 +1064,16 @@ async function upsertOAuthUser(
   profileImageUrl: string | null,
   tenantId: string = 'platform',
 ): Promise<string> {
-  // oauth_accounts is keyed by (provider, provider_user_id) globally — a single
-  // Google identity maps to a single user row regardless of tenant. If you
-  // need per-tenant linking later, scope this lookup by tenant_id too.
+  if (tenantId !== 'platform') {
+    const linked = await db.prepare('SELECT user_id FROM tenant_oauth_accounts WHERE tenant_id=? AND provider=? AND provider_user_id=?')
+      .bind(tenantId, provider, providerUserId).first<{ user_id: string }>();
+    if (linked) return linked.user_id;
+  }
   const linked = await db
     .prepare(
-      'SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?',
+      "SELECT o.user_id FROM oauth_accounts o JOIN users u ON u.id=o.user_id WHERE o.provider=? AND o.provider_user_id=? AND u.tenant_id=?",
     )
-    .bind(provider, providerUserId)
+    .bind(provider, providerUserId, tenantId)
     .first<{ user_id: string }>();
   if (linked) return linked.user_id;
 
@@ -1082,6 +1088,9 @@ async function upsertOAuthUser(
   let userId: string;
   if (existing) {
     userId = existing.id;
+    // An unconfirmed password may have been planted by someone who never
+    // controlled this mailbox. Do not preserve it when linking verified OAuth.
+    await db.prepare('UPDATE users SET password_hash=CASE WHEN email_verified=0 THEN NULL ELSE password_hash END,email_verified=1,updated_at=? WHERE id=? AND tenant_id=?').bind(ts,userId,tenantId).run();
   } else {
     userId = uuid();
     await db
@@ -1102,6 +1111,11 @@ async function upsertOAuthUser(
       .run();
   }
 
+  if (tenantId !== 'platform') {
+    await db.prepare('INSERT INTO tenant_oauth_accounts (tenant_id,provider,provider_user_id,user_id) VALUES (?,?,?,?)')
+      .bind(tenantId,provider,providerUserId,userId).run();
+    return userId;
+  }
   await db
     .prepare(
       'INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -1154,8 +1168,10 @@ app.get('/google/start', async (c) => {
   // appear logged out. Mobile Safari typically autocompletes www.* and is
   // the most common victim of this. APP_URL is still the absolute fallback.
   const currentOrigin = new URL(c.req.url).origin;
-  const redirectTo = safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin);
   const tenantId = await resolveTenantIdFromQuery(c);
+  if (!tenantId) return c.text('Unknown project.', 404);
+  const redirectTo = tenantId === 'platform' ? safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin) : await tenantSecurity.oauthTarget(c, tenantId);
+  if (!redirectTo) return c.text('Configure an allowed redirect origin and provide an S256 code_challenge.', 400);
   const state = await makeStateToken(c, 'google', redirectTo, tenantId);
   setCookie(c, STATE_COOKIE, state, {
     path: '/',
@@ -1220,8 +1236,9 @@ app.get('/google/callback', async (c) => {
     given_name?: string;
     family_name?: string;
     picture?: string;
+    email_verified?: boolean;
   };
-  if (!profile.email) {
+  if (!profile.email || profile.email_verified !== true) {
     return c.text('Your Google account did not share an email address.', 400);
   }
 
@@ -1235,6 +1252,7 @@ app.get('/google/callback', async (c) => {
     profile.picture || null,
     state.tenantId,
   );
+  if (state.tenantId !== 'platform') return tenantSecurity.finishOAuth(c, state, userId);
   await issueSession(c, userId);
   return c.redirect(state.redirect);
 });
@@ -1248,8 +1266,10 @@ app.get('/github/start', async (c) => {
   // See note in /google/start — preserve the user's current host so the
   // host-only session cookie stays valid after the OAuth round-trip.
   const currentOrigin = new URL(c.req.url).origin;
-  const redirectTo = safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin);
   const tenantId = await resolveTenantIdFromQuery(c);
+  if (!tenantId) return c.text('Unknown project.', 404);
+  const redirectTo = tenantId === 'platform' ? safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin) : await tenantSecurity.oauthTarget(c, tenantId);
+  if (!redirectTo) return c.text('Configure an allowed redirect origin and provide an S256 code_challenge.', 400);
   const state = await makeStateToken(c, 'github', redirectTo, tenantId);
   setCookie(c, STATE_COOKIE, state, {
     path: '/',
@@ -1318,7 +1338,7 @@ app.get('/github/callback', async (c) => {
     avatar_url?: string | null;
   };
 
-  let email = profile.email || null;
+  let email: string | null = null;
   if (!email) {
     const emailsRes = await fetch('https://api.github.com/user/emails', {
       headers: ghHeaders,
@@ -1358,6 +1378,7 @@ app.get('/github/callback', async (c) => {
     profile.avatar_url || null,
     state.tenantId,
   );
+  if (state.tenantId !== 'platform') return tenantSecurity.finishOAuth(c, state, userId);
   await issueSession(c, userId);
   return c.redirect(state.redirect);
 });
@@ -1491,25 +1512,14 @@ async function authenticatePlatformUser(c: any): Promise<{ id: string; email: st
 
 /** Issue a JWT for a tenant end-user. No cookie — token is returned in body. */
 async function issueTenantSession(c: any, tenantId: string, userId: string): Promise<string> {
-  const secret = enc.encode(c.env.JWT_SECRET);
-  return await new SignJWT({ sub: userId, tid: tenantId, kind: 'afro_auth' })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('30d')
-    .sign(secret);
+  return tenantSecurity.issue(c, tenantId, userId);
 }
 
 async function verifyTenantSession(
   c: any,
   token: string,
 ): Promise<{ userId: string; tenantId: string } | null> {
-  try {
-    const { payload } = await jwtVerify(token, enc.encode(c.env.JWT_SECRET));
-    if (payload.kind !== 'afro_auth') return null;
-    return { userId: String(payload.sub), tenantId: String(payload.tid) };
-  } catch {
-    return null;
-  }
+  return tenantSecurity.verify(c, token);
 }
 
 /** Best-effort MAU tracking. Inserts (or no-ops) into tenant_user_activity
@@ -1634,6 +1644,9 @@ app.patch('/v1/admin/tenants/:id', async (c) => {
     values.push(body.name.slice(0, 80));
   }
   if (Array.isArray(body.allowed_origins)) {
+    if (body.allowed_origins.length > 10 || body.allowed_origins.some((v: any) => typeof v !== 'string' || !validTenantOrigin(v))) {
+      return c.json({ message: 'Use up to 10 exact HTTPS origins (localhost HTTP is allowed for development). No paths or wildcards.' }, 400);
+    }
     updates.push('allowed_origins = ?');
     values.push(JSON.stringify(body.allowed_origins.slice(0, 10).map(String)));
   }
@@ -1747,6 +1760,7 @@ app.get('/v1/users/:id', async (c) => {
 });
 
 /* --------------------------- Public tenant API (slug) --------------------------- */
+tenantSecurity.register(app);
 
 app.post('/t/:slug/signup', async (c) => {
   const tenant = await findTenantBySlug(c.env.DB, c.req.param('slug'));
@@ -1762,7 +1776,7 @@ app.post('/t/:slug/signup', async (c) => {
   const lastName = String(body.lastName || '').trim().slice(0, 60);
 
   if (!isValidEmail(email)) return c.json({ message: 'Please enter a valid email.' }, 400);
-  if (password.length < 6) return c.json({ message: 'Password must be at least 6 characters.' }, 400);
+  if (password.length < 12 || password.length > 128) return c.json({ message: 'Password must be 12–128 characters.' }, 400);
 
   // Per-tenant + per-IP throttle
   const ip = c.req.header('CF-Connecting-IP') || 'unknown';
@@ -1771,6 +1785,8 @@ app.post('/t/:slug/signup', async (c) => {
   const emailKey = `tsignup:${tenant.id}:email:${email}`;
   const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
   if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_signup');
+  await recordThrottleFailure(c.env.DB, ipKey, now);
+  await recordThrottleFailure(c.env.DB, emailKey, now);
 
   // MAU enforcement before creating new accounts
   const mauLimit = PLAN_MAU_LIMITS[tenant.plan] || PLAN_MAU_LIMITS.free;
@@ -1802,9 +1818,10 @@ app.post('/t/:slug/signup', async (c) => {
     .run();
   await recordTenantMau(c.env.DB, tenant.id, id, now);
 
-  const token = await issueTenantSession(c, tenant.id, id);
+  try { await tenantSecurity.mail(c, tenant, { id, email }, 'verify'); }
+  catch { return c.json({ code: 'verification_delivery_failed', message: 'Account created, but verification delivery failed. Request another verification email after one minute.' }, 503); }
   return c.json({
-    token,
+    verificationRequired: true,
     user: { id, email, firstName, lastName, email_verified: 0 },
   });
 });
@@ -1831,7 +1848,7 @@ app.post('/t/:slug/login', async (c) => {
   if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_login');
 
   const user = await c.env.DB.prepare(
-    'SELECT id, password_hash, first_name, last_name, profile_image_url FROM users WHERE tenant_id = ? AND email = ?',
+    'SELECT id, password_hash, first_name, last_name, profile_image_url, email_verified FROM users WHERE tenant_id = ? AND email = ?',
   )
     .bind(tenant.id, email)
     .first<{
@@ -1840,6 +1857,7 @@ app.post('/t/:slug/login', async (c) => {
       first_name: string | null;
       last_name: string | null;
       profile_image_url: string | null;
+      email_verified: number;
     }>();
   if (!user || !user.password_hash) {
     await recordThrottleFailure(c.env.DB, ipKey, now);
@@ -1854,6 +1872,7 @@ app.post('/t/:slug/login', async (c) => {
   }
   await clearThrottle(c.env.DB, ipKey);
   await clearThrottle(c.env.DB, emailKey);
+  if (!user.email_verified) return c.json({ code: 'EMAIL_VERIFICATION_REQUIRED', message: 'Confirm your email before signing in.' }, 403);
   await recordTenantMau(c.env.DB, tenant.id, user.id, now);
 
   const token = await issueTenantSession(c, tenant.id, user.id);

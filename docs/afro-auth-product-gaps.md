@@ -6,7 +6,9 @@ Scope: customer-facing `/cf-auth/t/:slug/*` and `/cf-auth/v1/*` in the current W
 
 Tenant-scoped users and user lookups; hashed passwords; hashed tenant secret keys; API-key creation and revocation; login throttling; JWT signature/expiration checks; tenant-ID checks on session verification; and a project-management UI.
 
-## Priority gaps
+## Original findings (before customer-auth changes)
+
+Items 1, 2, 4, and 5 below are addressed in the current workspace by the tenant-auth release; issuer/audience checks and the password minimum are also addressed. They are retained here as the original assessment, not current missing-feature claims. See `tenant-auth-release.md` for required migration, breaking changes and verification limits. No live deployment is implied.
 
 1. **Tenant session lifecycle:** tenant JWTs last 30 days and verification checks token claims, not a revocable tenant session record. No tenant logout/revocation, refresh-token rotation, or “logout all devices” flow was found. Platform device management does not fix this.
 2. **Tenant recovery and verification:** tenant signup returns a usable token with `email_verified: 0`. Tenant-specific email-confirmation and forgotten-password/reset routes are missing. Existing platform reset endpoints query only the platform tenant.
@@ -26,4 +28,4 @@ Tenant-scoped users and user lookups; hashed passwords; hashed tenant secret key
 
 ## Suggested order
 
-First complete tenant verification/recovery/session revocation and correct origin parsing. Then isolate signing keys and add a tested rotation design. Address customer-domain cookie isolation before treating the combined hosting/auth platform as hardened.
+Next isolate signing keys and add a tested rotation design. Customer-domain cookie isolation remains a separate unresolved risk. Refresh-token rotation, MFA, security-event history and provider-backed production verification remain outside the tenant-auth release.

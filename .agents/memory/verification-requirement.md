@@ -13,3 +13,9 @@ The user wants to keep and improve the current authentication without Clerk. Set
 **Why:** The user explicitly chose improving their existing platform and login API rather than migrating to Clerk.
 
 **How to apply:** Keep platform-account fixes distinct from the customer-facing tenant auth product; report tenant gaps rather than claiming platform protections automatically cover customer apps.
+
+Customer-app password recovery requires a fresh explicit login after reset; it must not create an Afro AI platform cookie or silently activate an unverified customer account.
+
+**Why:** The reset browser cannot safely be assumed to be the original integrating app. Platform login and customer-app credentials are distinct trust boundaries.
+
+**How to apply:** Customer integrations handle their own post-reset navigation/login. When verified OAuth links an unverified account, discard any pre-existing password to prevent pre-registration account takeover.

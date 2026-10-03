@@ -197,9 +197,14 @@ export default function AfroAuthProjectPage() {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ email, password })
-}).then(r => r.json())
-  .then(({ token, user }) => {
-    localStorage.setItem("auth_token", token);
+}).then(async r => {
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.message);
+  return data;
+})
+  .then(({ verificationRequired, user, message }) => {
+    // Signup does not issue a token. Show a "check your email" screen.
+    // After confirmation, POST the email/password to /login.
   });`}
               </pre>
             </CardContent>
@@ -224,6 +229,33 @@ export default function AfroAuthProjectPage() {
 }).then(r => r.json());
 // → { valid: true, user: { id, email, ... } }`}
               </pre>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Verification, recovery and sessions</CardTitle>
+              <CardDescription>All routes below use your project URL. Tokens expire after 24 hours and are checked against live session records.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <p>Signup requires a 12–128 character password. It sends a confirmation email, not a token. After confirmation, sign in:</p>
+              <pre className="bg-card border rounded p-4 text-xs overflow-x-auto">{`const response = await fetch("${slugUrl}/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email, password })
+});
+const data = await response.json();
+if (!response.ok) throw new Error(data.message);
+// Keep data.token in memory, or in a secure server-side session.
+// Do not put your sk_live_ secret in browser code.`}</pre>
+              <ul className="space-y-2 list-disc pl-5">
+                <li><code>POST /send-verification</code> and <code>POST /forgot-password</code>: send <code>{'{"email":"person@example.com"}'}</code>. Responses deliberately do not reveal whether the account exists.</li>
+                <li>Email links open hosted confirmation/reset forms. Resetting a password logs out every session for that account in this project, including pending authorization codes.</li>
+                <li><code>GET /me</code>, <code>GET /sessions</code>, <code>POST /logout</code>, <code>POST /logout-all</code>, and <code>DELETE /sessions/:id</code>: send <code>Authorization: Bearer USER_TOKEN</code>. For POST logout calls, send an empty JSON object.</li>
+                <li>Validate tokens on your server with <code>/cf-auth/v1/sessions/verify</code> on every protected operation. Signature-only/offline checks cannot detect revocation.</li>
+              </ul>
+              <p>Social login: generate and retain a random PKCE verifier (43–128 characters); derive its SHA-256 base64url challenge. Navigate to <code>/cf-auth/google/start</code> or <code>/cf-auth/github/start</code> with <code>tenant</code>, <code>redirect_uri</code>, and <code>code_challenge</code>. The callback origin must be in your allowed origins.</p>
+              <p>Exchange the returned <code>code</code> within 60 seconds using <code>POST {slugUrl}/oauth/exchange</code> with <code>code</code>, <code>code_verifier</code>, and the identical <code>redirect_uri</code>. Remove the code from the browser address immediately. The response contains your project’s token—not an Afro AI platform session.</p>
+              <p className="text-muted-foreground">Existing stateless tokens require a fresh login after this release. Existing unverified users must confirm their email. Empty allowed origins block cross-origin browsers.</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -407,7 +439,7 @@ function SettingsForm({
       <Card>
         <CardHeader>
           <CardTitle>Allowed origins (CORS)</CardTitle>
-          <CardDescription>One per line. Leave blank to allow all (development only).</CardDescription>
+          <CardDescription>One exact HTTPS origin per line, without paths or trailing slashes. An empty list blocks cross-origin browser calls. HTTP localhost is allowed for development.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <textarea
