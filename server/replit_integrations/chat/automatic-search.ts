@@ -69,7 +69,7 @@ export async function completeWithAutomaticSearch(opts: {
         signal.throwIfAborted();
         completionTokens += repaired.completionTokens ?? 0;
         if (!repaired.text?.trim() || repaired.toolCalls?.length || invalidBuildAnswer(repaired.text, opts.buildTurn.requireHtml, opts.buildTurn.plan)) {
-          return { fullText: "I couldn’t complete this request. No new website was created or published. Please try again with Plan turned off to build.", model: repaired.model, completionTokens };
+          return { fullText: "I couldn’t complete this request. No new website was created or published. Please try again.", model: repaired.model, completionTokens };
         }
         return { fullText: repaired.text, model: repaired.model, completionTokens };
       }

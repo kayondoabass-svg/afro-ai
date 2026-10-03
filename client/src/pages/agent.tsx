@@ -55,7 +55,7 @@ interface AgentMessage {
   searchActivity?: ChatSearchActivity;
 }
 
-interface QueuedPrompt { id: string; text: string; mode: "chat" | "plan" | "project"; }
+interface QueuedPrompt { id: string; text: string; mode: "chat" | "project"; }
 
 interface ConversationSummary {
   id: number;
@@ -173,7 +173,6 @@ export default function AgentPage() {
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [queue, setQueue] = useState<QueuedPrompt[]>([]);
   const [queueOpen, setQueueOpen] = useState(true);
-  const [planMode, setPlanMode] = useState(false);
   const [searchActivity, setSearchActivity] = useState<ChatSearchActivity | null>(null);
   const [working, setWorking] = useState(false);
   const [workingStatus, setWorkingStatus] = useState("");
@@ -248,7 +247,6 @@ export default function AgentPage() {
     if (!isFullstack || projectBlocked) return;
     setProjectAgent(true);
     setProjectPanelOpen(true);
-    setPlanMode(false);
     setPendingAttachments([]);
   }, [isFullstack, activeProjectId, projectBlocked]);
 
@@ -460,7 +458,7 @@ export default function AgentPage() {
     return true;
   };
 
-  const sendMessage = async (text: string, attachments: Attachment[] = [], mode: "chat" | "plan" | "project" = projectAgent ? "project" : planMode ? "plan" : "chat") => {
+  const sendMessage = async (text: string, attachments: Attachment[] = [], mode: "chat" | "project" = projectAgent ? "project" : "chat") => {
     if (projectBlocked) {
       toast({ title: "Project is not ready", description: setupBlocked ? "Return to the dashboard and use Retry setup on this project." : "Verify project metadata before sending. Retry the project check.", variant: "destructive" });
       return;
@@ -549,7 +547,7 @@ export default function AgentPage() {
     };
 
     try {
-      const body: any = { content: mode === "plan" ? `[PLAN MODE] ${text}` : text };
+      const body: any = { content: text };
       if (mode === "project") body.projectAgent = true;
       if (attachments.length > 0) body.attachments = attachments;
 
@@ -656,7 +654,7 @@ export default function AgentPage() {
         toast({ title: "Wait to send attachments", description: "Attachments cannot be queued. Stop or wait for the current reply.", variant: "destructive" });
         return;
       }
-      setQueue(q => [...q, { id: `q-${Date.now()}`, text, mode: projectAgent ? "project" : planMode ? "plan" : "chat" }]);
+      setQueue(q => [...q, { id: `q-${Date.now()}`, text, mode: projectAgent ? "project" : "chat" }]);
       setInput("");
       toast({ title: t("chat.toastQueued"), description: t("chat.toastQueuedDesc") });
       return;
@@ -770,7 +768,6 @@ export default function AgentPage() {
       const loadedProjectId = data.projectId ?? data.conversation?.projectId ?? knownProjectId ?? conversations.find(c => c.id === id)?.projectId ?? null;
       setActiveProjectId(loadedProjectId);
       setProjectAgent(projectMetadata.data?.find(p => p.id === loadedProjectId)?.type === "fullstack");
-      setPlanMode(false);
       setMessages(msgs);
       setConversationId(id);
       setHistoryOpen(false);
@@ -818,7 +815,6 @@ export default function AgentPage() {
         setActiveProjectId(null);
         setProjectPanelOpen(false);
         setProjectAgent(false);
-        setPlanMode(false);
         setConversationId(conv.id);
         setMessages([]);
         setQueue([]);
@@ -900,7 +896,6 @@ export default function AgentPage() {
       return;
     }
     setProjectAgent(value => !value);
-    setPlanMode(false);
     setPendingAttachments([]);
   };
 
@@ -1424,9 +1419,10 @@ export default function AgentPage() {
               <span className="hidden sm:inline ml-1">Attach</span>
             </Button>
 
-            <button type="button" disabled={isFullstack || projectBlocked} aria-label="Plan before building" aria-pressed={planMode} onClick={() => { setPlanMode(v => !v); setProjectAgent(false); }} className={`agent-control rounded-md border px-2.5 h-9 text-xs font-medium ${planMode ? "border-amber-400 bg-amber-400/15 text-amber-200" : "border-zinc-700 text-zinc-300"}`} data-testid="checkbox-plan-mode">
-              Plan {planMode ? "on" : "off"}
-            </button>
+            <span title="Planning is automatic. Ask for 'plan only' when you do not want implementation. Project-file edits still require review."
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 h-9 text-xs font-medium text-zinc-300" data-testid="automatic-planning">
+              <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />Auto plan
+            </span>
           </div>
 
           {working ? (

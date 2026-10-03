@@ -60,7 +60,8 @@ describe("full-stack agent workspace", () => {
     expect(screen.queryByTestId("button-publish")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("button-github-export")).toBeEnabled());
     expect(screen.getByTestId("nav-preview")).toBeDisabled();
-    expect(screen.getByTestId("checkbox-plan-mode")).toBeDisabled();
+    expect(screen.queryByTestId("checkbox-plan-mode")).not.toBeInTheDocument();
+    expect(screen.getByTestId("automatic-planning")).toHaveTextContent("Auto plan");
     // Close the file drawer to interact with the underlying composer.
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Message to Afro AI" }), { target: { value: "Add a health endpoint" } });

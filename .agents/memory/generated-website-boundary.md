@@ -13,7 +13,9 @@ Build replies must contain real output, not background promises or placeholder l
 
 **Why:** The user showed a repeated confirmation loop with "[Link to your website]" while Publish reported nothing built, and explicitly requested automatic building and a publish recommendation.
 
-**How to apply:** Honor the current turn's Plan setting (not historical markers), preserve customer identity and project-agent review requirements, and validate generated output before treating a build as successful.
+**How to apply:** Plan and build automatically once the requested brief is complete. Stop at planning only on an explicit user request (such as "plan only" or "don't build"). Ignore obsolete UI mode markers. Preserve customer identity and project-agent review requirements.
+
+**Why:** The user explicitly corrected manual planning: "who told you to make plan manual. It was auto". No toggle or repeated build command should be required for normal website generation.
 
 Code must be hidden by default behind compact Preview (eye), Code (`</>`), Copy, and Search icons, connected to existing preview/publish/version/search functionality.
 

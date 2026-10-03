@@ -42,9 +42,10 @@ describe("active /chat Agent search", () => {
     expect(screen.queryByRole("button", { name: "Search the web" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("button-project-agent"));
     expect(screen.getByTestId("button-project-agent")).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByTestId("checkbox-plan-mode"));
+    fireEvent.click(screen.getByTestId("button-project-agent"));
     expect(screen.getByTestId("button-project-agent")).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByTestId("checkbox-plan-mode")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("automatic-planning")).toHaveTextContent("Auto plan");
+    expect(screen.queryByTestId("checkbox-plan-mode")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("button-mobile-menu"));
     expect(await screen.findByRole("button", { name: "Project files & review" })).toBeInTheDocument();
     expect(screen.getByTestId("button-mobile-project-agent")).toHaveAttribute("aria-pressed", "false");
@@ -173,17 +174,15 @@ describe("active /chat Agent search", () => {
     fireEvent.change(input, { target: { value: "First prompt" } });
     fireEvent.click(screen.getByTestId("button-send"));
     await waitFor(() => expect(bodies).toHaveLength(1));
-    fireEvent.click(screen.getByTestId("checkbox-plan-mode"));
     fireEvent.change(input, { target: { value: "Plan prompt" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    fireEvent.click(screen.getByTestId("checkbox-plan-mode"));
     fireEvent.change(input, { target: { value: "Chat prompt" } });
     fireEvent.keyDown(input, { key: "Enter" });
     fireEvent.click(screen.getByTestId("button-project-agent"));
     await act(async () => finishFirst());
     await waitFor(() => expect(bodies).toEqual([
       { content: "First prompt" },
-      { content: "[PLAN MODE] Plan prompt" },
+      { content: "Plan prompt" },
       { content: "Chat prompt" },
     ]));
     await waitFor(() => expect(screen.queryByTestId("button-toggle-queue")).not.toBeInTheDocument());

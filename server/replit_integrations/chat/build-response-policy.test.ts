@@ -4,7 +4,9 @@ const html = "<!doctype html><html><body><h1>Example</h1></body></html>";
 it("builds on current approval, but respects Plan on this turn", () => {
   expect(currentBuildTurn("build now", true)).toEqual({ plan: false, requireHtml: true });
   expect(currentBuildTurn("okay", true).requireHtml).toBe(true);
-  expect(currentBuildTurn("[PLAN MODE] build. whats wrong", true)).toEqual({ plan: true, requireHtml: false });
+  expect(currentBuildTurn("[PLAN MODE] build. whats wrong", true)).toEqual({ plan: false, requireHtml: true });
+  expect(currentBuildTurn("Plan only: a booking site", true)).toEqual({ plan: true, requireHtml: false });
+  expect(currentBuildTurn("Don't build yet, explain the approach", true).plan).toBe(true);
   expect(currentBuildTurn("build now", false).requireHtml).toBe(false);
   expect(currentBuildTurn("can I preview it?", true).requireHtml).toBe(false);
 });

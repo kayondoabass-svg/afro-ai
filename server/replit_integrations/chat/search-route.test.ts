@@ -72,6 +72,18 @@ beforeEach(() => {
   vi.stubEnv("JINA_API_KEY", "test-only");
 });
 describe("main chat search route wiring", () => {
+  it("does not let a stale Plan toggle block generating and saving a website", async () => {
+    mocks.inference.mockResolvedValue({ text: "<html><body><h1>A complete generated website</h1></body></html>", model: "test" });
+    await handler()(req("[PLAN MODE] build now", false), response());
+    expect(mocks.inference.mock.calls[0][0].messages.at(-1).content).toContain("AUTOMATIC PLAN AND BUILD");
+    expect(mocks.saveFiles).toHaveBeenCalled();
+  });
+  it("honors an explicit plan-only request without saving generated files", async () => {
+    mocks.inference.mockResolvedValue({ text: "The plan is a homepage, services section and contact form. No implementation yet.", model: "test" });
+    await handler()(req("Only discuss the approach.", false), response());
+    expect(mocks.inference.mock.calls[0][0].messages.at(-1).content).toContain("EXPLICIT PLAN-ONLY REQUEST");
+    expect(mocks.saveFiles).not.toHaveBeenCalled();
+  });
   it("recommends Publish then live preview only after an actual version is saved", async () => {
     mocks.inference.mockResolvedValue({ text: "<!doctype html><html><body><h1>A complete working website</h1></body></html>", model: "test" });
     const res = response();
