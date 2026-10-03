@@ -17,6 +17,7 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { SignJWT, jwtVerify } from 'jose';
 import { deviceLabel, resetPasswordUrl, resetStatements } from '../../shared/device-sessions';
+import { PLATFORM_ISSUER, PLATFORM_AUDIENCE, PLATFORM_PURPOSE, verifyPlatformSession } from '../../shared/platform-session';
 import bcrypt from 'bcryptjs';
 import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -66,6 +67,11 @@ app.use('/*', async (c, next) => {
   const isTenantSlugApi = path.startsWith('/cf-auth/t/');
   const isV1PublicApi =
     path.startsWith('/cf-auth/v1/') && !path.startsWith('/cf-auth/v1/admin');
+  if (!isTenantSlugApi && !isV1PublicApi && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
+    if (c.req.header('Sec-Fetch-Site') === 'cross-site' || (origin && origin !== new URL(c.env.APP_URL).origin)) {
+      return c.json({ message: 'Untrusted request origin.' }, 403);
+    }
+  }
   if (isTenantSlugApi) {
     // Extract slug from /cf-auth/t/:slug/...
     const slugMatch = path.match(/^\/cf-auth\/t\/([^/]+)/);
@@ -233,10 +239,11 @@ async function verifyTurnstile(token: string, secret: string, ip?: string): Prom
  *  the session without an extra D1 lookup. */
 async function buildSessionClaims(c: any, userId: string): Promise<Record<string, any>> {
   const row = await c.env.DB.prepare(
-    'SELECT email, first_name AS firstName, last_name AS lastName, profile_image_url AS profileImageUrl FROM users WHERE id = ?',
+    "SELECT email, first_name AS firstName, last_name AS lastName, profile_image_url AS profileImageUrl FROM users WHERE id = ? AND tenant_id = 'platform'",
   )
     .bind(userId)
     .first<{ email: string; firstName?: string; lastName?: string; profileImageUrl?: string }>();
+  if (!row) throw new Error('Cannot issue a platform session for a tenant user');
   return {
     sub: userId,
     email: row?.email || '',
@@ -256,8 +263,10 @@ async function issueSession(c: any, userId: string) {
   await c.env.DB.prepare(
     'INSERT INTO device_sessions (id, user_id, email, device, location, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   ).bind(sid, userId, String(claims.email || '').toLowerCase(), deviceLabel(c.req.header('User-Agent') || ''), location, now, now, now + 30 * 86400).run();
-  const token = await new SignJWT({ ...claims, sid })
+  const token = await new SignJWT({ ...claims, sid, kind: PLATFORM_PURPOSE })
     .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(PLATFORM_ISSUER)
+    .setAudience(PLATFORM_AUDIENCE)
     .setIssuedAt()
     .setExpirationTime('30d')
     .sign(secret);
@@ -290,11 +299,16 @@ async function getCurrentUserId(c: any): Promise<string | null> {
   if (!token) return null;
   try {
     const secret = enc.encode(c.env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
+    const payload = await verifyPlatformSession(token, secret);
     if (typeof payload.sid !== 'string' || !payload.sub) return null;
-    const session = await c.env.DB.prepare('SELECT id FROM device_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?')
+    const session = await c.env.DB.prepare('SELECT id, last_seen_at FROM device_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?')
       .bind(payload.sid, payload.sub, nowSec()).first();
-    return session ? payload.sub as string : null;
+    if (!session) return null;
+    if (session.last_seen_at < nowSec() - 300) {
+      await c.env.DB.prepare('UPDATE device_sessions SET last_seen_at = ? WHERE id = ? AND last_seen_at < ?')
+        .bind(nowSec(), payload.sid, nowSec() - 300).run();
+    }
+    return payload.sub as string;
   } catch {
     return null;
   }
@@ -674,7 +688,11 @@ app.post('/logout', async (c) => {
   const token = getCookie(c, 'afroai_session');
   if (token) {
     try {
-      const { payload } = await jwtVerify(token, enc.encode(c.env.JWT_SECRET));
+      const payload = await verifyPlatformSession(token, enc.encode(c.env.JWT_SECRET)).catch(() => null);
+      if (!payload) {
+        deleteCookie(c, 'afroai_session', { domain: c.env.COOKIE_DOMAIN || 'afroaigroup.com', path: '/' });
+        return c.json({ ok: true });
+      }
       if (typeof payload.sid === 'string') {
         await c.env.DB.prepare('UPDATE device_sessions SET revoked_at = ? WHERE id = ? AND user_id = ?')
           .bind(nowSec(), payload.sid, payload.sub).run();
@@ -1453,6 +1471,16 @@ async function authenticateBySecretKey(c: any): Promise<TenantRow | null> {
 async function authenticatePlatformUser(c: any): Promise<{ id: string; email: string } | null> {
   const userId = await getCurrentUserId(c);
   if (!userId) return null;
+  // Tenant-management is a platform feature too: an unverified platform
+  // session must not bypass the Express account-activation requirement.
+  try {
+    const identity = await fetch(new URL('/api/auth/user', c.env.EXPRESS_BASE_URL || c.env.APP_URL), {
+      headers: { Cookie: c.req.header('Cookie') || '' },
+      redirect: 'error',
+    });
+    const profile: any = identity.ok ? await identity.json() : null;
+    if (!profile?.emailVerified) return null;
+  } catch { return null; }
   const row = await c.env.DB.prepare(
     "SELECT id, email FROM users WHERE id = ? AND tenant_id = 'platform'",
   )

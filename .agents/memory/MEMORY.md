@@ -23,3 +23,4 @@
 - [Full-stack starters](fullstack-starter-scope.md) — automatic files for full-stack projects only; paid access must be server-enforced before expanding runtime capabilities.
 - [Customer branding](customer-branding.md) — never use Afro AI/KEYO as client brands; obtain the preferred customer name before new builds.
 - [Verification requirement](verification-requirement.md) — account access must wait for email confirmation; avoid automatic resend loops during session mirroring.
+- [Crypto test environments](crypto-test-environments.md) — use Node for real JWT tests; jsdom can mix incompatible typed-array realms.

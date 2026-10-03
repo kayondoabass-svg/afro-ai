@@ -21,17 +21,17 @@ async function fetchUser(): Promise<User | null> {
 
 async function logout(): Promise<void> {
   // 1. Tell the Worker to clear the httpOnly session cookie.
-  try {
-    await fetch("/cf-auth/logout", {
+  {
+    const response = await fetch("/cf-auth/logout", {
       method: "POST",
       credentials: "include",
       cache: "no-store",
     });
-  } catch {
-    /* best-effort — keep going so client state is cleared even if request fails */
+    if (!response.ok) throw new Error("Could not log out securely. Please try again.");
   }
   // Also destroy a Passport/TikTok session and revoke its device record.
-  await fetch("/api/logout", { credentials: "include" }).catch(() => {});
+  const response = await fetch("/api/logout", { credentials: "include" });
+  if (!response.ok) throw new Error("Could not log out securely. Please try again.");
 
   // 2. Wipe every cache the PWA service worker may have stored.
   // Without this the installed app silently re-renders the previous logged-in

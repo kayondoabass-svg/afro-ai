@@ -86,6 +86,20 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_reset_tokens_user ON password_reset_tokens(user_id);
 
+-- Platform sessions, shared with Express/Passport. Tenant API JWTs are separate.
+CREATE TABLE IF NOT EXISTS device_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  device TEXT NOT NULL,
+  location TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_device_sessions_email ON device_sessions(email, expires_at);
+
 -- Per-IP and per-email rate limiting for /cf-auth/login, /cf-auth/signup,
 -- and /cf-auth/forgot-password. The Worker writes one row per throttle key
 -- (e.g. "login:ip:1.2.3.4" or "login:email:foo@bar.com") and locks the key

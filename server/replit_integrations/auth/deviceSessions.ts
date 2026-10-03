@@ -12,9 +12,11 @@ const now = () => Math.floor(Date.now() / 1000);
 
 export async function validDeviceSession(id: unknown, userId: string): Promise<boolean> {
   if (typeof id !== "string") return false; // Legacy, unrevocable sessions require a fresh login.
-  const { results } = await sessionQuery("SELECT id FROM device_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?", [id, userId, now()]);
+  const { results } = await sessionQuery("SELECT id, last_seen_at FROM device_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?", [id, userId, now()]);
   if (!results.length) return false;
-  await sessionQuery("UPDATE device_sessions SET last_seen_at = ? WHERE id = ? AND last_seen_at < ?", [now(), id, now() - 300]);
+  if (results[0].last_seen_at < now() - 300) {
+    await sessionQuery("UPDATE device_sessions SET last_seen_at = ? WHERE id = ? AND last_seen_at < ?", [now(), id, now() - 300]);
+  }
   return true;
 }
 
@@ -36,6 +38,11 @@ export function registerDeviceSessionRoutes(app: Express) {
   });
   app.delete("/api/auth/devices/:id", isAuthenticated, async (req: any, res, next) => {
     try {
+      // Do not let customer subdomains make credentialed account changes.
+      const origin = req.get("origin");
+      if (req.get("sec-fetch-site") === "cross-site" || (origin && origin !== `${req.protocol}://${req.get("host")}`)) {
+        return res.status(403).json({ message: "Untrusted request origin." });
+      }
       const user = await authStorage.getUser(req.user.claims.sub);
       const result = await sessionQuery("UPDATE device_sessions SET revoked_at = ? WHERE id = ? AND email = ? AND revoked_at IS NULL", [now(), req.params.id, user!.email!.toLowerCase()]);
       if (!result.meta.changes) return res.status(404).json({ message: "Session not found." });

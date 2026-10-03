@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { jwtVerify } from "jose";
+import { verifyPlatformSession } from "@shared/platform-session";
 import { parse as parseCookie } from "cookie";
 import { authStorage } from "./storage";
 import { validDeviceSession } from "./deviceSessions";
@@ -53,7 +53,7 @@ export function cfAuthBridge(): RequestHandler {
         return next();
       }
 
-      const { payload } = await jwtVerify(token, enc.encode(secret));
+      const payload = await verifyPlatformSession(token, enc.encode(secret));
       const claims = payload as unknown as CfClaims;
       if (!claims.sub) return next();
       if (!await validDeviceSession(payload.sid, claims.sub)) return next();
