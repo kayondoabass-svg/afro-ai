@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { Check, Code2, Copy, Eye, Rocket } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { extractWebsiteHtml } from "@shared/html-extraction";
+import { AgentSearchButton } from "./agent-search-button";
 
 export function AgentHtmlPreview({ html, onClose }: { html: string | null; onClose: () => void }) {
   return <Dialog open={html !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -43,6 +44,7 @@ export function AgentCodeBlock({ code, language, complete = true, previewBlocked
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="text-xs text-zinc-400">{website ? complete ? "Generated HTML" : "Writing HTML…" : language || "Code"}</span>
       <div className="ml-auto flex items-center gap-1.5">
+        <AgentSearchButton code={code} />
         {website && <button type="button" aria-label="Publish" title={previewBlocked ? "Publishing unavailable for this project" : !html || !onPublish ? "Publish is available when generation is complete" : "Publish this website"}
           disabled={!html || !onPublish || previewBlocked} onClick={() => { if (html) onPublish?.(html); }}
           className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-2.5 text-xs text-zinc-100 hover:bg-violet-500 disabled:opacity-40">

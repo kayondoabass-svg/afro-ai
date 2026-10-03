@@ -15,7 +15,7 @@ Build replies must contain real output, not background promises or placeholder l
 
 **How to apply:** Honor the current turn's Plan setting (not historical markers), preserve customer identity and project-agent review requirements, and validate generated output before treating a build as successful.
 
-Code must be hidden by default behind compact Preview (eye), Code (`</>`), and Copy icons, connected to existing preview/publish/version functionality.
+Code must be hidden by default behind compact Preview (eye), Code (`</>`), Copy, and Search icons, connected to existing preview/publish/version/search functionality.
 
 **Why:** The user supplied this exact action-bar reference and repeated that the icons were missing. They explicitly requested Publish before live preview, without deleting existing functionality.
 

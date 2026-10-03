@@ -25,6 +25,7 @@ import { extractWebsiteHtml } from "@shared/html-extraction";
 import { FileTreeSidebar, type ProjectFile } from "@/components/file-tree-sidebar";
 import { AgentStructuredText } from "@/components/agent-structured-text";
 import { AgentCodeBlock, AgentHtmlPreview } from "@/components/agent-code-block";
+import { AgentSearchButton, AgentSearchContext } from "@/components/agent-search-button";
 import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
@@ -1177,6 +1178,10 @@ export default function AgentPage() {
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
+          <AgentSearchButton
+            code={extractHtml([...messages].reverse().find(m => m.role === "assistant" && extractHtml(m.content))?.content || "") || ""}
+            activities={[...messages.flatMap(m => m.searchActivity ? [m.searchActivity] : []), ...(working && searchActivity ? [searchActivity] : [])]}
+          />
           {isFullstack ? <Button
             size="sm"
             className="h-9 px-3 bg-violet-600 hover:bg-violet-500 text-white gap-1.5"
@@ -1296,9 +1301,11 @@ export default function AgentPage() {
           </div>
         )}
 
+        <AgentSearchContext.Provider value={messages.flatMap(m => m.searchActivity ? [m.searchActivity] : [])}>
         {messages.map(msg => msg.role === "web-search" ? (
           msg.searchActivity && <ChatSearchCard key={msg.id} activity={msg.searchActivity} />
         ) : <MessageBlock key={msg.id} msg={msg} previewBlocked={staticControlsBlocked} onPublish={staticControlsBlocked ? undefined : openPublishFor} />)}
+        </AgentSearchContext.Provider>
 
         {working && searchActivity && <ChatSearchCard activity={searchActivity} />}
         {working && streamingContent && (
