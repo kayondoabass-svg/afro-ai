@@ -217,14 +217,30 @@ export async function setupAuth(app: Express) {
 
 export const FOUNDER_EMAIL = "kayondoabass@gmail.com";
 
-export const isAuthenticated: RequestHandler = async (req, res, next) => {
+export const isSignedIn: RequestHandler = async (req, res, next) => {
   if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
   return next();
 };
 
+export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
+  if (!req.isAuthenticated?.()) return res.status(401).json({ message: "Unauthorized" });
+  try {
+    const user = await authStorage.getUser(req.user?.claims?.sub);
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (!user.emailVerified) {
+      return res.status(403).json({ code: "EMAIL_VERIFICATION_REQUIRED", message: "Please verify your email before using your account." });
+    }
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const isFounder: RequestHandler = async (req: any, res, next) => {
-  if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
-  const email = req.user?.claims?.email;
-  if (email !== FOUNDER_EMAIL) return res.status(403).json({ message: "Forbidden: Founder access only" });
-  return next();
+  return isAuthenticated(req, res, (error?: any) => {
+    if (error) return next(error);
+    const email = req.user?.claims?.email;
+    if (email !== FOUNDER_EMAIL) return res.status(403).json({ message: "Forbidden: Founder access only" });
+    return next();
+  });
 };

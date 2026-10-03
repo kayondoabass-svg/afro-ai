@@ -22,3 +22,4 @@
 - [Project agent scope](project-agent-scope.md) — cost-sensitive, existing-services-only coding assistance with explicit review; execution and pilot-model activation need separate approval.
 - [Full-stack starters](fullstack-starter-scope.md) — automatic files for full-stack projects only; paid access must be server-enforced before expanding runtime capabilities.
 - [Customer branding](customer-branding.md) — never use Afro AI/KEYO as client brands; obtain the preferred customer name before new builds.
+- [Verification requirement](verification-requirement.md) — account access must wait for email confirmation; avoid automatic resend loops during session mirroring.

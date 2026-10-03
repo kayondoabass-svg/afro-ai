@@ -3,8 +3,11 @@ import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, AlertCircle, Mail } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 const COPY: Record<string, { icon: any; title: string; body: string; tone: "ok" | "warn" }> = {
+  pending: { icon: Mail, tone: "warn", title: "Verify your email first", body: "Open the confirmation link in your inbox to activate your account. If it hasn't arrived, you can request another below." },
+  verifying: { icon: Mail, tone: "warn", title: "Confirming your email…", body: "Please wait while we check your link." },
   ok:      { icon: CheckCircle2, tone: "ok",   title: "Email confirmed!",          body: "Thanks — your email is now verified. You're all set." },
   used:    { icon: CheckCircle2, tone: "ok",   title: "Already confirmed",         body: "This link has already been used. Your email is verified." },
   expired: { icon: AlertCircle,  tone: "warn", title: "This link has expired",     body: "Verification links work for 24 hours. Request a new one from your account." },
@@ -13,16 +16,60 @@ const COPY: Record<string, { icon: any; title: string; body: string; tone: "ok" 
   error:   { icon: AlertCircle,  tone: "warn", title: "Something went wrong",      body: "We couldn't verify right now. Please try again in a moment." },
 };
 
+export function verificationRedirect(search: string): string | null {
+  const token = new URLSearchParams(search).get("token");
+  return token ? `/api/auth/verify-email?token=${encodeURIComponent(token)}` : null;
+}
+
 export default function VerifyEmailPage() {
   const [, setLocation] = useLocation();
+  const { user, logout } = useAuth();
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState("");
+  const [cooldown, setCooldown] = useState(0);
   const [status, setStatus] = useState<string>("missing");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const s = params.get("status") || "missing";
+    const redirect = verificationRedirect(window.location.search);
+    if (redirect) {
+      setStatus("verifying");
+      // Support verification emails sent before the backend link was corrected.
+      window.location.replace(redirect);
+      return;
+    }
+    const s = params.get("status") || (user && !user.emailVerified ? "pending" : "missing");
     setStatus(s);
     document.title = "Verify your email — Afro AI";
-  }, []);
+  }, [user]);
+
+  useEffect(() => {
+    if (!cooldown) return;
+    const timer = window.setTimeout(() => setCooldown(cooldown - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
+
+  async function resend() {
+    if (sending || cooldown) return;
+    setSending(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/auth/send-verification", { method: "POST", credentials: "include" });
+      const data = await response.json();
+      if (response.status === 429) setCooldown(60);
+      if (!response.ok) throw new Error(data.error || "Could not send verification email.");
+      if (data.alreadyVerified) {
+        window.location.replace("/dashboard");
+        return;
+      }
+      setCooldown(60);
+      setMessage("Verification email sent. Check your inbox and spam folder.");
+    } catch (error: any) {
+      setMessage(error.message || "Could not send verification email.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   const c = COPY[status] || COPY.error;
   const Icon = c.icon;
@@ -37,14 +84,19 @@ export default function VerifyEmailPage() {
           <h1 className="text-2xl font-bold font-serif" data-testid="text-verify-title">{c.title}</h1>
           <p className="text-muted-foreground" data-testid="text-verify-body">{c.body}</p>
           {c.tone === "ok" ? (
-            <Button className="w-full" onClick={() => setLocation("/dashboard")} data-testid="button-go-dashboard">
+            <Button className="w-full" onClick={() => window.location.replace("/dashboard")} data-testid="button-go-dashboard">
               Go to dashboard
             </Button>
           ) : (
             <div className="space-y-2">
-              <Button className="w-full" onClick={() => setLocation("/dashboard")} data-testid="button-go-account">
-                <Mail className="w-4 h-4 mr-2" /> Open my account
-              </Button>
+              {user ? <>
+                <Button className="w-full" onClick={resend} disabled={sending || cooldown > 0 || status === "verifying"} data-testid="button-resend-verify">
+                  <Mail className="w-4 h-4 mr-2" /> {sending ? "Sending…" : cooldown ? `Resend in ${cooldown}s` : "Resend verification email"}
+                </Button>
+                <Button variant="ghost" onClick={() => window.location.reload()}>I've verified — check again</Button>
+                <Button variant="ghost" onClick={() => logout()}>Sign out</Button>
+              </> : <Button className="w-full" onClick={() => setLocation("/login")}>Sign in to request a new link</Button>}
+              {message && <p role="status" className="text-sm">{message}</p>}
               <Link href="/" className="text-sm text-muted-foreground hover:text-primary block" data-testid="link-home">Back to home</Link>
             </div>
           )}

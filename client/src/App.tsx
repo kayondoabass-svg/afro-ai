@@ -497,6 +497,10 @@ function AppRouter() {
     );
   }
 
+  if (user && !user.emailVerified) {
+    return <Suspense fallback={<RouteFallback />}><VerifyEmailPage /></Suspense>;
+  }
+
   if (!user) {
     // Hard guard for protected routes: a logged-out visitor on /chat,
     // /dashboard, /settings, etc. used to silently fall through to the

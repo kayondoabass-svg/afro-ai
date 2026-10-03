@@ -3101,7 +3101,7 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.get("/api/affiliate/applications", isFounderOrTeamViewer, async (_req: any, res) => {
+  app.get("/api/affiliate/applications", isAuthenticated, isFounderOrTeamViewer, async (_req: any, res) => {
     try {
       const applications = await storage.getAllAffiliateApplications();
       res.json(applications);
@@ -3109,7 +3109,7 @@ export async function registerRoutes(
   });
 
   // Founder + manager team members: per-affiliate drill-down — referrals + commission records.
-  app.get("/api/affiliate/applications/:id", isFounderOrTeamViewer, async (req: any, res) => {
+  app.get("/api/affiliate/applications/:id", isAuthenticated, isFounderOrTeamViewer, async (req: any, res) => {
     try {
       const affiliate = await storage.getAffiliateApplicationById(parseInt(req.params.id));
       if (!affiliate) return res.status(404).json({ message: "Affiliate not found" });

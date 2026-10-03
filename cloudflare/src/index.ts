@@ -688,6 +688,20 @@ app.post('/run-code', async (c) => {
   const userId = await getCurrentUserId(c);
   if (!userId) return c.json({ ok: false, code: 'unauthorized', message: 'Sign in to run code.' }, 401);
 
+  // Platform verification is authoritative in Postgres, not the Worker's D1 mirror.
+  try {
+    const identity = await fetch(new URL('/api/auth/user', c.env.EXPRESS_BASE_URL || c.env.APP_URL), {
+      headers: { Cookie: c.req.header('Cookie') || '' },
+      redirect: 'error',
+    });
+    const user: any = identity.ok ? await identity.json() : null;
+    if (!user?.emailVerified) {
+      return c.json({ ok: false, code: 'EMAIL_VERIFICATION_REQUIRED', message: 'Verify your email before running code.' }, 403);
+    }
+  } catch {
+    return c.json({ ok: false, code: 'verification_unavailable', message: 'Unable to check account verification. Try again later.' }, 503);
+  }
+
   const apiKey = c.env.E2B_API_KEY;
   if (!apiKey) {
     return c.json({ ok: false, code: 'not_configured', message: 'Cloud sandbox not configured.' }, 503);

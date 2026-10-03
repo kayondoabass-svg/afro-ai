@@ -75,8 +75,9 @@ export function cfAuthBridge(): RequestHandler {
             const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.headers.host;
             const origin = `${proto}://${host}`;
             const name = dbUser.firstName || dbUser.email.split("@")[0];
-            const { sendVerificationEmailFor } = await import("./routes");
-            sendVerificationEmailFor(dbUser.id, dbUser.email, name, origin).catch(() => {});
+            const { sendVerificationEmailFor } = await import("./verification");
+            sendVerificationEmailFor(dbUser.id, dbUser.email, name, origin, true)
+              .catch(() => console.warn("[email-verify] Automatic verification email failed; manual resend available."));
           }
         }
       } catch {}
