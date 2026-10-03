@@ -40,13 +40,3 @@ export function ChatSearchCard({ activity }: { activity: ChatSearchActivity }) {
     </section>
   );
 }
-
-export function ChatSearchToggle({ enabled, disabled, onChange }: {
-  enabled: boolean; disabled?: boolean; onChange: (enabled: boolean) => void;
-}) {
-  return <button type="button" aria-label="Search the web" aria-pressed={enabled} disabled={disabled}
-    data-testid="button-web-search" onClick={() => onChange(!enabled)}
-    className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs shrink-0 ${enabled ? "bg-primary/10 text-primary border-primary" : "text-muted-foreground"} disabled:opacity-50`}>
-    <Globe className="w-4 h-4" />Search {enabled ? "on" : "off"}
-  </button>;
-}

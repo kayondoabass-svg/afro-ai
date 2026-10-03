@@ -1,6 +1,7 @@
 import { d1Query, isD1Configured } from "./d1";
 import { chatStorage } from "./replit_integrations/chat/storage";
 import { ProjectFileError, validateProjectFiles, type ProjectFile } from "./project-file-policy";
+import { indexWorkspaceFiles } from "./workspace-search";
 export { ProjectFileError, validateProjectFiles, type ProjectFile } from "./project-file-policy";
 
 export async function assertProjectFileOwnership(userId: string, conversationId: string | number): Promise<string> {
@@ -76,6 +77,7 @@ export async function saveProjectFiles(userId: string, conversationId: string | 
   // effects if any limit/constraint fails.
   await query("INSERT INTO project_file_commands (user_id, conversation_id, mode, files) VALUES (?, ?, ?, ?)",
     [userId, id, mode, JSON.stringify(files)]);
+  indexWorkspaceFiles(userId, id, result);
   return result;
 }
 

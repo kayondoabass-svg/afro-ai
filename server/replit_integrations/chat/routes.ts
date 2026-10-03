@@ -11,7 +11,8 @@ import { isAuthenticated, FOUNDER_EMAIL } from "../auth/replitAuth";
 import { aiQuotaGuard } from "../quota";
 import { aiChatCompleteStream } from "../../ai-chat-provider";
 import { buildLiveWebContext, extractUrls } from "../../url-scrape";
-import { planChatSearch, runChatSearch, searchEvidence, needsImageSearchContext } from "./search";
+import { searchEvidence } from "./search";
+import { completeWithAutomaticSearch } from "./automatic-search";
 import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
 import { listProjectFiles, saveProjectFiles } from "../../project-files";
@@ -2267,22 +2268,11 @@ export function registerChatRoutes(app: Express): void {
       };
       const priorMessages = messages.slice(0, -1)
         .map(m => ({ ...m, content: redactPrivateCredentials(m.content) }));
-      const searchQuery = planChatSearch(userContent, req.body.webSearch === true, priorMessages);
       let searchContext = "";
       for (const previous of priorMessages.filter(m => m.role === "web-search").slice(-2)) {
         try {
           searchContext += searchEvidence(JSON.parse(previous.content));
         } catch { /* Ignore malformed legacy metadata. */ }
-      }
-      if (searchQuery) {
-        const unknownImage = needsImageSearchContext(userContent,
-          Boolean(attachments?.some((a: any) => a?.mimetype?.startsWith("image/"))), priorMessages);
-        const activity: ChatSearchActivity = unknownImage
-          ? { type: "web-search", status: "needs-context", query: "", sources: [] }
-          : await runChatSearch(searchQuery, requestAbort.signal, emitSearch);
-        if (unknownImage) emitSearch(activity);
-        await chatStorage.createMessage(conversationId, "web-search", JSON.stringify(activity));
-        searchContext += searchEvidence(activity);
       }
       if (requestAbort.signal.aborted) return;
 
@@ -2482,13 +2472,19 @@ You are now in EDITOR MODE. Your workflow:
         content: contextPrompt,
       };
 
-      const streamResult = await aiChatCompleteStream({
+      const streamResult = await completeWithAutomaticSearch({
         messages: [systemMessage, ...chatMessages],
+        workspace: { userId, conversationId },
         maxTokens,
         signal: requestAbort.signal,
-        // Buffer until complete: credentials and solicitation can span chunks.
-        onChunk: () => {},
+        onActivity: async activity => {
+          emitSearch(activity);
+          if (activity.status !== "searching") {
+            await chatStorage.createMessage(conversationId, "web-search", JSON.stringify(activity));
+          }
+        },
       });
+      if (requestAbort.signal.aborted) return;
 
       let fullResponse = safeAssistantText(streamResult.fullText);
       if (!isFounderRequest && hasForbiddenCustomerBrand(fullResponse, chatMessages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : "").join("\n"))) {
@@ -2576,6 +2572,7 @@ You are now in EDITOR MODE. Your workflow:
       res.end();
     } catch (error) {
       console.error("Error sending message:", error);
+      if (res.destroyed || res.writableEnded) return;
       if (res.headersSent) {
         res.write(`data: ${JSON.stringify({ error: "Failed to send message" })}\n\n`);
         res.end();

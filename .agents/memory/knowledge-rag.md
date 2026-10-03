@@ -19,4 +19,8 @@ description: How semantic RAG and tool/function calling are built on Afro AI, an
 
 # Tool / function calling
 
+- Web and workspace searches should be internal model decisions, not manual chat toggles or keyword-triggered forced searches.
+  **Why:** The user reported that preview follow-ups produced unrelated web searches and explicitly requested automatic web and file retrieval.
+  **How to apply:** Keep conversation context available for tool selection; never interpret old client search flags as authorization to search. Workspace scope must come from authenticated ownership, never model-supplied project/vector-store IDs. Preserve review-before-write behavior.
+
 - `aiChatComplete` takes optional `tools`/`toolChoice` and returns `toolCalls`/`finishReason`; `runChatWithTools` runs the call→execute→feed-back loop. The first tool is `search_knowledge` (wraps `retrieveKnowledge`). Works across both Gemini and OpenAI because Gemini is reached via its OpenAI-compatible endpoint.

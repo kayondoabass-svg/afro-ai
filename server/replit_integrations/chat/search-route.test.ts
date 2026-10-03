@@ -20,8 +20,8 @@ vi.mock("./storage", () => ({ chatStorage: {
 vi.mock("../../db", () => ({ db: {} }));
 vi.mock("../auth/replitAuth", () => ({ isAuthenticated: vi.fn(), FOUNDER_EMAIL: "founder@example.org" }));
 vi.mock("../quota", () => ({ aiQuotaGuard: () => vi.fn() }));
-vi.mock("../../ai-chat-provider", () => ({ aiChatCompleteStream: mocks.inference }));
-vi.mock("../../web-search", () => ({ searchWeb: mocks.search }));
+vi.mock("../../ai-chat-provider", () => ({ aiChatComplete: mocks.inference, aiChatCompleteStream: vi.fn() }));
+vi.mock("../../web-search", () => ({ searchWeb: mocks.search, webSearchConfigured: () => Boolean(process.env.JINA_API_KEY) }));
 vi.mock("../../url-scrape", () => ({ extractUrls: () => [], buildLiveWebContext: vi.fn() }));
 vi.mock("../../attachment-parse", () => ({ isParseableAttachment: () => false, buildAttachmentContext: vi.fn() }));
 vi.mock("../../project-files", () => ({ listProjectFiles: vi.fn(), saveProjectFiles: vi.fn() }));
@@ -56,19 +56,22 @@ beforeEach(() => {
   mocks.getConversation.mockResolvedValue({ id: 12, userId: "owner" });
   mocks.search.mockReset().mockResolvedValue([{ title: "Kampala AI Conference admission", url: "https://conference.ug/register", snippet: "Free; register first.", retrievedAt: "2026-05-01" }]);
   mocks.inference.mockReset().mockImplementation(async (options) => {
-    options.onChunk("Check the linked event registration page.");
-    return { fullText: "Check the linked event registration page.", completionTokens: 10 };
+    if (options.messages.some((m: any) => m.role === "tool")) {
+      return { text: "Check the linked event registration page.", model: "test", completionTokens: 10 };
+    }
+    return { text: "", model: "test", toolCalls: [{ id: "search-1", type: "function", function: { name: "search_web", arguments: '{"query":"Kampala AI Conference registration"}' } }] };
   });
   vi.stubEnv("JINA_API_KEY", "test-only");
 });
 describe("main chat search route wiring", () => {
-  it("does not fabricate a search subject from a fresh image-only message", async () => {
+  it("lets the model clarify an unclear image instead of forcing search from an old UI flag", async () => {
+    mocks.inference.mockResolvedValue({ text: "Please name the event in the image.", model: "test" });
     const request: any = req("Search this image", true);
     request.body.attachments = [{ mimetype: "image/png", dataUrl: "data:image/png;base64,eA==" }];
     await handler()(request, response());
     expect(mocks.search).not.toHaveBeenCalled();
-    expect(JSON.parse(mocks.rows.find(m => m.role === "web-search").content).status).toBe("needs-context");
-    expect(mocks.inference.mock.calls[0][0].messages[0].content).toContain("no web search has occurred");
+    expect(mocks.rows.some(m => m.role === "web-search")).toBe(false);
+    expect(mocks.inference.mock.calls[0][0].messages.at(-1).content).toContain("image's subject is unclear");
   });
   it.each(["empty", "unavailable", "failed"] as const)("persists truthful %s state and gives inference no invented sources", async status => {
     if (status === "empty") mocks.search.mockResolvedValue([]);
@@ -79,7 +82,7 @@ describe("main chat search route wiring", () => {
     const stored = JSON.parse(mocks.rows.find(m => m.role === "web-search").content);
     expect(stored.status).toBe(status);
     expect(stored.sources).toEqual([]);
-    expect(mocks.inference.mock.calls[0][0].messages[0].content).toContain(`"status":"${status}"`);
+    expect(mocks.inference.mock.calls[1][0].messages.find((m: any) => m.role === "tool").content).toContain(`"status":"${status}"`);
     expect(res.write.mock.calls.join("")).not.toContain("private provider error");
     if (status === "unavailable") expect(mocks.search).not.toHaveBeenCalled();
   });
@@ -91,11 +94,15 @@ describe("main chat search route wiring", () => {
     expect(events.filter(e => e.type === "web-search").map(e => e.status)).toEqual(["searching", "success"]);
     expect(mocks.rows.find(m => m.role === "web-search").content).toContain("https://conference.ug/register");
     const options = mocks.inference.mock.calls[0][0];
-    expect(options.messages[0].content).toContain("untrusted data");
+    expect(options.tools[0].function.name).toBe("search_web");
+    expect(options.toolChoice).toBe("auto");
+    expect(mocks.inference.mock.calls[1][0].messages.find((m: any) => m.role === "tool")).toMatchObject({ tool_call_id: "search-1" });
+    expect(options.messages.at(-1).content).toContain("untrusted data");
     expect(options.messages.filter((m: any) => m.role === "web-search")).toHaveLength(0);
     expect(options.signal).toBeInstanceOf(AbortSignal);
     await handler()(req("Is it free? Or need to register", false), response());
-    expect(mocks.search.mock.calls[1][0]).toContain("Search Kampala AI conference");
+    expect(mocks.search.mock.calls[1][0]).toContain("Kampala AI Conference");
+    expect(mocks.inference.mock.calls[2][0].messages[0].content).toContain("conference.ug/register");
   });
   it("rejects other tenants before search or persistence", async () => {
     mocks.getConversation.mockResolvedValue({ id: 12, userId: "someone-else" });
@@ -105,7 +112,17 @@ describe("main chat search route wiring", () => {
     expect(mocks.search).not.toHaveBeenCalled();
     expect(mocks.rows).toEqual([]);
   });
-  it("aborts on disconnect and persists cancellation without inference", async () => {
+  it("does not search preview follow-ups even when a stale client sends webSearch true", async () => {
+    mocks.rows = [{ id: 1, role: "assistant", content: "```html\\n<html><body>Easy Mails</body></html>\\n```" }];
+    mocks.inference.mockResolvedValue({ text: "Open the in-app Preview control.", model: "test" });
+    await handler()(req("can i preview it", true), response());
+    expect(mocks.search).not.toHaveBeenCalled();
+    const options = mocks.inference.mock.calls[0][0];
+    expect(options.messages.some((m: any) => m.content.includes("Easy Mails"))).toBe(true);
+    expect(options.messages.at(-1).content).toContain('"Can I preview it?"');
+    expect(mocks.rows.at(-1).content).toBe("Open the in-app Preview control.");
+  });
+  it("aborts on disconnect and persists cancellation without final inference", async () => {
     const res = response();
     mocks.search.mockImplementation(async (_query, signal) => {
       res.emit("close");
@@ -113,7 +130,7 @@ describe("main chat search route wiring", () => {
       throw new Error("cancelled");
     });
     await handler()(req(), res);
-    expect(mocks.inference).not.toHaveBeenCalled();
+    expect(mocks.inference).toHaveBeenCalledTimes(1);
     expect(mocks.rows.find(m => m.role === "web-search").content).toContain('"status":"cancelled"');
   });
 });

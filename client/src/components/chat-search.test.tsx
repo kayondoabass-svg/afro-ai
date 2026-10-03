@@ -1,19 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { ChatSearchCard, ChatSearchToggle, parseSearchActivity } from "./chat-search";
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { ChatSearchCard, parseSearchActivity } from "./chat-search";
 import { CHAT_SEARCH_LABELS, type ChatSearchActivity } from "@shared/chat-search";
 
-describe("main chat search controls and actual server activities", () => {
-  it("offers an accessible toggle with explicit on/off state", () => {
-    const onChange = vi.fn();
-    const { rerender } = render(<ChatSearchToggle enabled={false} onChange={onChange} />);
-    const toggle = screen.getByRole("button", { name: "Search the web" });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(toggle);
-    expect(onChange).toHaveBeenCalledWith(true);
-    rerender(<ChatSearchToggle enabled disabled onChange={onChange} />);
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(toggle).toBeDisabled();
+describe("main chat server search activities", () => {
+  it("announces server activity updates without offering manual search controls", () => {
+    const { rerender } = render(<ChatSearchCard activity={{ type: "web-search", status: "searching", query: "conference", sources: [] }} />);
+    const card = screen.getByRole("region", { name: "Web search activity" });
+    expect(card).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByText(CHAT_SEARCH_LABELS.searching)).toBeVisible();
+    rerender(<ChatSearchCard activity={{ type: "web-search", status: "success", query: "conference", sources: [] }} />);
+    expect(screen.getByText(CHAT_SEARCH_LABELS.success)).toBeVisible();
+    expect(screen.queryByText(CHAT_SEARCH_LABELS.searching)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
   it("never turns model prose or reasoning headings into completed activities", () => {
     expect(parseSearchActivity("Research complete: I searched the web")).toBeNull();

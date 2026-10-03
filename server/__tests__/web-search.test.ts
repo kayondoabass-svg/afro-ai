@@ -4,16 +4,28 @@ import { searchWeb } from "../web-search";
 const originalKey = process.env.JINA_API_KEY;
 
 beforeEach(() => {
+  vi.stubEnv("TAVILY_API_KEY", "");
   process.env.JINA_API_KEY = "test-key";
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   if (originalKey === undefined) delete process.env.JINA_API_KEY;
   else process.env.JINA_API_KEY = originalKey;
 });
 
 describe("searchWeb", () => {
+  it("uses Tavily when configured and normalizes results", async () => {
+    vi.stubEnv("TAVILY_API_KEY", "test-key");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      results: [{ title: "News", url: "https://example.org/news", content: "Current report" }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await searchWeb("latest news")).toMatchObject([{ title: "News", snippet: "Current report" }]);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.tavily.com/search");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ query: "latest news", max_results: 5 });
+  });
   it("calls only Jina's search endpoint and limits results to safe HTTPS citations", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       data: [
@@ -48,7 +60,7 @@ describe("searchWeb", () => {
     await expect(searchWeb(" ")).rejects.toThrow("Search query");
     await expect(searchWeb("x".repeat(501))).rejects.toThrow("Search query");
     delete process.env.JINA_API_KEY;
-    await expect(searchWeb("hello")).rejects.toThrow("JINA_API_KEY");
+    await expect(searchWeb("hello")).rejects.toThrow("no search provider");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

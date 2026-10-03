@@ -64,6 +64,7 @@ function validMaxTokens(value: number | undefined): void {
 
 export interface ChatCompleteResult {
   text: string;
+  completionTokens?: number;
   provider: "openai" | "gemini" | "afro-test";
   model: string;
   /** Present when the model decided to call one or more tools. */
@@ -101,6 +102,7 @@ async function afroChatComplete(opts: ChatCompleteOptions, effectiveMax: number)
   const choice = completion.choices?.[0];
   return {
     text: choice?.message?.content?.trim() || "",
+    completionTokens: completion.usage?.completion_tokens ?? 0,
     provider: "afro-test",
     model: process.env.AFRO_AI_MODEL!,
     toolCalls: (choice?.message as any)?.tool_calls || undefined,
@@ -209,7 +211,7 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
       const choice = completion.choices?.[0];
       const text = choice?.message?.content?.trim() || "";
       const toolCalls = (choice?.message as any)?.tool_calls || undefined;
-      return { text, provider, model, toolCalls, finishReason: choice?.finish_reason };
+      return { text, provider, model, toolCalls, finishReason: choice?.finish_reason, completionTokens: completion.usage?.completion_tokens ?? 0 };
     } catch (err: any) {
       if (opts.signal?.aborted) throw err;
       lastErr = err;

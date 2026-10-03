@@ -1,4 +1,4 @@
-import { searchWeb } from "../../web-search";
+import { searchWeb, webSearchConfigured } from "../../web-search";
 import type { ChatSearchActivity } from "../../../shared/chat-search";
 
 type HistoryMessage = { role: string; content: string };
@@ -16,7 +16,7 @@ function text(message: HistoryMessage): string {
 }
 
 // Search queries never include attachments, code, knowledge retrieval, or profile data.
-function publicQuery(value: string): string {
+export function publicQuery(value: string): string {
   return value.replace(/```[\s\S]*?(?:```|$)/g, " ")
     .replace(/https?:\/\/\S+/gi, " ")
     .replace(/\b[\w.+-]+@[\w.-]+\.\w+\b/g, " ")
@@ -62,7 +62,7 @@ export async function runChatSearch(
 ): Promise<ChatSearchActivity> {
   const result: ChatSearchActivity = { type: "web-search", status: "unavailable", query, sources: [] };
   if (signal.aborted) return { ...result, status: "cancelled" };
-  if (!process.env.JINA_API_KEY?.trim()) { emit(result); return result; }
+  if (!webSearchConfigured()) { emit(result); return result; }
   emit({ ...result, status: "searching" });
   try {
     result.sources = (await search(query, signal)).slice(0, 5);

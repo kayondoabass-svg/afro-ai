@@ -11,6 +11,10 @@ const ENDPOINT = "https://s.jina.ai/";
 const MAX_RESPONSE_BYTES = 128 * 1024;
 const TIMEOUT_MS = 35_000;
 
+export function webSearchConfigured(): boolean {
+  return Boolean(process.env.TAVILY_API_KEY?.trim() || process.env.JINA_API_KEY?.trim());
+}
+
 function publicHttpsUrl(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 2048) return null;
   try {
@@ -38,8 +42,9 @@ export async function searchWeb(query: string, signal?: AbortSignal): Promise<We
   if (typeof query !== "string" || !query.trim() || query.length > 500) {
     throw new Error("Search query must be 1–500 characters.");
   }
-  const key = process.env.JINA_API_KEY;
-  if (!key?.trim()) throw new Error("Web search is unavailable: JINA_API_KEY is not configured.");
+  const tavily = Boolean(process.env.TAVILY_API_KEY?.trim());
+  const key = tavily ? process.env.TAVILY_API_KEY : process.env.JINA_API_KEY;
+  if (!key?.trim()) throw new Error("Web search is unavailable: no search provider is configured.");
 
   const controller = new AbortController();
   const onAbort = () => controller.abort();
@@ -48,17 +53,18 @@ export async function searchWeb(query: string, signal?: AbortSignal): Promise<We
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const response = await fetch(ENDPOINT, {
+    const response = await fetch(tavily ? "https://api.tavily.com/search" : ENDPOINT, {
       method: "POST",
       redirect: "error",
       headers: {
         Authorization: `Bearer ${key}`,
         Accept: "application/json",
         "Content-Type": "application/json",
-        "X-Engine": "direct",
-        "X-Respond-With": "no-content",
+        ...(!tavily ? { "X-Engine": "direct", "X-Respond-With": "no-content" } : {}),
       },
-      body: JSON.stringify({ q: query.trim() }),
+      body: JSON.stringify(tavily
+        ? { query: query.trim(), max_results: 5, search_depth: "basic", include_answer: false, include_raw_content: false }
+        : { q: query.trim() }),
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Web search provider returned HTTP ${response.status}.`);
@@ -100,8 +106,8 @@ export async function searchWeb(query: string, signal?: AbortSignal): Promise<We
     // Jina JSON search responses contain a data array; accept a bare array as well.
     const entries = Array.isArray(parsed)
       ? parsed
-      : parsed && typeof parsed === "object" && "data" in parsed
-        ? (parsed as { data: unknown }).data
+      : parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>)[tavily ? "results" : "data"]
         : null;
     if (!Array.isArray(entries)) throw new Error("Web search provider returned an unexpected response.");
 

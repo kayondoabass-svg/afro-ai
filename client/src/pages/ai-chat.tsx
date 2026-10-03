@@ -103,7 +103,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Conversation, Message } from "@shared/schema";
 import { extractWebsiteHtml } from "@shared/html-extraction";
 import type { ChatSearchActivity } from "@shared/chat-search";
-import { ChatSearchCard, ChatSearchToggle, parseSearchActivity } from "@/components/chat-search";
+import { ChatSearchCard, parseSearchActivity } from "@/components/chat-search";
 
 interface Attachment {
   filename: string;
@@ -1540,7 +1540,6 @@ export default function AIChatPage() {
   const [activeConversation, setActiveConversation] = useState<number | null>(null);
   const [input, setInput] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
-  const [webSearch, setWebSearch] = useState(false);
   const [searchActivity, setSearchActivity] = useState<ChatSearchActivity | null>(null);
   const streamAbort = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -2490,7 +2489,7 @@ export default function AIChatPage() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         signal: controller.signal,
-         body: JSON.stringify({ content: text, language, webSearch: webSearch && !projectMode, projectMode, selectedFilePath: projectMode ? openedFile?.path : undefined }),
+         body: JSON.stringify({ content: text, language, projectMode, selectedFilePath: projectMode ? openedFile?.path : undefined }),
       });
       if (!response.ok) {
         const errText = await response.text();
@@ -2599,7 +2598,6 @@ export default function AIChatPage() {
         signal: controller.signal,
         body: JSON.stringify({
           content: userMessage,
-          webSearch: webSearch && !projectMode,
            projectMode,
           selectedFilePath: projectMode ? openedFile?.path : undefined,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
@@ -3150,7 +3148,6 @@ export default function AIChatPage() {
                 )}
                 <div className="max-w-2xl mx-auto space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <ChatSearchToggle enabled={webSearch} disabled={isStreaming || projectMode} onChange={setWebSearch} />
                     <span className="text-xs text-muted-foreground">{projectMode ? "Search is separate from file editing" : "Or ask to search in your message"}</span>
                     {isStreaming && !projectMode && <Button type="button" size="sm" variant="outline" aria-label="Stop response" onClick={() => streamAbort.current?.abort()}>Stop</Button>}
                   </div>
@@ -3364,7 +3361,6 @@ export default function AIChatPage() {
               {/* Main input box */}
               <div className="w-full max-w-xl">
                 <div className="rounded-2xl border border-border/60 bg-card/50 backdrop-blur-sm p-4 space-y-3 shadow-lg">
-                  <ChatSearchToggle enabled={webSearch} onChange={setWebSearch} />
                   {showSecretWarning && SecretWarningBanner}
                   <Textarea
                     value={input}

@@ -20,10 +20,11 @@ import {
 } from "lucide-react";
 import { PublishDialog } from "@/pages/ai-chat";
 import type { ChatSearchActivity } from "@shared/chat-search";
-import { ChatSearchCard, ChatSearchToggle, parseSearchActivity } from "@/components/chat-search";
+import { ChatSearchCard, parseSearchActivity } from "@/components/chat-search";
 import { extractWebsiteHtml } from "@shared/html-extraction";
 import { FileTreeSidebar, type ProjectFile } from "@/components/file-tree-sidebar";
 import { AgentStructuredText } from "@/components/agent-structured-text";
+import { AgentCodeBlock, AgentHtmlPreview } from "@/components/agent-code-block";
 import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
@@ -53,7 +54,7 @@ interface AgentMessage {
   searchActivity?: ChatSearchActivity;
 }
 
-interface QueuedPrompt { id: string; text: string; webSearch: boolean; mode: "chat" | "plan" | "project"; }
+interface QueuedPrompt { id: string; text: string; mode: "chat" | "plan" | "project"; }
 
 interface ConversationSummary {
   id: number;
@@ -172,7 +173,6 @@ export default function AgentPage() {
   const [queue, setQueue] = useState<QueuedPrompt[]>([]);
   const [queueOpen, setQueueOpen] = useState(true);
   const [planMode, setPlanMode] = useState(false);
-  const [webSearch, setWebSearch] = useState(false);
   const [searchActivity, setSearchActivity] = useState<ChatSearchActivity | null>(null);
   const [working, setWorking] = useState(false);
   const [workingStatus, setWorkingStatus] = useState("");
@@ -189,6 +189,8 @@ export default function AgentPage() {
   const [githubExportOpen, setGithubExportOpen] = useState(false);
   useEffect(() => { setGithubExportOpen(false); }, [conversationId, activeProjectId, isFullstack]);
   const [publishCode, setPublishCode] = useState("");
+  const [versionPreviewHtml, setVersionPreviewHtml] = useState<string | null>(null);
+  useEffect(() => { setVersionPreviewHtml(null); }, [conversationId, activeProjectId]);
   const [manualProjectAgent, setProjectAgent] = useState(false);
   const projectAgent = isFullstack || manualProjectAgent;
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
@@ -245,7 +247,6 @@ export default function AgentPage() {
     if (!isFullstack || projectBlocked) return;
     setProjectAgent(true);
     setProjectPanelOpen(true);
-    setWebSearch(false);
     setPlanMode(false);
     setPendingAttachments([]);
   }, [isFullstack, activeProjectId, projectBlocked]);
@@ -442,7 +443,7 @@ export default function AgentPage() {
     if (queueDrainTrigger === 0 || working || queue.length === 0) return;
     const next = queue[0];
     setQueue(q => q.slice(1));
-    sendMessage(next.text, [], next.webSearch, next.mode);
+    sendMessage(next.text, [], next.mode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueDrainTrigger, working]);
 
@@ -458,7 +459,7 @@ export default function AgentPage() {
     return true;
   };
 
-  const sendMessage = async (text: string, attachments: Attachment[] = [], search = webSearch, mode: "chat" | "plan" | "project" = projectAgent ? "project" : planMode ? "plan" : "chat") => {
+  const sendMessage = async (text: string, attachments: Attachment[] = [], mode: "chat" | "plan" | "project" = projectAgent ? "project" : planMode ? "plan" : "chat") => {
     if (projectBlocked) {
       toast({ title: "Project is not ready", description: setupBlocked ? "Return to the dashboard and use Retry setup on this project." : "Verify project metadata before sending. Retry the project check.", variant: "destructive" });
       return;
@@ -542,7 +543,7 @@ export default function AgentPage() {
     };
 
     try {
-      const body: any = { content: mode === "plan" ? `[PLAN MODE] ${text}` : text, webSearch: mode === "chat" ? search : false };
+      const body: any = { content: mode === "plan" ? `[PLAN MODE] ${text}` : text };
       if (mode === "project") body.projectAgent = true;
       if (attachments.length > 0) body.attachments = attachments;
 
@@ -649,7 +650,7 @@ export default function AgentPage() {
         toast({ title: "Wait to send attachments", description: "Attachments cannot be queued. Stop or wait for the current reply.", variant: "destructive" });
         return;
       }
-      setQueue(q => [...q, { id: `q-${Date.now()}`, text, webSearch, mode: projectAgent ? "project" : planMode ? "plan" : "chat" }]);
+      setQueue(q => [...q, { id: `q-${Date.now()}`, text, mode: projectAgent ? "project" : planMode ? "plan" : "chat" }]);
       setInput("");
       toast({ title: t("chat.toastQueued"), description: t("chat.toastQueuedDesc") });
       return;
@@ -713,7 +714,7 @@ export default function AgentPage() {
     const item = queue.find(x => x.id === id);
     if (!item || working) return;
     setQueue(q => q.filter(x => x.id !== id));
-    sendMessage(item.text, [], item.webSearch, item.mode);
+    sendMessage(item.text, [], item.mode);
   };
   const moveQueueItem = (id: string, dir: -1 | 1) => {
     setQueue(q => {
@@ -763,7 +764,6 @@ export default function AgentPage() {
       const loadedProjectId = data.projectId ?? data.conversation?.projectId ?? knownProjectId ?? conversations.find(c => c.id === id)?.projectId ?? null;
       setActiveProjectId(loadedProjectId);
       setProjectAgent(projectMetadata.data?.find(p => p.id === loadedProjectId)?.type === "fullstack");
-      setWebSearch(false);
       setPlanMode(false);
       setMessages(msgs);
       setConversationId(id);
@@ -812,7 +812,6 @@ export default function AgentPage() {
         setActiveProjectId(null);
         setProjectPanelOpen(false);
         setProjectAgent(false);
-        setWebSearch(false);
         setPlanMode(false);
         setConversationId(conv.id);
         setMessages([]);
@@ -895,7 +894,6 @@ export default function AgentPage() {
       return;
     }
     setProjectAgent(value => !value);
-    setWebSearch(false);
     setPlanMode(false);
     setPendingAttachments([]);
   };
@@ -1086,8 +1084,7 @@ export default function AgentPage() {
                             disabled={staticControlsBlocked}
                             onClick={() => {
                               if (staticControlsBlocked) return;
-                              const w = window.open("", "_blank", "noopener,noreferrer");
-                              if (w) { w.document.open(); w.document.write(extractWebsiteHtml(ver.htmlContent) ?? ver.htmlContent); w.document.close(); }
+                              setVersionPreviewHtml(extractWebsiteHtml(ver.htmlContent) ?? ver.htmlContent);
                             }}
                             className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-700 hover:border-violet-500/40 hover:text-violet-300 text-xs font-medium text-zinc-300 transition-all"
                             data-testid={`button-preview-version-${ver.id}`}
@@ -1301,12 +1298,12 @@ export default function AgentPage() {
 
         {messages.map(msg => msg.role === "web-search" ? (
           msg.searchActivity && <ChatSearchCard key={msg.id} activity={msg.searchActivity} />
-        ) : <MessageBlock key={msg.id} msg={msg} onPublish={staticControlsBlocked ? undefined : openPublishFor} />)}
+        ) : <MessageBlock key={msg.id} msg={msg} previewBlocked={staticControlsBlocked} onPublish={staticControlsBlocked ? undefined : openPublishFor} />)}
 
         {working && searchActivity && <ChatSearchCard activity={searchActivity} />}
         {working && streamingContent && (
           <div data-testid="text-streaming">
-            <AgentStructuredText text={streamingContent} renderText={(value) => <MarkdownText text={value} />} />
+            <AgentStructuredText text={streamingContent} renderText={(value) => <MarkdownText text={value} previewBlocked={staticControlsBlocked} />} />
           </div>
         )}
 
@@ -1415,10 +1412,9 @@ export default function AgentPage() {
               <span className="hidden sm:inline ml-1">Attach</span>
             </Button>
 
-            <button type="button" disabled={isFullstack || projectBlocked} aria-label="Plan before building" aria-pressed={planMode} onClick={() => { setPlanMode(v => !v); setWebSearch(false); setProjectAgent(false); }} className={`agent-control rounded-md border px-2.5 h-9 text-xs font-medium ${planMode ? "border-amber-400 bg-amber-400/15 text-amber-200" : "border-zinc-700 text-zinc-300"}`} data-testid="checkbox-plan-mode">
+            <button type="button" disabled={isFullstack || projectBlocked} aria-label="Plan before building" aria-pressed={planMode} onClick={() => { setPlanMode(v => !v); setProjectAgent(false); }} className={`agent-control rounded-md border px-2.5 h-9 text-xs font-medium ${planMode ? "border-amber-400 bg-amber-400/15 text-amber-200" : "border-zinc-700 text-zinc-300"}`} data-testid="checkbox-plan-mode">
               Plan {planMode ? "on" : "off"}
             </button>
-            {!isFullstack && <ChatSearchToggle enabled={webSearch} onChange={(enabled) => { setWebSearch(enabled); if (enabled) { setPlanMode(false); setProjectAgent(false); } }} />}
           </div>
 
           {working ? (
@@ -1476,6 +1472,7 @@ export default function AgentPage() {
         open={publishOpen && !staticControlsBlocked}
         onOpenChange={setPublishOpen}
       />
+      <AgentHtmlPreview html={staticControlsBlocked ? null : versionPreviewHtml} onClose={() => setVersionPreviewHtml(null)} />
       {isFullstack && !exportBlocked && <GithubProjectDialog
         key={`${activeProjectId}-${conversationId}`}
         open={githubExportOpen}
@@ -1526,20 +1523,27 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
-function MarkdownText({ text, className }: { text: string; className?: string }) {
-  const parts = text.split(/(```[\s\S]*?```)/g);
+function MarkdownText({ text, className, previewBlocked = false }: { text: string; className?: string; previewBlocked?: boolean }) {
+  const rawHtml = !text.includes("```") ? extractWebsiteHtml(text) : null;
+  if (rawHtml && /<!doctype|<(?:html|body|main|style|script|section|canvas)\b/i.test(rawHtml)) {
+    const at = text.indexOf(rawHtml);
+    return <div className="min-w-0 space-y-2">
+      {at > 0 && <MarkdownText text={text.slice(0, at)} className={className} previewBlocked={previewBlocked} />}
+      <AgentCodeBlock code={rawHtml} language="html" previewBlocked={previewBlocked} />
+      {at >= 0 && text.slice(at + rawHtml.length).trim() && <MarkdownText text={text.slice(at + rawHtml.length)} className={className} previewBlocked={previewBlocked} />}
+    </div>;
+  }
+  const parts = text.split(/(```[\s\S]*?```|```[\s\S]*$)/g);
   return (
     <div className={className ?? "text-sm text-zinc-200 leading-relaxed space-y-2"}>
       {parts.map((part, i) => {
-        if (part.startsWith("```") && part.endsWith("```") && part.length >= 6) {
-          const inner = part.slice(3, -3);
+        if (part.startsWith("```")) {
+          const complete = part.endsWith("```") && part.length >= 6;
+          const inner = complete ? part.slice(3, -3) : part.slice(3);
           const firstNl = inner.indexOf("\n");
-          const code = firstNl > 0 ? inner.slice(firstNl + 1) : inner;
-          return (
-            <pre key={i} className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 overflow-x-auto text-xs font-mono text-zinc-200 whitespace-pre" data-testid={`code-block-${i}`}>
-              <code>{code.replace(/\n+$/, "")}</code>
-            </pre>
-          );
+          const code = firstNl >= 0 ? inner.slice(firstNl + 1) : inner;
+          const language = firstNl >= 0 ? inner.slice(0, firstNl).trim() : "";
+          return <AgentCodeBlock key={i} code={code} language={language} complete={complete} previewBlocked={previewBlocked} testId={`code-block-${i}`} />;
         }
         if (!part) return null;
         return part.split(/\n{2,}/).map((para, j) => (
@@ -1550,7 +1554,7 @@ function MarkdownText({ text, className }: { text: string; className?: string })
   );
 }
 
-function MessageBlock({ msg, onPublish }: { msg: AgentMessage; onPublish?: (content: string) => void }) {
+function MessageBlock({ msg, onPublish, previewBlocked = false }: { msg: AgentMessage; onPublish?: (content: string) => void; previewBlocked?: boolean }) {
   const { t } = useLanguage();
   if (msg.role === "user") {
     return (
@@ -1578,7 +1582,7 @@ function MessageBlock({ msg, onPublish }: { msg: AgentMessage; onPublish?: (cont
   return (
     <div className="space-y-2" data-testid={`message-assistant-${msg.id}`}>
       {msg.actions && msg.actions.length > 0 && <ActionChipsRow actions={msg.actions} />}
-      <AgentStructuredText text={msg.content} renderText={(value) => <MarkdownText text={value} />} />
+      <AgentStructuredText text={msg.content} renderText={(value) => <MarkdownText text={value} previewBlocked={previewBlocked} />} />
       {showPublish && (
         <div className="pt-1">
           <Button

@@ -4129,7 +4129,7 @@ Never invent features or pricing not listed above.`;
       const { hasAfroAiProvider } = await import("./ai-chat-provider");
       res.json({
         afroAvailable: await canTestAfro(req) && hasAfroAiProvider(),
-        webSearchAvailable: Boolean(process.env.JINA_API_KEY?.trim()),
+        webSearchAvailable: Boolean(process.env.TAVILY_API_KEY?.trim() || process.env.JINA_API_KEY?.trim()),
       });
     } catch (error: any) {
       res.status(500).json({ message: "Unable to check knowledge capabilities." });
@@ -4173,7 +4173,7 @@ Never invent features or pricing not listed above.`;
         new Set(body.enabledTools).size !== body.enabledTools.length)) {
         return res.status(400).json({ message: "Invalid enabledTools" });
       }
-      if (body.enabledTools?.includes("web_search") && !process.env.JINA_API_KEY?.trim()) {
+      if (body.enabledTools?.includes("web_search") && !(process.env.TAVILY_API_KEY?.trim() || process.env.JINA_API_KEY?.trim())) {
         return res.status(503).json({ message: "Web search is not configured." });
       }
       const history = body.history || [];

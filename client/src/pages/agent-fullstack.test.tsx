@@ -66,7 +66,7 @@ describe("full-stack agent workspace", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Message to Afro AI" }), { target: { value: "Add a health endpoint" } });
     fireEvent.click(screen.getByTestId("button-send"));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/conversations/91/messages", expect.objectContaining({
-      body: JSON.stringify({ content: "Add a health endpoint", webSearch: false, projectAgent: true }),
+      body: JSON.stringify({ content: "Add a health endpoint", projectAgent: true }),
     })));
   });
 
