@@ -3,8 +3,12 @@ name: Low-cost project agent scope
 description: Approved limits and review-only behavior for coding assistance
 ---
 
-Keep the project coding agent on existing providers and storage, with explicit review before writes. Do not expand it into hosted workspaces, terminal/test execution, or activation of the pilot model without separate approval.
+Keep the project coding agent on existing providers and storage, with explicit review before writes. The user subsequently approved building per-project D1 provisioning and the full-stack hosting setup, with strict cross-account isolation. This does not approve activation of the pilot model or unrestricted execution on Afro AI's server.
 
 **Why:** The user selected this smaller stage in response to rising costs. Reading/searching/edit proposals are the approved capability, not an autonomous execution environment.
 
 **How to apply:** Preserve existing generation modes, bounded tool calls, and owner-bound proposals. Treat a successful build as local verification, not proof of an authenticated production AI flow.
+
+Customer execution must remain isolated from Afro AI source, internal databases and service credentials. Hosted preview/deployment requires an explicit hosting-cost decision and verified isolation; approval to build the setup does not authorize purchasing a Cloudflare plan.
+
+**Why:** The user explicitly required that no user access another person's account or Afro AI's private source and requested an explanation of Stage C hosting limits and costs while building.

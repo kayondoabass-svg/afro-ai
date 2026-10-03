@@ -1,7 +1,7 @@
 export * from "./models/auth";
 export * from "./models/chat";
 
-import { pgTable, serial, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index, customType } from "drizzle-orm/pg-core";
+import { pgTable, serial, bigserial, check, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index, customType } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -41,6 +41,31 @@ export const projects = pgTable("projects", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
+
+// Internal resource mappings: no client-write schema. Owner identity comes from the session.
+export const projectInfrastructure = pgTable("project_infrastructure", {
+  projectId: integer("project_id").primaryKey().references(() => projects.id, { onDelete: "restrict" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  databaseName: text("database_name").notNull().unique(),
+  databaseId: text("database_id").unique(),
+  createAttempted: boolean("create_attempted").notNull().default(false),
+  state: text("state").notNull(),
+  migrationsApplied: integer("migrations_applied").notNull().default(0),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [
+  index("project_infrastructure_owner").on(table.userId),
+  check("project_infrastructure_state_check", sql`${table.state} IN ('provisioning','ready','failed','deleting','deleted')`),
+]);
+
+export const projectInfrastructureEvents = pgTable("project_infrastructure_events", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  projectId: integer("project_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  action: text("action").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("project_infrastructure_events_owner_time").on(table.userId, table.createdAt)]);
 
 export const insertProjectSchema = createInsertSchema(projects).omit({
   id: true,

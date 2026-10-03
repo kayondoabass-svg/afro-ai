@@ -2,7 +2,7 @@ import { aiChatComplete } from "./ai-chat-provider";
 import { validateProjectFiles, type ProjectFile } from "./project-file-policy";
 import { CHAT_CREDENTIAL_POLICY, containsPrivateCredential, redactPrivateCredentials, safeAssistantText } from "./chat-credential-safety";
 
-export const PROJECT_TOOLS_NOTICE = "Project tools only read files and propose text edits. No tests, builds, terminal commands, Git operations or deployment ran.";
+export const PROJECT_TOOLS_NOTICE = "Project tools only read files and propose text edits. No tests, builds, terminal commands, Git operations or deployment ran. For paid Workers/Hono+D1 projects, the dashboard or Files panel has Database setup controls. Database readiness is not a running app. Full-stack hosting is not activated: never claim a full-stack app was published or use static HTML publishing as its deployment. These chat tools cannot provision or delete databases; the owner must use the real setup controls.";
 export const PROJECT_TOOL_LIMITS = { rounds: 5, calls: 10, edits: 8, fileBytes: 16000, resultBytes: 20000, contextBytes: 64000 };
 const bytes = (value: unknown) => Buffer.byteLength(typeof value === "string" ? value : JSON.stringify(value), "utf8");
 const schema = (properties: object, required: string[]) => ({ type: "object", properties, required, additionalProperties: false });

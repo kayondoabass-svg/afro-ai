@@ -9,6 +9,7 @@ vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({ t: (key: string) => key }) }));
 vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()] }));
 vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>Saved starter files</div> }));
+vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => <div data-testid="fullstack-infrastructure">Infrastructure controls</div> }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
     data: queryKey[0] === "/api/auth/user" ? { firstName: "Amina" }
@@ -46,7 +47,8 @@ afterEach(() => {
 describe("full-stack agent workspace", () => {
   it("detects metadata without a mode hint, opens Files and disables static deployment", async () => {
     render(<AgentPage />);
-    expect(screen.getByTestId("fullstack-source-notice")).toHaveTextContent("No runtime or database is provisioned");
+    expect(screen.getByTestId("fullstack-source-notice")).toHaveTextContent("a ready database does not mean the app is running");
+    expect(screen.getByTestId("fullstack-infrastructure")).toBeInTheDocument();
     expect(screen.getByText("Saved starter files")).toBeInTheDocument();
     expect(screen.getByTestId("button-project-agent")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("button-publish")).toBeDisabled();

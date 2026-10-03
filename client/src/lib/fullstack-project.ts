@@ -1,6 +1,6 @@
 import type { Project } from "@shared/schema";
 
-export const FULLSTACK_SOURCE_NOTICE = "Source-only starter: React/TypeScript frontend and Workers/Hono + D1 backend files are saved in your project. No runtime or database is provisioned. Static Preview and Publish cannot deploy a working full-stack app.";
+export const FULLSTACK_SOURCE_NOTICE = "Source starter: React/TypeScript frontend and Workers/Hono + D1 backend files are saved separately from infrastructure. Check Database infrastructure for D1 status; a ready database does not mean the app is running. No runtime is provisioned. Static Preview and Publish remain unavailable pending isolated build and hosting activation.";
 
 export function projectChatUrl(project: Pick<Project, "id" | "name" | "type" | "description">): string {
   const base = `/chat?projectId=${project.id}&project=${encodeURIComponent(project.name)}`;

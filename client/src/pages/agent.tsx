@@ -24,6 +24,7 @@ import { ChatSearchCard, ChatSearchToggle, parseSearchActivity } from "@/compone
 import { extractWebsiteHtml } from "@shared/html-extraction";
 import { FileTreeSidebar, type ProjectFile } from "@/components/file-tree-sidebar";
 import { AgentStructuredText } from "@/components/agent-structured-text";
+import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import type { Project } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
 import "./agent.css";
@@ -1119,6 +1120,7 @@ export default function AgentPage() {
               <p className="text-xs text-zinc-400">Project agent only reads and proposes text changes. It never runs commands or saves automatically.</p>
               {proposalLoadError && <p role="alert" className="text-xs text-red-400">{proposalLoadError.message}</p>}
               <div className="min-h-0 flex-1 overflow-y-auto space-y-4">
+                {isFullstack && activeProject && <FullstackInfrastructure key={activeProject.id} project={activeProject} />}
                 <div className="h-64 border border-zinc-800 rounded-md overflow-hidden">
                   <FileTreeSidebar conversationId={conversationId} openedFileId={openedProjectFile?.id ?? null}
                     onFileOpen={setOpenedProjectFile} onClose={() => setProjectPanelOpen(false)} />
@@ -1162,7 +1164,7 @@ export default function AgentPage() {
             className="hidden md:inline-flex h-9 px-3 bg-violet-600 hover:bg-violet-500 text-white gap-1.5"
             onClick={openPublishFromLatest}
             disabled={staticControlsBlocked}
-            title={isFullstack ? "Source-only: deploy the Workers backend and provision D1 separately. Static Publish is unavailable." : undefined}
+            title={isFullstack ? "Database status is separate from runtime. Static Publish is unavailable pending isolated hosting." : undefined}
             data-testid="button-publish"
           >
             <Rocket className="w-4 h-4" />
@@ -1231,8 +1233,9 @@ export default function AgentPage() {
       </header>
 
       {isFullstack && !projectBlocked && <div className="shrink-0 border-b border-amber-400/25 bg-amber-400/5 px-4 py-3 text-xs text-amber-200" role="note" data-testid="fullstack-source-notice">
-        <strong className="block mb-1">Full-stack project · source only</strong>
+        <strong className="block mb-1">Full-stack project · source &amp; database, no runtime</strong>
         {FULLSTACK_SOURCE_NOTICE}
+        <Button size="sm" variant="outline" className="ml-2 mt-2" onClick={() => setProjectPanelOpen(true)}>Database infrastructure</Button>
       </div>}
       {projectBlocked && <div className="shrink-0 border-b border-violet-500/25 bg-violet-500/5 px-4 py-3 text-xs text-zinc-300" role="status">
         {setupBlocked ? activeProject?.status === "initializing" ? "Starter setup is still initializing. Return to the dashboard to check progress." : "Starter setup failed. Return to the dashboard and use Retry setup on this project." : projectMetadata.isError ? "Could not verify project metadata. Sending, Preview and Publish are blocked until verified." : projectMetadata.isSuccess ? "Project not found. Return to the dashboard or retry the project check." : "Checking project metadata…"}
@@ -1436,7 +1439,7 @@ export default function AgentPage() {
       <nav aria-label="Builder navigation" className="md:hidden flex items-stretch justify-around gap-1 px-2 py-2 border-t border-zinc-800/80 bg-zinc-950 shrink-0">
         <button onClick={() => setLocation("/dashboard")} className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-zinc-300"><ListChecks className="w-4 h-4" />Dashboard</button>
         <button aria-current="page" className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-amber-300" disabled><Sparkles className="w-4 h-4" />Builder</button>
-        <button onClick={goToProjectPreview} disabled={!activeProjectId || staticControlsBlocked} title={isFullstack ? "Source only: no runtime or database provisioned" : activeProjectId ? "Preview project" : "Open a project first to preview"} className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-zinc-300 disabled:opacity-40"><Monitor className="w-4 h-4" />Preview</button>
+        <button onClick={goToProjectPreview} disabled={!activeProjectId || staticControlsBlocked} title={isFullstack ? "No runtime provisioned; database status is separate" : activeProjectId ? "Preview project" : "Open a project first to preview"} className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-zinc-300 disabled:opacity-40"><Monitor className="w-4 h-4" />Preview</button>
         <button onClick={() => setProjectPanelOpen(true)} className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-zinc-300"><FileEdit className="w-4 h-4" />{projectProposal ? "Review" : "Files"}</button>
       </nav>
 

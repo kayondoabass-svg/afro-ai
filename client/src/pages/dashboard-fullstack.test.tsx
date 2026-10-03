@@ -43,6 +43,22 @@ async function openFullstackForm() {
 }
 
 describe("dashboard paid full-stack creation", () => {
+  it("opens database infrastructure without navigation when paid access is lost", async () => {
+    queryClient.setQueryDefaults(["/api/projects"], { queryFn: async () => [project] });
+    queryClient.setQueryDefaults(["/api/projects/fullstack-access"], { queryFn: async () => ({ allowed: false, reason: "Subscription lapsed" }) });
+    mocks.apiRequest.mockResolvedValue(Response.json({
+      state: "ready", databaseName: "afro-project-81", lastError: null, migrationsApplied: 2,
+      canProvision: false, configured: true, limits: { databasesPerUser: 3, provisionsPerDay: 7 },
+      hosting: { available: false, reason: "Isolated hosting unavailable." },
+    }));
+    render(<QueryClientProvider client={queryClient}><DashboardPage /></QueryClientProvider>);
+    fireEvent.click(await screen.findByTestId("button-infrastructure-81"));
+    expect(await screen.findByText("Database ready")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete database" })).toBeEnabled();
+    expect(screen.getByText(/Your app is not running or live/)).toBeInTheDocument();
+    expect(mocks.apiRequest).toHaveBeenCalledWith("GET", "/api/projects/81/infrastructure");
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
   it.each(["setup_failed", "initializing"])("offers paid-gated retry for %s without opening or duplicating the project", async (status) => {
     queryClient.setQueryDefaults(["/api/projects"], { queryFn: async () => [{ ...project, status }] });
     queryClient.setQueryDefaults(["/api/projects/fullstack-access"], { queryFn: async () => ({ allowed: false, reason: "Paid access required" }) });

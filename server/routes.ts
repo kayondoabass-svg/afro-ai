@@ -42,6 +42,8 @@ import bcrypt from "bcryptjs";
 import { affiliateApplicationInput } from "./affiliate-application";
 import { productSelfKnowledge } from "./product-self-knowledge";
 import { fullstackAccess } from "./fullstack-access";
+import { registerProjectInfrastructureRoutes, isManagementOrigin } from "./project-infrastructure/routes";
+import { deleteFullstackProject } from "./project-infrastructure/service";
 import { createFullstackProject, initializeFullstackProject, FullstackSetupError } from "./fullstack-projects";
 import { ProjectFileError } from "./project-file-policy";
 import { ZodError } from "zod";
@@ -307,6 +309,7 @@ export async function registerRoutes(
     throw new Error(`Sentry pipeline test — traceId=${traceId} — safe to ignore.`);
   });
   registerChatRoutes(app);
+  registerProjectInfrastructureRoutes(app);
   registerVibeRoutes(app);
   registerImageRoutes(app);
   registerAudioRoutes(app);
@@ -1015,6 +1018,11 @@ export async function registerRoutes(
       if (project.userId !== userId) {
         return res.status(403).json({ message: "Forbidden" });
       }
+      if (project.type === "fullstack") {
+        if (!isManagementOrigin(req.headers.origin)) return res.status(403).json({ message: "Use the signed-in Afro AI dashboard for this operation." });
+        await deleteFullstackProject(userId, id);
+        return res.json({ ok: true, removedPublished: [] });
+      }
       // Also tear down any of this user's published live sites whose title matches
       // the project name. This is what the user expects when deleting from the dashboard:
       // the live URL should also stop serving.
@@ -1037,6 +1045,7 @@ export async function registerRoutes(
       await storage.deleteProject(id);
       res.json({ ok: true, removedPublished });
     } catch (error) {
+      if (error instanceof ProjectFileError) return res.status(error.status).json({ message: error.message });
       console.error("Error deleting project:", error);
       res.status(500).json({ message: "Failed to delete project" });
     }

@@ -62,6 +62,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import type { Project, PublishedApp } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, isSetupBlocked, projectChatUrl, projectRequestError } from "@/lib/fullstack-project";
+import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -69,6 +70,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [showNewProject, setShowNewProject] = useState(false);
+  const [infrastructureProject, setInfrastructureProject] = useState<Project | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [paymentSuccess, setPaymentSuccess] = useState<{ plan: string } | null>(null);
@@ -410,8 +412,11 @@ export default function DashboardPage() {
                     </div>
                     {project.type === "fullstack" && (
                       <p className="text-xs text-muted-foreground">
-                        {project.status === "setup_failed" ? "Starter files could not be saved. Retry setup on this project; do not create another." : project.status === "initializing" ? "Starter setup is initializing. If progress has stalled, safely Retry setup on this same project. If setup is still running, the server will ask you to wait." : "Source files only · no runtime or database provisioned."}
+                        {project.status === "setup_failed" ? "Starter files could not be saved. Retry setup on this project; do not create another." : project.status === "initializing" ? "Starter setup is initializing. If progress has stalled, safely Retry setup on this same project. If setup is still running, the server will ask you to wait." : "Source saved separately · check database infrastructure · runtime unavailable."}
                       </p>
+                    )}
+                    {project.type === "fullstack" && (
+                      <Button size="sm" variant="outline" className="w-full" onClick={e => { e.stopPropagation(); setInfrastructureProject(project); }} data-testid={`button-infrastructure-${project.id}`}>Database infrastructure</Button>
                     )}
                     {isSetupBlocked(project) ? (
                       <div className="space-y-2">
@@ -496,6 +501,16 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={!!infrastructureProject} onOpenChange={open => { if (!open) setInfrastructureProject(null); }}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="break-words">{infrastructureProject?.name} · Infrastructure</DialogTitle>
+            <DialogDescription>Manage the project database separately from source files and hosting.</DialogDescription>
+          </DialogHeader>
+          {infrastructureProject && <FullstackInfrastructure key={infrastructureProject.id} project={projects?.find(p => p.id === infrastructureProject.id) || infrastructureProject} />}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showNewProject} onOpenChange={setShowNewProject}>
         <DialogContent>

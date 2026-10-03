@@ -8,6 +8,7 @@ vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({
 }) }));
 vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()] }));
 vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>Project file tree</div> }));
+vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => null }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
     data: queryKey[0] === "/api/auth/user" ? { firstName: "Test" } : queryKey[2] === "project-proposal" ? null : [],
