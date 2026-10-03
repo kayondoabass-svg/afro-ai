@@ -72,6 +72,15 @@ beforeEach(() => {
   vi.stubEnv("JINA_API_KEY", "test-only");
 });
 describe("main chat search route wiring", () => {
+  it("includes hosting trial limits and upgrade requirements in pricing guidance", async () => {
+    mocks.inference.mockResolvedValue({ text: "Starter includes one published app for 30 days. Upgrade for continued hosting.", model: "test" });
+    await handler()(req("Do I need to pay for hosting?", false), response());
+    const system = mocks.inference.mock.calls[0][0].messages[0].content;
+    expect(system).toContain("ONE published app with a 30-day hosting trial");
+    expect(system).toContain("Continued hosting after the trial requires an upgrade");
+    expect(system).toContain("state the one-app and 30-day limits in the same answer");
+    expect(system).toContain("do not invent prices or assume the customer's plan");
+  });
   it("does not let a stale Plan toggle block generating and saving a website", async () => {
     mocks.inference.mockResolvedValue({ text: "<html><body><h1>A complete generated website</h1></body></html>", model: "test" });
     await handler()(req("[PLAN MODE] build now", false), response());
