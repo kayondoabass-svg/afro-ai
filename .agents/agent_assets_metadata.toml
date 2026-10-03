@@ -14,3 +14,31 @@ mtime_ms = 1790198210016
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/ae786cd1-7866-488d-ab17-6a91def27a1e/883c0496-0708-488b-9306-0fe3ad4a17f6"
 storage_version_token = "1790198223591489"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "FsVPydhNGuUpcXj83MRO6"
+uri = "file://attached_assets/generated_images/afro-ai-gold-africa-logo.png"
+type = "image"
+title = "Option 1 — Africa & technology"
+description = "Black-and-gold circular Afro AI logo featuring Africa and circuit details. Square PNG for social profile pictures."
+logical_id = "f0cb8a51-3f6b-4e19-b1bb-42805fa55ce7"
+content_hash = "sha256:96a8919ea04bcb1f89f8cfb23686b67b6d9e939d31b5fd8976a3d225ec5f8f15"
+size = 922287
+mtime_ms = 1791053209162
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/f0cb8a51-3f6b-4e19-b1bb-42805fa55ce7/9c27651d-62ba-4138-b14b-5a9099a60bf4"
+storage_version_token = "1791053222270931"
+content_type = "image/png"
+
+[[outputs]]
+id = "kIx8fahpGRwKTAfVu-p4t"
+uri = "file://attached_assets/generated_images/afro-ai-gold-monogram-logo.png"
+type = "image"
+title = "Option 2 — Modern monogram"
+description = "Black-and-gold circular Afro AI logo featuring a geometric AA monogram. Square PNG for social profile pictures."
+logical_id = "1a49cae3-8d0c-4fa5-baab-3f23ff8e6b6f"
+content_hash = "sha256:f3e90ebe8bdabb9822760f4d8ff3897df74c3ca80960c83bdf6305966e69a08a"
+size = 950531
+mtime_ms = 1791053209594
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/1a49cae3-8d0c-4fa5-baab-3f23ff8e6b6f/88333cfc-186a-4314-a3fa-f88ac0a000c5"
+storage_version_token = "1791053225188178"
+content_type = "image/png"
