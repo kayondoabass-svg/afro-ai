@@ -19,3 +19,9 @@ Validate Worker installation from its own manifest and lockfile in a clean direc
 **Why:** A successful build using existing dependencies hid an incomplete Worker lockfile, causing the user's `npm ci` to stop during publishing.
 
 **How to apply:** Check a clean install with development dependencies included (Wrangler is a build/deployment tool), not only a build from the existing workspace.
+
+For a scoped Cloudflare deployment token, explicitly select the intended account with `CLOUDFLARE_ACCOUNT_ID` when Wrangler's automatic account lookup fails.
+
+**Why:** The user's token failed `/memberships` lookup but successfully published the Worker once the correct account was explicitly selected. The lookup failure did not mean the token lacked Worker deployment permission.
+
+**How to apply:** Obtain the intended account ID from verified configuration or the user's Cloudflare output; never guess it. Keep the API token secret and do not broaden its permissions merely to enable account discovery.
