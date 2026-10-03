@@ -68,8 +68,9 @@ export async function runChatSearch(
     result.sources = (await search(query, signal)).slice(0, 5);
     result.status = signal.aborted ? "cancelled" : result.sources.length ? "success" : "empty";
     if (signal.aborted) result.sources = [];
-  } catch {
-    result.status = signal.aborted ? "cancelled" : "failed";
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    result.status = signal.aborted ? "cancelled" : code === "SEARCH_UNAVAILABLE" ? "unavailable" : "failed";
   }
   emit(result);
   return result;

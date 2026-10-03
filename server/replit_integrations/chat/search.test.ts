@@ -64,6 +64,7 @@ describe("main chat public search", () => {
     expect((await runChatSearch("conference", new AbortController().signal, vi.fn(), vi.fn().mockResolvedValue([]))).status).toBe("empty");
   });
   it("does not execute or emit searching without configuration", async () => {
+    vi.stubEnv("TAVILY_API_KEY", "");
     vi.stubEnv("JINA_API_KEY", "");
     const search = vi.fn(); const emit = vi.fn();
     expect((await runChatSearch("conference", new AbortController().signal, emit, search)).status).toBe("unavailable");

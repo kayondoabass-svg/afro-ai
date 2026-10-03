@@ -22,7 +22,7 @@ describe("searchWeb", () => {
       results: [{ title: "News", url: "https://example.org/news", content: "Current report" }],
     }), { headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
-    expect(await searchWeb("latest news")).toMatchObject([{ title: "News", snippet: "Current report" }]);
+    expect(await searchWeb("latest news", undefined, "tavily")).toMatchObject([{ title: "News", snippet: "Current report" }]);
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.tavily.com/search");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ query: "latest news", max_results: 5 });
   });

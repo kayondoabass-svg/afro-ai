@@ -3,6 +3,7 @@ import { containsPrivateCredential } from "../../chat-credential-safety";
 import { publicQuery, runChatSearch } from "./search";
 import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { searchWorkspaceFiles } from "../../workspace-search";
+import { searchAccountWeb } from "../../search-policy";
 
 export const SEARCH_WEB_TOOL = {
   type: "function",
@@ -97,7 +98,7 @@ export async function completeWithAutomaticSearch(opts: {
           // Persist only the terminal activity, but display the searching status immediately.
           const pending = runChatSearch(query, signal, activity => {
             if (activity.status === "searching") searching = activity;
-          });
+          }, (q, s) => searchAccountWeb(opts.workspace?.userId || "", q, s));
           if (searching) await opts.onActivity(searching);
           const activity = await pending;
           await opts.onActivity(activity);

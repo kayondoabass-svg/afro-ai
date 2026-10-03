@@ -1,7 +1,8 @@
 import { aiChatComplete, type UserTier } from "./ai-chat-provider";
 import { retrieveKnowledge, type RetrievedChunk } from "./knowledge";
 import { calculate } from "./calculator";
-import { searchWeb, type WebSource } from "./web-search";
+import { type WebSource } from "./web-search";
+import { searchAccountWeb } from "./search-policy";
 
 export type ToolName = "search_knowledge" | "calculate" | "web_search";
 export interface ToolContext {
@@ -182,7 +183,7 @@ export async function runChatWithTools(opts: {
                   pendingKnowledge = (await abortable(() => retrieveKnowledge(opts.ctx.userId, input, 5), toolController.signal)).slice(0, 5);
                   data = { results: pendingKnowledge.map((s, i) => ({ rank: i + 1, documentId: s.documentId, score: s.score, content: s.content.slice(0, 700) })) };
                 } else {
-                  pendingWeb = (await abortable(() => searchWeb(input, toolController.signal), toolController.signal)).slice(0, 5);
+                  pendingWeb = (await abortable(() => searchAccountWeb(opts.ctx.userId, input, toolController.signal), toolController.signal)).slice(0, 5);
                   data = { results: pendingWeb };
                 }
               } finally {

@@ -15,7 +15,9 @@ The model gets conversation history, then selects tools only when needed. Calls 
 
 ## Search providers
 
-Tavily is selected when `TAVILY_API_KEY` is configured. Otherwise the existing `JINA_API_KEY` provider remains selected. Provider failure does **not** silently retry against another paid search service. Configure the chosen key in the actual deployed server environment, not browser code. No database migration or Worker update is required for these changes.
+Free users use Jina only. Verified paying accounts can use both Jina and Tavily: a search queries both configured providers and merges/deduplicates their sources. Access uses the existing paid-account billing check, not browser flags or trials. Missing Jina configuration never sends free traffic to Tavily. A failed provider causes an explicit search failure rather than an automatic paid retry.
+
+There is no one-search allowance or per-account simultaneous-search cap. Existing abuse controls and per-response tool budgets remain. When both providers are configured, each paid web-tool execution makes one request to each provider. Configure keys on the actual deployed server, not in browser code. No database migration or Worker update is required.
 
 Tavily integration is covered by mocked API contract tests; real Tavily requests require the key.
 

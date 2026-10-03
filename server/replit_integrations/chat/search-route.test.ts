@@ -22,6 +22,7 @@ vi.mock("../auth/replitAuth", () => ({ isAuthenticated: vi.fn(), FOUNDER_EMAIL: 
 vi.mock("../quota", () => ({ aiQuotaGuard: () => vi.fn() }));
 vi.mock("../../ai-chat-provider", () => ({ aiChatComplete: mocks.inference, aiChatCompleteStream: vi.fn() }));
 vi.mock("../../web-search", () => ({ searchWeb: mocks.search, webSearchConfigured: () => Boolean(process.env.JINA_API_KEY) }));
+vi.mock("../../search-policy", () => ({ searchAccountWeb: (_id: string, q: string, s: AbortSignal) => mocks.search(q, s) }));
 vi.mock("../../url-scrape", () => ({ extractUrls: () => [], buildLiveWebContext: vi.fn() }));
 vi.mock("../../attachment-parse", () => ({ isParseableAttachment: () => false, buildAttachmentContext: vi.fn() }));
 vi.mock("../../project-files", () => ({ listProjectFiles: vi.fn(), saveProjectFiles: vi.fn() }));

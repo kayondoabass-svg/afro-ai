@@ -11,7 +11,8 @@ const ENDPOINT = "https://s.jina.ai/";
 const MAX_RESPONSE_BYTES = 128 * 1024;
 const TIMEOUT_MS = 35_000;
 
-export function webSearchConfigured(): boolean {
+export function webSearchConfigured(provider?: "jina" | "tavily"): boolean {
+  if (provider) return Boolean((provider === "tavily" ? process.env.TAVILY_API_KEY : process.env.JINA_API_KEY)?.trim());
   return Boolean(process.env.TAVILY_API_KEY?.trim() || process.env.JINA_API_KEY?.trim());
 }
 
@@ -38,11 +39,11 @@ function publicHttpsUrl(value: unknown): string | null {
 
 // Reader search API: https://jina.ai/reader (Search mode, JSON Response).
 // Only the fixed Jina endpoint is fetched; result URLs are citations, never fetched.
-export async function searchWeb(query: string, signal?: AbortSignal): Promise<WebSource[]> {
+export async function searchWeb(query: string, signal?: AbortSignal, provider: "jina" | "tavily" = "jina"): Promise<WebSource[]> {
   if (typeof query !== "string" || !query.trim() || query.length > 500) {
     throw new Error("Search query must be 1–500 characters.");
   }
-  const tavily = Boolean(process.env.TAVILY_API_KEY?.trim());
+  const tavily = provider === "tavily";
   const key = tavily ? process.env.TAVILY_API_KEY : process.env.JINA_API_KEY;
   if (!key?.trim()) throw new Error("Web search is unavailable: no search provider is configured.");
 

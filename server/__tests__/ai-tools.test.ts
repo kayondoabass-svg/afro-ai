@@ -4,6 +4,10 @@ vi.mock("../ai-chat-provider", () => ({ aiChatComplete: vi.fn() }));
 vi.mock("../knowledge", () => ({ retrieveKnowledge: vi.fn() }));
 vi.mock("../calculator", () => ({ calculate: vi.fn() }));
 vi.mock("../web-search", () => ({ searchWeb: vi.fn() }));
+vi.mock("../search-policy", async () => ({
+  searchAccountWeb: async (_id: string, query: string, signal: AbortSignal) =>
+    (await import("../web-search")).searchWeb(query, signal),
+}));
 
 import { aiChatComplete } from "../ai-chat-provider";
 import { retrieveKnowledge } from "../knowledge";
