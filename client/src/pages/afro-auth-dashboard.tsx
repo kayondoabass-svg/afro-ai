@@ -3,7 +3,8 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
+import { authAdminRequest } from "@/lib/afro-auth-admin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,15 +31,15 @@ export default function AfroAuthDashboardPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
 
-  const { data, isLoading } = useQuery<{ tenants: TenantSummary[] }>({
+  const { data, isLoading, error, refetch } = useQuery<{ tenants: TenantSummary[] }>({
     queryKey: ["/cf-auth/v1/admin/tenants"],
+    queryFn: () => authAdminRequest("/cf-auth/v1/admin/tenants"),
     enabled: !!user,
   });
 
   const createMutation = useMutation({
     mutationFn: async (projectName: string) => {
-      const res = await apiRequest("POST", "/cf-auth/v1/admin/tenants", { name: projectName });
-      return res.json() as Promise<TenantSummary>;
+      return authAdminRequest("/cf-auth/v1/admin/tenants", projectName) as Promise<TenantSummary>;
     },
     onSuccess: (tenant) => {
       queryClient.invalidateQueries({ queryKey: ["/cf-auth/v1/admin/tenants"] });
@@ -89,7 +90,12 @@ export default function AfroAuthDashboardPage() {
         </Button>
       </div>
 
-      {isLoading ? (
+      {error ? (
+        <div role="alert" className="rounded-lg border p-6 space-y-3">
+          <p>{error.message}</p>
+          <Button variant="outline" onClick={() => refetch()}>Try again</Button>
+        </div>
+      ) : isLoading ? (
         <div className="grid md:grid-cols-2 gap-4">
           <Skeleton className="h-32" />
           <Skeleton className="h-32" />

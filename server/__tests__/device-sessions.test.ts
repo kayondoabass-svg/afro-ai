@@ -59,9 +59,10 @@ describe("platform JWT validation", () => {
 
 describe("real Worker reset and session lifecycle", () => {
   it("denies tenant management to an unverified platform user", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ emailVerified: null }), { status: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id: "one", email: "one@example.test", emailVerified: null }), { status: 200 }));
     const response = await request("/v1/admin/tenants", { name: "Test", slug: "test" }, `afroai_session=${await token()}`);
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
+    expect((await response.json() as any).code).toBe("EMAIL_VERIFICATION_REQUIRED");
     expect(db.query("SELECT id FROM tenants WHERE id != 'platform'")).toHaveLength(0);
   });
   it("reset revokes both old devices, preserves another account, issues a fresh session and rejects reuse", async () => {

@@ -32,3 +32,4 @@
 - [Domain purchase experience](domain-purchase-experience.md) — after purchase, prioritize management and app connection, not repeated purchase prompts.
 - [Local currency pricing](local-currency-pricing.md) — USD is the base; each customer uses their country's currency, with conversion rather than relabeling.
 - [Navigation grouping](navigation-grouping.md) — keep related products under expandable sidebar sections instead of extending the long flat menu.
+- [Platform admin identity](platform-admin-identity.md) — avoid requiring two login systems for Afro Auth management; preserve legacy ownership and distinguish outages from expired sessions.

@@ -20,6 +20,7 @@ import { deviceLabel, resetPasswordUrl, resetStatements } from '../../shared/dev
 import { PLATFORM_ISSUER, PLATFORM_AUDIENCE, PLATFORM_PURPOSE, verifyPlatformSession } from '../../shared/platform-session';
 import bcrypt from 'bcryptjs';
 import { tenantAuth } from './tenant-auth';
+import { platformAdminIdentity } from './platform-admin-auth';
 import { parseTenantOrigins, validTenantOrigin } from '../../shared/tenant-origins';
 import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -1491,26 +1492,7 @@ async function authenticateBySecretKey(c: any): Promise<TenantRow | null> {
 }
 
 /** Authenticate the platform user (afroaigroup.com signed-in user). */
-async function authenticatePlatformUser(c: any): Promise<{ id: string; email: string } | null> {
-  const userId = await getCurrentUserId(c);
-  if (!userId) return null;
-  // Tenant-management is a platform feature too: an unverified platform
-  // session must not bypass the Express account-activation requirement.
-  try {
-    const identity = await fetch(new URL('/api/auth/user', c.env.EXPRESS_BASE_URL || c.env.APP_URL), {
-      headers: { Cookie: c.req.header('Cookie') || '' },
-      redirect: 'error',
-    });
-    const profile: any = identity.ok ? await identity.json() : null;
-    if (!profile?.emailVerified) return null;
-  } catch { return null; }
-  const row = await c.env.DB.prepare(
-    "SELECT id, email FROM users WHERE id = ? AND tenant_id = 'platform'",
-  )
-    .bind(userId)
-    .first<{ id: string; email: string }>();
-  return row || null;
-}
+const authenticatePlatformUser = platformAdminIdentity;
 
 /** Issue a JWT for a tenant end-user. No cookie — token is returned in body. */
 async function issueTenantSession(c: any, tenantId: string, userId: string): Promise<string> {
@@ -1566,7 +1548,7 @@ async function getTenantMauThisMonth(db: D1Database, tenantId: string, now: numb
 
 app.post('/v1/admin/tenants', async (c) => {
   const platformUser = await authenticatePlatformUser(c);
-  if (!platformUser) return c.json({ message: 'Sign in first.' }, 401);
+  if (platformUser instanceof Response) return platformUser;
   let body: any = {};
   try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
   const name = String(body.name || '').trim().slice(0, 80);
@@ -1585,7 +1567,7 @@ app.post('/v1/admin/tenants', async (c) => {
 
 app.get('/v1/admin/tenants', async (c) => {
   const platformUser = await authenticatePlatformUser(c);
-  if (!platformUser) return c.json({ message: 'Sign in first.' }, 401);
+  if (platformUser instanceof Response) return platformUser;
   const rows = await c.env.DB.prepare(
     'SELECT id, slug, name, plan, created_at FROM tenants WHERE owner_user_id = ? ORDER BY created_at DESC',
   )
@@ -1600,7 +1582,7 @@ async function ownedTenantOr401(
   tenantId: string,
 ): Promise<TenantRow | Response> {
   const platformUser = await authenticatePlatformUser(c);
-  if (!platformUser) return c.json({ message: 'Sign in first.' }, 401);
+  if (platformUser instanceof Response) return platformUser;
   const tenant = await findTenantById(c.env.DB, tenantId);
   if (!tenant || tenant.owner_user_id !== platformUser.id) {
     return c.json({ message: 'Project not found.' }, 404);
