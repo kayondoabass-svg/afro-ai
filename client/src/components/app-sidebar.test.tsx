@@ -42,8 +42,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("grouped sidebar", () => {
-  it("opens and closes with native Enter and Space buttons and preserves manual closure", async () => {
+  it("keeps New Chat primary, searchable and outside the builder group", async () => {
+    const user = userEvent.setup();
     route("/chat");
+    mount();
+    expect(screen.getByRole("link", { name: "New Chat" })).toHaveAttribute("href", "/chat");
+    expect(MENU_GROUPS.find(group => group.id === "builder")?.urls).not.toContain("/chat");
+    expect(screen.queryByRole("link", { name: "Start Building" })).toBeNull();
+    await user.type(screen.getByRole("textbox"), "new chat");
+    expect(screen.getByRole("link", { name: "New Chat" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "AI Builder" })).toBeNull();
+  });
+  it("opens and closes with native Enter and Space buttons and preserves manual closure", async () => {
+    route("/dashboard");
     const user = userEvent.setup();
     mount();
     const builder = screen.getByRole("button", { name: "AI Builder" });
@@ -137,9 +148,9 @@ describe("grouped sidebar", () => {
   it("expands the compact sidebar before revealing group leaves", async () => {
     const user = userEvent.setup();
     mount(false);
-    expect(screen.queryByRole("link", { name: "Start Building" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Forms" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "AI Builder" }));
-    expect(screen.getByRole("link", { name: "Start Building" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Forms" })).toBeVisible();
     expect(screen.getByRole("button", { name: "AI Builder" })).toHaveAttribute("aria-expanded", "true");
     await user.click(screen.getByRole("button", { name: "Log Out" }));
     expect(mocks.logout).toHaveBeenCalledOnce();

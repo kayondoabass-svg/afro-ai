@@ -47,7 +47,6 @@ import {
   Bot,
   HardDrive,
   PhoneCall,
-  LayoutGrid,
   KeyRound,
   Activity,
   DatabaseZap,
@@ -59,11 +58,11 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
+import { requestNewChat } from "@/lib/chat-entry";
 
 export const ALL_MENU_ITEMS = [
-  { titleKey: "sidebar.overview", title: "Overview", url: "/overview", icon: LayoutGrid },
+  { titleKey: "sidebar.newChat", title: "New Chat", url: "/chat", icon: MessageSquare },
   { titleKey: "sidebar.dashboard", title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { titleKey: "sidebar.startBuilding", title: "Start Building", url: "/chat", icon: MessageSquare },
   { titleKey: "sidebar.imagesVideos", title: "Images & Videos", url: "/media", icon: Images },
   { titleKey: "sidebar.playground", title: "Run Code", url: "/playground", icon: Play },
   { titleKey: "sidebar.blockBuilder", title: "Block Builder", url: "/builder", icon: Layers },
@@ -108,7 +107,7 @@ const FOUNDER_ITEMS = [
 type MenuItem = (typeof ALL_MENU_ITEMS)[number];
 
 export const MENU_GROUPS = [
-  { id: "builder", titleKey: "sidebar.aiBuilder", title: "AI Builder", icon: Layers, urls: ["/chat", "/dashboard", "/media", "/builder", "/templates", "/deployments", "/forms", "/pwa"] },
+  { id: "builder", titleKey: "sidebar.aiBuilder", title: "AI Builder", icon: Layers, urls: ["/dashboard", "/media", "/builder", "/templates", "/deployments", "/forms", "/pwa"] },
   { id: "ussd", titleKey: "sidebar.groupUssd", title: "USSD", icon: PhoneCall, urls: ["/ussd", "/ussd/apps"] },
   { id: "domains", titleKey: "sidebar.groupDomains", title: "Domains", icon: Globe, urls: ["/domains?tab=search", "/domains?tab=mydomains"] },
   { id: "marketing", titleKey: "sidebar.groupMarketing", title: "Marketing & Content", icon: BarChart3, urls: ["/blog", "/email", "/analytics", "/seo"] },
@@ -181,7 +180,10 @@ export function AppSidebar() {
       <SidebarMenuButton asChild isActive={activeUrl === item.url} tooltip={label(item)}>
         <Link
           href={item.url}
-          onClick={closeMobile}
+           onClick={event => {
+             if (item.url === "/chat" && requestNewChat()) event.preventDefault();
+             closeMobile();
+           }}
           aria-current={activeUrl === item.url ? "page" : undefined}
           title={label(item)}
           data-testid={`link-sidebar-${item.url.slice(1).replace("?tab=", "-")}`}
@@ -196,7 +198,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 pb-2 group-data-[collapsible=icon]:p-2">
-        <Link href="/overview" onClick={closeMobile} aria-label="Afro AI">
+        <Link href="/chat" onClick={event => { if (requestNewChat()) event.preventDefault(); closeMobile(); }} aria-label="Afro AI">
           <div className="flex items-center gap-2 cursor-pointer mb-3" data-testid="link-sidebar-logo">
             <img src={afroLogo} alt="Afro AI" className="w-8 h-8 object-contain" />
              <span className="font-bold text-lg tracking-tight group-data-[collapsible=icon]:hidden">Afro AI</span>
@@ -224,7 +226,7 @@ export function AppSidebar() {
                 <p className="text-xs text-muted-foreground px-2 py-4 text-center">{t("sidebar.noMatches")}</p>
               ) : filteredItems.map(renderLeaf)) : (
                 <>
-                  {renderLeaf(ALL_MENU_ITEMS.find(item => item.url === "/overview")!)}
+                  {renderLeaf(ALL_MENU_ITEMS.find(item => item.url === "/chat")!)}
                   {MENU_GROUPS.map(group => (
                     <SidebarMenuItem key={group.id}>
                       <SidebarMenuButton

@@ -11,7 +11,7 @@ vi.mock("@/components/github-project-dialog", () => ({
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({ t: (key: string) => key }) }));
-vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()] }));
+vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()], useSearch: () => window.location.search.slice(1) }));
 vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>Saved starter files</div> }));
 vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => <div data-testid="fullstack-infrastructure">Infrastructure controls</div> }));
 vi.mock("@tanstack/react-query", () => ({

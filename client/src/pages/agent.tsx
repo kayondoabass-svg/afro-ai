@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,8 @@ import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, FULLSTACK_EXPORT_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
 import "./agent.css";
+import { NewChatEntry } from "@/components/new-chat-entry";
+import { NEW_CHAT_EVENT } from "@/lib/chat-entry";
 
 // ---------- Types ----------
 
@@ -100,11 +102,6 @@ function inferActions(content: string): ActionChip[] {
   return actions.slice(0, 12);
 }
 
-function getQueryParam(name: string): string | null {
-  if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get(name);
-}
-
 function mapAgentMessages(records: any[]): AgentMessage[] {
   return records.flatMap((m: any): AgentMessage[] => {
     if (m.role === "web-search") {
@@ -138,7 +135,10 @@ function mapAgentMessages(records: any[]): AgentMessage[] {
 export default function AgentPage() {
   const { toast } = useToast();
   const { t } = useLanguage();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const routeSearch = useSearch();
+  const queryParams = new URLSearchParams(routeSearch);
+  const getQueryParam = (name: string) => queryParams.get(name);
   const qc = useQueryClient();
   const { data: user } = useQuery<any>({ queryKey: ["/api/auth/user"] });
 
@@ -152,6 +152,7 @@ export default function AgentPage() {
   };
 
   const projectIdParam = getQueryParam("projectId");
+  const conversationParam = getQueryParam("conversationId") || getQueryParam("conversation");
   const projectName = getQueryParam("project");
   const initialDescription = getQueryParam("description");
   const projectMode = getQueryParam("projectMode");
@@ -251,7 +252,7 @@ export default function AgentPage() {
   }, [isFullstack, activeProjectId, projectBlocked]);
 
   // Load conversations list (for history drawer)
-  const { data: conversations = [], refetch: refetchConvos } = useQuery<ConversationSummary[]>({
+  const { data: conversations = [] } = useQuery<ConversationSummary[]>({
     queryKey: ["/api/conversations"],
     enabled: !!user,
   });
@@ -326,6 +327,7 @@ export default function AgentPage() {
   const ensureConversation = async (): Promise<number | null> => {
     if (projectBlocked) return null;
     if (conversationId) return conversationId;
+    const sequence = loadSequenceRef.current;
     try {
       const res = await fetch("/api/conversations", {
         method: "POST",
@@ -346,6 +348,7 @@ export default function AgentPage() {
         return null;
       }
       const conv = await res.json();
+      if (sequence !== loadSequenceRef.current) return null;
       setConversationId(conv.id);
       qc.invalidateQueries({ queryKey: ["/api/conversations"] });
       return conv.id;
@@ -364,18 +367,31 @@ export default function AgentPage() {
   // a fresh conversation when nothing exists yet.
   const resumedExistingRef = useRef(false);
   const initialProjectLoadStartedRef = useRef(false);
+  const loadedEntryRef = useRef("");
   useEffect(() => {
+    if (!projectIdParam && !conversationParam) return;
     if (projectIdParam && projectBlocked) return;
+    const entryKey = `${projectIdParam || ""}:${conversationParam || ""}`;
+    if (loadedEntryRef.current !== entryKey) {
+      loadedEntryRef.current = entryKey;
+      initialProjectLoadStartedRef.current = false;
+    }
     if (initialProjectLoadStartedRef.current) return;
     initialProjectLoadStartedRef.current = true;
+    const initialSequence = loadSequenceRef.current;
     let cancelled = false;
     (async () => {
       try {
+        if (conversationParam && Number(conversationParam) > 0) {
+          await loadConversation(Number(conversationParam));
+          return;
+        }
         if (projectIdParam) {
           const pid = parseInt(projectIdParam);
           const res = await fetch(`/api/conversations/project/${pid}`, { credentials: "include" });
           if (!cancelled && res.ok) {
             const list: any[] = await res.json();
+            if (cancelled || initialSequence !== loadSequenceRef.current) return;
             if (Array.isArray(list) && list.length > 0) {
               // Newest first if backend already sorts; otherwise pick by createdAt desc
               const sorted = [...list].sort((a, b) =>
@@ -400,7 +416,7 @@ export default function AgentPage() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectIdParam, projectBlocked]);
+  }, [projectIdParam, conversationParam, projectBlocked]);
 
   // Pre-fill (don't auto-send) the initial description from URL so the user
   // can review/edit it before pressing Send. Skipped when an existing
@@ -793,16 +809,12 @@ export default function AgentPage() {
   };
 
   const startNewChat = async () => {
+    if (reviewBusy) {
+      toast({ title: t("chat.working") });
+      return;
+    }
+    if ((working || input.trim() || pendingAttachments.length || queue.length) && !window.confirm(t("chat.confirmFreshStart"))) return;
     ++loadSequenceRef.current;
-    try {
-      const res = await fetch("/api/conversations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: t("chat.agentNewChat") }),
-        credentials: "include",
-      });
-      if (res.ok) {
-        const conv = await res.json();
         // Abort any in-flight generation from the prior chat first.
         ++activeRequestRef.current;
         abortRef.current?.abort();
@@ -815,7 +827,7 @@ export default function AgentPage() {
         setActiveProjectId(null);
         setProjectPanelOpen(false);
         setProjectAgent(false);
-        setConversationId(conv.id);
+        setConversationId(null);
         setMessages([]);
         setQueue([]);
         // Clear the composer and any in-flight UI so the user gets a truly
@@ -825,16 +837,37 @@ export default function AgentPage() {
         setStreamingContent("");
         setPendingAttachments([]);
         initialDescriptionSentRef.current = true;
-        refetchConvos();
+        initialProjectLoadStartedRef.current = true;
+        loadedEntryRef.current = "";
+        setHistoryCursor(0);
+        setHistoryOpen(false);
+        setVersionsOpen(false);
+        setPublishOpen(false);
+        setGithubExportOpen(false);
+        setQueueDrainTrigger(0);
+        setLocation("/chat", { replace: true });
         toast({ title: t("chat.toastStartedNew") });
-      }
-    } catch {}
   };
+
+  const freshStartRef = useRef(startNewChat);
+  freshStartRef.current = startNewChat;
+  useEffect(() => {
+    const onNewChat = (event: Event) => {
+      event.preventDefault();
+      void freshStartRef.current();
+    };
+    window.addEventListener(NEW_CHAT_EVENT, onNewChat);
+    return () => window.removeEventListener(NEW_CHAT_EVENT, onNewChat);
+  }, [location]);
 
   // ---------- Top menu actions ----------
 
   const copyShareLink = () => {
-    const url = `${window.location.origin}/chat${activeProjectId ? `?projectId=${activeProjectId}${isFullstack ? "&projectMode=fullstack" : ""}` : ""}`;
+    const query = new URLSearchParams();
+    if (conversationId) query.set("conversationId", String(conversationId));
+    if (activeProjectId) query.set("projectId", String(activeProjectId));
+    if (isFullstack) query.set("projectMode", "fullstack");
+    const url = `${window.location.origin}/chat${query.size ? `?${query}` : ""}`;
     if (!navigator.clipboard?.writeText) {
       toast({ title: "Copy unavailable", description: "Your browser does not support copying links here.", variant: "destructive" });
       return;
@@ -939,9 +972,10 @@ export default function AgentPage() {
   };
 
   // ---------- Render ----------
+  const emptyEntry = messages.length === 0 && !working && !activeProjectId && !projectName && !projectPanelOpen;
 
   return (
-    <div ref={shellRef} className="agent-shell flex flex-col bg-zinc-950 text-zinc-100" data-testid="agent-shell">
+    <div ref={shellRef} className={`agent-shell flex flex-col bg-zinc-950 text-zinc-100 ${emptyEntry ? "agent-new-entry" : ""}`} data-testid="agent-shell">
       <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.md,.csv,.json" multiple className="hidden" onChange={handleFileChange} data-testid="input-file" />
 
       {/* Top bar */}
@@ -1276,29 +1310,10 @@ export default function AgentPage() {
       {/* Messages */}
       <div ref={scrollRef} className="agent-scroll flex-1 overflow-y-auto px-4 py-4 space-y-5" data-testid="agent-messages">
         {messages.length === 0 && !working && (
-          <div className="flex flex-col items-center justify-center h-full text-center text-zinc-500 px-6">
-            <div className="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center mb-3">
-              <Sparkles className="w-6 h-6 text-violet-400" />
-            </div>
-            <h2 className="text-lg font-semibold text-zinc-200 mb-1">{t("chat.greeting", { name: user?.firstName || t("chat.there") })}</h2>
-            <p className="text-sm mb-4">{t("chat.emptyPrompt")}</p>
-            <div className="grid gap-2 w-full max-w-sm">
-              {[
-                t("chat.agentSuggestion1"),
-                t("chat.agentSuggestion2"),
-                t("chat.agentSuggestion3"),
-              ].map(s => (
-                <button
-                  key={s}
-                  onClick={() => setInput(s)}
-                  className="px-3 py-2 text-left text-sm text-zinc-300 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors"
-                  data-testid={`button-suggestion-${s.slice(0, 10)}`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
+          <NewChatEntry name={user?.firstName} onSuggestion={value => {
+            setInput(value);
+            shellRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+          }} />
         )}
 
         <AgentSearchContext.Provider value={messages.flatMap(m => m.searchActivity ? [m.searchActivity] : [])}>

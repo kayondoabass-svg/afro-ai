@@ -11,3 +11,9 @@ Prefer expandable navigation groups for tools dealing with similar tasks, rather
 Settings, Marketplace, and Collaborate are tools for clients too, not founder-only tools. Personal settings, listing management, and collaboration actions must apply to the particular signed-in client.
 
 **Why:** The user explicitly asked to remember client access and account-specific scope.
+
+Use New Chat, not Overview, as the primary entry and ordinary post-login destination. The user wants a simpler chat-first experience inspired by familiar AI assistants, retaining Afro AI branding and a moving golden pattern rather than a blue glow.
+
+**Why:** The user found the previous overview repetitive and explicitly requested a chat-first default.
+
+**How to apply:** Preserve deliberate deep links and payment-return destinations; New Chat should start fresh without deleting saved conversations or projects. Respect reduced-motion preferences.

@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, AlertCircle, Mail } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { authDestination } from "@/lib/chat-entry";
 
 const COPY: Record<string, { icon: any; title: string; body: string; tone: "ok" | "warn" }> = {
   pending: { icon: Mail, tone: "warn", title: "Verify your email first", body: "Open the confirmation link in your inbox to activate your account. If it hasn't arrived, you can request another below." },
@@ -30,6 +31,9 @@ export default function VerifyEmailPage() {
   const [status, setStatus] = useState<string>("missing");
 
   useEffect(() => {
+    if (user && !user.emailVerified && window.location.pathname !== "/verify-email") {
+      try { sessionStorage.setItem("after_login_redirect", window.location.pathname + window.location.search); } catch { /* Storage unavailable. */ }
+    }
     const params = new URLSearchParams(window.location.search);
     const redirect = verificationRedirect(window.location.search);
     if (redirect) {
@@ -59,7 +63,7 @@ export default function VerifyEmailPage() {
       if (response.status === 429) setCooldown(60);
       if (!response.ok) throw new Error(data.error || "Could not send verification email.");
       if (data.alreadyVerified) {
-        window.location.replace("/dashboard");
+        window.location.replace(authDestination(sessionStorage.getItem("after_login_redirect")));
         return;
       }
       setCooldown(60);
@@ -84,8 +88,8 @@ export default function VerifyEmailPage() {
           <h1 className="text-2xl font-bold font-serif" data-testid="text-verify-title">{c.title}</h1>
           <p className="text-muted-foreground" data-testid="text-verify-body">{c.body}</p>
           {c.tone === "ok" ? (
-            <Button className="w-full" onClick={() => window.location.replace("/dashboard")} data-testid="button-go-dashboard">
-              Go to dashboard
+            <Button className="w-full" onClick={() => window.location.replace(authDestination(sessionStorage.getItem("after_login_redirect")))} data-testid="button-go-dashboard">
+              Continue to Afro AI
             </Button>
           ) : (
             <div className="space-y-2">

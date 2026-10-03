@@ -42,6 +42,17 @@ type TranslationStrings = Record<string, string>;
 
 export const translations: Record<LanguageCode, TranslationStrings> = {
   en: {
+    "sidebar.newChat": "New Chat",
+    "chat.entryTitle": "What will you build today?",
+    "chat.entryGreeting": "What will you build today, {name}?",
+    "chat.entrySubtitle": "Turn your idea into an app, website, or AI product. Start with what you want to create.",
+    "chat.entryWebsiteLabel": "Build a business website",
+    "chat.entryWebsitePrompt": "Help me build a website for my business. Ask me about my customers and what I offer first.",
+    "chat.entryAppLabel": "Develop an app idea",
+    "chat.entryAppPrompt": "Help me turn my app idea into a working product. Ask me about the problem I want to solve.",
+    "chat.entryAILabel": "Create an AI product",
+    "chat.entryAIPrompt": "Help me plan and build an AI product for my customers. Ask me about the workflow it should improve.",
+    "chat.confirmFreshStart": "Start a new chat? Your unsent draft, attachments and queued prompts will be cleared, and the current reply will stop. Saved conversations and projects will remain.",
     "media.title": "AI Images & Videos",
     "media.subtitle": "Describe what you want to create. Your generations are saved here for you to preview and download.",
     "media.create": "Create media",
@@ -177,7 +188,7 @@ export const translations: Record<LanguageCode, TranslationStrings> = {
     "chat.settings": "Settings",
     "chat.signOut": "Sign out",
     "chat.there": "there",
-    "chat.greeting": "Hey {name} 👋",
+    "chat.greeting": "Hey {name}",
     "chat.emptyPrompt": "Ask me to build, edit, debug, or explain anything.",
     "chat.agentSuggestion1": "Build a simple landing page for my business",
     "chat.agentSuggestion2": "Create a contact form that sends to my email",

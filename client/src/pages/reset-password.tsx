@@ -90,7 +90,7 @@ export default function ResetPasswordPage() {
       }
       setDone(true);
       setTimeout(() => {
-        if (data.loggedIn) setLocation("/dashboard");
+        if (data.loggedIn) setLocation("/chat");
         else setLocation("/login");
       }, 2000);
     } catch {

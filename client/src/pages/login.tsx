@@ -19,6 +19,7 @@ import {
   type LockState,
 } from "@/components/locked-panel";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
+import { authDestination } from "@/lib/chat-entry";
 
 const AUTH_BASE = "/cf-auth";
 
@@ -78,7 +79,7 @@ export default function LoginPage() {
     // Default to /chat (the main product surface) rather than "/" so users
     // see proof of being logged in instead of bouncing back to the marketing
     // landing page.
-    const dest = stored && stored.startsWith("/") ? stored : "/chat";
+    const dest = authDestination(stored);
     // Drop a short-lived marker so the next page load can tell the difference
     // between "user never logged in" and "user logged in but the cookie didn't
     // survive the redirect" (the bug where mobile users get bounced back to
@@ -233,11 +234,9 @@ export default function LoginPage() {
     // same page as the email/password flow (sanitized server-side).
     const stored = sessionStorage.getItem("after_login_redirect");
     let url = `${AUTH_BASE}/${provider}/start`;
-    const dest = stored && stored.startsWith("/") ? stored : "/chat";
-    if (stored && stored.startsWith("/")) {
-      const target = `${window.location.origin}${stored}`;
-      url += `?redirect=${encodeURIComponent(target)}`;
-    }
+    const dest = authDestination(stored);
+    const target = `${window.location.origin}${dest}`;
+    url += `?redirect=${encodeURIComponent(target)}`;
     // Same "login didn't stick" marker as the email/password flow — sessionStorage
     // is per-tab so it survives the round-trip to Google/GitHub and back, letting
     // AppRouter detect a dropped cookie on the way home from OAuth too.

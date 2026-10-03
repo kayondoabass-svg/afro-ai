@@ -9,7 +9,7 @@ vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({
   t: (key: string) => key,
 }) }));
-vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()] }));
+vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()], useSearch: () => window.location.search.slice(1) }));
 vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>Project file tree</div> }));
 vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => null }));
 vi.mock("@tanstack/react-query", () => ({
@@ -30,6 +30,23 @@ const activity = {
 };
 
 describe("active /chat Agent search", () => {
+  it("starts empty without creating history and resets the same-route draft only after confirmation", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    render(<AgentPage />);
+    expect(screen.getByTestId("new-chat-entry")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByTestId("input-prompt"), { target: { value: "Unsent idea" } });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    act(() => { window.dispatchEvent(new Event("afro:new-chat", { cancelable: true })); });
+    expect(screen.getByTestId("input-prompt")).toHaveValue("Unsent idea");
+    confirm.mockReturnValue(true);
+    act(() => { window.dispatchEvent(new Event("afro:new-chat", { cancelable: true })); });
+    expect(screen.getByTestId("input-prompt")).toHaveValue("");
+    expect(fetchMock).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
   it("keeps builder modes exclusive and exposes review and navigation through the mobile menu", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url === "/api/conversations") return Response.json({ id: 47 });

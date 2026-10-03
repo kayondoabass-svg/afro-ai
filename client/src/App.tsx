@@ -191,7 +191,7 @@ function AuthenticatedLayout() {
                 <Route path="/verify-email" component={VerifyEmailPage} />
                 <Route path="/cookies" component={CookiePolicyPage} />
                 <Route path="/refund-policy" component={RefundPolicyPage} />
-                <Route path="/" component={DashboardPage} />
+                <Route path="/"><Redirect to={`${new URLSearchParams(window.location.search).has("payment") ? "/dashboard" : "/chat"}${window.location.search}`} /></Route>
                 <Route component={NotFound} />
               </Switch>
             </Suspense>
@@ -219,7 +219,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/cookies": "Cookie Policy — Afro AI",
   "/refund-policy": "Refund Policy — Afro AI",
   "/dashboard": "Dashboard — Afro AI",
-  "/chat": "AI Builder — Afro AI",
+  "/chat": "New Chat — Afro AI",
   "/media": "AI Images & Videos — Afro AI",
   "/deployments": "Deployments — Afro AI",
   "/settings": "Settings — Afro AI",
