@@ -90,6 +90,7 @@ const AppDesignerLandingPage = lazy(() => import("@/pages/app-designer-landing")
 const AfroAuthLandingPage = lazy(() => import("@/pages/afro-auth-landing"));
 const AfroAuthDashboardPage = lazy(() => import("@/pages/afro-auth-dashboard"));
 const AfroAuthProjectPage = lazy(() => import("@/pages/afro-auth-project"));
+const AuthDocsPage = lazy(() => import("@/pages/docs-auth"));
 
 function RouteFallback() {
   return (
@@ -234,7 +235,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/ussd-builder": "USSD Builder — Afro AI | Build USSD Apps for African Mobile Networks",
   "/domain-names": "Domain Names — Afro AI | .africa, .co.ke, .ng, .co.za & More",
   "/articles": "Articles — Afro AI",
-  "/afro-auth": "Afro Auth — Login-as-a-Service for African builders | from $5/mo",
+   "/afro-auth": "Afro Auth — Customer-App Authentication | Built in Africa for the World",
+   "/docs/auth": "Afro Auth Documentation — Signup, Sessions & OAuth | Afro AI",
   "/dashboard/auth": "Afro Auth Projects — Afro AI",
 };
 
@@ -481,7 +483,7 @@ function AppRouter() {
     );
   }
 
-  const PUBLIC_AUTH_PATHS = new Set(["/login", "/forgot-password", "/reset-password", "/verify-email"]);
+  const PUBLIC_AUTH_PATHS = new Set(["/login", "/forgot-password", "/reset-password", "/verify-email", "/docs/auth"]);
   if (PUBLIC_AUTH_PATHS.has(location)) {
     return (
       <ErrorBoundary>
@@ -491,6 +493,7 @@ function AppRouter() {
             <Route path="/forgot-password" component={ForgotPasswordPage} />
             <Route path="/reset-password" component={ResetPasswordPage} />
             <Route path="/verify-email" component={VerifyEmailPage} />
+            <Route path="/docs/auth" component={AuthDocsPage} />
           </Switch>
         </Suspense>
       </ErrorBoundary>
@@ -534,6 +537,7 @@ function AppRouter() {
           <Route path="/chatbot-checkout" component={ChatbotCheckoutPage} />
           <Route path="/developer-email" component={EmailApiLandingPage} />
           <Route path="/docs/email-api" component={EmailApiDocsPage} />
+           <Route path="/docs/auth" component={AuthDocsPage} />
           <Route path="/ussd-builder" component={UssdLandingPage} />
           <Route path="/partners" component={PartnersPage} />
           <Route path="/become-partner" component={BecomePartnerPage} />

@@ -1,3 +1,4 @@
+import { registerPublicAuthDocs } from "./public-auth-docs";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
@@ -184,6 +185,7 @@ export async function registerRoutes(
   });
 
   // Serve SEO files explicitly so crawlers always find them
+  registerPublicAuthDocs(app);
   app.get("/robots.txt", (_req, res) => {
     res.type("text/plain").send(
       "User-agent: *\n" +
@@ -203,11 +205,6 @@ export async function registerRoutes(
       "Disallow: /admin-command\n" +
       "Disallow: /d1\n" +
       "Disallow: /overview\n\n" +
-      "User-agent: GPTBot\nAllow: /\n\n" +
-      "User-agent: Google-Extended\nAllow: /\n\n" +
-      "User-agent: ClaudeBot\nAllow: /\n\n" +
-      "User-agent: PerplexityBot\nAllow: /\n\n" +
-      "User-agent: anthropic-ai\nAllow: /\n\n" +
       "Sitemap: https://afroaigroup.com/sitemap.xml\n"
     );
   });
@@ -215,6 +212,8 @@ export async function registerRoutes(
     const today = new Date().toISOString().split("T")[0];
     res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://afroaigroup.com/afro-auth</loc></url>
+  <url><loc>https://afroaigroup.com/docs/auth</loc></url>
   <url><loc>https://afroaigroup.com/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
   <url><loc>https://afroaigroup.com/pricing</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.9</priority></url>
   <url><loc>https://afroaigroup.com/templates</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>

@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
+import { enhancePublicHtml } from "./public-auth-docs";
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(__dirname, "public");
@@ -26,6 +27,6 @@ export function serveStatic(app: Express) {
     // Inject fresh canonical + og:url before </head>
     const injection = `  <link rel="canonical" href="${canonicalUrl}" />\n  <meta property="og:url" content="${canonicalUrl}" />\n`;
     html = html.replace("</head>", `${injection}</head>`);
-    res.set("Content-Type", "text/html").send(html);
+    res.set("Content-Type", "text/html").send(enhancePublicHtml(html, pathname));
   });
 }

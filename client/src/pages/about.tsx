@@ -152,7 +152,10 @@ export default function AboutPage() {
                 <Card>
                   <CardContent className="p-6 space-y-2">
                     <h3 className="font-semibold" data-testid="text-offer-afro-auth">Afro Auth</h3>
-                    <p className="text-sm text-muted-foreground">Our Login-as-a-Service product for developers. Drop a complete signup, login, and user management system into any app in minutes. Free up to 5,000 monthly users.</p>
+                    <p className="text-sm text-muted-foreground">Customer-app authentication for developers worldwide, built in Africa. Email/password signup with email confirmation, password recovery, revocable 24-hour sessions, and Google/GitHub sign-in with PKCE.</p>
+                    <Link href="/afro-auth" className="inline-block text-sm text-primary hover:underline">Explore Afro Auth</Link>
+                    <span className="text-muted-foreground"> · </span>
+                    <Link href="/docs/auth" className="inline-block text-sm text-primary hover:underline">Integration guide</Link>
                   </CardContent>
                 </Card>
                 <Card>
@@ -221,6 +224,22 @@ export default function AboutPage() {
                     <p className="text-sm text-muted-foreground">Professional developer dashboard with real-time activity logs, interactive bash terminal, and deployments overview — all in one place.</p>
                   </CardContent>
                 </Card>
+                {[
+                  { id: "pwa", title: "PWA Builder", description: "Generate a manifest, service worker, and integration snippet for a published app to make it installable.", href: "/pwa" },
+                  { id: "knowledge", title: "Knowledge Base", description: "Add text, URLs, and uploaded documents as sources for your AI knowledge base.", href: "/knowledge" },
+                  { id: "files", title: "File Manager", description: "Upload, browse, and manage files, with links you can copy or open.", href: "/files" },
+                  { id: "playground", title: "Code Playground", description: "Write code in the Run Code workspace. Execution requires a configured runtime.", href: "/playground" },
+                  { id: "business-services", title: "Business Services", description: "Explore SMS, USSD, WhatsApp, airtime, and mobile-money service options. Availability and setup requirements are listed per service; contact the team to arrange access.", href: "/business-services" },
+                  { id: "partners", title: "Partner Programme", description: "Explore partnership options, apply to become a partner, and browse the partner directory.", href: "/partners" },
+                ].map((offer) => (
+                  <Card key={offer.id}>
+                    <CardContent className="p-6 space-y-2">
+                      <h3 className="font-semibold" data-testid={`text-offer-${offer.id}`}>{offer.title}</h3>
+                      <p className="text-sm text-muted-foreground">{offer.description}</p>
+                      <Link href={offer.href} className="inline-block text-sm text-primary hover:underline">Learn more</Link>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             </section>
 

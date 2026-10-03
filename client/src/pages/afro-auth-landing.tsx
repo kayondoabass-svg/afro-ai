@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Code2, Globe2, ShieldCheck, Smartphone, Zap } from "lucide-react";
+import { Check, Globe2, ShieldCheck, Code2, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 const TIERS = [
@@ -29,7 +29,7 @@ const TIERS = [
     price: "$25",
     sub: "/ month",
     mau: "100,000",
-    features: ["Up to 5 apps", "SMS OTP (African telcos)", "Priority email support", "Webhook events"],
+    features: ["Up to 5 apps", "Email/password authentication", "Email verification and recovery", "Revocable sessions"],
     cta: "Choose Business",
     highlight: false,
   },
@@ -38,17 +38,10 @@ const TIERS = [
     price: "$100",
     sub: "/ month",
     mau: "500,000",
-    features: ["Unlimited apps", "Dedicated success manager", "99.9% SLA", "Custom contracts"],
+    features: ["Unlimited apps", "Email/password authentication", "Google and GitHub sign-in", "Server-side session verification"],
     cta: "Talk to us",
     highlight: false,
   },
-];
-
-const COMPETITORS = [
-  { name: "Auth0", price: "from $35/mo (500 MAUs)" },
-  { name: "Clerk", price: "from $25/mo (10k MAUs)" },
-  { name: "Frontegg", price: "from $99/mo" },
-  { name: "Afro Auth", price: "from $5/mo (25k MAUs)", us: true },
 ];
 
 export default function AfroAuthLandingPage() {
@@ -62,14 +55,14 @@ export default function AfroAuthLandingPage() {
       <section className="border-b">
         <div className="max-w-6xl mx-auto px-6 py-20 text-center">
           <Badge className="mb-4" variant="secondary" data-testid="badge-built-in-africa">
-            Built in Africa, for African builders
+            Built in Africa, for developers worldwide
           </Badge>
           <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-4" data-testid="text-hero-title">
             Afro Auth
           </h1>
           <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto mb-8" data-testid="text-hero-tagline">
-            Drop-in login for your app. Email, password, OAuth — and pay in mobile money.
-            Auth0-grade quality from <span className="font-semibold text-foreground">$5/month</span>.
+            Customer-app authentication with email, password, and Google or GitHub sign-in.
+            Built in Africa for teams shipping anywhere in the world.
           </p>
           <div className="flex flex-wrap gap-3 justify-center" data-testid="container-hero-cta">
             <Button
@@ -79,6 +72,9 @@ export default function AfroAuthLandingPage() {
               data-testid="button-get-started"
             >
               Get started free
+            </Button>
+            <Button size="lg" variant="outline" asChild>
+              <Link href="/docs/auth">Read the documentation</Link>
             </Button>
             <Button
               size="lg"
@@ -99,20 +95,20 @@ export default function AfroAuthLandingPage() {
       <section className="max-w-6xl mx-auto px-6 py-16 grid md:grid-cols-3 gap-6">
         <FeatureCard
           icon={<Zap className="h-6 w-6" />}
-          title="Ship login in 10 minutes"
-          body="Two API calls. We handle password hashing, captcha, sessions, and security."
+          title="Confirm email before sign-in"
+          body="Signup sends an email confirmation form, not a login token. Accounts must be verified before password login."
           testId="card-feature-fast"
         />
         <FeatureCard
           icon={<Globe2 className="h-6 w-6" />}
-          title="Pay in mobile money"
-          body="MTN, Airtel, M-Pesa via Pesapal. No US credit card required — finally."
+          title="Build for users worldwide"
+          body="Configure exact allowed origins for your app. Use the JSON API or hosted email confirmation and password-reset forms."
           testId="card-feature-mm"
         />
         <FeatureCard
-          icon={<Smartphone className="h-6 w-6" />}
-          title="Future: SMS + USSD"
-          body="OTP via local telcos and login from feature phones. Things Auth0 won't ever build."
+          icon={<Code2 className="h-6 w-6" />}
+          title="Sessions you can revoke"
+          body="Tokens expire after 24 hours and require a live session. Verify each protected operation from your backend."
           testId="card-feature-future"
         />
       </section>
@@ -124,13 +120,14 @@ export default function AfroAuthLandingPage() {
             <h2 className="text-3xl font-bold mb-2" data-testid="text-code-section-title">
               Plug it into your app
             </h2>
-            <p className="text-muted-foreground">A signup endpoint takes one fetch call.</p>
+            <p className="text-muted-foreground">Signup starts email verification. After confirmation, call login to create a session.</p>
           </div>
           <pre
             className="bg-card border rounded-lg p-6 overflow-x-auto text-sm font-mono"
             data-testid="code-snippet"
           >
-{`// In your app, point your signup form here:
+{`// Configure your app's exact allowed origin first.
+// New passwords must contain 12–128 characters.
 const res = await fetch(
   "https://afroaigroup.com/cf-auth/t/your-app-slug/signup",
   {
@@ -139,9 +136,19 @@ const res = await fetch(
     body: JSON.stringify({ email, password }),
   }
 );
-const { token, user } = await res.json();
-// Store \`token\` (localStorage / cookie) and you're done.`}
+const data = await res.json();
+if (!res.ok) throw new Error(data.message || "Signup failed");
+// → { verificationRequired: true, user }
+// Ask the user to confirm via the emailed POST form.
+// Signup does NOT return a token.
+// After confirmation, POST { email, password } to /login.
+// Keep the resulting token in memory or a secure server-side session.
+// Never expose your sk_ key in browser code.`}
           </pre>
+          <div className="flex flex-wrap gap-4 mt-6 text-sm text-primary">
+            <Link href="/docs/auth" className="hover:underline">Complete integration guide</Link>
+            <a href="/openapi.json" className="hover:underline">OpenAPI specification</a>
+          </div>
         </div>
       </section>
 
@@ -149,10 +156,10 @@ const { token, user } = await res.json();
       <section id="pricing" className="max-w-6xl mx-auto px-6 py-16">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold mb-2" data-testid="text-pricing-title">
-            Honest, African-friendly pricing
+            Plans for your next app
           </h2>
           <p className="text-muted-foreground">
-            All plans include captcha, password reset, and 30-day sessions.
+            Email verification, password recovery, and revocable 24-hour sessions.
           </p>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -202,34 +209,18 @@ const { token, user } = await res.json();
         </div>
       </section>
 
-      {/* Comparison */}
+      {/* Integration boundaries */}
       <section className="bg-muted/30 border-t">
         <div className="max-w-3xl mx-auto px-6 py-16">
           <h2 className="text-2xl md:text-3xl font-bold mb-8 text-center" data-testid="text-comparison-title">
-            How we compare
+            Know what you are integrating
           </h2>
           <Card>
-            <CardContent className="p-0">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-4 font-medium">Service</th>
-                    <th className="text-right p-4 font-medium">Cheapest paid plan</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {COMPETITORS.map((c) => (
-                    <tr
-                      key={c.name}
-                      className={c.us ? "bg-primary/10 font-semibold" : "border-b last:border-0"}
-                      data-testid={`row-competitor-${c.name.toLowerCase().replace(/\s+/g, "-")}`}
-                    >
-                      <td className="p-4">{c.name}{c.us ? " (us)" : ""}</td>
-                      <td className="p-4 text-right">{c.price}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <CardContent className="p-6 space-y-4 text-sm text-muted-foreground">
+              <p>Afro Auth is customer-app authentication, separate from the Afro AI platform login. Your application remains responsible for authorization and safe token handling.</p>
+              <p>There is no refresh-token rotation in this release. Expired or revoked sessions require a new login; offline JWT verification alone cannot enforce revocation.</p>
+              <p>Production migration, real email delivery, and provider consent flows require post-release checks. Automated tests do not establish live availability.</p>
+              <Link href="/docs/auth#security" className="inline-block text-primary hover:underline">Read the security limitations</Link>
             </CardContent>
           </Card>
         </div>
@@ -242,7 +233,7 @@ const { token, user } = await res.json();
           Stop building login from scratch.
         </h2>
         <p className="text-muted-foreground mb-6">
-          Set up your first project in under 5 minutes. Free tier, no card.
+          Create a project, configure your allowed origins, and follow the integration guide.
         </p>
         <Button size="lg" onClick={() => setLocation(ctaHref)} data-testid="button-final-cta">
           Create your project

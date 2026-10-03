@@ -1,3 +1,4 @@
+import { enhancePublicHtml } from "./public-auth-docs";
 import { type Express } from "express";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
@@ -59,7 +60,7 @@ export async function setupVite(server: Server, app: Express) {
       // Inject fresh canonical + og:url before </head>
       const injection = `  <link rel="canonical" href="${canonicalUrl}" />\n  <meta property="og:url" content="${canonicalUrl}" />\n`;
       page = page.replace("</head>", `${injection}</head>`);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      res.status(200).set({ "Content-Type": "text/html" }).end(enhancePublicHtml(page, pathname));
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);

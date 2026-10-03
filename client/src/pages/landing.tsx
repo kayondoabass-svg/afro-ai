@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { InstallPwaButton } from "@/components/install-pwa-button";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useLanguage } from "@/hooks/use-language";
 import {
   Smartphone,
@@ -23,6 +24,7 @@ import {
   ScanSearch,
   Github,
   GitBranch,
+  ChevronDown,
 } from "lucide-react";
 import heroBg from "@assets/hero-bg.jpg";
 import workspaceImg from "@assets/workspace.jpg";
@@ -666,7 +668,21 @@ export default function LandingPage() {
                 <a href="/terms" className="block hover:text-primary transition-colors" data-testid="link-footer-terms">{t("footer.terms")}</a>
                 <a href="/cookies" className="block hover:text-primary transition-colors" data-testid="link-footer-cookies">{t("footer.cookies")}</a>
                 <a href="/refund-policy" className="block hover:text-primary transition-colors" data-testid="link-footer-refund">{t("footer.refundPolicy")}</a>
-                <a href="/.well-known/security.txt" className="block hover:text-primary transition-colors" data-testid="link-footer-security">{t("footer.security")}</a>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" className="flex items-center gap-1 hover:text-primary transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="link-footer-security">
+                      {t("footer.security")} <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="top">
+                    <DropdownMenuItem asChild>
+                      <a href="/afro-auth" data-testid="link-footer-authentication">Authentication</a>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <a href="/.well-known/security.txt" data-testid="link-footer-security-disclosure">Security disclosure</a>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
               <div className="pt-2">
                 <InstallPwaButton variant="outline" />
