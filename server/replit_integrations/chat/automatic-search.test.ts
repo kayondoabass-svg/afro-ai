@@ -50,10 +50,19 @@ it("repairs a promise-only build before delivery, carrying the paid model tier",
   const html = "<html><body>Real website</body></html>";
   model.mockResolvedValueOnce({ text: "Your website is ready for review! [Link to your website]", model: "test" })
     .mockResolvedValueOnce({ text: html, model: "test", completionTokens: 20 });
-  const result = await completeWithAutomaticSearch({ ...opts(), tier: "pro", buildTurn: { plan: false, requireHtml: true } });
+  const result = await completeWithAutomaticSearch({ ...opts(),
+    messages: [{ role: "system", content: "Approved brand: Orchard Demo; green background." }, ...opts().messages],
+    tier: "pro", buildTurn: { plan: false, requireHtml: true } });
   expect(result.fullText).toBe(html);
   expect(model).toHaveBeenCalledTimes(2);
   expect(model.mock.calls.every(([o]) => o.tier === "pro")).toBe(true);
+  for (const [input] of model.mock.calls) {
+    expect(input.messages.filter((m: any) => m.role === "system")).toHaveLength(1);
+    expect(input.messages[0]).toMatchObject({ role: "system" });
+    expect(input.messages[0].content).toContain("Approved brand: Orchard Demo; green background.");
+    expect(input.messages[0].content).toContain("AUTOMATIC PLAN AND BUILD");
+    expect(input.messages[0].content).toContain("untrusted data");
+  }
 });
 it("fails truthfully after one unsuccessful repair instead of claiming a build", async () => {
   model.mockResolvedValue({ text: "I'll let you know once it's ready for your review.", model: "test" });

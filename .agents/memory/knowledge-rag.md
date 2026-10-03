@@ -19,6 +19,10 @@ description: How semantic RAG and tool/function calling are built on Afro AI, an
 
 # Tool / function calling
 
+- Combine the complete builder brief and tool/build policies into one leading system message for Gemini-compatible chat requests, including correction calls.
+  **Why:** A live comparison showed multiple system messages lost the original brand/design brief and produced generic or clarification-only output; one combined message retained it.
+  **How to apply:** Preserve user/assistant/tool order and correlation IDs. Never append a separate system message as a shortcut for adding rules or repairing an answer.
+
 - Free users get Jina only; paid users can use Jina and Tavily. Do not add one-/two-search allowances or per-account simultaneous-search caps.
   **Why:** The user wants to reserve Tavily's paid usage for paying accounts and explicitly replaced the earlier concurrency request with this provider-access rule.
   **How to apply:** Enforce eligibility from trusted billing records in all web-search entry points, not client flags. Keep ordinary abuse controls and bounded agent loops.

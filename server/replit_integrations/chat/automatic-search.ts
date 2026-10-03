@@ -43,8 +43,17 @@ export async function completeWithAutomaticSearch(opts: {
   buildTurn?: { plan: boolean; requireHtml: boolean };
 }) {
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(110_000)]);
-  const messages: any[] = [...opts.messages, { role: "system", content: POLICY }];
-  if (opts.buildTurn) messages.push({ role: "system", content: buildTurnPolicy(opts.buildTurn.plan, opts.buildTurn.requireHtml) });
+  // Gemini's compatibility endpoint can discard earlier system messages.
+  // Keep the builder brief, safety rules and tool policy in one leading message.
+  const systemContent = [
+    ...opts.messages.filter(message => message.role === "system").map(message => message.content),
+    POLICY,
+    ...(opts.buildTurn ? [buildTurnPolicy(opts.buildTurn.plan, opts.buildTurn.requireHtml)] : []),
+  ].join("\n\n");
+  const messages: any[] = [
+    { role: "system", content: systemContent },
+    ...opts.messages.filter(message => message.role !== "system"),
+  ];
   const seen = new Set<string>();
   let completionTokens = 0;
   let executions = 0;
@@ -62,9 +71,11 @@ export async function completeWithAutomaticSearch(opts: {
       if (opts.buildTurn && invalidBuildAnswer(result.text, opts.buildTurn.requireHtml, opts.buildTurn.plan)) {
         // One bounded corrective generation, before anything is shown or saved.
         const repaired = await aiChatComplete({
-          messages: [...messages, { role: "assistant", content: result.text }, {
-            role: "system", content: "The previous answer did not fulfill this turn: it omitted required complete HTML, violated Plan-only mode, or claimed a nonexistent build/link. Correct it now. " + buildTurnPolicy(opts.buildTurn.plan, opts.buildTurn.requireHtml),
-          }], maxTokens: opts.maxTokens, tier: opts.tier, signal,
+          messages: [{
+            role: "system",
+            content: systemContent + "\n\nThe previous answer did not fulfill this turn: it omitted required complete HTML, violated an explicit plan-only request, or claimed a nonexistent build/link. Correct it now, using the full original brief above.",
+          }, ...messages.slice(1), { role: "assistant", content: result.text }],
+          maxTokens: opts.maxTokens, tier: opts.tier, signal,
         });
         signal.throwIfAborted();
         completionTokens += repaired.completionTokens ?? 0;
