@@ -156,22 +156,13 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
+      // Bodies may include credentials or checkout URLs. Route templates also
+      // avoid logging private tokens embedded in URL parameters.
+      const route = typeof req.route?.path === "string" ? req.route.path : "/api";
+      const logLine = `${req.method} ${route} ${res.statusCode} in ${duration}ms`;
       log(logLine);
     }
   });

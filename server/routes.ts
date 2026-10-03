@@ -1781,8 +1781,8 @@ export async function registerRoutes(
   app.get("/api/admin/test-pesapal", isFounder, async (req, res) => {
     try {
       const { getAuthToken } = await import("./pesapal");
-      const token = await getAuthToken();
-      res.json({ success: true, message: "Pesapal credentials verified successfully", tokenPreview: token.slice(0, 20) + "..." });
+      await getAuthToken();
+      res.json({ success: true, message: "Pesapal credentials verified successfully" });
     } catch (e: any) {
       res.status(400).json({ success: false, message: e.message });
     }

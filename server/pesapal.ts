@@ -88,8 +88,8 @@ export async function getAuthToken(): Promise<string> {
 
   const data = (await res.json()) as PesapalAuthResponse;
 
-  if (data.error) {
-    throw new Error(`Pesapal auth error: ${data.error}`);
+  if (data.error || typeof data.token !== "string" || !data.token) {
+    throw new Error("Pesapal authentication failed; check merchant configuration.");
   }
 
   cachedToken = data.token;
@@ -115,22 +115,21 @@ export async function registerIpnUrl(ipnUrl: string): Promise<string> {
   });
 
   const rawText = await res.text();
-  console.log(`[Pesapal] registerIPN status=${res.status} body=${rawText}`);
+  console.log(`[Pesapal] registerIPN status=${res.status}`);
 
   if (!res.ok) {
-    throw new Error(`Pesapal IPN registration failed with status ${res.status}: ${rawText}`);
+    throw new Error(`Pesapal IPN registration failed with status ${res.status}`);
   }
 
   let data: any;
   try {
     data = JSON.parse(rawText);
   } catch {
-    throw new Error(`Pesapal IPN returned invalid JSON: ${rawText}`);
+    throw new Error("Pesapal IPN returned an invalid response");
   }
 
   if (data.error) {
-    const errMsg = typeof data.error === "object" ? JSON.stringify(data.error) : String(data.error);
-    throw new Error(`Pesapal IPN registration error: ${errMsg}`);
+    throw new Error("Pesapal IPN registration was rejected; check merchant configuration.");
   }
 
   return data.ipn_id;
@@ -150,26 +149,25 @@ export async function submitOrder(order: PesapalOrderRequest): Promise<PesapalOr
   });
 
   const rawText = await res.text();
-  console.log(`[Pesapal] submitOrder status=${res.status} body=${rawText}`);
+  console.log(`[Pesapal] submitOrder status=${res.status}`);
 
   if (!res.ok) {
-    throw new Error(`Pesapal order submission failed with status ${res.status}: ${rawText}`);
+    throw new Error(`Pesapal order submission failed with status ${res.status}`);
   }
 
   let data: any;
   try {
     data = JSON.parse(rawText);
   } catch {
-    throw new Error(`Pesapal returned invalid JSON: ${rawText}`);
+    throw new Error("Pesapal returned an invalid response");
   }
 
   if (data.error) {
-    const errMsg = typeof data.error === "object" ? JSON.stringify(data.error) : String(data.error);
-    throw new Error(`Pesapal order error: ${errMsg}`);
+    throw new Error("Pesapal rejected the order; check merchant configuration and payment details.");
   }
 
   if (!data.redirect_url) {
-    throw new Error(`Pesapal order missing redirect_url. Response: ${rawText}`);
+    throw new Error("Pesapal order response did not include a checkout URL");
   }
 
   return data as PesapalOrderResponse;
@@ -197,7 +195,7 @@ export async function getTransactionStatus(orderTrackingId: string): Promise<Pes
   const data = (await res.json()) as PesapalTransactionStatus;
 
   if (data.error) {
-    throw new Error(`Pesapal status error: ${JSON.stringify(data.error)}`);
+    throw new Error("Pesapal could not retrieve the transaction status");
   }
 
   return data;
