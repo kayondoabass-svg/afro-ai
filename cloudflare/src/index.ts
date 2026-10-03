@@ -16,6 +16,7 @@
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { SignJWT, jwtVerify } from 'jose';
+import { deviceLabel, resetPasswordUrl, resetStatements } from '../../shared/device-sessions';
 import bcrypt from 'bcryptjs';
 import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -248,7 +249,14 @@ async function buildSessionClaims(c: any, userId: string): Promise<Record<string
 async function issueSession(c: any, userId: string) {
   const secret = enc.encode(c.env.JWT_SECRET);
   const claims = await buildSessionClaims(c, userId);
-  const token = await new SignJWT(claims)
+  const sid = uuid();
+  const now = nowSec();
+  const geo = c.req.raw.cf;
+  const location = [geo?.city, geo?.region, geo?.country].filter(Boolean).join(', ') || 'Location unavailable';
+  await c.env.DB.prepare(
+    'INSERT INTO device_sessions (id, user_id, email, device, location, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).bind(sid, userId, String(claims.email || '').toLowerCase(), deviceLabel(c.req.header('User-Agent') || ''), location, now, now, now + 30 * 86400).run();
+  const token = await new SignJWT({ ...claims, sid })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('30d')
@@ -283,7 +291,10 @@ async function getCurrentUserId(c: any): Promise<string | null> {
   try {
     const secret = enc.encode(c.env.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
-    return (payload.sub as string) || null;
+    if (typeof payload.sid !== 'string' || !payload.sub) return null;
+    const session = await c.env.DB.prepare('SELECT id FROM device_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?')
+      .bind(payload.sid, payload.sub, nowSec()).first();
+    return session ? payload.sub as string : null;
   } catch {
     return null;
   }
@@ -660,6 +671,18 @@ app.post('/login', async (c) => {
 });
 
 app.post('/logout', async (c) => {
+  const token = getCookie(c, 'afroai_session');
+  if (token) {
+    try {
+      const { payload } = await jwtVerify(token, enc.encode(c.env.JWT_SECRET));
+      if (typeof payload.sid === 'string') {
+        await c.env.DB.prepare('UPDATE device_sessions SET revoked_at = ? WHERE id = ? AND user_id = ?')
+          .bind(nowSec(), payload.sid, payload.sub).run();
+      }
+    } catch {
+      return c.json({ message: 'Unable to revoke this session. Please retry.' }, 503);
+    }
+  }
   // Must match the domain/path used when the cookie was issued — otherwise
   // the browser keeps the cookie and the user stays "logged in" after they
   // tap Sign out. See setSessionCookie above for the matching scope.
@@ -830,7 +853,7 @@ app.post('/forgot-password', async (c) => {
     .bind(uuid(), user.id, tokenHash, expiresAt, ts)
     .run();
 
-  const resetUrl = `${c.env.APP_URL}/reset-password?token=${rawToken}`;
+  const resetUrl = resetPasswordUrl(c.env.APP_URL, rawToken);
   try {
     await sendViaBridge(c.env, 'password_reset', email, {
       name: user.first_name || 'there',
@@ -891,7 +914,7 @@ app.post('/admin/mint-reset-token', async (c) => {
   // welcome=1 tells the /reset-password page that this is a first-time
   // "set your password" flow (migration blast), so it shows friendlier copy
   // instead of the default "Reset your password" wording.
-  const resetUrl = `${c.env.APP_URL}/reset-password?token=${rawToken}&welcome=1`;
+  const resetUrl = resetPasswordUrl(c.env.APP_URL, rawToken, true);
   return c.json({ ok: true, resetUrl, name: user.first_name || '' });
 });
 
@@ -948,20 +971,12 @@ app.post('/reset-password', async (c) => {
   //   1. Update the user's password hash
   //   2. Mark THIS specific reset token as used (auditable)
   //   3. Invalidate any other outstanding tokens for the same user
-  await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').bind(
-      newHash,
-      ts,
-      row.user_id,
-    ),
-    c.env.DB.prepare('UPDATE password_reset_tokens SET used_at = ? WHERE id = ?').bind(
-      ts,
-      row.id,
-    ),
-    c.env.DB.prepare(
-      'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL AND id != ?',
-    ).bind(ts, row.user_id, row.id),
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(resetStatements[0]).bind(newHash, ts, row.user_id, row.id, ts),
+    c.env.DB.prepare(resetStatements[1]).bind(ts, row.user_id, row.user_id, row.id, ts),
+    c.env.DB.prepare(resetStatements[2]).bind(ts, row.user_id, row.id, ts),
   ]);
+  if (!results[0].meta.changes) return c.json({ message: 'This reset link has expired or already been used. Please request a new one.' }, 400);
 
   await issueSession(c, row.user_id);
   // `loggedIn: true` tells the reset-password page that the cookie is now

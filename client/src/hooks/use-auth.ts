@@ -30,6 +30,8 @@ async function logout(): Promise<void> {
   } catch {
     /* best-effort — keep going so client state is cleared even if request fails */
   }
+  // Also destroy a Passport/TikTok session and revoke its device record.
+  await fetch("/api/logout", { credentials: "include" }).catch(() => {});
 
   // 2. Wipe every cache the PWA service worker may have stored.
   // Without this the installed app silently re-renders the previous logged-in
@@ -88,6 +90,8 @@ export function useAuth() {
     queryFn: fetchUser,
     retry: false,
     staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: "always",
   });
 
   const logoutMutation = useMutation({

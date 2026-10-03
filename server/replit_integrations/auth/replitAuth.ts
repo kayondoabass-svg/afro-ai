@@ -178,6 +178,8 @@ export async function setupAuth(app: Express) {
 
       const dbUser = await authStorage.upsertUser({ id: userId, email, firstName, lastName, profileImageUrl });
       const user = buildUserClaims(dbUser, { email, firstName, lastName, profileImageUrl });
+      const { createPassportDeviceSession } = await import("./deviceSessions");
+      await createPassportDeviceSession(req, user);
 
       req.logIn(user, async (loginErr: any) => {
         if (loginErr) return res.redirect("/?error=auth_failed&reason=login_error");
@@ -194,9 +196,14 @@ export async function setupAuth(app: Express) {
   // Clears both the legacy Passport session and the Cloudflare Worker
   // session cookie so a single round-trip fully signs the user out, no
   // matter which system issued their session.
-  app.get("/api/logout", (req, res) => {
+  app.get("/api/logout", async (req, res) => {
     const isProduction = process.env.REPLIT_DEPLOYMENT === "1" || process.env.NODE_ENV === "production";
     const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+    const { sessionQuery } = await import("./deviceSessions");
+    const sid = (req.user as any)?.sid;
+    if (sid) {
+      await sessionQuery("UPDATE device_sessions SET revoked_at = ? WHERE id = ?", [Math.floor(Date.now() / 1000), sid]);
+    }
     req.logout((err) => {
       if (err) console.error("Logout error:", err);
       req.session.destroy((destroyErr) => {

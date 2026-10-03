@@ -1,4 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
+import { AccountSecurity } from "@/components/account-security";
 import { useLanguage } from "@/hooks/use-language";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -152,6 +153,7 @@ export default function SettingsPage() {
     <div className="flex-1 overflow-auto min-h-0">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         <h1 className="text-2xl font-bold" data-testid="text-settings-title">Settings</h1>
+        <AccountSecurity email={user?.email} />
 
         <Card>
           <CardContent className="p-6">

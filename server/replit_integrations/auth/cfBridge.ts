@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import { jwtVerify } from "jose";
 import { parse as parseCookie } from "cookie";
 import { authStorage } from "./storage";
+import { validDeviceSession } from "./deviceSessions";
 
 const COOKIE_NAME = "afroai_session";
 const enc = new TextEncoder();
@@ -33,7 +34,10 @@ export function cfAuthBridge(): RequestHandler {
     try {
       // Already authenticated by Passport? Leave it alone.
       if (typeof req.isAuthenticated === "function" && req.isAuthenticated()) {
-        return next();
+        const user = req.user as any;
+        if (await validDeviceSession(user.sid, user.claims?.sub)) return next();
+        (req as any).user = undefined;
+        req.isAuthenticated = (() => false) as typeof req.isAuthenticated;
       }
 
       const cookieHeader = req.headers.cookie;
@@ -52,6 +56,7 @@ export function cfAuthBridge(): RequestHandler {
       const { payload } = await jwtVerify(token, enc.encode(secret));
       const claims = payload as unknown as CfClaims;
       if (!claims.sub) return next();
+      if (!await validDeviceSession(payload.sid, claims.sub)) return next();
 
       // Lazy mirror into Postgres. authStorage.upsertUser dedupes by email
       // (so an existing Postgres row for the same email gets reused, even
@@ -110,6 +115,7 @@ export function cfAuthBridge(): RequestHandler {
 
       // Shape req.user identically to what Passport produces in this codebase.
       (req as any).user = {
+        sid: payload.sid,
         claims: {
           sub: dbUser.id,
           email: dbUser.email || claims.email || "",
@@ -127,6 +133,8 @@ export function cfAuthBridge(): RequestHandler {
         return Boolean((req as any).user);
       }) as typeof req.isAuthenticated;
     } catch (err: any) {
+      (req as any).user = undefined;
+      req.isAuthenticated = (() => false) as typeof req.isAuthenticated;
       // Invalid / expired token — silently fall through as anonymous.
       if (err?.code !== "ERR_JWS_INVALID" && err?.code !== "ERR_JWT_EXPIRED") {
         console.warn("[cfBridge] verify failed:", err?.code || err?.message || err);

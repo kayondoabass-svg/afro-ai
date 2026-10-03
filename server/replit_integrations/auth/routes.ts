@@ -5,6 +5,7 @@ import { db } from "../../db";
 import { users } from "@shared/models/auth";
 import { eq } from "drizzle-orm";
 import { sendVerificationEmailFor, verifyEmailToken } from "./verification";
+import { registerDeviceSessionRoutes } from "./deviceSessions";
 
 const ALLOWED_LANGS = new Set(["en", "sw", "ar", "zu", "hi", "es", "fr", "lg", "yo", "ha", "tw", "pt", "zh", "gu", "ta"]);
 
@@ -15,6 +16,7 @@ function getOrigin(req: any): string {
 }
 
 export function registerAuthRoutes(app: Express): void {
+  registerDeviceSessionRoutes(app);
   app.get("/api/auth/user", isSignedIn, async (req: any, res) => {
     res.setHeader("Cache-Control", "no-store");
     try {

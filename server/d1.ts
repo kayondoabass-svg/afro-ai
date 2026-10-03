@@ -21,8 +21,8 @@ function getHeaders() {
   };
 }
 
-function getBaseUrl() {
-  const dbId = process.env.CLOUDFLARE_D1_DATABASE_ID;
+function getBaseUrl(databaseId?: string) {
+  const dbId = databaseId || process.env.CLOUDFLARE_D1_DATABASE_ID;
   return `https://api.cloudflare.com/client/v4/accounts/${getCfAccountId()}/d1/database/${dbId}`;
 }
 
@@ -38,8 +38,8 @@ export async function d1GetDatabaseInfo(): Promise<{ uuid: string; name: string 
   return { uuid: data.result.uuid, name: data.result.name };
 }
 
-export async function d1Query(sql: string, params: any[] = []): Promise<{ results: any[]; meta: any }> {
-  const resp = await fetch(`${getBaseUrl()}/query`, {
+export async function d1Query(sql: string, params: any[] = [], databaseId?: string): Promise<{ results: any[]; meta: any }> {
+  const resp = await fetch(`${getBaseUrl(databaseId)}/query`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({ sql, params }),
