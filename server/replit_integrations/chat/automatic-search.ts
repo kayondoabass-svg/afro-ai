@@ -4,6 +4,7 @@ import { publicQuery, runChatSearch } from "./search";
 import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { searchWorkspaceFiles } from "../../workspace-search";
 import { searchAccountWeb } from "../../search-policy";
+import { buildTurnPolicy, invalidBuildAnswer } from "./build-response-policy";
 
 export const SEARCH_WEB_TOOL = {
   type: "function",
@@ -38,9 +39,12 @@ export async function completeWithAutomaticSearch(opts: {
   signal: AbortSignal;
   onActivity: (activity: ChatSearchActivity) => Promise<void>;
   workspace?: { userId: string; conversationId: number };
+  tier?: ChatCompleteOptions["tier"];
+  buildTurn?: { plan: boolean; requireHtml: boolean };
 }) {
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(110_000)]);
   const messages: any[] = [...opts.messages, { role: "system", content: POLICY }];
+  if (opts.buildTurn) messages.push({ role: "system", content: buildTurnPolicy(opts.buildTurn.plan, opts.buildTurn.requireHtml) });
   const seen = new Set<string>();
   let completionTokens = 0;
   let executions = 0;
@@ -48,13 +52,27 @@ export async function completeWithAutomaticSearch(opts: {
   for (let round = 0; round < 3; round++) {
     signal.throwIfAborted();
     const result = await aiChatComplete({
-      messages: [...messages], maxTokens: opts.maxTokens, signal,
+      messages: [...messages], maxTokens: opts.maxTokens, tier: opts.tier, signal,
       tools: [SEARCH_WEB_TOOL, ...(opts.workspace ? [FILE_SEARCH_TOOL] : [])], toolChoice: round === 2 ? "none" : "auto",
     });
     signal.throwIfAborted();
     completionTokens += result.completionTokens ?? 0;
     if (!result.toolCalls?.length) {
       if (!result.text?.trim()) throw new Error("The model returned no usable answer.");
+      if (opts.buildTurn && invalidBuildAnswer(result.text, opts.buildTurn.requireHtml, opts.buildTurn.plan)) {
+        // One bounded corrective generation, before anything is shown or saved.
+        const repaired = await aiChatComplete({
+          messages: [...messages, { role: "assistant", content: result.text }, {
+            role: "system", content: "The previous answer did not fulfill this turn: it omitted required complete HTML, violated Plan-only mode, or claimed a nonexistent build/link. Correct it now. " + buildTurnPolicy(opts.buildTurn.plan, opts.buildTurn.requireHtml),
+          }], maxTokens: opts.maxTokens, tier: opts.tier, signal,
+        });
+        signal.throwIfAborted();
+        completionTokens += repaired.completionTokens ?? 0;
+        if (!repaired.text?.trim() || repaired.toolCalls?.length || invalidBuildAnswer(repaired.text, opts.buildTurn.requireHtml, opts.buildTurn.plan)) {
+          return { fullText: "I couldn’t complete this request. No new website was created or published. Please try again with Plan turned off to build.", model: repaired.model, completionTokens };
+        }
+        return { fullText: repaired.text, model: repaired.model, completionTokens };
+      }
       return { fullText: result.text, model: result.model, completionTokens };
     }
     if (round === 2) throw new Error("The model did not return a final answer.");

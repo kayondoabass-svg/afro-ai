@@ -10,6 +10,7 @@ import path from "path";
 import { isAuthenticated, FOUNDER_EMAIL } from "../auth/replitAuth";
 import { aiQuotaGuard } from "../quota";
 import { aiChatCompleteStream } from "../../ai-chat-provider";
+import { currentBuildTurn } from "./build-response-policy";
 import { buildLiveWebContext, extractUrls } from "../../url-scrape";
 import { searchEvidence } from "./search";
 import { completeWithAutomaticSearch } from "./automatic-search";
@@ -2472,8 +2473,11 @@ You are now in EDITOR MODE. Your workflow:
         content: contextPrompt,
       };
 
+      const buildTurn = currentBuildTurn(userContent, Boolean(customerProjectName || lastGeneratedCode));
       const streamResult = await completeWithAutomaticSearch({
         messages: [systemMessage, ...chatMessages],
+        tier: userPlan,
+        buildTurn: isFounderRequest ? undefined : buildTurn,
         workspace: { userId, conversationId },
         maxTokens,
         signal: requestAbort.signal,
@@ -2494,8 +2498,6 @@ You are now in EDITOR MODE. Your workflow:
       res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
       const completionTokens = streamResult.completionTokens;
 
-      await chatStorage.createMessage(conversationId, "assistant", fullResponse);
-
       // Auto-save version whenever the response contains any HTML output.
       // Detection ladder (broadest catch — we'd rather over-save than miss):
       //   1. Full document <!DOCTYPE html ... </html>
@@ -2510,7 +2512,7 @@ You are now in EDITOR MODE. Your workflow:
         const extracted = extractWebsiteHtml(fullResponse);
         const detectedVia = "shared-html-extraction";
 
-        if (extracted && extracted.length > 50) {
+        if (extracted && extracted.length > 50 && (isFounderRequest || !buildTurn.plan)) {
           const { storage } = await import("../../storage");
           const existingVersions = await storage.getAppVersions(conversationId);
           const versionNum = existingVersions.length + 1;
@@ -2537,6 +2539,12 @@ You are now in EDITOR MODE. Your workflow:
       // Surface the result to the client so the UI can refetch immediately and
       // we can debug from DevTools without server log access.
       res.write(`data: ${JSON.stringify({ type: "version-saved", ...versionSaveResult })}\n\n`);
+      if (versionSaveResult.saved) {
+        const nextStep = "\n\nYour website version is saved. Select **Publish** to put it online, then open the published link to preview your live site. Local **Preview**, **Code**, and **Copy** are also available.";
+        fullResponse += nextStep;
+        res.write(`data: ${JSON.stringify({ content: nextStep })}\n\n`);
+      }
+      await chatStorage.createMessage(conversationId, "assistant", fullResponse);
 
       try {
         const authUser = (req as any).user;

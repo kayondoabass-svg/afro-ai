@@ -18,6 +18,11 @@ vi.mock("./storage", () => ({ chatStorage: {
   updateConversationTitle: vi.fn(),
 } }));
 vi.mock("../../db", () => ({ db: {} }));
+vi.mock("../../storage", () => ({ storage: {
+  getUser: vi.fn(async () => null),
+  getAppVersions: vi.fn(async () => []),
+  saveAppVersion: vi.fn(async () => ({ id: 1, label: "Version 1" })),
+} }));
 vi.mock("../auth/replitAuth", () => ({ isAuthenticated: vi.fn(), FOUNDER_EMAIL: "founder@example.org" }));
 vi.mock("../quota", () => ({ aiQuotaGuard: () => vi.fn() }));
 vi.mock("../../ai-chat-provider", () => ({ aiChatComplete: mocks.inference, aiChatCompleteStream: vi.fn() }));
@@ -65,6 +70,15 @@ beforeEach(() => {
   vi.stubEnv("JINA_API_KEY", "test-only");
 });
 describe("main chat search route wiring", () => {
+  it("recommends Publish then live preview only after an actual version is saved", async () => {
+    mocks.inference.mockResolvedValue({ text: "<!doctype html><html><body><h1>A complete working website</h1></body></html>", model: "test" });
+    const res = response();
+    await handler()(req("Hello", false), res);
+    expect(res.write.mock.calls.join("")).toContain('"saved":true');
+    expect(mocks.rows.at(-1).content).toContain("Select **Publish**");
+    expect(mocks.rows.at(-1).content).toContain("then open the published link");
+    expect(mocks.rows.at(-1).content).not.toContain("[Link to your website]");
+  });
   it("lets the model clarify an unclear image instead of forcing search from an old UI flag", async () => {
     mocks.inference.mockResolvedValue({ text: "Please name the event in the image.", model: "test" });
     const request: any = req("Search this image", true);
@@ -72,7 +86,7 @@ describe("main chat search route wiring", () => {
     await handler()(request, response());
     expect(mocks.search).not.toHaveBeenCalled();
     expect(mocks.rows.some(m => m.role === "web-search")).toBe(false);
-    expect(mocks.inference.mock.calls[0][0].messages.at(-1).content).toContain("image's subject is unclear");
+    expect(mocks.inference.mock.calls[0][0].messages.some((m: any) => m.content.includes("image's subject is unclear"))).toBe(true);
   });
   it.each(["empty", "unavailable", "failed"] as const)("persists truthful %s state and gives inference no invented sources", async status => {
     if (status === "empty") mocks.search.mockResolvedValue([]);
@@ -98,7 +112,7 @@ describe("main chat search route wiring", () => {
     expect(options.tools[0].function.name).toBe("search_web");
     expect(options.toolChoice).toBe("auto");
     expect(mocks.inference.mock.calls[1][0].messages.find((m: any) => m.role === "tool")).toMatchObject({ tool_call_id: "search-1" });
-    expect(options.messages.at(-1).content).toContain("untrusted data");
+    expect(options.messages.some((m: any) => m.content.includes("untrusted data"))).toBe(true);
     expect(options.messages.filter((m: any) => m.role === "web-search")).toHaveLength(0);
     expect(options.signal).toBeInstanceOf(AbortSignal);
     await handler()(req("Is it free? Or need to register", false), response());
@@ -120,7 +134,7 @@ describe("main chat search route wiring", () => {
     expect(mocks.search).not.toHaveBeenCalled();
     const options = mocks.inference.mock.calls[0][0];
     expect(options.messages.some((m: any) => m.content.includes("Easy Mails"))).toBe(true);
-    expect(options.messages.at(-1).content).toContain('"Can I preview it?"');
+    expect(options.messages.some((m: any) => m.content.includes('"Can I preview it?"'))).toBe(true);
     expect(mocks.rows.at(-1).content).toBe("Open the in-app Preview control.");
   });
   it("aborts on disconnect and persists cancellation without final inference", async () => {

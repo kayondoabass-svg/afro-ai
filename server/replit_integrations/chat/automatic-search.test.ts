@@ -3,6 +3,7 @@ const { model, web, files } = vi.hoisted(() => ({ model: vi.fn(), web: vi.fn(), 
 vi.mock("../../ai-chat-provider", () => ({ aiChatComplete: model }));
 vi.mock("./search", async importOriginal => ({ ...await importOriginal<any>(), runChatSearch: web }));
 vi.mock("../../workspace-search", () => ({ searchWorkspaceFiles: files }));
+vi.mock("../../search-policy", () => ({ searchAccountWeb: vi.fn() }));
 import { completeWithAutomaticSearch } from "./automatic-search";
 const call = (name: string, args = '{"query":"auth middleware"}', id = "1") => ({ id, type: "function", function: { name, arguments: args } });
 const opts = () => ({ messages: [{ role: "user" as const, content: "Where is our auth middleware?" }], signal: new AbortController().signal, onActivity: vi.fn(), workspace: { userId: "owner", conversationId: 42 } });
@@ -44,4 +45,19 @@ it("stops before inference when disconnected", async () => {
   input.signal = AbortSignal.abort();
   await expect(completeWithAutomaticSearch(input)).rejects.toThrow();
   expect(model).not.toHaveBeenCalled();
+});
+it("repairs a promise-only build before delivery, carrying the paid model tier", async () => {
+  const html = "<html><body>Real website</body></html>";
+  model.mockResolvedValueOnce({ text: "Your website is ready for review! [Link to your website]", model: "test" })
+    .mockResolvedValueOnce({ text: html, model: "test", completionTokens: 20 });
+  const result = await completeWithAutomaticSearch({ ...opts(), tier: "pro", buildTurn: { plan: false, requireHtml: true } });
+  expect(result.fullText).toBe(html);
+  expect(model).toHaveBeenCalledTimes(2);
+  expect(model.mock.calls.every(([o]) => o.tier === "pro")).toBe(true);
+});
+it("fails truthfully after one unsuccessful repair instead of claiming a build", async () => {
+  model.mockResolvedValue({ text: "I'll let you know once it's ready for your review.", model: "test" });
+  const result = await completeWithAutomaticSearch({ ...opts(), buildTurn: { plan: false, requireHtml: true } });
+  expect(result.fullText).toContain("No new website was created or published");
+  expect(model).toHaveBeenCalledTimes(2);
 });

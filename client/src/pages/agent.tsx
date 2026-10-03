@@ -1523,14 +1523,14 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
-function MarkdownText({ text, className, previewBlocked = false }: { text: string; className?: string; previewBlocked?: boolean }) {
+function MarkdownText({ text, className, previewBlocked = false, onPublish }: { text: string; className?: string; previewBlocked?: boolean; onPublish?: (html: string) => void }) {
   const rawHtml = !text.includes("```") ? extractWebsiteHtml(text) : null;
   if (rawHtml && /<!doctype|<(?:html|body|main|style|script|section|canvas)\b/i.test(rawHtml)) {
     const at = text.indexOf(rawHtml);
     return <div className="min-w-0 space-y-2">
-      {at > 0 && <MarkdownText text={text.slice(0, at)} className={className} previewBlocked={previewBlocked} />}
-      <AgentCodeBlock code={rawHtml} language="html" previewBlocked={previewBlocked} />
-      {at >= 0 && text.slice(at + rawHtml.length).trim() && <MarkdownText text={text.slice(at + rawHtml.length)} className={className} previewBlocked={previewBlocked} />}
+      {at > 0 && <MarkdownText text={text.slice(0, at)} className={className} previewBlocked={previewBlocked} onPublish={onPublish} />}
+      <AgentCodeBlock code={rawHtml} language="html" previewBlocked={previewBlocked} onPublish={onPublish} />
+      {at >= 0 && text.slice(at + rawHtml.length).trim() && <MarkdownText text={text.slice(at + rawHtml.length)} className={className} previewBlocked={previewBlocked} onPublish={onPublish} />}
     </div>;
   }
   const parts = text.split(/(```[\s\S]*?```|```[\s\S]*$)/g);
@@ -1543,7 +1543,7 @@ function MarkdownText({ text, className, previewBlocked = false }: { text: strin
           const firstNl = inner.indexOf("\n");
           const code = firstNl >= 0 ? inner.slice(firstNl + 1) : inner;
           const language = firstNl >= 0 ? inner.slice(0, firstNl).trim() : "";
-          return <AgentCodeBlock key={i} code={code} language={language} complete={complete} previewBlocked={previewBlocked} testId={`code-block-${i}`} />;
+          return <AgentCodeBlock key={i} code={code} language={language} complete={complete} previewBlocked={previewBlocked} testId={`code-block-${i}`} onPublish={onPublish} />;
         }
         if (!part) return null;
         return part.split(/\n{2,}/).map((para, j) => (
@@ -1582,7 +1582,7 @@ function MessageBlock({ msg, onPublish, previewBlocked = false }: { msg: AgentMe
   return (
     <div className="space-y-2" data-testid={`message-assistant-${msg.id}`}>
       {msg.actions && msg.actions.length > 0 && <ActionChipsRow actions={msg.actions} />}
-      <AgentStructuredText text={msg.content} renderText={(value) => <MarkdownText text={value} previewBlocked={previewBlocked} />} />
+      <AgentStructuredText text={msg.content} renderText={(value) => <MarkdownText text={value} previewBlocked={previewBlocked} onPublish={onPublish} />} />
       {showPublish && (
         <div className="pt-1">
           <Button

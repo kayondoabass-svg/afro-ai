@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
-vi.mock("@/pages/ai-chat", () => ({ PublishDialog: () => null }));
+vi.mock("@/pages/ai-chat", () => ({
+  PublishDialog: ({ open, code, onOpenChange }: { open: boolean; code: string; onOpenChange: (open: boolean) => void }) => open
+    ? <div data-testid="publish-dialog">{code}<button onClick={() => onOpenChange(false)}>Close publish</button></div> : null,
+}));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({
   t: (key: string) => key,
@@ -127,10 +130,14 @@ describe("active /chat Agent search", () => {
     fireEvent.click(screen.getByTestId("button-send"));
     await waitFor(() => expect(screen.queryByTestId("button-stop")).not.toBeInTheDocument());
     const reply = await screen.findByTestId("message-assistant-db-1");
-    const control = within(reply).getByText("View Code");
-    expect(control.closest("details")).not.toHaveAttribute("open");
+    const control = within(reply).getByRole("button", { name: "View Code" });
+    expect(control).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Here is the page.")).toBeVisible();
     expect(screen.queryByTitle("Generated website preview")).not.toBeInTheDocument();
+    fireEvent.click(within(reply).getByRole("button", { name: "Publish" }));
+    expect(screen.getByTestId("publish-dialog")).toHaveTextContent(html);
+    expect(screen.queryByTitle("Generated website preview")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close publish" }));
     fireEvent.click(within(reply).getByRole("button", { name: "Preview" }));
     expect(screen.getByTitle("Generated website preview")).toHaveAttribute("srcdoc", html);
     expect(screen.getByTitle("Generated website preview")).toHaveAttribute("sandbox", "allow-scripts");

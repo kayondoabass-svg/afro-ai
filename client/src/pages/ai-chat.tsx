@@ -907,11 +907,11 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
                       href={publishedUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-primary"
-                      title="Open in new tab"
+                      className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                      title="Open live preview in a new tab"
                       data-testid="link-open-published-url"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-3.5 h-3.5" />Open live preview
                     </a>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 items-center">
