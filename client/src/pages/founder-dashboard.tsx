@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { formatPaymentAmount, paymentTotalsByCurrency } from "@/lib/payment-currency";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
@@ -1202,21 +1203,21 @@ export default function FounderDashboardPage() {
                 {
                   label: "Successful",
                   count: allPayments.filter(p => p.status === "completed").length,
-                  total: allPayments.filter(p => p.status === "completed").reduce((s: number, p: any) => s + parseFloat(p.amount || 0), 0),
+                  totals: paymentTotalsByCurrency(allPayments, "completed"),
                   color: "text-green-400",
                   icon: CircleCheck,
                 },
                 {
                   label: "Pending",
                   count: allPayments.filter(p => p.status === "pending").length,
-                  total: allPayments.filter(p => p.status === "pending").reduce((s: number, p: any) => s + parseFloat(p.amount || 0), 0),
+                  totals: paymentTotalsByCurrency(allPayments, "pending"),
                   color: "text-yellow-400",
                   icon: Clock,
                 },
                 {
                   label: "Failed",
                   count: allPayments.filter(p => p.status === "failed").length,
-                  total: allPayments.filter(p => p.status === "failed").reduce((s: number, p: any) => s + parseFloat(p.amount || 0), 0),
+                  totals: paymentTotalsByCurrency(allPayments, "failed"),
                   color: "text-red-400",
                   icon: CircleX,
                 },
@@ -1227,7 +1228,7 @@ export default function FounderDashboardPage() {
                     <span className="text-xs text-muted-foreground">{s.label}</span>
                   </div>
                   <p className={`text-xl font-bold ${s.color}`}>{s.count}</p>
-                  <p className="text-xs text-muted-foreground">${s.total.toFixed(2)} total</p>
+                  {s.totals.map(total => <p key={total} className="text-xs text-muted-foreground break-words">{total}</p>)}
                 </div>
               ))}
             </div>
@@ -1271,7 +1272,7 @@ export default function FounderDashboardPage() {
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <p className="text-sm font-bold text-green-400">${parseFloat(p.amount || 0).toFixed(2)}</p>
+                          <p className="text-sm font-bold text-green-400">{formatPaymentAmount(p.amount, p.currency)}</p>
                           <p className="text-xs text-muted-foreground">{p.currency}</p>
                         </div>
                         <div className="text-right flex-shrink-0 hidden sm:block">
@@ -1363,7 +1364,7 @@ export default function FounderDashboardPage() {
                   <div className="mt-4">
                     {detail("Status", <Badge variant="outline" className={`text-xs ${statusColor}`}>{p.status}</Badge>, "detail-status")}
                     {detail("Plan", p.plan, "detail-plan")}
-                    {detail("Amount", `${p.currency || ""} ${parseFloat(p.amount || 0).toFixed(2)}`.trim(), "detail-amount")}
+                    {detail("Amount", formatPaymentAmount(p.amount, p.currency), "detail-amount")}
                     {detail("Payment method", p.paymentMethod || "—", "detail-method")}
                     {detail("Date", p.createdAt ? new Date(p.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—", "detail-date")}
                     {detail("Order ID", <span className="font-mono">{p.merchantReference || "—"}</span>, "detail-order-id")}
