@@ -9,6 +9,10 @@ export async function assertProjectFileOwnership(userId: string, conversationId:
   if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) throw new ProjectFileError(400, "invalid conversation");
   const conversation = await chatStorage.getConversation(Number(id));
   if (!conversation || conversation.userId !== userId) throw new ProjectFileError(404, "conversation not found");
+  if (conversation.projectId) {
+    const { guardFullstackProject } = await import("./fullstack-access");
+    await guardFullstackProject(userId, conversation.projectId);
+  }
   return id;
 }
 
@@ -79,6 +83,22 @@ export async function deleteProjectFile(userId: string, fileId: string) {
   // Deletion must remain possible for legacy files rejected by export policy.
   const file = await resolveProjectFileRecord(userId, fileId);
   await query("DELETE FROM project_files WHERE id = ? AND user_id = ? AND conversation_id = ?", [fileId, userId, file.conversation_id]);
+}
+
+/** Insert only missing starter paths in one D1 statement. Never replace user edits. */
+export async function seedMissingProjectFiles(userId: string, conversationId: string | number, input: ProjectFile[]) {
+  const id = await assertProjectFileOwnership(userId, conversationId);
+  const files = validateProjectFiles(input);
+  await initializeProjectFiles();
+  await query(`INSERT INTO project_file_commands (user_id, conversation_id, mode, files)
+    SELECT ?, ?, 'merge', json_group_array(json(candidate.value))
+    FROM json_each(?) AS candidate
+    WHERE NOT EXISTS (
+      SELECT 1 FROM project_files
+      WHERE user_id = ? AND conversation_id = ?
+      AND path = json_extract(candidate.value, '$.path') COLLATE NOCASE
+    ) HAVING count(*) > 0`, [userId, id, JSON.stringify(files), userId, id]);
+  return listProjectFiles(userId, id);
 }
 
 /** Compare all touched files and insert the merge command in ONE SQLite statement.

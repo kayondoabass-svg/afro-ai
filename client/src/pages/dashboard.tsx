@@ -61,6 +61,7 @@ import {
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import type { Project, PublishedApp } from "@shared/schema";
+import { FULLSTACK_SOURCE_NOTICE, isSetupBlocked, projectChatUrl, projectRequestError } from "@/lib/fullstack-project";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -91,7 +92,20 @@ export default function DashboardPage() {
 
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+    refetchInterval: (query) => query.state.data?.some(p => p.status === "initializing") ? 3000 : false,
   });
+
+  const fullstackAccess = useQuery<{ allowed: boolean; reason: string }>({
+    queryKey: ["/api/projects/fullstack-access"],
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
+  const canCreateFullstack = fullstackAccess.isSuccess && !fullstackAccess.isFetching && fullstackAccess.data.allowed === true;
+  const accessExplanation = fullstackAccess.isError
+    ? "Could not verify full-stack access. Retry the access check."
+    : fullstackAccess.isPending || fullstackAccess.isFetching
+      ? "Checking paid full-stack access…"
+      : fullstackAccess.data?.reason || "Full-stack starters require a paid plan.";
 
   const { data: publishedApps } = useQuery<PublishedApp[]>({
     queryKey: ["/api/published-apps"],
@@ -104,13 +118,35 @@ export default function DashboardPage() {
       const res = await apiRequest("POST", "/api/projects", data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (project: Project) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setShowNewProject(false);
       toast({ title: t("dashboard.projectCreated"), description: t("dashboard.projectCreatedDesc") });
+      if (project.type === "fullstack" && !isSetupBlocked(project)) navigate(projectChatUrl(project));
     },
-    onError: () => {
-      toast({ title: t("dashboard.error"), description: t("dashboard.createError"), variant: "destructive" });
+    onError: (error) => {
+      const result = projectRequestError(error);
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      if (result.project?.id) {
+        setShowNewProject(false);
+        form.reset();
+      }
+      toast({ title: t("dashboard.error"), description: `${result.message}${result.project?.id ? " Your project was created. Use Retry setup on its card instead of creating a duplicate." : ""}`, variant: "destructive" });
+    },
+  });
+
+  const initializeMutation = useMutation({
+    mutationFn: async (id: number): Promise<Project> => {
+      const res = await apiRequest("POST", `/api/projects/${id}/initialize`);
+      return res.json();
+    },
+    onSuccess: (project) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      if (!isSetupBlocked(project)) handleOpenProject(project);
+    },
+    onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Setup failed", description: projectRequestError(error).message, variant: "destructive" });
     },
   });
 
@@ -148,6 +184,10 @@ export default function DashboardPage() {
   });
 
   const onSubmit = (data: { name: string; description: string; type: string }) => {
+    if (data.type === "fullstack" && !canCreateFullstack) {
+      toast({ title: "Full-stack access required", description: accessExplanation, variant: "destructive" });
+      return;
+    }
     createMutation.mutate(data);
   };
 
@@ -163,12 +203,15 @@ export default function DashboardPage() {
     switch (status) {
       case "published": return "bg-green-500/10 text-green-500";
       case "in_progress": return "bg-primary/10 text-primary";
+      case "initializing": return "bg-primary/10 text-primary";
+      case "setup_failed": return "bg-destructive/10 text-destructive";
       default: return "bg-muted text-muted-foreground";
     }
   };
 
   const handleOpenProject = (project: Project) => {
-    navigate(`/chat?projectId=${project.id}&project=${encodeURIComponent(project.name)}&type=${encodeURIComponent(project.type)}&description=${encodeURIComponent(project.description || "")}`);
+    if (isSetupBlocked(project)) return;
+    navigate(projectChatUrl(project));
   };
 
   const firstName = user?.firstName || t("overview.defaultUser");
@@ -358,16 +401,29 @@ export default function DashboardPage() {
                     </p>
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <Badge variant="secondary" className={getStatusColor(project.status)}>
-                        {project.status}
+                        {project.status === "setup_failed" ? "Setup failed" : project.status === "initializing" ? "Initializing starter…" : project.status}
                       </Badge>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Clock className="w-3 h-3" />
                         {new Date(project.createdAt).toLocaleDateString()}
                       </div>
                     </div>
-                    <Button
+                    {project.type === "fullstack" && (
+                      <p className="text-xs text-muted-foreground">
+                        {project.status === "setup_failed" ? "Starter files could not be saved. Retry setup on this project; do not create another." : project.status === "initializing" ? "Starter setup is initializing. If progress has stalled, safely Retry setup on this same project. If setup is still running, the server will ask you to wait." : "Source files only · no runtime or database provisioned."}
+                      </p>
+                    )}
+                    {isSetupBlocked(project) ? (
+                      <div className="space-y-2">
+                        <Button size="sm" className="w-full" disabled={!canCreateFullstack || initializeMutation.isPending} onClick={(e) => { e.stopPropagation(); initializeMutation.mutate(project.id); }} data-testid={`button-retry-setup-${project.id}`}>
+                          {initializeMutation.isPending && initializeMutation.variables === project.id ? "Retrying setup…" : "Retry setup"}
+                        </Button>
+                        {!canCreateFullstack && <p className="text-xs text-muted-foreground">{accessExplanation}</p>}
+                      </div>
+                    ) : <Button
                       size="sm"
                       className="w-full gap-2"
+                      disabled={isSetupBlocked(project)}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleOpenProject(project);
@@ -375,9 +431,9 @@ export default function DashboardPage() {
                       data-testid={`button-build-project-${project.id}`}
                     >
                       <Sparkles className="w-3.5 h-3.5" />
-                      {t("dashboard.openAndBuild")}
+                      {project.status === "initializing" ? "Initializing starter…" : t("dashboard.openAndBuild")}
                       <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
+                    </Button>}
                   </CardContent>
                 </Card>
               ))}
@@ -479,7 +535,7 @@ export default function DashboardPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t("dashboard.type")}</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-project-type">
                           <SelectValue />
@@ -488,12 +544,20 @@ export default function DashboardPage() {
                       <SelectContent>
                         <SelectItem value="website">{t("dashboard.website")}</SelectItem>
                         <SelectItem value="mobile_app">{t("dashboard.mobileApp")}</SelectItem>
+                        <SelectItem value="fullstack">Full-stack starter · paid</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-submit-project">
+              <div className="rounded-md border border-primary/25 bg-primary/5 p-3 space-y-2 text-sm" data-testid="fullstack-access-notice">
+                <p className="font-medium">Full-stack starter · React + Workers/Hono + D1</p>
+                <p className="text-xs text-muted-foreground">{FULLSTACK_SOURCE_NOTICE}</p>
+                {!canCreateFullstack && <p className="text-xs text-muted-foreground" role="status">{accessExplanation}</p>}
+                {fullstackAccess.isError && <Button type="button" size="sm" variant="outline" onClick={() => fullstackAccess.refetch()}>Retry access check</Button>}
+                {!canCreateFullstack && !fullstackAccess.isPending && <Button type="button" size="sm" variant="outline" onClick={() => navigate("/pricing")}>View paid plans</Button>}
+              </div>
+              <Button type="submit" className="w-full" disabled={createMutation.isPending || (form.watch("type") === "fullstack" && !canCreateFullstack)} data-testid="button-submit-project">
                 {createMutation.isPending ? t("dashboard.creating") : t("dashboard.createProject")}
               </Button>
             </form>

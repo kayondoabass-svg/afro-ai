@@ -41,6 +41,10 @@ import { SESClient, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIde
 import bcrypt from "bcryptjs";
 import { affiliateApplicationInput } from "./affiliate-application";
 import { productSelfKnowledge } from "./product-self-knowledge";
+import { fullstackAccess } from "./fullstack-access";
+import { createFullstackProject, initializeFullstackProject, FullstackSetupError } from "./fullstack-projects";
+import { ProjectFileError } from "./project-file-policy";
+import { ZodError } from "zod";
 import { extractWebsiteHtml } from "@shared/html-extraction";
 
 const apiLimiter = rateLimit({
@@ -965,13 +969,36 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/projects/fullstack-access", isAuthenticated, async (req: any, res) => {
+    try { res.json(await fullstackAccess(req.user.claims.sub)); }
+    catch { res.status(503).json({ allowed: false, message: "Could not verify paid access." }); }
+  });
+
+  app.post("/api/projects/:id/initialize", isAuthenticated, async (req: any, res) => {
+    try { res.json(await initializeFullstackProject(req.user.claims.sub, Number(req.params.id))); }
+    catch (error) {
+      if (error instanceof FullstackSetupError) return res.status(503).json({ message: error.message, project: error.project });
+      if (error instanceof ProjectFileError) return res.status(error.status).json({ message: error.message });
+      res.status(503).json({ message: "Project setup unavailable. Retry setup from your project card." });
+    }
+  });
+
   app.post("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const parsed = insertProjectSchema.parse({ ...req.body, userId });
-      const project = await storage.createProject(parsed);
+      const parsed = insertProjectSchema.parse({
+        name: req.body.name, description: req.body.description, type: req.body.type, userId, status: "draft",
+      });
+      if (!parsed.name.trim() || parsed.name.length > 160 || (parsed.description?.length ?? 0) > 10000) {
+        return res.status(400).json({ message: "Project name or description exceeds the allowed length." });
+      }
+      const project = parsed.type === "fullstack"
+        ? await createFullstackProject(parsed) : await storage.createProject(parsed);
       res.status(201).json(project);
     } catch (error) {
+      if (error instanceof FullstackSetupError) return res.status(503).json({ message: error.message, project: error.project });
+      if (error instanceof ProjectFileError) return res.status(error.status).json({ message: error.message });
+      if (error instanceof ZodError) return res.status(400).json({ message: "Invalid project details" });
       console.error("Error creating project:", error);
       res.status(500).json({ message: "Failed to create project" });
     }

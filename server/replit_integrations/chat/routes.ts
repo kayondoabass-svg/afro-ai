@@ -20,6 +20,7 @@ import { createProjectProposal, finishProjectProposal, pendingProjectProposal } 
 import { ProjectFileError } from "../../project-file-policy";
 import { buildProjectEditContext, parseProjectEditResponse } from "./project-edit";
 import { productSelfKnowledge } from "../../product-self-knowledge";
+import { guardFullstackProject } from "../../fullstack-access";
 import { extractWebsiteHtml } from "../../../shared/html-extraction";
 import { CHAT_CREDENTIAL_POLICY, containsPrivateCredential, redactPrivateCredentials, safeAssistantText } from "../../chat-credential-safety";
 
@@ -1971,6 +1972,17 @@ export function registerChatRoutes(app: Express): void {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { title, projectId } = req.body;
+      if (projectId !== undefined) {
+        const id = Number(projectId);
+        if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: "Invalid project" });
+        const fullstack = await guardFullstackProject(userId, id);
+        if (fullstack) {
+          const conversations = await chatStorage.getConversationsByProject(id);
+          const existing = conversations.filter(c => c.userId === userId).sort((a, b) => a.id - b.id)[0];
+          if (!existing) return res.status(409).json({ error: "Finish project setup from the dashboard first." });
+          return res.status(200).json(existing);
+        }
+      }
       const conversation = await chatStorage.createConversation(
         title || "New Chat",
         projectId ? parseInt(projectId) : undefined,
@@ -1978,6 +1990,7 @@ export function registerChatRoutes(app: Express): void {
       );
       res.status(201).json(conversation);
     } catch (error) {
+      if (error instanceof ProjectFileError) return res.status(error.status).json({ error: error.message });
       console.error("Error creating conversation:", error);
       res.status(500).json({ error: "Failed to create conversation" });
     }
@@ -2044,6 +2057,19 @@ export function registerChatRoutes(app: Express): void {
         ? await chatStorage.getConversation(conversationId) : undefined;
       if (!conversation || !userId || conversation.userId !== userId) {
         return res.status(404).json({ error: "Conversation not found" });
+      }
+      try {
+        if (await guardFullstackProject(userId, conversation.projectId)) {
+          // Full-stack projects never enter the single-HTML generation/publish path.
+          req.body.projectAgent = true;
+          req.body.webSearch = false;
+          if (req.body.selectedFilePath !== undefined) {
+            return res.status(400).json({ error: "Use reviewed project-agent edits for full-stack files." });
+          }
+        }
+      } catch (error) {
+        return res.status(error instanceof ProjectFileError ? error.status : 503)
+          .json({ error: error instanceof ProjectFileError ? error.message : "Could not verify project access." });
       }
       if (typeof userContent !== "string" || !userContent.trim() || userContent.length > 24_000) {
         return res.status(400).json({ error: "Message must contain between 1 and 24000 characters" });

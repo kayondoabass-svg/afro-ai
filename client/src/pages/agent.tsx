@@ -24,6 +24,8 @@ import { ChatSearchCard, ChatSearchToggle, parseSearchActivity } from "@/compone
 import { extractWebsiteHtml } from "@shared/html-extraction";
 import { FileTreeSidebar, type ProjectFile } from "@/components/file-tree-sidebar";
 import { AgentStructuredText } from "@/components/agent-structured-text";
+import type { Project } from "@shared/schema";
+import { FULLSTACK_SOURCE_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
 import "./agent.css";
 
 // ---------- Types ----------
@@ -148,6 +150,19 @@ export default function AgentPage() {
   const projectIdParam = getQueryParam("projectId");
   const projectName = getQueryParam("project");
   const initialDescription = getQueryParam("description");
+  const projectMode = getQueryParam("projectMode");
+  const [activeProjectId, setActiveProjectId] = useState<number | null>(projectIdParam ? Number(projectIdParam) : null);
+  const projectMetadata = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+    enabled: !!user && activeProjectId !== null,
+    staleTime: 0,
+  });
+  const activeProject = projectMetadata.data?.find(project => project.id === activeProjectId);
+  const metadataUnverified = activeProjectId !== null && (!projectMetadata.isSuccess || !activeProject);
+  const isFullstack = activeProject?.type === "fullstack" || (!activeProject && activeProjectId === Number(projectIdParam) && projectMode === "fullstack");
+  const setupBlocked = !!activeProject && isSetupBlocked(activeProject);
+  const staticControlsBlocked = isFullstack || metadataUnverified || setupBlocked;
+  const projectBlocked = metadataUnverified || setupBlocked;
 
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [input, setInput] = useState("");
@@ -170,7 +185,8 @@ export default function AgentPage() {
   const prevVersionsLenRef = useRef(0);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishCode, setPublishCode] = useState("");
-  const [projectAgent, setProjectAgent] = useState(false);
+  const [manualProjectAgent, setProjectAgent] = useState(false);
+  const projectAgent = isFullstack || manualProjectAgent;
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -221,6 +237,15 @@ export default function AgentPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialDescriptionSentRef = useRef(false);
 
+  useEffect(() => {
+    if (!isFullstack || projectBlocked) return;
+    setProjectAgent(true);
+    setProjectPanelOpen(true);
+    setWebSearch(false);
+    setPlanMode(false);
+    setPendingAttachments([]);
+  }, [isFullstack, activeProjectId, projectBlocked]);
+
   // Load conversations list (for history drawer)
   const { data: conversations = [], refetch: refetchConvos } = useQuery<ConversationSummary[]>({
     queryKey: ["/api/conversations"],
@@ -246,6 +271,7 @@ export default function AgentPage() {
   // `latestAssistantHtml()`, so this single push makes the old code "current"
   // without any extra plumbing.
   const restoreVersion = (ver: AppVersion, opts: { silent?: boolean } = {}) => {
+    if (staticControlsBlocked) return;
     setMessages(m => [
       ...m,
       {
@@ -294,6 +320,7 @@ export default function AgentPage() {
 
   // Lazily create a conversation. Called on mount AND on first send (retry).
   const ensureConversation = async (): Promise<number | null> => {
+    if (projectBlocked) return null;
     if (conversationId) return conversationId;
     try {
       const res = await fetch("/api/conversations", {
@@ -301,7 +328,7 @@ export default function AgentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: projectName ? t("chat.sessionTitle", { name: projectName }) : t("chat.agentSession"),
-          projectId: projectIdParam ? parseInt(projectIdParam) : undefined,
+          projectId: activeProjectId ?? undefined,
         }),
         credentials: "include",
       });
@@ -332,7 +359,11 @@ export default function AgentPage() {
   // (don't start over and don't pre-fill the original description). Only create
   // a fresh conversation when nothing exists yet.
   const resumedExistingRef = useRef(false);
+  const initialProjectLoadStartedRef = useRef(false);
   useEffect(() => {
+    if (projectIdParam && projectBlocked) return;
+    if (initialProjectLoadStartedRef.current) return;
+    initialProjectLoadStartedRef.current = true;
     let cancelled = false;
     (async () => {
       try {
@@ -351,7 +382,7 @@ export default function AgentPage() {
                 resumedExistingRef.current = true;
                 // Mark initial-description as already handled so it never repopulates
                 initialDescriptionSentRef.current = true;
-                await loadConversation(latest.id);
+                await loadConversation(latest.id, pid);
                 return;
               }
             }
@@ -365,12 +396,13 @@ export default function AgentPage() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectIdParam]);
+  }, [projectIdParam, projectBlocked]);
 
   // Pre-fill (don't auto-send) the initial description from URL so the user
   // can review/edit it before pressing Send. Skipped when an existing
   // conversation was resumed — the user is continuing, not starting over.
   useEffect(() => {
+    if (isFullstack || metadataUnverified) return;
     if (initialDescriptionSentRef.current) return;
     if (resumedExistingRef.current) return;
     if (initialDescription && initialDescription.trim().length > 0) {
@@ -378,7 +410,7 @@ export default function AgentPage() {
       setInput(initialDescription.trim());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialDescription]);
+  }, [initialDescription, isFullstack, metadataUnverified]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -413,6 +445,11 @@ export default function AgentPage() {
   // ---------- Send message ----------
 
   const sendMessage = async (text: string, attachments: Attachment[] = [], search = webSearch, mode: "chat" | "plan" | "project" = projectAgent ? "project" : planMode ? "plan" : "chat") => {
+    if (projectBlocked) {
+      toast({ title: "Project is not ready", description: setupBlocked ? "Return to the dashboard and use Retry setup on this project." : "Verify project metadata before sending. Retry the project check.", variant: "destructive" });
+      return;
+    }
+    if (isFullstack) mode = "project";
     if ((!text.trim() && attachments.length === 0) || working) return;
     if (mode === "project" && attachments.length) {
       toast({ title: "Project agent accepts text only", variant: "destructive" });
@@ -564,6 +601,7 @@ export default function AgentPage() {
   };
 
   const handleSend = () => {
+    if (projectBlocked) return;
     if (!input.trim() && pendingAttachments.length === 0) return;
     const text = input.trim();
     if (projectAgent && pendingAttachments.length) {
@@ -682,7 +720,7 @@ export default function AgentPage() {
 
   // ---------- History ----------
 
-  const loadConversation = async (id: number) => {
+  const loadConversation = async (id: number, knownProjectId?: number | null) => {
     const sequence = ++loadSequenceRef.current;
     try {
       const res = await fetch(`/api/conversations/${id}`, { credentials: "include" });
@@ -700,7 +738,9 @@ export default function AgentPage() {
       setSearchActivity(null);
       setToolActivity([]);
       setOpenedProjectFile(null);
-      setProjectAgent(false);
+      const loadedProjectId = data.projectId ?? data.conversation?.projectId ?? knownProjectId ?? conversations.find(c => c.id === id)?.projectId ?? null;
+      setActiveProjectId(loadedProjectId);
+      setProjectAgent(projectMetadata.data?.find(p => p.id === loadedProjectId)?.type === "fullstack");
       setWebSearch(false);
       setPlanMode(false);
       setMessages(msgs);
@@ -747,6 +787,8 @@ export default function AgentPage() {
         setSearchActivity(null);
         setToolActivity([]);
         setOpenedProjectFile(null);
+        setActiveProjectId(null);
+        setProjectPanelOpen(false);
         setProjectAgent(false);
         setWebSearch(false);
         setPlanMode(false);
@@ -769,7 +811,7 @@ export default function AgentPage() {
   // ---------- Top menu actions ----------
 
   const copyShareLink = () => {
-    const url = `${window.location.origin}/chat${projectIdParam ? `?projectId=${projectIdParam}` : ""}`;
+    const url = `${window.location.origin}/chat${activeProjectId ? `?projectId=${activeProjectId}${isFullstack ? "&projectMode=fullstack" : ""}` : ""}`;
     if (!navigator.clipboard?.writeText) {
       toast({ title: "Copy unavailable", description: "Your browser does not support copying links here.", variant: "destructive" });
       return;
@@ -791,12 +833,14 @@ export default function AgentPage() {
   // ---------- Bottom nav ----------
 
   const goToProjectPreview = () => {
-    if (projectIdParam) setLocation(`/preview/${projectIdParam}`);
+    if (staticControlsBlocked) return;
+    if (activeProjectId) setLocation(`/preview/${activeProjectId}`);
     else setLocation("/dashboard");
   };
   const goToShell = () => setLocation("/shell");
   const goToTasks = () => setLocation("/dashboard");
   const goToWeb = async () => {
+    if (staticControlsBlocked) return;
     try {
       const res = await fetch("/api/published-apps", { credentials: "include" });
       if (!res.ok) throw new Error("not signed in");
@@ -816,8 +860,18 @@ export default function AgentPage() {
       toast({ title: t("chat.toastSignInView"), variant: "destructive" });
     }
   };
-  const goToCode = () => setLocation("/chat-classic");
+  const goToCode = () => {
+    if (staticControlsBlocked) {
+      setProjectPanelOpen(true);
+      return;
+    }
+    setLocation("/chat-classic");
+  };
   const toggleProjectAgent = () => {
+    if (isFullstack) {
+      setProjectPanelOpen(true);
+      return;
+    }
     setProjectAgent(value => !value);
     setWebSearch(false);
     setPlanMode(false);
@@ -827,6 +881,10 @@ export default function AgentPage() {
   // ---------- Publish ----------
 
   const openPublishFromLatest = () => {
+    if (staticControlsBlocked) {
+      toast({ title: "Static publishing unavailable", description: isFullstack ? FULLSTACK_SOURCE_NOTICE : "Verify project metadata before publishing.", variant: "destructive" });
+      return;
+    }
     // Find the most recent assistant message that contains a website
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
@@ -845,6 +903,7 @@ export default function AgentPage() {
   };
 
   const openPublishFor = (content: string) => {
+    if (staticControlsBlocked) return;
     const html = extractHtml(content);
     if (!html) {
       toast({
@@ -887,7 +946,7 @@ export default function AgentPage() {
                 {conversations.map(c => (
                   <button
                     key={c.id}
-                    onClick={() => loadConversation(c.id)}
+                    onClick={() => loadConversation(c.id, c.projectId)}
                     className={`w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-900 transition-colors ${conversationId === c.id ? "bg-zinc-900 border border-violet-500/30" : ""}`}
                     data-testid={`button-history-conv-${c.id}`}
                   >
@@ -907,7 +966,7 @@ export default function AgentPage() {
             title={canUndo ? t("chat.undoTitle") : t("chat.undoNothing")}
             data-hint={canUndo ? "Undo version" : "No earlier version"}
             className="agent-tooltip hidden md:inline-flex h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
-            disabled={!canUndo}
+            disabled={!canUndo || staticControlsBlocked}
             onClick={handleUndo}
             data-testid="button-undo"
           >
@@ -922,7 +981,7 @@ export default function AgentPage() {
             title={canRedo ? t("chat.redoTitle") : t("chat.redoNothing")}
             data-hint={canRedo ? "Redo version" : "No version to redo"}
             className="agent-tooltip hidden md:inline-flex h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
-            disabled={!canRedo}
+            disabled={!canRedo || staticControlsBlocked}
             onClick={handleRedo}
             data-testid="button-redo"
           >
@@ -1002,7 +1061,9 @@ export default function AgentPage() {
                         <div className="text-xs text-zinc-500">{dateStr} · {(ver.htmlContent.length / 1024).toFixed(1)} KB</div>
                         <div className="flex gap-2">
                           <button
+                            disabled={staticControlsBlocked}
                             onClick={() => {
+                              if (staticControlsBlocked) return;
                               const w = window.open("", "_blank", "noopener,noreferrer");
                               if (w) { w.document.open(); w.document.write(extractWebsiteHtml(ver.htmlContent) ?? ver.htmlContent); w.document.close(); }
                             }}
@@ -1019,6 +1080,7 @@ export default function AgentPage() {
                             </div>
                           ) : (
                             <button
+                              disabled={staticControlsBlocked}
                               onClick={() => restoreVersion(ver)}
                               className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium transition-all"
                               data-testid={`button-restore-version-${ver.id}`}
@@ -1043,7 +1105,7 @@ export default function AgentPage() {
             size="sm"
             aria-pressed={projectAgent}
             onClick={toggleProjectAgent}
-            title="Opt in to review-only project tools. No files are saved until you apply."
+            title={isFullstack ? "Full-stack projects use project tools. Review changes before saving." : "Opt in to review-only project tools. No files are saved until you apply."}
             data-testid="button-project-agent"
             className="hidden md:inline-flex shrink-0"
           >Project agent {projectAgent ? "on" : "off"}</Button>
@@ -1053,6 +1115,7 @@ export default function AgentPage() {
             </SheetTrigger>
             <SheetContent side="right" className="bg-zinc-950 text-zinc-100 border-zinc-800 w-full sm:w-[560px] flex flex-col overflow-hidden">
               <SheetHeader><SheetTitle className="text-zinc-100">Project files &amp; review</SheetTitle></SheetHeader>
+              {isFullstack && !projectBlocked && <p className="rounded-md border border-amber-400/25 bg-amber-400/5 p-3 text-xs text-amber-200">{FULLSTACK_SOURCE_NOTICE}</p>}
               <p className="text-xs text-zinc-400">Project agent only reads and proposes text changes. It never runs commands or saves automatically.</p>
               {proposalLoadError && <p role="alert" className="text-xs text-red-400">{proposalLoadError.message}</p>}
               <div className="min-h-0 flex-1 overflow-y-auto space-y-4">
@@ -1098,6 +1161,8 @@ export default function AgentPage() {
             size="sm"
             className="hidden md:inline-flex h-9 px-3 bg-violet-600 hover:bg-violet-500 text-white gap-1.5"
             onClick={openPublishFromLatest}
+            disabled={staticControlsBlocked}
+            title={isFullstack ? "Source-only: deploy the Workers backend and provision D1 separately. Static Publish is unavailable." : undefined}
             data-testid="button-publish"
           >
             <Rocket className="w-4 h-4" />
@@ -1157,13 +1222,23 @@ export default function AgentPage() {
                   ["Settings", () => setLocation("/settings")],
                   ["Sign out", handleLogout],
                 ] as [string, () => void][]).map(([label, action]) => (
-                  <Button key={label} variant="ghost" className="h-11 w-full justify-start text-zinc-200 hover:bg-zinc-800" disabled={(label === "Undo previous version" && !canUndo) || (label === "Redo version" && !canRedo)} onClick={() => { setMobileMenuOpen(false); action(); }}>{label}</Button>
+                  <Button key={label} variant="ghost" className="h-11 w-full justify-start text-zinc-200 hover:bg-zinc-800" disabled={(label === "Undo previous version" && !canUndo) || (label === "Redo version" && !canRedo) || (staticControlsBlocked && ["Undo previous version", "Redo version", "Publish site", "Open published site"].includes(label))} onClick={() => { setMobileMenuOpen(false); action(); }}>{label}</Button>
                 ))}
               </div>
             </SheetContent>
           </Sheet>
         </div>
       </header>
+
+      {isFullstack && !projectBlocked && <div className="shrink-0 border-b border-amber-400/25 bg-amber-400/5 px-4 py-3 text-xs text-amber-200" role="note" data-testid="fullstack-source-notice">
+        <strong className="block mb-1">Full-stack project · source only</strong>
+        {FULLSTACK_SOURCE_NOTICE}
+      </div>}
+      {projectBlocked && <div className="shrink-0 border-b border-violet-500/25 bg-violet-500/5 px-4 py-3 text-xs text-zinc-300" role="status">
+        {setupBlocked ? activeProject?.status === "initializing" ? "Starter setup is still initializing. Return to the dashboard to check progress." : "Starter setup failed. Return to the dashboard and use Retry setup on this project." : projectMetadata.isError ? "Could not verify project metadata. Sending, Preview and Publish are blocked until verified." : projectMetadata.isSuccess ? "Project not found. Return to the dashboard or retry the project check." : "Checking project metadata…"}
+        {(projectMetadata.isError || projectMetadata.isSuccess) && !setupBlocked && <Button size="sm" variant="ghost" className="ml-2" onClick={() => projectMetadata.refetch()}>Retry project check</Button>}
+        {setupBlocked && <Button size="sm" variant="ghost" className="ml-2" onClick={() => setLocation("/dashboard")}>Back to dashboard</Button>}
+      </div>}
 
       {/* Messages */}
       <div ref={scrollRef} className="agent-scroll flex-1 overflow-y-auto px-4 py-4 space-y-5" data-testid="agent-messages">
@@ -1195,7 +1270,7 @@ export default function AgentPage() {
 
         {messages.map(msg => msg.role === "web-search" ? (
           msg.searchActivity && <ChatSearchCard key={msg.id} activity={msg.searchActivity} />
-        ) : <MessageBlock key={msg.id} msg={msg} onPublish={openPublishFor} />)}
+        ) : <MessageBlock key={msg.id} msg={msg} onPublish={staticControlsBlocked ? undefined : openPublishFor} />)}
 
         {working && searchActivity && <ChatSearchCard activity={searchActivity} />}
         {working && streamingContent && (
@@ -1288,9 +1363,10 @@ export default function AgentPage() {
       <div className="agent-composer border-t border-zinc-800/80 bg-zinc-950 px-3 py-3 flex-shrink-0 min-w-0">
         {projectAgent && <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-amber-400/25 bg-amber-400/5 px-2.5 py-1.5 text-xs text-amber-200">
           <span>Project agent · text only · review before saving</span>
-          <button type="button" onClick={toggleProjectAgent} className="shrink-0 underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">Turn off</button>
+          <button type="button" onClick={toggleProjectAgent} className="shrink-0 underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">{isFullstack ? "Open files" : "Turn off"}</button>
         </div>}
         <Textarea
+          disabled={projectBlocked}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.metaKey) { e.preventDefault(); handleSend(); } }}
@@ -1308,10 +1384,10 @@ export default function AgentPage() {
               <span className="hidden sm:inline ml-1">Attach</span>
             </Button>
 
-            <button type="button" aria-label="Plan before building" aria-pressed={planMode} onClick={() => { setPlanMode(v => !v); setWebSearch(false); setProjectAgent(false); }} className={`agent-control rounded-md border px-2.5 h-9 text-xs font-medium ${planMode ? "border-amber-400 bg-amber-400/15 text-amber-200" : "border-zinc-700 text-zinc-300"}`} data-testid="checkbox-plan-mode">
+            <button type="button" disabled={isFullstack || projectBlocked} aria-label="Plan before building" aria-pressed={planMode} onClick={() => { setPlanMode(v => !v); setWebSearch(false); setProjectAgent(false); }} className={`agent-control rounded-md border px-2.5 h-9 text-xs font-medium ${planMode ? "border-amber-400 bg-amber-400/15 text-amber-200" : "border-zinc-700 text-zinc-300"}`} data-testid="checkbox-plan-mode">
               Plan {planMode ? "on" : "off"}
             </button>
-            <ChatSearchToggle enabled={webSearch} onChange={(enabled) => { setWebSearch(enabled); if (enabled) { setPlanMode(false); setProjectAgent(false); } }} />
+            {!isFullstack && <ChatSearchToggle enabled={webSearch} onChange={(enabled) => { setWebSearch(enabled); if (enabled) { setPlanMode(false); setProjectAgent(false); } }} />}
           </div>
 
           {working ? (
@@ -1319,7 +1395,7 @@ export default function AgentPage() {
               <Square className="w-3.5 h-3.5 fill-white" />
             </Button>
           ) : (
-            <Button size="icon" aria-label={t("chat.sendMessage")} title={t("chat.sendMessage")} className="agent-tooltip h-10 w-10 shrink-0 rounded-lg bg-violet-600 hover:bg-violet-500 text-white disabled:bg-zinc-800 disabled:text-zinc-500" data-hint="Send message" onClick={handleSend} disabled={!input.trim() && pendingAttachments.length === 0} data-testid="button-send">
+            <Button size="icon" aria-label={t("chat.sendMessage")} title={t("chat.sendMessage")} className="agent-tooltip h-10 w-10 shrink-0 rounded-lg bg-violet-600 hover:bg-violet-500 text-white disabled:bg-zinc-800 disabled:text-zinc-500" data-hint="Send message" onClick={handleSend} disabled={projectBlocked || (!input.trim() && pendingAttachments.length === 0)} data-testid="button-send">
               <ArrowUp className="w-4 h-4" />
             </Button>
           )}
@@ -1330,9 +1406,9 @@ export default function AgentPage() {
       <nav aria-label="Builder navigation" className="hidden md:flex items-center justify-around px-2 py-2 border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0">
         {[
           { icon: Square, key: "code", label: t("chat.nav.classic"), testid: "nav-code", action: goToCode },
-          { icon: Monitor, key: "preview", label: projectIdParam ? t("chat.nav.preview") : "Preview (open a project first)", testid: "nav-preview", action: projectIdParam ? goToProjectPreview : undefined },
+          { icon: Monitor, key: "preview", label: isFullstack ? "Preview unavailable · source-only full-stack project" : activeProjectId ? t("chat.nav.preview") : "Preview (open a project first)", testid: "nav-preview", action: activeProjectId && !staticControlsBlocked ? goToProjectPreview : undefined },
           { icon: Sparkles, key: "agent", label: t("chat.agent"), active: true, testid: "nav-agent", action: undefined },
-          { icon: Globe, key: "web", label: t("chat.nav.openSite"), testid: "nav-web", action: goToWeb },
+          { icon: Globe, key: "web", label: t("chat.nav.openSite"), testid: "nav-web", action: staticControlsBlocked ? undefined : goToWeb },
           { divider: true, key: "div" },
           { icon: Terminal, key: "shell", label: t("chat.nav.shell"), testid: "nav-shell", action: goToShell },
           { icon: ListChecks, key: "tasks", label: t("chat.nav.dashboard"), testid: "nav-tasks", action: goToTasks },
@@ -1360,13 +1436,13 @@ export default function AgentPage() {
       <nav aria-label="Builder navigation" className="md:hidden flex items-stretch justify-around gap-1 px-2 py-2 border-t border-zinc-800/80 bg-zinc-950 shrink-0">
         <button onClick={() => setLocation("/dashboard")} className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-zinc-300"><ListChecks className="w-4 h-4" />Dashboard</button>
         <button aria-current="page" className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-amber-300" disabled><Sparkles className="w-4 h-4" />Builder</button>
-        <button onClick={goToProjectPreview} disabled={!projectIdParam} title={projectIdParam ? "Preview project" : "Open a project first to preview"} className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-zinc-300 disabled:opacity-40"><Monitor className="w-4 h-4" />Preview</button>
+        <button onClick={goToProjectPreview} disabled={!activeProjectId || staticControlsBlocked} title={isFullstack ? "Source only: no runtime or database provisioned" : activeProjectId ? "Preview project" : "Open a project first to preview"} className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-zinc-300 disabled:opacity-40"><Monitor className="w-4 h-4" />Preview</button>
         <button onClick={() => setProjectPanelOpen(true)} className="agent-control flex-1 min-w-0 flex flex-col items-center gap-1 rounded-md py-1 text-xs text-zinc-300"><FileEdit className="w-4 h-4" />{projectProposal ? "Review" : "Files"}</button>
       </nav>
 
       <PublishDialog
         code={publishCode}
-        open={publishOpen}
+        open={publishOpen && !staticControlsBlocked}
         onOpenChange={setPublishOpen}
       />
     </div>
