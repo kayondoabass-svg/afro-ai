@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
 import { InstallPwaButton } from "@/components/install-pwa-button";
+import { SocialLinks } from "@/components/social-links";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useLanguage } from "@/hooks/use-language";
 import {
@@ -622,6 +623,7 @@ export default function LandingPage() {
                   <GitBranch className="w-5 h-5" />
                 </a>
               </div>
+              <SocialLinks />
             </div>
 
             <div className="space-y-3">

@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
+import { SocialLinks } from "@/components/social-links";
 import { useLanguage } from "@/hooks/use-language";
 import { ArrowLeft, Mail, MapPin, Clock, Phone, MessageCircle } from "lucide-react";
 import { Link } from "wouter";
@@ -73,6 +74,10 @@ export default function ContactPage() {
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               We'd love to hear from you. Reach out to us for any questions, feedback, or partnership opportunities.
             </p>
+          </div>
+
+          <div className="mb-8 flex justify-center">
+            <SocialLinks />
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
