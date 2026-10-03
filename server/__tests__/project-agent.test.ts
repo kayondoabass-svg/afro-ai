@@ -65,7 +65,11 @@ describe("signed review and atomic apply", () => {
     const proposal = await createProjectProposal("owner", "1", [{ before: file(), file: file("updated") }]);
     expect(verifyProjectProposal(proposal.token, "owner", "1").changes).toHaveLength(1);
     expect(() => verifyProjectProposal(proposal.token, "other", "1")).toThrow("ownership");
-    expect(() => verifyProjectProposal(proposal.token.slice(0, -1) + "x", "owner", "1")).toThrow();
+    // Changing the last base64url character can alter only unused padding bits.
+    // Change the first signature character so the decoded HMAC definitely differs.
+    const [body, signature] = proposal.token.split(".");
+    const tampered = `${body}.${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`;
+    expect(() => verifyProjectProposal(tampered, "owner", "1")).toThrow();
     vi.useFakeTimers();
     try {
       vi.advanceTimersByTime(16 * 60_000);

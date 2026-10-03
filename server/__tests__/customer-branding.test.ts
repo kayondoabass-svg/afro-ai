@@ -66,7 +66,7 @@ describe("generated and published client branding", () => {
     const chat = readFileSync("server/replit_integrations/chat/routes.ts", "utf8");
     expect(chat).not.toContain("If unsure of a name or color: make a smart assumption");
     expect(chat).toContain("contextPrompt += CUSTOMER_BRANDING_POLICY");
-    expect(chat).toContain("needsCustomerName(namingHistory");
+    expect(chat).toContain("customerIntake(namingHistory");
     expect(chat.indexOf("hasForbiddenCustomerBrand(fullResponse")).toBeLessThan(chat.indexOf('createMessage(conversationId, "assistant", fullResponse)'));
     expect(readFileSync("server/routes.ts", "utf8")).toContain("hasForbiddenCustomerBrand(sanitizedHtml");
     expect(readFileSync("server/project-tools.ts", "utf8")).toContain("${CUSTOMER_BRANDING_POLICY}");

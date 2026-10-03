@@ -53,7 +53,8 @@ describe("trusted product context", () => {
   it("assembles trusted context in builder, founder, selected-file, Knowledge Ask, standalone audio and legacy voice paths", () => {
     const chat = readFileSync(resolve(__dirname, "../replit_integrations/chat/routes.ts"), "utf8");
     expect(chat).toContain("let contextPrompt = isFounderRequest ? FOUNDER_COMMAND_SYSTEM_PROMPT : BUILDER_SYSTEM_PROMPT");
-    expect(chat).toMatch(/contextPrompt \+= productSelfKnowledge\(\{ afroAuthorized: isFounderRequest \}\);\s*contextPrompt \+= CHAT_CREDENTIAL_POLICY;\s*const systemMessage/);
+    expect(chat).toMatch(/contextPrompt \+= productSelfKnowledge\(\{ afroAuthorized: isFounderRequest \}\);\s*contextPrompt \+= CHAT_CREDENTIAL_POLICY;/);
+    expect(chat.indexOf("contextPrompt += CUSTOMER_DESIGN_POLICY")).toBeLessThan(chat.indexOf("const systemMessage ="));
     expect(chat).toMatch(/role: "system", content: prompt \+ productSelfKnowledge\(\{ afroAuthorized: false \}\) \+ CHAT_CREDENTIAL_POLICY/);
     expect(chat).toContain("content: contextPrompt");
     const knowledge = readFileSync(resolve(__dirname, "../routes.ts"), "utf8").split('app.post("/api/knowledge/ask"')[1]!;

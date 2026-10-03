@@ -32,9 +32,10 @@ export function customerNameQuestion(language: string) { return QUESTIONS[langua
 const forbidden = /\b(?:afro[\s_-]*ai|keyo(?:\s+technologies)?|afrobalance)\b/i;
 const explicitName = /\b(?:(?:app|business|company|project|website|site|store|brand)\s+(?:called|named|titled)|(?:brand|app|business|company|project|website)\s+name\s*(?:is|:))\s*["'“]?([^\n.!?]{2,100})/i;
 type Message = { role: string; content: unknown };
+export const customerBuildIntent = /\b(?:build|create|make|design|develop|generate|need|want)\b[\s\S]{0,180}\b(?:app|website|site|page|dashboard|store|portal|ussd|platform)\b/i;
 
 /** Conservative deterministic gate for recognizable new-build requests; the prompt covers other languages/phrasing. */
-export function needsCustomerName(history: Message[], current: string, existingHtml: string, projectName?: string | null) {
+export function needsCustomerName(history: Message[], current: string, existingHtml: string, projectName?: string | null, newBuild = false) {
   if (existingHtml) return false;
   if (projectName && !/^(?:new|my|untitled|test)\s*(?:app|project|website)?$/i.test(projectName.trim()) && !forbidden.test(projectName)) return false;
   const users = history.filter(m => m.role === "user" && typeof m.content === "string").map(m => m.content as string);
@@ -52,7 +53,7 @@ export function needsCustomerName(history: Message[], current: string, existingH
     return !answer;
   }
   if (/^\s*(?:what|why|how|explain|tell me)\b/i.test(current)) return false;
-  return /\b(?:build|create|make|design|develop|generate)\b[\s\S]{0,180}\b(?:app|website|site|dashboard|store|portal|ussd|platform)\b/i.test(current);
+  return newBuild || customerBuildIntent.test(current);
 }
 
 /** Check visible brand locations, not code comments or technical references to the platform. */
