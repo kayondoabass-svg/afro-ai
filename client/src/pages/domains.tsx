@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Globe, Search, CheckCircle2, XCircle, Loader2, ShoppingCart, Star,
@@ -34,6 +35,10 @@ interface ContactForm {
 const POPULAR_TLDS = [".com", ".net", ".org", ".io", ".co", ".africa", ".shop", ".tech", ".app"];
 
 export default function DomainsPage() {
+  const [, navigate] = useLocation();
+  const routeSearch = useSearch();
+  const requestedTab = new URLSearchParams(routeSearch).get("tab");
+  const urlTab = requestedTab === "search" || requestedTab === "mydomains" ? requestedTab : null;
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<DomainAvailability | null>(null);
@@ -44,7 +49,11 @@ export default function DomainsPage() {
     address: "", city: "", state: "", zip: "", country: "",
   });
   const { toast } = useToast();
-  const [selectedTab, setSelectedTab] = useState<string | null>(null);
+  const setSelectedTab = (tab: string) => {
+    const params = new URLSearchParams(routeSearch);
+    params.set("tab", tab);
+    navigate(`/domains?${params.toString()}`);
+  };
   const ownedQuery = useQuery<Array<{ domainName: string; status: string }>>({ queryKey: ["/api/domains/my"] });
   const hasPurchases = Array.isArray(ownedQuery.data) && ownedQuery.data.length > 0;
 
@@ -56,14 +65,22 @@ export default function DomainsPage() {
   const [paymentReturnOrder, setPaymentReturnOrder] = useState<number | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+     const params = new URLSearchParams(routeSearch);
     const status = params.get("status");
     const orderId = params.get("order");
     if (status === "success" && orderId) {
-      setPaymentReturnOrder(parseInt(orderId));
-      window.history.replaceState({}, "", "/domains");
+       const parsedOrder = Number(orderId);
+       if (Number.isInteger(parsedOrder) && parsedOrder > 0) {
+         setPaymentReturnOrder(parsedOrder);
+       }
+       params.delete("status");
+       params.delete("order");
+       // Keep explicit tab choices and unrelated parameters when cleaning the
+       // checkout return URL. Without a choice, show registration management.
+       if (!urlTab) params.set("tab", "mydomains");
+       navigate(`/domains${params.size ? `?${params.toString()}` : ""}`, { replace: true });
     }
-  }, []);
+   }, [routeSearch, urlTab, navigate]);
 
   const orderMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/domains/order", data).then(r => r.json()),
@@ -133,7 +150,7 @@ export default function DomainsPage() {
           <p className="text-muted-foreground mt-1">Find and register your perfect domain — powered by name.com</p>
         </div>
 
-        <Tabs value={selectedTab ?? (hasPurchases || paymentReturnOrder ? "mydomains" : "search")} onValueChange={setSelectedTab}>
+        <Tabs value={urlTab ?? (hasPurchases || paymentReturnOrder ? "mydomains" : "search")} onValueChange={setSelectedTab}>
           <TabsList className="bg-white/5 border border-white/10">
             <TabsTrigger value="search" data-testid="tab-search">Find Domains</TabsTrigger>
             <TabsTrigger value="mydomains" data-testid="tab-mydomains">

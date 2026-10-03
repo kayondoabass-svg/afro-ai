@@ -3,6 +3,7 @@ import { registerAppInstallRoutes } from "./app-installs";
 import { registerDomainManagementRoutes, validateNameservers } from "./domain-management";
 import { completeDomainRegistration, RegistrationError } from "./domain-registration";
 import { verifyAppDomain } from "./domain-connection";
+import { customerListingSchema, removeOwnedCollaborator } from "./customer-tool-access";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
@@ -2723,14 +2724,16 @@ export async function registerRoutes(
   app.get("/api/marketplace/:id", async (req: any, res) => {
     try {
       const listing = await storage.getMarketplaceListing(parseInt(req.params.id));
-      if (!listing) return res.status(404).json({ message: "Not found" });
+      if (!listing || listing.status !== "active") return res.status(404).json({ message: "Not found" });
       res.json(listing);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/marketplace", isAuthenticated, async (req: any, res) => {
     try {
-      const listing = await storage.createMarketplaceListing({ ...req.body, userId: req.user.claims.sub });
+      const input = customerListingSchema.safeParse(req.body);
+      if (!input.success) return res.status(400).json({ message: "Invalid marketplace listing fields" });
+      const listing = await storage.createMarketplaceListing({ ...input.data, userId: req.user.claims.sub });
       res.json(listing);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2740,7 +2743,9 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       const existing = await storage.getMarketplaceListing(id);
       if (!existing || existing.userId !== req.user.claims.sub) return res.status(403).json({ message: "Not authorized" });
-      const updated = await storage.updateMarketplaceListing(id, req.body);
+      const input = customerListingSchema.partial().safeParse(req.body);
+      if (!input.success) return res.status(400).json({ message: "Invalid marketplace listing fields" });
+      const updated = await storage.updateMarketplaceListing(id, input.data);
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -2759,7 +2764,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const listing = await storage.getMarketplaceListing(id);
-      if (!listing) return res.status(404).json({ message: "Not found" });
+      if (!listing || listing.status !== "active") return res.status(404).json({ message: "Not found" });
       await storage.incrementListingDownloads(id);
       res.json({ htmlContent: extractWebsiteHtml(listing.htmlContent) ?? listing.htmlContent, title: listing.title });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -2797,7 +2802,8 @@ export async function registerRoutes(
 
   app.delete("/api/collaborate/:id", isAuthenticated, async (req: any, res) => {
     try {
-      await storage.removeCollaborator(parseInt(req.params.id));
+      const removed = await removeOwnedCollaborator(Number(req.params.id), req.user.claims.sub);
+      if (!removed) return res.status(404).json({ message: "Collaboration invitation not found" });
       res.json({ success: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

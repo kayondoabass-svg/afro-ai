@@ -121,7 +121,8 @@ export default function MarketplacePage() {
               <Store className="w-8 h-8 text-yellow-400" />
               Marketplace
             </h1>
-            <p className="text-muted-foreground mt-1">Browse, clone, and share apps built with Afro AI</p>
+            <p className="text-muted-foreground mt-1">Browse community templates, customize a copy in AI Builder, or share your own design.</p>
+            <p className="text-xs text-muted-foreground mt-2">The catalogue is shared. My Listings contains only your listings. Publishing shares your template’s HTML publicly—never include secrets or private customer data. Seller payments and payouts are not available here.</p>
           </div>
           <Button
             data-testid="button-publish-listing"

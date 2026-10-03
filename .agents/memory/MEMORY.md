@@ -31,3 +31,4 @@
 - [MCP product scope](mcp-product-scope.md) — user requires AI discoverability through MCP across domains, chatbots, email, web/app design, and USSD.
 - [Domain purchase experience](domain-purchase-experience.md) — after purchase, prioritize management and app connection, not repeated purchase prompts.
 - [Local currency pricing](local-currency-pricing.md) — USD is the base; each customer uses their country's currency, with conversion rather than relabeling.
+- [Navigation grouping](navigation-grouping.md) — keep related products under expandable sidebar sections instead of extending the long flat menu.

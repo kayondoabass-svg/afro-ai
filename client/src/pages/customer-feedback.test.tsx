@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 const mocks = vi.hoisted(() => ({ navigate: vi.fn(), request: vi.fn(), toast: vi.fn(), user: { isFounder: true } }));
-vi.mock("wouter", () => ({ useLocation: () => ["/templates", mocks.navigate] }));
+vi.mock("wouter", () => ({ useLocation: () => ["/templates", mocks.navigate], useSearch: () => window.location.search.slice(1) }));
 vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({ t: (key: string) => key }) }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: mocks.user, isLoading: false }) }));
