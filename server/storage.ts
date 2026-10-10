@@ -1371,16 +1371,15 @@ class DatabaseStorage implements IStorage {
     return db.select().from(chatbotScannedPages).where(eq(chatbotScannedPages.widgetId, widgetId));
   }
   async upsertChatbotScannedPage(widgetId: number, url: string, contentHash: string): Promise<void> {
-    // Concurrency-safe upsert. A unique index on (widget_id, url) backs the
-    // ON CONFLICT target so a manual scan + scheduler scan racing on the same
-    // page can't throw 23505.
-    await db
-      .insert(chatbotScannedPages)
-      .values({ widgetId, url, contentHash })
-      .onConflictDoUpdate({
-        target: [chatbotScannedPages.widgetId, chatbotScannedPages.url],
-        set: { contentHash, scannedAt: new Date() },
-      });
+    await db.transaction(async tx => {
+      const parent = await tx.select({ id: chatbotWidgets.id }).from(chatbotWidgets)
+        .where(eq(chatbotWidgets.id, widgetId)).for("update");
+      if (!parent.length) throw new Error("Chatbot not found");
+      const updated = await tx.update(chatbotScannedPages).set({ contentHash, scannedAt: new Date() })
+        .where(and(eq(chatbotScannedPages.widgetId, widgetId), eq(chatbotScannedPages.url, url)))
+        .returning({ id: chatbotScannedPages.id });
+      if (!updated.length) await tx.insert(chatbotScannedPages).values({ widgetId, url, contentHash });
+    });
   }
   async incrementWidgetConversationCount(widgetId: number): Promise<void> {
     await db.update(chatbotWidgets).set({ conversationCount: sql`${chatbotWidgets.conversationCount} + 1` }).where(eq(chatbotWidgets.id, widgetId));

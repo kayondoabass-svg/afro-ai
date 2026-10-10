@@ -344,6 +344,7 @@ async function callLLM(systemPrompt: string, userPrompt: string, _model?: string
     maxTokens: 2000,
     temperature: 0.2,
     responseFormat: { type: "json_object" },
+    signal,
   });
   return text || "{}";
 }
@@ -385,7 +386,7 @@ ${page.text.slice(0, 6000)}`;
       }));
   } catch (e) {
     console.error("[autoscan] extract failed for", page.url, (e as Error).message);
-    return [];
+    throw e;
   }
 }
 

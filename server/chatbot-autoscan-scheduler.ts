@@ -2,6 +2,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { runAutoScan } from "./chatbot-autoscan";
 import { storage } from "./storage";
+import { saveScan } from "./chatbot-scan-persistence";
 
 function escapeLiteral(s: string): string { return s.replace(/'/g, "''"); }
 
@@ -23,22 +24,11 @@ async function runOnce(widget: { id: number; userId: string; websiteUrl: string 
   try {
     const result = await runAutoScan(widget.id, widget.websiteUrl, { maxPages: 20 });
 
-    // Incremental insert: only Q&As whose page hash changed.
-    const knownPages = await storage.getChatbotScannedPages(widget.id);
-    const knownByUrl = new Map(knownPages.map((p) => [p.url, p.contentHash]));
-    const rowsToInsert = result.rows.filter((r) => {
-      if (!r.sourceUrl || !r.sourceHash) return true;
-      return knownByUrl.get(r.sourceUrl) !== r.sourceHash;
-    });
-
-    const inserted = await storage.bulkInsertChatbotQas(rowsToInsert);
-    for (const p of result.pageHashes) {
-      await storage.upsertChatbotScannedPage(widget.id, p.url, p.hash);
-    }
+    const saved = await saveScan(widget.id, result, "incremental");
 
     const stats = {
       pagesScanned: result.pagesScanned,
-      qasInserted: inserted.length,
+      qasInserted: saved.inserted,
       qasSensitive: result.qasSensitive,
       durationMs: Date.now() - startedAt,
       ranBy: "scheduler",
