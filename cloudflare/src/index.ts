@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { handleVersionedAuthRequest } from './api-versioning';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { SignJWT, jwtVerify } from 'jose';
 import { deviceLabel, resetPasswordUrl, resetStatements } from '../../shared/device-sessions';
@@ -1916,7 +1917,8 @@ async function cleanupAuthThrottle(db: D1Database, now: number): Promise<void> {
 }
 
 export default {
-  fetch: root.fetch.bind(root),
+  fetch: (request: Request, env: Env, ctx: ExecutionContext) =>
+    handleVersionedAuthRequest(request, routed => root.fetch(routed, env, ctx)),
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       cleanupAuthThrottle(env.DB, nowSec()).catch((err) => {

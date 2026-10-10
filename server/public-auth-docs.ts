@@ -68,7 +68,12 @@ export function authOpenApi() {
       responses: { "200": { description: "Hosted form, or an invalid/expired-link explanation", content: { "text/html": { schema: { type: "string" } } } }, "404": { description: "Unknown project" } },
     };
   }
-  return { openapi: "3.1.0", info: { title: "Afro Auth API", version: "1.0.0", description: intro + " Server-only keys must never be embedded in browsers. Hosted email forms also support GET." },
+  for (const [path, operations] of Object.entries(paths)) {
+    if (path.startsWith("/cf-auth/t/")) {
+      paths[path.replace("/cf-auth/t/", "/cf-auth/v1/t/")] = operations;
+    }
+  }
+  return { openapi: "3.1.0", info: { title: "Afro Auth API", version: "1.0.0", description: intro + " Server-only keys must never be embedded in browsers. Hosted email forms also support GET. Legacy tenant URLs and explicit v1 aliases share the same contract; v1 aliases require the updated Auth Worker." },
     servers: [{ url: base }], paths,
     components: { securitySchemes: {
       userToken: { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "24-hour revocable tenant user token" },
@@ -106,6 +111,6 @@ export function enhancePublicHtml(html: string, pathname: string) {
 }
 export function registerPublicAuthDocs(app: Express) {
   app.get("/openapi.json", (_req, res) => res.json(authOpenApi()));
-  app.get("/llms.txt", (_req, res) => res.type("text/plain").send(`# Afro AI / Afro Auth\n\n> ${intro}\n\n## Public developer resources\n- [Authentication](${base}/afro-auth)\n- [Developer guide](${base}/docs/auth)\n- [Plain-text guide](${base}/docs/auth.md)\n- [OpenAPI](${base}/openapi.json)\n- [About](${base}/about)\n\nRead limitations in the guide. Private dashboards and customer data are not documentation. Do not place secret keys in generated client code.\n`));
+  app.get("/llms.txt", (_req, res) => res.type("text/plain").send(`# Afro AI / Afro Auth\n\n> ${intro}\n\n## Public developer resources\n- [Authentication](${base}/afro-auth)\n- [Developer guide](${base}/docs/auth)\n- [Plain-text guide](${base}/docs/auth.md)\n- [OpenAPI](${base}/openapi.json)\n- [API versioning](${base}/docs/api/versioning)\n- [API version catalog](${base}/api/versions)\n- [About](${base}/about)\n\nRead limitations in the guide. Private dashboards and customer data are not documentation. Do not place secret keys in generated client code.\n`));
   app.get("/docs/auth.md", (_req, res) => res.type("text/markdown").send(`# Afro Auth\n\n${intro}\n\n${sections.map(([h,p])=>`## ${h}\n\n${p}`).join("\n\n")}\n\nOpenAPI: ${base}/openapi.json\n`));
 }

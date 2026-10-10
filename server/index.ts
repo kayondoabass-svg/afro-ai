@@ -15,6 +15,8 @@ import passport from "passport";
 import { getSession } from "./replit_integrations/auth";
 import { cfAuthBridge } from "./replit_integrations/auth/cfBridge";
 import { hasShellAccess, isAllowedShellOrigin } from "./shell-security";
+import { apiVersioning } from "./api-versioning";
+import { hasEndpointPreflight } from "@shared/api-version-policy";
 
 const app = express();
 
@@ -72,9 +74,14 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With");
   }
-  if (req.method === "OPTIONS") return res.sendStatus(204);
+  // Versioned preflights must reach the version guard; unsupported versions
+  // should not appear available merely because this is an OPTIONS request.
+  if (req.method === "OPTIONS" && !/^\/api\/v\d+(\/|$)/i.test(req.path) && !hasEndpointPreflight(req.path)) {
+    return res.sendStatus(204);
+  }
   next();
 });
+app.use(apiVersioning);
 
 declare module "http" {
   interface IncomingMessage {

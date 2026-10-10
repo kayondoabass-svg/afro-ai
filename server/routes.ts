@@ -1,4 +1,5 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
+import { registerApiVersionDocs, versionedApiNotFound } from "./api-versioning";
 import { scanFailure, manualKnowledge, CUSTOMER_CHAT_POLICY, verifyWidgetHtml } from "./chatbot-support";
 import { saveScan } from "./chatbot-scan-persistence";
 import { fetchPublicPage, scrapeUrl } from "./url-scrape";
@@ -120,6 +121,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   app.use("/uploads", express.static(uploadDir));
+  registerApiVersionDocs(app);
 
   // ── Login-bounce diagnostics ───────────────────────────────────────────────
   // Fired by the React app when it boots up with NO active session despite
@@ -5007,7 +5009,7 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
     addMsg("user", msg);
     showTyping();
     sendEl.disabled = true;
-    fetch("${apiBase}/api/widget-chat/" + key, {
+    fetch("${apiBase}/api/v1/widget-chat/" + key, {
       method: "POST",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({ message: msg, sessionId: sessionId, history: history })
@@ -5972,5 +5974,7 @@ Authorization: Bearer YOUR_API_KEY</pre>
     }
   });
 
+  // Prevent unknown explicit-version routes from falling through to SPA HTML.
+  app.use(versionedApiNotFound);
   return httpServer;
 }
