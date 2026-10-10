@@ -4,7 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { buildKeyoRelease, KEYO_FILENAME } from "../scripts/keyo-release";
 import { keyoStudioPage } from "./keyo-studio-page";
-import { KEYO_UPLOAD_FILENAME } from "../scripts/keyo-upload-zip";
+import { KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME } from "../scripts/keyo-upload-zip";
 
 let pending: Promise<Awaited<ReturnType<typeof buildKeyoRelease>>> | undefined;
 async function release() {
@@ -14,6 +14,8 @@ async function release() {
         const manifest = JSON.parse(await readFile(path.resolve("dist/keyo-studio/release.json"), "utf8"));
         await stat(path.resolve("dist/keyo-studio", KEYO_FILENAME));
         await stat(path.resolve("dist/keyo-studio", KEYO_UPLOAD_FILENAME));
+        await stat(path.resolve("dist/keyo-studio", KEYO_SPACE_UPLOAD_FILENAME));
+        if (manifest.huggingFaceUpload?.filename !== KEYO_SPACE_UPLOAD_FILENAME) throw Object.assign(new Error("Space upload ZIP requires rebuilding."), { code: "ENOENT" });
         if (manifest.manualUpload?.filename !== KEYO_UPLOAD_FILENAME) throw Object.assign(new Error("Manual upload ZIP requires rebuilding."), { code: "ENOENT" });
         if (manifest.downloadUrl !== `/downloads/keyo-studio/${KEYO_FILENAME}`) throw new Error("Release contract mismatch.");
         return manifest;
@@ -57,6 +59,17 @@ export function registerKeyoStudio(app: Express) {
         if (error && !res.headersSent) res.status(503).json({ message: "KEYO ZIP is unavailable." });
       });
     } catch { res.status(503).json({ message: "KEYO ZIP is unavailable." }); }
+  });
+  app.get(`/downloads/keyo-studio/${KEYO_SPACE_UPLOAD_FILENAME}`, async (_req, res) => {
+    try {
+      const manifest = await release();
+      res.set("Cache-Control", "no-store");
+      res.set("X-Content-SHA256", manifest.huggingFaceUpload.sha256);
+      res.set("X-Content-Type-Options", "nosniff");
+      res.download(path.resolve("dist/keyo-studio", KEYO_SPACE_UPLOAD_FILENAME), KEYO_SPACE_UPLOAD_FILENAME, error => {
+        if (error && !res.headersSent) res.status(503).json({ message: "KEYO Space ZIP is unavailable." });
+      });
+    } catch { res.status(503).json({ message: "KEYO Space ZIP is unavailable." }); }
   });
   app.get(`/downloads/keyo-studio/${KEYO_FILENAME}`, async (_req, res) => {
     try {

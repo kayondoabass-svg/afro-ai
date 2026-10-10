@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { mkdir, readFile, writeFile, cp, lstat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { KEYO_GIT_EXTRAS, KEYO_UPLOAD_FILENAME, sourceZip } from "./keyo-upload-zip";
+import { KEYO_GIT_EXTRAS, KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME, sourceZip } from "./keyo-upload-zip";
 
 const exec = promisify(execFile);
 export const KEYO_VERSION = "0.1.0-alpha.1";
@@ -34,6 +34,50 @@ export async function buildKeyoRelease(root = process.cwd()) {
   for (const [name, content] of Object.entries(KEYO_GIT_EXTRAS)) uploadFiles.push({ name, data: Buffer.from(content) });
   const zip = sourceZip(uploadFiles);
   await writeFile(path.join(directory, KEYO_UPLOAD_FILENAME), zip);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const spaceFiles = await Promise.all(["index.html", "style.css", "app.mjs", "bridge.mjs"].map(async name => {
+    const file = path.join(root, "packages", "keyo-studio", "desktop", "renderer", name);
+    if (!(await lstat(file)).isFile()) throw new Error("Non-regular Space asset refused.");
+    let data = await readFile(file);
+    if (name === "index.html") data = Buffer.from(data.toString().replace("</body>",
+      `<footer class="notice"><a href="./${KEYO_FILENAME}" download>Download KEYO Studio source — developer alpha</a></footer>\n</body>`));
+    return { name, data };
+  }));
+  spaceFiles.push({ name: KEYO_FILENAME, data: bytes });
+  spaceFiles.push({ name: "LICENSE", data: await readFile(path.join(root, "packages", "keyo-studio", "LICENSE")) });
+  spaceFiles.push({ name: "README.md", data: Buffer.from(`---
+title: KEYO Studio
+sdk: static
+app_file: index.html
+license: mit
+colorFrom: green
+colorTo: yellow
+short_description: Ugandan-built local AI runner — preview and source
+---
+
+# KEYO Studio — KEYO Technologies, Uganda
+
+Open-source local LLM/SLM runner with our own CPU engine.
+This Space is an **interface preview and source download**, not cloud/browser inference.
+Conversation creation, editing and deletion are browser-local. Model selection and
+generation are disabled here; install the desktop source on your device to run models.
+
+[Download the developer-alpha source](./${KEYO_FILENAME})
+
+SHA-256: \`${sha256}\`
+
+CLI: Node >=20. Desktop development: Node >=22.12 and Electron.
+Current limits: 256 MiB weights, 512 context tokens and 128 output tokens.
+Larger models, GPU inference and signed Windows/macOS installers are unfinished.
+No model weights, credentials, paid API or telemetry are included.
+
+GitHub: https://github.com/kayondoabass-svg/keyo-studio
+The GitHub source upload is still being completed; the archive above contains
+the complete developer-alpha package. MIT covers our code only, not third-party
+model weights. Listing on Hugging Face does not automatically generate payments.
+`) });
+  const spaceZip = sourceZip(spaceFiles);
+  await writeFile(path.join(directory, KEYO_SPACE_UPLOAD_FILENAME), spaceZip);
   const manifest = {
     name: "KEYO Studio LLM/SLM Runner",
     version: KEYO_VERSION,
@@ -45,7 +89,7 @@ export async function buildKeyoRelease(root = process.cwd()) {
     engine: "Independent JavaScript CPU transformer implementation",
     dependencyCount: 0,
     downloadUrl: `/downloads/keyo-studio/${KEYO_FILENAME}`,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
+    sha256,
     bytes: bytes.length,
     files,
     manualUpload: {
@@ -54,6 +98,13 @@ export async function buildKeyoRelease(root = process.cwd()) {
       bytes: zip.length,
       sha256: createHash("sha256").update(zip).digest("hex"),
       files: uploadFiles.map(file => file.name),
+    },
+    huggingFaceUpload: {
+      filename: KEYO_SPACE_UPLOAD_FILENAME,
+      downloadUrl: `/downloads/keyo-studio/${KEYO_SPACE_UPLOAD_FILENAME}`,
+      bytes: spaceZip.length,
+      sha256: createHash("sha256").update(spaceZip).digest("hex"),
+      files: spaceFiles.map(file => file.name),
     },
     implementedArchitectures: ["gpt_neo", "qwen2", "llama"],
     pretrainedSmokeCheckedArchitectures: ["llama"],

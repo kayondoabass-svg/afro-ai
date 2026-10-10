@@ -1,6 +1,7 @@
 import { deflateRawSync } from "node:zlib";
 
 export const KEYO_UPLOAD_FILENAME = "keyo-studio-github-upload.zip";
+export const KEYO_SPACE_UPLOAD_FILENAME = "keyo-studio-huggingface-upload.zip";
 export const KEYO_GIT_EXTRAS: Record<string, string> = {
   ".gitignore": "node_modules/\ndist/\nmodels/\nweights/\n*.safetensors\n*.gguf\n*.bin\n*.tgz\n*.tar.gz\n.env*\n**/api-token\n",
   ".github/workflows/tests.yml": `name: Runner checks

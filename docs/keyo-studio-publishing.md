@@ -66,6 +66,13 @@ Do not reuse a published tag/version for later changes.
 
 ## Hugging Face
 
+For manual upload, use the separate **keyo-studio-huggingface-upload.zip**
+from the running workspace's `/downloads/keyo-studio/` path. Extract it and
+upload its seven root-level files through **Files → Add file → Upload files**.
+Keep the source `.tgz` intact: visitors download it as an archive. Replace the
+starter README/index/style files with our versions and retain the Space's existing
+`.gitattributes`. Do not upload the GitHub ZIP, private weights or platform files.
+
 1. Create a new **Space** called `KEYO-Studio`, selecting the **Static** SDK.
    This preview does not start a GPU or paid inference endpoint.
 2. Authenticate Git using your normal Hugging Face account/SSH or secure token

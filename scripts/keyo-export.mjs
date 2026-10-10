@@ -75,7 +75,7 @@ app_file: index.html
 license: mit
 colorFrom: green
 colorTo: yellow
-short_description: Ugandan-built local AI runner — interface preview and source download
+short_description: Ugandan-built local AI runner — preview and source
 ---
 
 # KEYO Studio — KEYO Technologies, Uganda
