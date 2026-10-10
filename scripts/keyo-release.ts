@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile, cp, lstat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { KEYO_GIT_EXTRAS, KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME, sourceZip } from "./keyo-upload-zip";
+import { KEYO_PUBLIC_LINKS, prepareReleaseAssets } from "./keyo-release-assets";
 
 const exec = promisify(execFile);
 export const KEYO_VERSION = "0.1.0-alpha.1";
@@ -71,17 +72,20 @@ Current limits: 256 MiB weights, 512 context tokens and 128 output tokens.
 Larger models, GPU inference and signed Windows/macOS installers are unfinished.
 No model weights, credentials, paid API or telemetry are included.
 
-GitHub: https://github.com/kayondoabass-svg/keyo-studio
-The GitHub source upload is still being completed; the archive above contains
-the complete developer-alpha package. MIT covers our code only, not third-party
+GitHub: ${KEYO_PUBLIC_LINKS.github}
+The archive above contains the complete developer-alpha package.
+MIT covers our code only, not third-party
 model weights. Listing on Hugging Face does not automatically generate payments.
 `) });
   const spaceZip = sourceZip(spaceFiles);
   await writeFile(path.join(directory, KEYO_SPACE_UPLOAD_FILENAME), spaceZip);
+  const releaseAssets = await prepareReleaseAssets(directory, KEYO_FILENAME, bytes, zip);
   const manifest = {
     name: "KEYO Studio LLM/SLM Runner",
     version: KEYO_VERSION,
     stage: "developer-alpha",
+    publicLinks: KEYO_PUBLIC_LINKS,
+    releaseAssets,
     license: "MIT (this package's code only)",
     runtime: "Node.js >=20",
     desktopDevelopmentRuntime: "Node.js >=22.12 + Electron; dependencies are not bundled in this source archive",

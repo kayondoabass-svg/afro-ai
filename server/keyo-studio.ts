@@ -5,6 +5,7 @@ import path from "node:path";
 import { buildKeyoRelease, KEYO_FILENAME } from "../scripts/keyo-release";
 import { keyoStudioPage } from "./keyo-studio-page";
 import { KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME } from "../scripts/keyo-upload-zip";
+import { KEYO_RELEASE_ASSETS, KEYO_RELEASE_BUNDLE } from "../scripts/keyo-release-assets";
 
 let pending: Promise<Awaited<ReturnType<typeof buildKeyoRelease>>> | undefined;
 async function release() {
@@ -15,6 +16,8 @@ async function release() {
         await stat(path.resolve("dist/keyo-studio", KEYO_FILENAME));
         await stat(path.resolve("dist/keyo-studio", KEYO_UPLOAD_FILENAME));
         await stat(path.resolve("dist/keyo-studio", KEYO_SPACE_UPLOAD_FILENAME));
+        await stat(path.resolve("dist/keyo-studio", KEYO_RELEASE_BUNDLE));
+        if (!manifest.releaseAssets?.length) throw Object.assign(new Error("Release assets require rebuilding."), { code: "ENOENT" });
         if (manifest.huggingFaceUpload?.filename !== KEYO_SPACE_UPLOAD_FILENAME) throw Object.assign(new Error("Space upload ZIP requires rebuilding."), { code: "ENOENT" });
         if (manifest.manualUpload?.filename !== KEYO_UPLOAD_FILENAME) throw Object.assign(new Error("Manual upload ZIP requires rebuilding."), { code: "ENOENT" });
         if (manifest.downloadUrl !== `/downloads/keyo-studio/${KEYO_FILENAME}`) throw new Error("Release contract mismatch.");
@@ -49,6 +52,21 @@ export function registerKeyoStudio(app: Express) {
     try { res.set("Cache-Control", "no-store").json(await release()); }
     catch { res.status(503).json({ message: "KEYO release is unavailable. Please try again later." }); }
   });
+  for (const filename of KEYO_RELEASE_ASSETS) {
+    app.get(`/downloads/keyo-studio/${filename}`, async (_req, res) => {
+      try {
+        const manifest = await release();
+        const asset = manifest.releaseAssets.find((entry: {filename: string}) => entry.filename === filename);
+        if (!asset) throw new Error("Release asset missing.");
+        res.set("Cache-Control", "no-store");
+        res.set("X-Content-SHA256", asset.sha256);
+        res.set("X-Content-Type-Options", "nosniff");
+        res.download(path.resolve("dist/keyo-studio", filename), filename, error => {
+          if (error && !res.headersSent) res.status(503).json({ message: "KEYO release asset is unavailable." });
+        });
+      } catch { res.status(503).json({ message: "KEYO release asset is unavailable." }); }
+    });
+  }
   app.get(`/downloads/keyo-studio/${KEYO_UPLOAD_FILENAME}`, async (_req, res) => {
     try {
       const manifest = await release();

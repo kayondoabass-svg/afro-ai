@@ -1,3 +1,5 @@
+import { KEYO_PUBLIC_LINKS, KEYO_RELEASE_BUNDLE, KEYO_RELEASE_NOTES } from "../scripts/keyo-release-assets";
+
 export function keyoStudioPage(): string {
   return `<!doctype html>
 <html lang="en">
@@ -7,6 +9,10 @@ export function keyoStudioPage(): string {
   <meta name="theme-color" content="#eef0e7">
   <title>KEYO Studio — Local AI, open to inspection</title>
   <meta name="description" content="KEYO Studio is an early developer alpha with our own local JavaScript CPU inference engine. No paid API. No telemetry.">
+  <link rel="canonical" href="https://afroaigroup.com/keyo-studio">
+  <meta property="og:title" content="KEYO Studio — Open-source local LLM/SLM runner">
+  <meta property="og:description" content="Ugandan-built by KEYO Technologies. Independent CPU engine, developer-alpha source on GitHub and interface preview on Hugging Face.">
+  <meta property="og:url" content="https://afroaigroup.com/keyo-studio">
   <style>
     :root {
       color-scheme: light;
@@ -117,7 +123,7 @@ export function keyoStudioPage(): string {
     .release { display:flex; justify-content:space-between; align-items:center; gap:28px; padding:27px; background:var(--lime); border-radius:5px; }
     .release h3 { margin:0 0 7px; font:400 25px var(--serif); letter-spacing:-.03em; }
     .release p { margin:0; color:#4f5c3b; font-size:12px; line-height:1.7; }
-    .release .button { flex:none; background:var(--forest); border-color:var(--forest); }
+    .release .button { flex:none; background:var(--forest); border-color:var(--forest); color:#f4f5ed; }
     .footer { padding:34px 0 42px; }
     .footer-inner { display:flex; justify-content:space-between; align-items:center; gap:18px; color:#6b766c; font-size:11px; }
     .footer-links { display:flex; flex-wrap:wrap; gap:20px; }
@@ -258,9 +264,11 @@ export function keyoStudioPage(): string {
           <div><h3>KEYO Studio 0.1.0-alpha.1</h3><p>Early developer alpha · Source package · Model weights not included</p></div>
           <div class="actions" style="margin:0">
             <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-0.1.0-alpha.1.tgz">Download source <span class="arrow" aria-hidden="true">↓</span></a>
+            <a class="button secondary" href="/downloads/keyo-studio/${KEYO_RELEASE_BUNDLE}">Release files ZIP</a>
             <a class="button secondary" href="/api/keyo-studio/release">Release API <span class="arrow" aria-hidden="true">↗</span></a>
           </div>
         </div>
+        <p class="section-intro" style="margin-top:24px">Published developer source: <a href="${KEYO_PUBLIC_LINKS.github}" target="_blank" rel="noopener noreferrer">GitHub — KEYO Studio</a>. Live browser interface preview: <a href="${KEYO_PUBLIC_LINKS.huggingFace}" target="_blank" rel="noopener noreferrer">Hugging Face — KEYO Studio</a>. The preview does not run models.</p>
       </div>
     </section>
   </main>
@@ -268,7 +276,7 @@ export function keyoStudioPage(): string {
     <div class="wrap footer-inner">
       <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">K</span> KEYO Studio</a>
       <div>Open local execution, one alpha at a time.</div>
-      <div class="footer-links"><a href="/">Afro AI home</a><a href="/api/keyo-studio/release">Release details</a><a href="/downloads/keyo-studio/afro-ai-keyo-studio-0.1.0-alpha.1.tgz">Source package</a><a href="/downloads/keyo-studio/keyo-studio-github-upload.zip">GitHub upload ZIP</a></div>
+      <div class="footer-links"><a href="/">Afro AI home</a><a href="/api/keyo-studio/release">Release details</a><a href="/downloads/keyo-studio/${KEYO_RELEASE_NOTES}">Release notes</a><a href="${KEYO_PUBLIC_LINKS.github}" target="_blank" rel="noopener noreferrer">GitHub source</a><a href="${KEYO_PUBLIC_LINKS.huggingFace}" target="_blank" rel="noopener noreferrer">Hugging Face preview</a></div>
     </div>
   </footer>
   <script>

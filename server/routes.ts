@@ -218,6 +218,7 @@ export async function registerRoutes(
       "Disallow: /admin-command\n" +
       "Disallow: /d1\n" +
       "Disallow: /overview\n\n" +
+      "Disallow: /keyo-studio/workspace/\n\n" +
       "Sitemap: https://afroaigroup.com/sitemap.xml\n"
     );
   });
@@ -228,6 +229,7 @@ export async function registerRoutes(
   <url><loc>https://afroaigroup.com/afro-auth</loc></url>
   <url><loc>https://afroaigroup.com/docs/auth</loc></url>
   <url><loc>https://afroaigroup.com/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://afroaigroup.com/keyo-studio</loc><lastmod>2026-10-11</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://afroaigroup.com/pricing</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.9</priority></url>
   <url><loc>https://afroaigroup.com/templates</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>
   <url><loc>https://afroaigroup.com/marketplace</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>
