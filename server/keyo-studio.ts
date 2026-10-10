@@ -8,7 +8,7 @@ import { KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME } from "../scripts/key
 import { KEYO_RELEASE_ASSETS, KEYO_RELEASE_BUNDLE } from "../scripts/keyo-release-assets";
 
 let pending: Promise<Awaited<ReturnType<typeof buildKeyoRelease>>> | undefined;
-async function release() {
+export async function release() {
   if (!pending) {
     pending = (async () => {
       try {

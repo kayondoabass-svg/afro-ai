@@ -61,6 +61,7 @@ import afroLogo from "@assets/IMG_5719_1771852498362.png";
 import { requestNewChat } from "@/lib/chat-entry";
 
 export const ALL_MENU_ITEMS = [
+  { titleKey: "sidebar.keyoStudio", title: "KEYO Studio", url: "/keyo-studio", icon: Terminal },
   { titleKey: "sidebar.newChat", title: "New Chat", url: "/chat", icon: MessageSquare },
   { titleKey: "sidebar.dashboard", title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { titleKey: "sidebar.imagesVideos", title: "Images & Videos", url: "/media", icon: Images },
@@ -101,6 +102,7 @@ export const ALL_MENU_ITEMS = [
 const FOUNDER_ITEMS = [
   { titleKey: "sidebar.founderDashboard", title: "Founder Dashboard", url: "/founder", icon: Crown },
   { titleKey: "sidebar.commandCenter", title: "Command Center", url: "/admin-command", icon: Terminal },
+  { titleKey: "sidebar.keyoStudioRunner", title: "KEYO Studio runner studio", url: "/admin-command/keyo-studio", icon: Terminal },
   { titleKey: "sidebar.d1", title: "D1 Database", url: "/d1", icon: DatabaseZap },
 ];
 
@@ -111,7 +113,7 @@ export const MENU_GROUPS = [
   { id: "ussd", titleKey: "sidebar.groupUssd", title: "USSD", icon: PhoneCall, urls: ["/ussd", "/ussd/apps"] },
   { id: "domains", titleKey: "sidebar.groupDomains", title: "Domains", icon: Globe, urls: ["/domains?tab=search", "/domains?tab=mydomains"] },
   { id: "marketing", titleKey: "sidebar.groupMarketing", title: "Marketing & Content", icon: BarChart3, urls: ["/blog", "/email", "/analytics", "/seo"] },
-  { id: "developer", titleKey: "sidebar.groupDeveloper", title: "Developer Tools", icon: Terminal, urls: ["/playground", "/integrations", "/webhooks", "/email-api", "/dashboard/auth", "/chatbots", "/knowledge", "/files", "/secrets", "/console", "/logs"] },
+  { id: "developer", titleKey: "sidebar.groupDeveloper", title: "Developer Tools", icon: Terminal, urls: ["/keyo-studio", "/playground", "/integrations", "/webhooks", "/email-api", "/dashboard/auth", "/chatbots", "/knowledge", "/files", "/secrets", "/console", "/logs"] },
   { id: "billing", titleKey: "sidebar.billing", title: "Billing & Usage", icon: Receipt, urls: ["/billing", "/pricing"] },
   { id: "partners", titleKey: "sidebar.groupPartners", title: "Partners & Referrals", icon: Handshake, urls: ["/become-partner", "/referrals", "/partner-portal"] },
 ];
@@ -176,11 +178,15 @@ export function AppSidebar() {
   );
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
   const renderLeaf = (item: MenuItem) => (
-    <SidebarMenuItem key={item.url}>
+    <SidebarMenuItem key={item.url} className={item.url === "/admin-command/keyo-studio" ? "pl-4" : undefined}>
       <SidebarMenuButton asChild isActive={activeUrl === item.url} tooltip={label(item)}>
         <Link
           href={item.url}
            onClick={event => {
+             if (item.url === "/keyo-studio" && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+               event.preventDefault();
+               window.location.assign(item.url);
+             }
              if (item.url === "/chat" && requestNewChat()) event.preventDefault();
              closeMobile();
            }}
@@ -269,7 +275,7 @@ export function AppSidebar() {
             <SidebarGroupLabel className="text-primary">{t("sidebar.founder")}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {FOUNDER_ITEMS.map(renderLeaf)}
+                 {FOUNDER_ITEMS.map(renderLeaf)}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

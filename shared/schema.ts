@@ -8,6 +8,17 @@ import { sql } from "drizzle-orm";
 import { users } from "./models/auth";
 
 const mediaBytes = customType<{ data: Buffer }>({ dataType: () => "bytea" });
+// Private platform management only; never exported with the public runner.
+export const keyoStudioInvites = pgTable("keyo_studio_invites", {
+  email: text("email").primaryKey(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const keyoStudioPresence = pgTable("keyo_studio_presence", {
+  userId: text("user_id").primaryKey(),
+  email: text("email").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
 export const mediaJobs = pgTable("media_jobs", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),

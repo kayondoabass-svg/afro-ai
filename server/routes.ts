@@ -1,5 +1,7 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
-import { registerKeyoStudio } from "./keyo-studio";
+import { registerKeyoStudio, release as keyoRelease } from "./keyo-studio";
+import { registerKeyoStudioAdmin } from "./keyo-studio-admin";
+import { keyoAdminStore } from "./keyo-studio-admin-store";
 import { registerApiVersionDocs, versionedApiNotFound } from "./api-versioning";
 import { scanFailure, manualKnowledge, CUSTOMER_CHAT_POLICY, verifyWidgetHtml } from "./chatbot-support";
 import { saveScan } from "./chatbot-scan-persistence";
@@ -311,6 +313,8 @@ export async function registerRoutes(
   });
 
   await setupAuth(app);
+  registerKeyoStudioAdmin(app, { authenticate: isAuthenticated, founderEmail: FOUNDER_EMAIL, store: keyoAdminStore, getRelease: keyoRelease,
+    allowedOrigins: ["https://afroaigroup.com", "https://www.afroaigroup.com"] });
   registerAppInstallRoutes(app, isFounder);
   registerDomainManagementRoutes(app, isAuthenticated);
   registerAuthRoutes(app);

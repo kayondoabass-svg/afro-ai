@@ -32,6 +32,7 @@ const PricingPage = lazy(() => import("@/pages/pricing"));
 const DeploymentsPage = lazy(() => import("@/pages/deployments"));
 const FounderDashboardPage = lazy(() => import("@/pages/founder-dashboard"));
 const AdminCommandPage = lazy(() => import("@/pages/admin-command"));
+const KeyoStudioAdminPage = lazy(() => import("@/pages/keyo-studio-admin"));
 const TeamManagementPage = lazy(() => import("@/pages/team-management"));
 const ReferralsPage = lazy(() => import("@/pages/referrals"));
 const AboutPage = lazy(() => import("@/pages/about"));
@@ -136,6 +137,7 @@ function AuthenticatedLayout() {
                 <Route path="/pricing" component={PricingPage} />
                 <Route path="/founder" component={FounderDashboardPage} />
                 <Route path="/team" component={TeamManagementPage} />
+                <Route path="/admin-command/keyo-studio" component={KeyoStudioAdminPage} />
                 <Route path="/admin-command" component={AdminCommandPage} />
                 <Route path="/referrals" component={ReferralsPage} />
                 <Route path="/templates" component={TemplatesPage} />
@@ -277,6 +279,7 @@ const AUTH_REQUIRED_EXACT = new Set<string>([
   "/founder",
   "/team",
   "/admin-command",
+  "/admin-command/keyo-studio",
   "/referrals",
   "/settings",
   "/billing",

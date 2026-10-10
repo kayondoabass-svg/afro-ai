@@ -15,3 +15,13 @@ Keep invite management founder-only; default invited users to viewing rather
 than release/access administration. Distinguish authorized users from currently
 viewing users so the counter does not imply offline desktop users are tracked.
 Keep this management dashboard in the platform, not the public runner export.
+
+Completion must include discoverable public product links and the actual private
+management UI, not just a public product page or sitemap entry.
+
+**Why:** The user reported missing founder navigation and footer links after
+the public page and sitemap were available. Those checks alone did not
+establish that the requested platform integration was finished.
+
+**How to apply:** Check each requested entry point and permission path
+separately. Distinguish code pushed to GitHub from the VPS actually running it.

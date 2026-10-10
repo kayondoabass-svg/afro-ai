@@ -642,6 +642,9 @@ export default function AdminCommandPage() {
             <h2 className="font-semibold text-sm" data-testid="text-command-title">Founder Command Center</h2>
             <p className="text-xs text-muted-foreground">Type what you want to build or change. AI will generate it instantly.</p>
           </div>
+          <Button size="sm" variant="outline" asChild>
+            <a href="/admin-command/keyo-studio" data-testid="link-command-keyo-studio">KEYO Studio runner studio</a>
+          </Button>
           {showPreview && previewCode && (
             <Button size="sm" variant="outline" className="md:hidden gap-1.5 flex-shrink-0" onClick={() => setMobileView("preview")} data-testid="button-switch-to-preview">
               <Eye className="w-3.5 h-3.5" />

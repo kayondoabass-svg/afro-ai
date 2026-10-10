@@ -631,6 +631,7 @@ export default function LandingPage() {
               <div className="space-y-2 text-sm text-muted-foreground">
                 <a href="/website-builder" className="block hover:text-primary transition-colors" data-testid="link-footer-website-builder">{t("footer.websiteBuilder")}</a>
                 <a href="/app-designer" className="block hover:text-primary transition-colors" data-testid="link-footer-app-designer">{t("footer.appDesigner")}</a>
+                <a href="/keyo-studio" className="block hover:text-primary transition-colors" data-testid="link-footer-keyo-studio">KEYO Studio — Open-source runner</a>
                 <a href={loginUrl} className="block hover:text-primary transition-colors" data-testid="link-footer-ai-assistant">{t("footer.aiAssistant")}</a>
                 <a href="/templates" className="block hover:text-primary transition-colors" data-testid="link-footer-templates">{t("footer.templates")}</a>
                 <a href="/marketplace" className="block hover:text-primary transition-colors" data-testid="link-footer-marketplace">{t("footer.marketplace")}</a>
