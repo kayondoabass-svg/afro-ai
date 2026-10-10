@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import type { ChatbotWidget } from "@shared/schema";
 import { ChatbotKnowledgeBase } from "@/components/chatbot-knowledge-base";
+import { ChatbotPrivateKnowledge } from "@/components/chatbot-private-knowledge";
+import { chatbotReplyAllowance } from "@shared/chatbot-display";
 import { Sparkles as SparklesIcon } from "lucide-react";
 
 const SENSITIVE_CATEGORIES = [
@@ -86,9 +88,9 @@ export default function ChatbotsPage() {
       if (data.knowledge) {
         onResult(data.knowledge);
         toast({
-          title: data.isSpa ? "Partial scan — template added" : "Website scanned!",
+          title: data.isSpa ? "Limited website content extracted" : "Website scanned!",
           description: data.isSpa
-            ? "Site uses JavaScript rendering — basic info extracted. Fill in the [brackets] to complete your knowledge base."
+            ? "Only limited content could be read. No placeholder template was added. Review the draft and add missing facts."
             : "Knowledge base auto-filled. Review and add any missing details."
         });
       } else {
@@ -198,7 +200,7 @@ export default function ChatbotsPage() {
               )}
             </h1>
             <p className="text-xs text-muted-foreground">
-              {sub ? `${sub.repliesLimit - sub.repliesUsed} AI replies remaining this month` : "Embed AI customer service on any website"}
+          {chatbotReplyAllowance(sub)}
             </p>
           </div>
         </div>
@@ -530,11 +532,11 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
       const r = await apiRequest("POST", "/api/chatbots/scan-url", { url });
       const data = await r.json();
       if (data.knowledge) {
-        setEdit(f => ({ ...f, knowledgeBase: data.knowledge + buildOmitInstructions(kbOmitCats) }));
+        setEdit(f => ({ ...f, knowledgeBase: [f.knowledgeBase, data.knowledge + buildOmitInstructions(kbOmitCats)].filter(Boolean).join("\n\n") }));
         toast({
-          title: data.isSpa ? "Partial scan — template added" : "Website scanned",
+          title: data.isSpa ? "Limited website content extracted" : "Website scanned",
           description: data.isSpa
-            ? "This site loads content via JavaScript so only basic info was extracted. Fill in the [brackets] with your details."
+            ? "Only limited content could be read. Existing knowledge was kept; review the draft and add missing facts."
             : `${data.knowledge.length.toLocaleString()} chars extracted. Review and save.`
         });
       } else {
@@ -697,7 +699,7 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="font-semibold text-sm">Widget Status</p>
-              <p className="text-xs text-muted-foreground">{widget.isActive ? "Active — responding to visitors" : "Inactive — widget is hidden"}</p>
+              <p className="text-xs text-muted-foreground">{widget.isActive ? "Enabled — check installation and test a visitor reply" : "Disabled — visitor replies are off"}</p>
             </div>
             <Switch
               checked={widget.isActive}
@@ -862,9 +864,8 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
           />
           <p className="text-xs text-muted-foreground">{(edit.knowledgeBase || "").length.toLocaleString()} characters</p>
         </div>
-        <Button onClick={() => onUpdate({ knowledgeBase: edit.knowledgeBase })} disabled={isUpdating} className="w-full">
-          {isUpdating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</> : <><BookOpen className="w-4 h-4 mr-2" />Save Knowledge Base</>}
-        </Button>
+        <ChatbotPrivateKnowledge key={widget.id} widgetId={widget.id} draft={edit.knowledgeBase || ""}
+          onDraftChange={knowledgeBase => setEdit(f => ({ ...f, knowledgeBase }))} />
       </TabsContent>
 
       <TabsContent value="autoscan" className="flex-1 overflow-auto p-6 mt-0">

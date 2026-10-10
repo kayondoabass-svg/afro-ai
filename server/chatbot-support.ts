@@ -4,7 +4,7 @@ import { redactPrivateCredentials } from "./chat-credential-safety";
 export function scanFailure(error: unknown): string {
   const reference = crypto.randomUUID().slice(0, 8);
   console.error(`[chatbot-scan:${reference}]`, error);
-  return `Scan could not be completed. No scan changes were saved. Retry or contact support with reference ${reference}.`;
+  return `Scan could not be completed. Your existing approved knowledge is unchanged. Some source files may have been saved privately. Retry or contact support with reference ${reference}.`;
 }
 
 export function manualKnowledge(text: string | null | undefined): string {
@@ -27,9 +27,9 @@ export function verifyWidgetHtml(html: string, pageUrl: string, key: string) {
   // unrelated key or text anywhere in the page.
   const markup = html.replace(/<!--[\s\S]*?-->/g, "");
   let found = false;
-  for (const match of markup.matchAll(/<script\b([^>]*)>/gi)) {
+  for (const match of Array.from(markup.matchAll(/<script\b([^>]*)>/gi))) {
     const attrs = new Map<string, string>();
-    for (const attr of match[1].matchAll(/([:\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) {
+    for (const attr of Array.from(match[1].matchAll(/([:\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+))/g))) {
       attrs.set(attr[1].toLowerCase(), (attr[2] ?? attr[3] ?? attr[4]).replace(/&amp;/gi, "&"));
     }
     try {

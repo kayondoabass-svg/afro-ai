@@ -80,6 +80,7 @@ async function isDnsSafe(hostname: string): Promise<boolean> {
 
 function isSafeUrl(u: URL): boolean {
   if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  if (u.username || u.password) return false;
   if (isPrivateOrLocalHost(u.hostname)) return false;
   // Reject our own infrastructure so users can't recursively fetch the site
   // through itself (cheap amplification + risk of internal endpoints).
@@ -165,6 +166,34 @@ async function readBodyCapped(res: Response): Promise<string> {
   return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
 }
 
+// Raw, bounded public HTML/text for robots, sitemap and installation checks.
+// Unlike fetch(...redirect:"follow"), every redirect is checked before fetching.
+export async function fetchPublicPage(url: string, signal?: AbortSignal): Promise<{ url: string; html: string }> {
+  const timeout = AbortSignal.timeout(PER_URL_TIMEOUT_MS);
+  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  let current = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const target = new URL(current);
+    if (!isSafeUrl(target) || !(await isDnsSafe(target.hostname))) throw new Error("Blocked non-public website");
+    const response = await fetch(target, {
+      headers: { "User-Agent": UA, Accept: "text/html,text/plain,application/xml;q=0.9" },
+      redirect: "manual", signal: combined,
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      await response.body?.cancel();
+      if (!location || hop === MAX_REDIRECTS) throw new Error("Invalid or excessive redirects");
+      current = new URL(location, target).toString();
+      continue;
+    }
+    if (!response.ok) throw new Error(`Website HTTP ${response.status}`);
+    const type = response.headers.get("content-type") || "";
+    if (type && !/text\/|html|xml/i.test(type)) throw new Error("Unsupported website content");
+    return { url: current, html: await readBodyCapped(response) };
+  }
+  throw new Error("Excessive redirects");
+}
+
 /**
  * Try Jina AI Reader first (returns clean markdown, handles JS-rendered pages),
  * then fall back to a direct fetch if Jina is rate-limited / down / blocks the
@@ -179,6 +208,7 @@ export async function scrapeUrl(url: string, signal?: AbortSignal): Promise<Scra
     return { url, ok: false, error: "invalid URL" };
   }
   if (!isSafeUrl(u)) return { url, ok: false, error: "blocked (private/internal host)" };
+  if (!(await isDnsSafe(u.hostname))) return { url, ok: false, error: "blocked (non-public DNS)" };
 
   const target = u.toString();
 
@@ -219,7 +249,10 @@ export async function scrapeUrl(url: string, signal?: AbortSignal): Promise<Scra
           // First line of Jina output is usually "Title: ..." — extract it
           const titleMatch = md.match(/^\s*Title:\s*(.+)$/m);
           const title = titleMatch ? titleMatch[1].trim() : "";
-          const text = md.replace(/\s+/g, " ").trim().slice(0, PER_URL_MAX_OUT_CHARS);
+          // Reader metadata alone is not usable website knowledge.
+          const body = md.includes("Markdown Content:") ? md.split("Markdown Content:").slice(1).join("Markdown Content:") : md;
+          const text = body.trim().slice(0, PER_URL_MAX_OUT_CHARS);
+          if (text.length < 80) throw new Error("Reader returned metadata without usable content");
           return { url: target, ok: true, title, text };
         }
         console.warn(`[scrapeUrl] Jina returned thin/rate-limited body for ${target}, falling back`);

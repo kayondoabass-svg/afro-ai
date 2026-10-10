@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { runAutoScan } from "./chatbot-autoscan";
 import { storage } from "./storage";
 import { saveScan } from "./chatbot-scan-persistence";
+import { archiveScan } from "./chatbot-knowledge-files";
 
 function escapeLiteral(s: string): string { return s.replace(/'/g, "''"); }
 
@@ -24,6 +25,7 @@ async function runOnce(widget: { id: number; userId: string; websiteUrl: string 
   try {
     const result = await runAutoScan(widget.id, widget.websiteUrl, { maxPages: 20 });
 
+    await archiveScan(widget.userId, widget.id, result);
     const saved = await saveScan(widget.id, result, "incremental");
 
     const stats = {
@@ -42,7 +44,7 @@ async function runOnce(widget: { id: number; userId: string; websiteUrl: string 
           last_scan_stats = '${statsJson}'
       WHERE id = ${widget.id}
     `));
-    console.log(`[scan-scheduler] widget ${widget.id}: ${inserted.length} new Q&As from ${result.pagesScanned} pages (${stats.durationMs}ms)`);
+    console.log(`[scan-scheduler] widget ${widget.id}: ${saved.inserted} new Q&As from ${result.pagesScanned} pages (${stats.durationMs}ms)`);
   } catch (e: any) {
     console.error(`[scan-scheduler] widget ${widget.id} failed:`, e?.message || e);
     // Push next run forward to avoid hammering a broken site.

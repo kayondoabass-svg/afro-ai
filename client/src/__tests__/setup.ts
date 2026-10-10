@@ -14,8 +14,8 @@ if (!process.env.DATABASE_URL) {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  localStorage.clear();
-  sessionStorage.clear();
+  if (typeof localStorage !== "undefined") localStorage.clear();
+  if (typeof sessionStorage !== "undefined") sessionStorage.clear();
 });
 
 if (typeof window !== "undefined" && !("matchMedia" in window)) {

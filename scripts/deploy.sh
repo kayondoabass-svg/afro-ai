@@ -292,6 +292,9 @@ main() {
   if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/project-files-d1-preflight.ts" --require-ready; then
     die "Project-files D1 preflight failed; no D1 changes made. Existing service remains running."
   fi
+  if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/chatbot-knowledge-migrate.ts"; then
+    die "Private knowledge-folder schema not ready. Apply migration 004 explicitly before retrying; existing service remains running."
+  fi
 
   if ! run_build; then
     log "Build FAILED — entering recovery"

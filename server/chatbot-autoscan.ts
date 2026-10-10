@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import type { InsertChatbotQa } from "@shared/schema";
-import { scrapeUrl } from "./url-scrape";
+import { scrapeUrl, fetchPublicPage } from "./url-scrape";
 
 const UA = "AfroAIBot";
 const FULL_UA = "Mozilla/5.0 (compatible; AfroAIBot/1.0; +https://afroaigroup.com)";
@@ -45,13 +45,7 @@ export type ScannedPage = {
 async function fetchText(url: string, signal?: AbortSignal): Promise<string | null> {
   if (!isSafeUrl(url)) return null;
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": FULL_UA, Accept: "text/html,application/xhtml+xml,application/xml,text/plain,*/*" },
-      redirect: "follow",
-      signal: signal ?? AbortSignal.timeout(12000),
-    });
-    if (!res.ok) return null;
-    return await res.text();
+    return (await fetchPublicPage(url, signal)).html;
   } catch {
     return null;
   }
@@ -60,15 +54,7 @@ async function fetchText(url: string, signal?: AbortSignal): Promise<string | nu
 async function fetchHtml(url: string, signal?: AbortSignal): Promise<string | null> {
   if (!isSafeUrl(url)) return null;
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": FULL_UA, Accept: "text/html,application/xhtml+xml" },
-      redirect: "follow",
-      signal: signal ?? AbortSignal.timeout(12000),
-    });
-    if (!res.ok) return null;
-    const ct = res.headers.get("content-type") || "";
-    if (!ct.includes("html")) return null;
-    return await res.text();
+    return (await fetchPublicPage(url, signal)).html;
   } catch {
     return null;
   }
@@ -416,6 +402,7 @@ export function dedupeQas<T extends { question: string }>(rows: T[], threshold =
 
 // ============ FULL SCAN PIPELINE ============
 export type ScanResult = {
+  sources?: { url: string; title: string; text: string }[];
   pagesScanned: number;
   qasExtracted: number;
   qasSensitive: number;
@@ -440,6 +427,7 @@ export async function runAutoScan(widgetId: number, startUrl: string, opts: RunO
     signal,
     onPage: ({ scanned, total, url }) => opts.onProgress?.({ phase: "crawl", scanned, total, url }),
   });
+  if (signal?.aborted) throw new Error("Scan cancelled");
 
   if (signal?.aborted) {
     return { pagesScanned: pages.length, qasExtracted: 0, qasSensitive: 0, qasDeduped: 0, topics: [], rows: [], pageHashes: pages.map((p) => ({ url: p.url, hash: p.hash })) };
@@ -482,6 +470,7 @@ export async function runAutoScan(widgetId: number, startUrl: string, opts: RunO
   opts.onProgress?.({ phase: "done", scanned: pages.length, total: pages.length });
 
   return {
+    sources: pages.map(p => ({ url: p.url, title: p.title, text: p.text })),
     pagesScanned: pages.length,
     qasExtracted: beforeDedupe,
     qasDeduped: beforeDedupe - deduped.length,

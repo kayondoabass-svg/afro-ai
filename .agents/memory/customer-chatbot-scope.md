@@ -9,7 +9,7 @@ Chatbot fixes must serve all customers well, not refer to BrightBoard only.
 
 **How to apply:** Use tenant-scoped, site-independent fixes and regression tests. Do not hard-code one customer's website, answers, credentials, or identity into platform behavior.
 
-The Save option needs a folder backed by R2 or D1, a chance to edit, and access only by the owning user.
+The Save option for chatbot knowledge and website scans needs a folder backed by R2 or D1, a chance to edit, and access only by the owning user. This folder is for knowledge/scans, not generated documents.
 
 **Why:** The user explicitly requested this saved-folder behavior and asked that it be remembered.
 
