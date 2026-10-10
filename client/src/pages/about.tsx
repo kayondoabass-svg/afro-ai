@@ -41,19 +41,44 @@ export default function AboutPage() {
               About <span className="text-primary">Afro AI</span>
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              A product of <strong className="text-foreground">KEYO TECHNOLOGIES</strong>, a registered business in the Pearl of Africa, Uganda — and the first AI platform in Africa dedicated to powering startups across the continent.
+              A product of <strong className="text-foreground">KEYO TECHNOLOGIES</strong>, a registered Ugandan business building AI tools for creators and developers in Africa and around the world.
             </p>
             <p className="text-primary font-serif text-xl italic">"The Africa We Want"</p>
           </div>
 
           <div className="space-y-12">
+            <section className="space-y-4" data-testid="section-keyo-studio">
+              <h2 className="font-serif text-2xl font-bold flex items-center gap-2">
+                <Building2 className="w-6 h-6 text-primary" />
+                KEYO Studio — Ugandan-built local AI
+              </h2>
+              <p className="text-muted-foreground leading-relaxed">
+                KEYO Studio LLM/SLM Runner is an open-source software initiative by KEYO TECHNOLOGIES in Uganda.
+                It adds a local AI workspace to the Afro AI family, with our own CPU inference engine rather than
+                a wrapper around another model runner. Developers can inspect the code and run supported model
+                weights on their own devices without a paid AI API.
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                This is a milestone in our work to advance Ugandan and African AI development. Our long-term
+                ambition is to contribute to the AI revolution and add value to the development of AI and future
+                superintelligence through transparent, developer-owned software.
+                The current release is a developer alpha: larger-model support, GPU acceleration and signed
+                cross-platform installers are still in development.
+              </p>
+              <a href="/keyo-studio" className="inline-flex items-center gap-2 text-primary hover:underline" data-testid="link-keyo-studio">
+                Explore KEYO Studio and download the source
+              </a>
+              <p className="text-xs text-muted-foreground">
+                A claim to be the first African company to release this category of software has not yet been independently verified.
+              </p>
+            </section>
             <section className="space-y-4">
               <h2 className="font-serif text-2xl font-bold flex items-center gap-2">
                 <Target className="w-6 h-6 text-primary" />
                 Our Mission
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Afro AI is a product of KEYO TECHNOLOGIES, a registered business in Uganda (Registration No. 80030812159711), the Pearl of Africa. We are the first AI platform on the continent built specifically to empower African creators. We are breaking down the barriers to technology by providing an AI-powered platform that lets anyone — regardless of technical background — build professional websites and mobile apps.
+                Afro AI is a product of KEYO TECHNOLOGIES, a registered business in Uganda (Registration No. 80030812159711), the Pearl of Africa. We build AI tools to empower creators in Africa and around the world. We are breaking down the barriers to technology by providing an AI-powered platform that lets anyone — regardless of technical background — build professional websites and web apps.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 Our AI assistant understands the unique needs of African businesses and communities. From local restaurants in Lagos to healthcare startups in Nairobi, from fashion brands in Accra to tech companies in Johannesburg — we empower creators across the continent to bring their ideas to life.
@@ -68,7 +93,7 @@ export default function AboutPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <Card>
                   <CardContent className="p-6 space-y-2">
-                    <h3 className="font-semibold" data-testid="text-value-africa">Built by Africans for the world</h3>
+                    <h3 className="font-semibold" data-testid="text-value-africa">Built in Uganda for the world</h3>
                     <p className="text-sm text-muted-foreground">We understand the unique challenges and opportunities of the African market. Our platform is designed with Africa-first thinking.</p>
                   </CardContent>
                 </Card>
@@ -112,7 +137,7 @@ export default function AboutPage() {
                 Our Team
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Afro AI is built by KEYO TECHNOLOGIES, founded and led by a passionate team of African technologists, designers, and entrepreneurs who believe in the transformative power of technology. Headquartered in Kampala, Uganda, the Pearl of Africa, our team brings together diverse perspectives and deep understanding of the African tech landscape. As the first AI platform in Africa, we are pioneering the future of technology on the continent.
+                Afro AI is built by KEYO TECHNOLOGIES, founded and led by a passionate Ugandan team of technologists, designers, and entrepreneurs who believe in the transformative power of technology. Headquartered in Kampala, Uganda, the Pearl of Africa, our team brings together diverse perspectives and deep understanding of the African tech landscape. We contribute to the future of technology on the continent through products including Afro AI and KEYO Studio.
               </p>
             </section>
 

@@ -34,4 +34,6 @@
 - [Navigation grouping](navigation-grouping.md) — keep related products under expandable sidebar sections instead of extending the long flat menu.
 - [Platform admin identity](platform-admin-identity.md) — avoid requiring two login systems for Afro Auth management; preserve legacy ownership and distinguish outages from expired sessions.
 - [Customer chatbot scope](customer-chatbot-scope.md) — chatbot fixes must serve all customers; never hard-code one demonstration site's identity or behavior.
-- [Open-source developer product](open-source-developer-product.md) — build downloadable software; the Ollama PDF is research, not an installation request.
+- [KEYO Studio scope](open-source-developer-product.md) — downloadable open-source runner with its own engine; reference research is not an installation request or proof of global rank.
+- [Native loader environment](native-loader-environment.md) — sanitized desktop checks must preserve Replit’s public loader/audit configuration, not provider credentials.
+- [KEYO founder dashboard](keyo-founder-dashboard.md) — private Command Center runner oversight, founder-managed email access, and separate authorized/active viewer counts.

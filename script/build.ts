@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
+import { buildKeyoRelease } from "../scripts/keyo-release";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -34,6 +35,9 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+
+  console.log("packaging KEYO Studio developer release...");
+  await buildKeyoRelease();
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));

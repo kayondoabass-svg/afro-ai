@@ -1,4 +1,5 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
+import { registerKeyoStudio } from "./keyo-studio";
 import { registerApiVersionDocs, versionedApiNotFound } from "./api-versioning";
 import { scanFailure, manualKnowledge, CUSTOMER_CHAT_POLICY, verifyWidgetHtml } from "./chatbot-support";
 import { saveScan } from "./chatbot-scan-persistence";
@@ -122,6 +123,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use("/uploads", express.static(uploadDir));
   registerApiVersionDocs(app);
+  registerKeyoStudio(app);
 
   // ── Login-bounce diagnostics ───────────────────────────────────────────────
   // Fired by the React app when it boots up with NO active session despite
