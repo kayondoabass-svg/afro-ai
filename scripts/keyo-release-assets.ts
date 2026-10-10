@@ -2,18 +2,19 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { sourceZip } from "./keyo-upload-zip";
+import { KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
 
 export const KEYO_PUBLIC_LINKS = {
   github: "https://github.com/kayondoabass-svg/keyo-studio",
   huggingFace: "https://huggingface.co/spaces/kayondoabass/KEYO-Studio",
 } as const;
-export const KEYO_RELEASE_BUNDLE = "KEYO-Studio-0.1.0-alpha.1-release-files.zip";
-export const KEYO_SOURCE_RELEASE = "KEYO-Studio-0.1.0-alpha.1-source.zip";
-export const KEYO_RELEASE_NOTES = "KEYO-Studio-0.1.0-alpha.1-release-notes.md";
-export const KEYO_CHECKSUMS = "KEYO-Studio-0.1.0-alpha.1-SHA256SUMS.txt";
+export const KEYO_RELEASE_BUNDLE = `KEYO-Studio-${KEYO_VERSION}-release-files.zip`;
+export const KEYO_SOURCE_RELEASE = `KEYO-Studio-${KEYO_VERSION}-source.zip`;
+export const KEYO_RELEASE_NOTES = `KEYO-Studio-${KEYO_VERSION}-release-notes.md`;
+export const KEYO_CHECKSUMS = `KEYO-Studio-${KEYO_VERSION}-SHA256SUMS.txt`;
 export const KEYO_RELEASE_ASSETS = [KEYO_SOURCE_RELEASE, KEYO_RELEASE_NOTES, KEYO_CHECKSUMS, KEYO_RELEASE_BUNDLE];
 
-export const keyoReleaseNotes = `# KEYO Studio v0.1.0-alpha.1
+export const keyoReleaseNotes = `# KEYO Studio v${KEYO_VERSION}
 
 **Developer alpha · Source-only prerelease · MIT code licence**
 
@@ -32,10 +33,15 @@ JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
 - CLI: Node.js >=20. Desktop development: Node.js >=22.12 and Electron.
 - Supply a compatible model folder containing config.json, tokenizer.json and
   a single model.safetensors checkpoint. No model weights are included.
-- Checkpoint and decoded weights each limited to 256 MiB.
+- Single-file checkpoints up to 4 GiB; above 256 MiB, matrices stay on disk and
+  are read through a bounded 256 KiB buffer. Resident vectors are capped at 8 MiB.
+- NFC byte-level BPE, exact literal added tokens and modern default RoPE settings.
+- Existing Afro AI checkpoint support is a CPU smoke check, not certification
+  of quality, speed, all Qwen variants or 7B/14B support.
 - Context: 512 tokens. Maximum generated output: 128 tokens.
-- A small public Llama checkpoint was smoke-tested. Existing Afro AI 2B,
-  7B and 14B models are not certified for this alpha.
+- A small public Llama checkpoint and the existing merged Afro AI Qwen2
+  checkpoint have been smoke-tested. This does not establish numerical parity,
+  useful chat quality, production performance or 7B/14B support.
 
 ## Not included
 GPU inference, GGUF/integer quantization, sharded checkpoints, training,
@@ -43,13 +49,13 @@ automatic model downloads, cloud inference or signed desktop installers.
 There is no prompt telemetry or paid inference API.
 
 ## Download files
-- afro-ai-keyo-studio-0.1.0-alpha.1.tgz: npm-installable source package.
+- afro-ai-keyo-studio-${KEYO_VERSION}.tgz: npm-installable source package.
 - ${KEYO_SOURCE_RELEASE}: developer source, licence, tests and CI workflow.
 - ${KEYO_CHECKSUMS}: SHA-256 checksums for these source files and these notes.
 
 Install the CLI with:
 
-    npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.1.tgz
+    npm install -g ./afro-ai-keyo-studio-${KEYO_VERSION}.tgz
     keyo inspect /path/to/model
     keyo chat /path/to/model --prompt "Hello"
 

@@ -21,7 +21,7 @@ No claims are made that the model architecture or weights were invented here.
 Public Afro AI routes:
 - `/keyo-studio`: source download and alpha requirements.
 - `/api/keyo-studio/release`: real release manifest, file list and SHA-256.
-- `/downloads/keyo-studio/afro-ai-keyo-studio-0.1.0-alpha.1.tgz`: code-only package.
+- `/downloads/keyo-studio/afro-ai-keyo-studio-0.1.0-alpha.2.tgz`: code-only package.
 
 Production builds package the runner into `dist/keyo-studio`. No model or
 private credential is copied into the archive. Do not treat a public source
@@ -66,9 +66,9 @@ Unit fixtures are explicitly synthetic. Root tests remain independently scoped.
    generation, cancellation and private local conversation CRUD.
 5. Test and sign platform-specific Linux/Windows/macOS installers and updates.
 6. Add optional account/cloud services without breaking offline use.
-7. Add the private “KEYO Studio runner studio” dashboard under Command Center:
-   founder-controlled email invitations, viewer-only access by default, server
-   authorization, and separate authorized/actively-viewing counts.
+7. Verify the implemented private dashboard through authenticated production
+   sign-in, invitation and revocation workflows. Server authorization,
+   viewer-only grants and separate authorized/active counts are implemented.
 8. Add explicitly opt-in, off-by-default product analytics with a payload
    preview, retention/deletion controls and aggregate founder reporting. Do not
    collect prompts, history, user files, emails, secrets or raw crash dumps.
@@ -89,3 +89,25 @@ preview; production builds copy its assets into `dist/keyo-studio/workspace`.
 
 `node scripts/keyo-export.mjs` prepares isolated GitHub and Hugging Face folders,
 not an upload. See `keyo-studio-publishing.md` for safe publication commands.
+
+## Existing Afro AI checkpoint loading
+
+The next alpha supports one checkpoint up to 4 GiB through our own disk-backed
+CPU tensor reader. Large matrices remain in the read-only checkpoint; a shared
+256 KiB buffer serves blocks and resident normalization/bias vectors are capped
+at 8 MiB. Small checkpoints retain the earlier resident loader.
+
+The owner's existing merged Qwen2 checkpoint is 3,086,634,296 bytes and contains
+1,543,298,048 stored parameters. It was downloaded at a pinned revision into
+ignored private QA storage and matched its provider's SHA-256. It is not bundled
+in public source, uploaded anywhere, or activated as a cloud provider.
+
+An initial own-engine text-continuation check produced two tokens from `Hello`,
+with about 128 MiB process RSS, 34 seconds loading and 41 seconds generation.
+This is a smoke check on this environment, not an interactive-speed claim.
+The subsequent local worker/API instruction-chat check returned HTTP 200 and
+`Hello!` for a user message `Hello` (two output tokens, about 122 seconds
+generation and 18 seconds startup). No provider inference endpoint was used.
+The loader reads modern default RoPE parameters, NFC normalization and exact
+literal added tokens used by this checkpoint. Other normalization/token matching
+or position-scaling variants remain rejected. Context is still 512 tokens.

@@ -43,7 +43,7 @@
         <div class="main-inner">
           <div class="notice" id="alpha-notice" role="note">
             <span class="notice-mark" aria-hidden="true">ALPHA</span>
-            <div><strong>CPU alpha, deliberately small.</strong><p>Bring your own compatible files: config.json, tokenizer.json, and one model.safetensors. Checkpoint and decoded weights are each capped at 256 MiB; context is capped at 512 tokens. GPU, GGUF, and larger-model support are not ready.</p></div>
+            <div><strong>Own-engine CPU alpha.</strong><p>Bring config.json, tokenizer.json, and one model.safetensors up to 4 GiB. Weights above 256 MiB use disk-backed loading rather than decoding the entire checkpoint into RAM. Context stays capped at 512 tokens; generation may be slow and has a five-minute limit for disk-backed models. GPU, GGUF, sharded weights and 7B/14B models are not supported.</p></div>
           </div>
           <div class="notice preview-note" id="preview-notice" role="note" hidden>
             <span class="notice-mark" aria-hidden="true">PREVIEW</span>
@@ -106,8 +106,8 @@
               </select>
             </div>
             <div class="control-field">
-              <label for="max-tokens">Max tokens <span class="range-value" id="token-value">32</span></label>
-              <input id="max-tokens" type="range" min="1" max="128" step="1" value="32" aria-describedby="token-help">
+              <label for="max-tokens">Max tokens <span class="range-value" id="token-value">4</span></label>
+              <input id="max-tokens" type="range" min="1" max="128" step="1" value="4" aria-describedby="token-help">
               <span class="sr-only" id="token-help">Maximum generated tokens, from 1 to the alpha limit of 128.</span>
             </div>
             <div class="control-field">

@@ -25,7 +25,7 @@ The hosted workspace is an **interface preview**, not browser inference:
 browser-local conversation CRUD is real, but model selection/generation are
 disabled. It does not read your device's model files or send prompts to our server.
 
-**0.1.0-alpha.1 — developer CPU alpha, not a finished desktop application.**
+**0.1.0-alpha.2 — developer CPU alpha, not a finished desktop application.**
 
 An independent, open-source local inference engine associated with Afro AI.
 Transformer computation, attention, KV cache, RoPE, normalization, sampling,
@@ -38,7 +38,7 @@ There are no production dependencies beyond Node.js 20+.
 Download the source package from the Afro AI `/keyo-studio` page:
 
 ```sh
-npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.1.tgz
+npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.2.tgz
 keyo --help
 keyo inspect /path/to/model
 keyo chat /path/to/model --prompt "Once upon a time" --max-tokens 32
@@ -53,19 +53,30 @@ an Afro AI account, provider API key, inference credits or network access.
 ## Model compatibility: deliberately limited
 
 The model directory needs `config.json`, `tokenizer.json`, and a single
-`model.safetensors`. The checkpoint limit is **256 MiB on disk AND 256 MiB of
-decoded float32 tensors**, not a promise that large models fit in memory.
+`model.safetensors`. A single checkpoint can be **up to 4 GiB**. Above 256 MiB,
+matrix weights remain on disk and are read through a shared 256 KiB scratch
+buffer; normalization/bias vectors are capped at 8 MiB. This avoids allocating
+the complete multi-gigabyte checkpoint or its float32 equivalent in process RAM.
+Smaller files retain the 256 MiB decoded-memory limit. OS file cache, tokenizer,
+activations and KV cache are additional memory, not included in the scratch cap.
+Loading validates every tensor value and can take tens of seconds. Disk-backed
+CPU generation can be slow: prefer short prompts and a small `max_tokens`.
+Disk-backed library, CLI and API generation defaults to four output tokens
+instead of 32; explicit requests remain capped at 128 and five minutes.
+The desktop starts its output-token control at four as well.
 
 Implemented architectures: basic GPT-Neo (`gelu_new`), Qwen2, and Llama
 (`silu`, conventional full-head RoPE), including grouped-query attention.
-Only unnormalized byte-level BPE tokenizers with supported splitting rules
+Only unnormalized or NFC byte-level BPE tokenizers with supported splitting rules
 are accepted. Floating-point F32/F16/BF16 checkpoint data is supported;
 computation is float32 with JavaScript-number accumulators.
 
 Unsupported variants fail explicitly. No GGUF, integer quantization, sharded
 checkpoints, scaled RoPE, sliding-window Qwen/Llama, unusual head dimensions,
 arbitrary Jinja templates, tools, multimodal input, training or GPU kernels.
-Your existing fine-tuned model has **not** been certified compatible.
+The existing Afro AI merged Qwen2 checkpoint can now be loaded through the
+disk-backed engine. A real-checkpoint smoke check is not quality, performance
+or numerical-parity certification. 7B/14B models remain unsupported.
 Architecture implementation is not certification of every model in that family.
 Maximum context: 512 tokens; maximum output: 128; default generation: greedy.
 Pure JavaScript CPU execution is an inspectable correctness baseline, not yet
@@ -109,7 +120,8 @@ error events, not successful generated answers. This is a documented subset,
 
 One generation runs at a time; concurrent requests return 409. A worker thread
 keeps the HTTP event loop responsive. Disconnects cancel computation through
-shared memory; each request has a 60-second computation deadline.
+shared memory; each request has a 60-second computation deadline for resident
+weights, or a five-minute deadline for disk-backed weights.
 No browser CORS access is enabled in the alpha. A future local desktop UI must
 establish its own explicit origin and credential policy.
 
@@ -127,8 +139,9 @@ provenance are documented separately by the Afro AI project.
 
 Linux is the first validation target. A source/npm download is **not** a
 Windows/macOS executable or a Tauri installer. Those, optimized kernels,
-quantization, larger-model certification, registry downloads, the desktop
-workspace and optional cloud services remain future work.
+quantization, broader model certification, registry downloads and optional
+cloud services remain future work. The desktop workspace exists in source;
+that does not certify cross-platform installers.
 
 Local generation makes no outbound requests and collects no telemetry.
 No paid subscriptions, inference endpoints or publishing jobs are started by

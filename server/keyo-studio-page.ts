@@ -1,4 +1,5 @@
 import { KEYO_PUBLIC_LINKS, KEYO_RELEASE_BUNDLE, KEYO_RELEASE_NOTES } from "../scripts/keyo-release-assets";
+import { KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
 
 export function keyoStudioPage(): string {
   return `<!doctype html>
@@ -172,10 +173,10 @@ export function keyoStudioPage(): string {
         <h1>Run it here.<br><em>See how.</em></h1>
         <p class="hero-copy"><strong>KEYO Studio is a local LLM/SLM runner for developers.</strong> Inspect and own model execution on your machine, powered by our JavaScript CPU inference engine—not a wrapper around Ollama, llama.cpp, or vLLM.</p>
         <div class="actions">
-          <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-0.1.0-alpha.1.tgz">Get the source package <span class="arrow" aria-hidden="true">↓</span></a>
+          <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_VERSION}.tgz">Get the source package <span class="arrow" aria-hidden="true">↓</span></a>
           <a class="button secondary" href="/api/keyo-studio/release">Release details <span class="arrow" aria-hidden="true">↗</span></a>
         </div>
-        <p class="alpha-note"><strong>Developer alpha 0.1.0-alpha.1.</strong> Ugandan-built by KEYO Technologies. Includes our CPU engine, CLI and desktop workspace source, not a signed cross-platform installer or a production-readiness claim. CLI requires Node.js 20+; desktop development requires Node.js 22.12+ and Electron.</p>
+        <p class="alpha-note"><strong>Developer alpha ${KEYO_VERSION}.</strong> Ugandan-built by KEYO Technologies. Includes our CPU engine, CLI and desktop workspace source, not a signed cross-platform installer or a production-readiness claim. CLI requires Node.js 20+; desktop development requires Node.js 22.12+ and Electron.</p>
         <a class="text-link" href="/keyo-studio/workspace/">Explore the workspace interface preview →</a>
         <p>Ugandan-built by KEYO Technologies, KEYO Studio aims to contribute to the AI revolution and add value to the development of AI and future superintelligence.</p>
       </div>
@@ -213,7 +214,7 @@ export function keyoStudioPage(): string {
             <div class="code-card">
               <div class="code-top"><span>TERMINAL / commands to run locally</span><button class="copy-button" id="copy-commands" type="button" aria-label="Copy command examples">Copy commands</button></div>
               <pre><code><span class="code-muted"># Node.js 20 or newer</span>
-<span class="prompt">$</span> npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.1.tgz
+<span class="prompt">$</span> npm install -g ./afro-ai-keyo-studio-${KEYO_VERSION}.tgz
 <span class="prompt">$</span> keyo inspect /path/to/model
 <span class="prompt">$</span> keyo chat /path/to/model --prompt "Hello"
 <span class="prompt">$</span> keyo serve /path/to/model</code></pre>
@@ -234,7 +235,7 @@ export function keyoStudioPage(): string {
       <div class="wrap">
         <div class="section-head"><div class="section-kicker">03 / Input contract</div><div><h2>Keep the model folder explicit.</h2><p class="section-intro">The alpha expects these files to already exist together in a supported local model directory. Missing files or incompatible model configs can prevent a model from loading.</p></div></div>
         <div class="model-box">
-          <div class="model-copy"><h3>What you provide</h3><p>A compatible model directory prepared for the current loader. Single safetensors checkpoint and decoded weights are each limited to 256 MiB; context is limited to 512 tokens. This is not yet a larger-model release. KEYO does not bundle weights, fetch assets in the background, or send prompts to a cloud service.</p></div>
+          <div class="model-copy"><h3>What you provide</h3><p>A compatible model directory with one safetensors checkpoint up to 4 GiB. Above 256 MiB, KEYO reads matrix blocks from disk instead of decoding all weights into RAM. Context stays limited to 512 tokens. This CPU alpha does not support GPU, GGUF, sharded checkpoints or 7B/14B models. KEYO does not bundle private weights, automatically fetch them, or send prompts to a cloud service.</p></div>
           <div class="file-tree" aria-label="Required local model folder contents"><div class="tree-heading">/path/to/model</div><div>├── <span class="required">config.json</span></div><div>├── <span class="required">tokenizer.json</span></div><div>└── <span class="required">model.safetensors</span></div><p class="tree-note">Required files · local only · not included in the package</p></div>
         </div>
       </div>
@@ -259,11 +260,11 @@ export function keyoStudioPage(): string {
 
     <section class="section" id="release">
       <div class="wrap">
-        <div class="section-head"><div class="section-kicker">05 / Get the alpha</div><div><h2>Start with the source package.</h2><p class="section-intro">Get version 0.1.0-alpha.1, inspect what you’re installing, and try it with a supported model folder on Node.js 20 or newer.</p></div></div>
+        <div class="section-head"><div class="section-kicker">05 / Get the alpha</div><div><h2>Start with the source package.</h2><p class="section-intro">Get version ${KEYO_VERSION}, inspect what you’re installing, and try it with a supported model folder on Node.js 20 or newer.</p></div></div>
         <div class="release">
-          <div><h3>KEYO Studio 0.1.0-alpha.1</h3><p>Early developer alpha · Source package · Model weights not included</p></div>
+          <div><h3>KEYO Studio ${KEYO_VERSION}</h3><p>Early developer alpha · Source package · Model weights not included</p></div>
           <div class="actions" style="margin:0">
-            <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-0.1.0-alpha.1.tgz">Download source <span class="arrow" aria-hidden="true">↓</span></a>
+            <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_VERSION}.tgz">Download source <span class="arrow" aria-hidden="true">↓</span></a>
             <a class="button secondary" href="/downloads/keyo-studio/${KEYO_RELEASE_BUNDLE}">Release files ZIP</a>
             <a class="button secondary" href="/api/keyo-studio/release">Release API <span class="arrow" aria-hidden="true">↗</span></a>
           </div>
@@ -283,7 +284,7 @@ export function keyoStudioPage(): string {
     (function () {
       var button = document.getElementById("copy-commands");
       var status = document.getElementById("copy-status");
-      var commands = "npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.1.tgz\\nkeyo inspect /path/to/model\\nkeyo chat /path/to/model --prompt \\"Hello\\"\\nkeyo serve /path/to/model";
+      var commands = "npm install -g ./afro-ai-keyo-studio-${KEYO_VERSION}.tgz\\nkeyo inspect /path/to/model\\nkeyo chat /path/to/model --prompt \\"Hello\\"\\nkeyo serve /path/to/model";
       if (!button || !status) return;
       function fallbackCopy() {
         var field = document.createElement("textarea");

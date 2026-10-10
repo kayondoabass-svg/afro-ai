@@ -13,7 +13,7 @@ node scripts/keyo-export.mjs
 ```
 
 This creates two isolated folders under
-`generated-artifacts/keyo-publication/0.1.0-alpha.1/`:
+`generated-artifacts/keyo-publication/0.1.0-alpha.2/`:
 
 - `github/`: runner/desktop source, synthetic tests, MIT licence, security and
   contribution guides, ignore rules and least-privilege test workflow.

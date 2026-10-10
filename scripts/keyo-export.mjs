@@ -90,7 +90,8 @@ Source archive: [${pack.filename}](./${pack.filename})
 SHA-256: \`${sha256}\`
 
 CLI: Node >=20. Desktop development: Node >=22.12 and Electron.
-256 MiB weights / 512 context tokens / 128 output tokens. Larger models,
+4 GiB single checkpoint / disk-backed above 256 MiB / 512 context tokens /
+128 output tokens. 7B/14B models,
 GPU inference and signed Windows/macOS installers are unfinished.
 No weights, credentials, paid API or billing integration are included.
 

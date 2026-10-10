@@ -7,7 +7,8 @@ import { KEYO_GIT_EXTRAS, KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME, sour
 import { KEYO_PUBLIC_LINKS, prepareReleaseAssets } from "./keyo-release-assets";
 
 const exec = promisify(execFile);
-export const KEYO_VERSION = "0.1.0-alpha.1";
+import { KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
+export { KEYO_VERSION };
 export const KEYO_FILENAME = `afro-ai-keyo-studio-${KEYO_VERSION}.tgz`;
 
 export async function buildKeyoRelease(root = process.cwd()) {
@@ -21,7 +22,7 @@ export async function buildKeyoRelease(root = process.cwd()) {
   const files: string[] = result.files.map((file: {path: string}) => file.path);
   const permitted = (file: string) =>
     ["package.json", "README.md", "CONTRIBUTING.md", "LICENSE", "SECURITY.md", "bin/keyo.mjs"].includes(file) ||
-    /^src\/[a-z-]+\.mjs$/.test(file) ||
+    /^src\/[a-z-]+\.mjs$/.test(file) || file === "src/version.d.mts" ||
     /^test\/[a-z-]+(?:\.test)?\.mjs$/.test(file) ||
     /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(file) ||
     /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file);
@@ -68,7 +69,8 @@ generation are disabled here; install the desktop source on your device to run m
 SHA-256: \`${sha256}\`
 
 CLI: Node >=20. Desktop development: Node >=22.12 and Electron.
-Current limits: 256 MiB weights, 512 context tokens and 128 output tokens.
+Current limits: one checkpoint up to 4 GiB, bounded-memory disk-backed CPU loading
+above 256 MiB, 512 context tokens and 128 output tokens. No GPU, GGUF or 7B/14B support.
 Larger models, GPU inference and signed Windows/macOS installers are unfinished.
 No model weights, credentials, paid API or telemetry are included.
 
@@ -113,7 +115,9 @@ model weights. Listing on Hugging Face does not automatically generate payments.
     implementedArchitectures: ["gpt_neo", "qwen2", "llama"],
     pretrainedSmokeCheckedArchitectures: ["llama"],
     existingAfroModelCertified: false,
-    limits: { checkpointMiB: 256, decodedWeightsMiB: 256, contextTokens: 512, outputTokens: 128 },
+    limits: { checkpointMiB: 4096, residentCheckpointMiB: 256,
+      diskScratchKiB: 256, residentVectorsMiB: 8, contextTokens: 512, outputTokens: 128,
+      diskGenerationTimeoutSeconds: 300 },
     modelWeightsIncluded: false,
     requiresPaidApi: false,
     telemetry: false,

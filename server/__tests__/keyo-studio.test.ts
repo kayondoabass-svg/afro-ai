@@ -18,6 +18,7 @@ describe("KEYO Studio independent runner", () => {
       "packages/keyo-studio/test/engine.test.mjs",
       "packages/keyo-studio/test/server.test.mjs",
       "packages/keyo-studio/test/desktop.test.mjs",
+      "packages/keyo-studio/test/disk-tensors.test.mjs",
     ], { timeout: 30000, maxBuffer: 256 * 1024 });
     expect(stdout).toMatch(/fail 0/);
   });
@@ -48,7 +49,7 @@ describe("KEYO Studio independent runner", () => {
         if (asset.filename !== KEYO_CHECKSUMS && asset.filename !== KEYO_RELEASE_BUNDLE) expect(checksums).toContain(`${asset.sha256}  ${asset.filename}`);
       }
       expect(keyoReleaseNotes).toContain("Source-only prerelease");
-      expect(keyoReleaseNotes).toContain("14B models are not certified");
+      expect(keyoReleaseNotes).toMatch(/does not establish[\s\S]*7B\/14B support/);
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 });

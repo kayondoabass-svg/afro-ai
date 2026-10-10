@@ -5,8 +5,9 @@ import path from 'node:path';
 import os from 'node:os';
 import { KeyoEngine } from '../src/engine.mjs';
 import { startServer } from '../src/server.mjs';
+import { KEYO_VERSION } from '../src/version.mjs';
 
-const help = `KEYO Studio LLM/SLM Runner — 0.1.0-alpha.1
+const help = `KEYO Studio LLM/SLM Runner — ${KEYO_VERSION}
 Our CPU engine. No cloud AI API, no telemetry, no bundled model.
 Requires Node 20+ and a supported, locally downloaded model.
 
@@ -14,7 +15,8 @@ keyo inspect MODEL_DIRECTORY
 keyo chat MODEL_DIRECTORY --prompt "Once upon a time" [--max-tokens 32]
 keyo serve MODEL_DIRECTORY [--port 4317]
 
-Folder: config.json + tokenizer.json + model.safetensors (max 256 MiB).
+Folder: config.json + tokenizer.json + one model.safetensors (max 4 GiB).
+Weights above 256 MiB use bounded-memory disk-backed CPU loading.
 Architectures: basic GPT-Neo, Qwen2, Llama. Unsupported variants fail explicitly.
 Not yet: GGUF, quantized weights, GPUs, Tauri desktop installers, training.
 `;
@@ -37,7 +39,7 @@ async function apiToken() {
 try {
   const [command,directory,...args] = process.argv.slice(2);
   if (!command || ['help','--help','-h'].includes(command)) { console.log(help); }
-  else if (['--version','version'].includes(command)) console.log('0.1.0-alpha.1');
+  else if (['--version','version'].includes(command)) console.log(KEYO_VERSION);
   else {
     if (!['inspect','chat','serve'].includes(command) || !directory) throw new Error('Unknown command or missing model directory. Use keyo --help.');
     const options = {};
@@ -56,15 +58,18 @@ try {
       process.once('SIGINT',stop); process.once('SIGTERM',stop);
     } else {
       const engine = await KeyoEngine.load(directory);
+      try {
       if (command === 'inspect') console.log(JSON.stringify(engine.info(),null,2));
       else {
         if (!options['--prompt']) throw new Error('Provide --prompt. This alpha uses text continuation; chat templates are available through the API for supported instruction models.');
         const abort = new AbortController();
         process.once('SIGINT',() => abort.abort());
-        for await (const event of engine.generate(options['--prompt'],{maxTokens:Number(options['--max-tokens'] ?? 32),signal:abort.signal}))
+        for await (const event of engine.generate(options['--prompt'],{
+          maxTokens:Number(options['--max-tokens'] ?? (engine.info().storage === 'disk' ? 4 : 32)),signal:abort.signal}))
           if (event.type === 'token') process.stdout.write(event.text);
         process.stdout.write('\n');
       }
+      } finally { engine.close(); }
     }
   }
 } catch (error) { console.error(`KEYO: ${error.message}`); process.exitCode = 1; }

@@ -15,7 +15,9 @@ export class KeyoEngine {
   static async load(directory) {
     const config = await readJson(path.join(directory, 'config.json'));
     const tokenizer = await ByteBPE.load(directory, config.model_type);
-    return new KeyoEngine(config, await loadTensors(directory), tokenizer, path.basename(path.resolve(directory)));
+    const tensors = await loadTensors(directory);
+    try { return new KeyoEngine(config, tensors, tokenizer, path.basename(path.resolve(directory))); }
+    catch (error) { tensors.close?.(); throw error; }
   }
   constructor(config, tensors, tokenizer, id = 'local-model') {
     this.config = config; this.tensors = tensors; this.tokenizer = tokenizer; this.id = id;
@@ -33,7 +35,17 @@ export class KeyoEngine {
     if (!Number.isInteger(this.headSize) || this.heads % this.kvHeads || this.headSize % 2) throw new Error('Invalid attention head dimensions.');
     if (config.head_dim != null && config.head_dim !== this.headSize) throw new Error('Custom head dimensions are not supported.');
     this.epsilon = config.rms_norm_eps ?? config.layer_norm_epsilon ?? 1e-5;
-    this.theta = config.rope_theta ?? 10000;
+    const rope = config.rope_parameters;
+    if (rope != null && (typeof rope !== 'object' || Array.isArray(rope) ||
+        (rope.rope_type ?? 'default') !== 'default' ||
+        Object.keys(rope).some(key => !['rope_type','rope_theta'].includes(key))))
+      throw new Error('Unsupported RoPE parameters.');
+    if (rope?.rope_theta !== undefined && config.rope_theta !== undefined && rope.rope_theta !== config.rope_theta)
+      throw new Error('Conflicting RoPE settings.');
+    this.theta = rope?.rope_theta ?? config.rope_theta ?? 10000;
+    if (config.layer_types != null && (!Array.isArray(config.layer_types) ||
+        config.layer_types.length !== this.layers || config.layer_types.some(type => type !== 'full_attention')))
+      throw new Error('Unsupported per-layer attention variant.');
     if (!Number.isFinite(this.epsilon) || !(this.epsilon > 0 && this.epsilon < 1) || !Number.isFinite(this.theta) || !(this.theta > 0)) throw new Error('Invalid normalization or position settings.');
     this.eos = new Set(Array.isArray(config.eos_token_id) ? config.eos_token_id : [config.eos_token_id]);
     const neo = this.family === 'gpt_neo';
@@ -84,8 +96,10 @@ export class KeyoEngine {
     if (!Number.isInteger(token) || token < 0 || token >= this.vocab || cache.position >= this.context) throw new Error('Token or context out of range.');
     const neo = this.family === 'gpt_neo';
     const position = cache.position;
-    let x = this.embedding.data.slice(token * this.hidden, (token + 1) * this.hidden);
-    if (neo) x = add(x, this.position.data.subarray(position * this.hidden, (position + 1) * this.hidden));
+    let x = this.embedding.row ? this.embedding.row(token) :
+      this.embedding.data.slice(token * this.hidden, (token + 1) * this.hidden);
+    if (neo) x = add(x, this.position.row ? this.position.row(position) :
+      this.position.data.subarray(position * this.hidden, (position + 1) * this.hidden));
     const project = (layer, input) => {
       const result = matvec(layer.weight, input, guard);
       return layer.bias ? add(result, layer.bias) : result;
@@ -139,7 +153,9 @@ export class KeyoEngine {
       return '<|begin_of_text|>' + messages.map(m => `<|start_header_id|>${m.role}<|end_header_id|>\n\n${m.content}<|eot_id|>`).join('') + '<|start_header_id|>assistant<|end_header_id|>\n\n';
     throw new Error('This base model has no supported chat template. Use /v1/completions or CLI --prompt instead.');
   }
-  async *generate(prompt, { maxTokens = 32, temperature = 0, topK = 40, seed = 1, signal, deadlineMs = 60000, chat = false, cancelled = () => false } = {}) {
+  async *generate(prompt, { maxTokens = this.tensors.storage === 'disk' ? 4 : 32,
+    temperature = 0, topK = 40, seed = 1, signal,
+    deadlineMs = this.tensors.storage === 'disk' ? 300000 : 60000, chat = false, cancelled = () => false } = {}) {
     if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 128 || !Number.isFinite(temperature) ||
         temperature < 0 || temperature > 2 || !Number.isInteger(topK) || topK < 1 || topK > 100 ||
         !Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('Invalid generation options.');
@@ -184,6 +200,10 @@ export class KeyoEngine {
     const chatTemplate = this.family === 'qwen2' && ['<|im_start|>','<|im_end|>'].every(t => this.tokenizer.special.has(t)) ? 'chatml'
       : this.family === 'llama' && ['<|begin_of_text|>','<|start_header_id|>','<|end_header_id|>','<|eot_id|>'].every(t => this.tokenizer.special.has(t)) ? 'llama3' : null;
     return { id:this.id, architecture:this.family, engine:'keyo-cpu', context_limit:this.context, chatTemplate,
-      tensors:this.tensors.size, parameters:[...this.tensors.values()].reduce((sum,t) => sum + t.data.length,0) };
+      storage:this.tensors.storage ?? 'memory', checkpointBytes:this.tensors.checkpointBytes,
+      generationTimeoutSeconds:this.tensors.storage === 'disk' ? 300 : 60,
+      tensors:this.tensors.size, parameters:[...this.tensors.values()].reduce((sum,t) =>
+        sum + t.shape.reduce((a,b) => a*b,1),0) };
   }
+  close() { this.tensors.close?.(); }
 }

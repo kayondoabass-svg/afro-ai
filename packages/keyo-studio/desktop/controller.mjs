@@ -7,7 +7,7 @@ export class DesktopController extends EventEmitter {
   constructor(store) { super(); this.store = store; this.worker = null; this.model = null; this.loading = false; this.active = null; this.finishing = false; }
   state() {
     return {mode:'desktop',platform:process.platform,model:this.model,loading:this.loading,busy:!!this.active || this.finishing,
-      limits:{maxTokens:128,context:512,maxWeightsMiB:256}};
+      limits:{maxTokens:128,context:512,maxWeightsMiB:4096}};
   }
   changed() { this.emit('event',{type:'state',state:this.state()}); }
   async load(directory) {

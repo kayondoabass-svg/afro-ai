@@ -47,6 +47,6 @@ await run('tar',['-czf',path.join(output,filename),'-C',output,name],{timeout:18
 const hash=createHash('sha256'); for await (const chunk of createReadStream(path.join(output,filename))) hash.update(chunk);
 const bytes=(await fs.stat(path.join(output,filename))).size;
 const release={name:'KEYO Studio',version:pkg.version,platform:'linux',architecture:process.arch,filename,bytes,sha256:hash.digest('hex'),
-  electronVersion:electron.version,signed:false,modelsIncluded:false,engine:'keyo-cpu',modelLimits:'256 MiB, 512 token context',nativeStatus:'unsigned developer alpha'};
+  electronVersion:electron.version,signed:false,modelsIncluded:false,engine:'keyo-cpu',modelLimits:'4 GiB single checkpoint, disk-backed above 256 MiB, 512 token context',nativeStatus:'unsigned developer alpha'};
 await fs.writeFile(path.join(output,'release.json'),JSON.stringify(release,null,2));
 console.log(JSON.stringify(release,null,2));

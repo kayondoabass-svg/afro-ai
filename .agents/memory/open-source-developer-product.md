@@ -42,3 +42,15 @@ Do not publish “eighth globally” or “first from Africa” without evidence
 **Why:** The initial seven-runner premise omitted existing projects, and an unsuccessful search for an earlier African runner does not establish that none exists.
 
 **How to apply:** Distinguish runner applications, inference engines, cloud services and model weights in competitive comparisons. Treat “first” and ordinal rankings as unverified until supported.
+
+Certify runner support against the actual checkpoint and tokenizer, not just
+the architecture name. Loading successfully does not establish useful speed,
+answer quality or numerical parity.
+
+**Why:** The existing merged model required tokenizer and serialized position
+configuration changes despite belonging to an already implemented family.
+A successful short CPU chat was still much slower than an interactive runner.
+
+**How to apply:** Inspect the pinned model's tokenizer and configuration before
+claiming compatibility. Keep private weights outside public releases and report
+real generation timings and limits; distinguish smoke evidence from certification.

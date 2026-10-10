@@ -28,6 +28,7 @@ export async function startServer({directory, token, port = 4317}) {
       });
     });
   } catch (error) { await worker.terminate(); throw error; }
+  const defaultTokens = info.storage === 'disk' ? 4 : 32;
   const server = http.createServer(async (req, res) => {
     const address = server.address();
     // Loopback bind + Host validation defeats remote exposure and DNS rebinding.
@@ -72,7 +73,7 @@ export async function startServer({directory, token, port = 4317}) {
             body.messages.some(m => !m || !['system','user','assistant'].includes(m.role) || typeof m.content !== 'string') ||
             body.messages.reduce((sum,m) => sum + m.content.length,0) > 12000) throw new Error('Invalid messages.');
       } else if (typeof body.prompt !== 'string' || !body.prompt.length || body.prompt.length > 16384 || body.messages !== undefined) throw new Error('A bounded, non-empty string prompt is required.');
-      if (!Number.isInteger(body.max_tokens ?? 32) || (body.max_tokens ?? 32) < 1 || (body.max_tokens ?? 32) > 128 ||
+      if (!Number.isInteger(body.max_tokens ?? defaultTokens) || (body.max_tokens ?? defaultTokens) < 1 || (body.max_tokens ?? defaultTokens) > 128 ||
           !Number.isFinite(body.temperature ?? 0) || (body.temperature ?? 0) < 0 || (body.temperature ?? 0) > 2 ||
           !Number.isInteger(body.top_k ?? 40) || (body.top_k ?? 40) < 1 || (body.top_k ?? 40) > 100 ||
           !Number.isInteger(body.seed ?? 1) || (body.seed ?? 1) < 0 || (body.seed ?? 1) > 0xffffffff) throw new Error('Invalid generation options.');
@@ -88,7 +89,7 @@ export async function startServer({directory, token, port = 4317}) {
     res.on('close', () => { if (active?.id === id) Atomics.store(new Int32Array(cancel), 0, 1); });
     worker.postMessage({
       type:'generate', id, cancel, ...(chat ? {messages:body.messages} : {prompt:body.prompt}),
-      options:{maxTokens:body.max_tokens ?? 32,temperature:body.temperature ?? 0,topK:body.top_k ?? 40,seed:body.seed ?? 1}
+      options:{maxTokens:body.max_tokens ?? defaultTokens,temperature:body.temperature ?? 0,topK:body.top_k ?? 40,seed:body.seed ?? 1}
     });
   });
   server.requestTimeout = 10000;

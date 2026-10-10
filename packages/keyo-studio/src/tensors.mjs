@@ -83,12 +83,17 @@ export async function loadTensors(directory) {
   const handle = await open(path.join(directory, 'model.safetensors'), 'r');
   try {
     const stat = await handle.stat();
-    if (!stat.isFile() || stat.size > MAX_WEIGHTS) throw new Error('This alpha supports one safetensors file up to 256 MiB; larger/sharded models are not supported yet.');
+    if (!stat.isFile()) throw new Error('Weights must be a regular safetensors file.');
+    if (stat.size > MAX_WEIGHTS) {
+      const { loadDiskTensors } = await import('./disk-tensors.mjs');
+      return loadDiskTensors(path.join(directory, 'model.safetensors'));
+    }
     return parseSafetensors(await handle.readFile());
   } finally { await handle.close(); }
 }
 
 export function matvec(tensor, vector, guard = () => {}) {
+  if (tensor.multiply) return tensor.multiply(vector, guard);
   const [rows, cols] = tensor.shape;
   if (cols !== vector.length) throw new Error('Matrix/vector shape mismatch.');
   const result = new Float32Array(rows);
