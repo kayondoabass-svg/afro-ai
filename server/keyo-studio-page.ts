@@ -268,7 +268,7 @@ export function keyoStudioPage(): string {
     <div class="wrap footer-inner">
       <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">K</span> KEYO Studio</a>
       <div>Open local execution, one alpha at a time.</div>
-      <div class="footer-links"><a href="/">Afro AI home</a><a href="/api/keyo-studio/release">Release details</a><a href="/downloads/keyo-studio/afro-ai-keyo-studio-0.1.0-alpha.1.tgz">Source package</a></div>
+      <div class="footer-links"><a href="/">Afro AI home</a><a href="/api/keyo-studio/release">Release details</a><a href="/downloads/keyo-studio/afro-ai-keyo-studio-0.1.0-alpha.1.tgz">Source package</a><a href="/downloads/keyo-studio/keyo-studio-github-upload.zip">GitHub upload ZIP</a></div>
     </div>
   </footer>
   <script>

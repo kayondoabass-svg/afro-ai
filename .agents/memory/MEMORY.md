@@ -7,7 +7,7 @@
 - [attached_assets gitignore trap](attached-assets-gitignore.md) — @assets images can pass locally/prod but be untracked → CI test file fails to LOAD + build can't resolve; use `attached_assets/*` + `!` negation + commit the binary.
 - [CI "vitest: not found" w/ healthy lock](ci-npx-vs-bin.md) — npm ci green but `npm run test` can't find the bin on the runner; use `npx vitest run`/`npx tsx` in CI. Don't regenerate an all-platform lock against a 1-platform node_modules (prunes optional deps).
 - [Droplet build "tsx: not found"](deploy-devdeps-build.md) — prod-only node_modules + deploy.sh skip-npm-ci-when-unchanged = build fails on missing dev tools; fix: `rm -rf node_modules && bash scripts/deploy.sh`.
-- [Push rejected on workflow files](github-workflow-scope-push.md) — Replit push of any `.github/workflows/*` edit is rejected (OAuth token lacks `workflow` scope); shows as fake "divergence". Need a workflow-scoped PAT, or skip.
+- [GitHub push authentication](github-workflow-scope-push.md) — distinguish credential failure from workflow-scope rejection; a healthy git-provider binding does not prove a push will authenticate.
 - [Replit lockfile registry URLs](lockfile-replit-registry.md) — package-firewall.replit.local URLs baked into package-lock.json break npm ci off-Replit (EAI_AGAIN/partial install); --registry can't override, sed-rewrite resolved host.
 - [Caddy shared-log-dir outage](caddy-log-permission-outage.md) — whole-site "Host Error" with healthy Node = Caddy can't write /srv/afro-ai/logs/access.log after dir/file chowned to afro; status=1 ≠ OOM (check dmesg).
 - [AutoTrain SFT smoke test](autotrain-sft-smoke-test.md) — tiny Qwen 1.5B LoRA tests need short block sizes; expand the dataset before a real 512-token run.

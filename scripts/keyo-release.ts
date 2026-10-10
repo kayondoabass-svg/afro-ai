@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, writeFile, cp } from "node:fs/promises";
+import { mkdir, readFile, writeFile, cp, lstat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { KEYO_GIT_EXTRAS, KEYO_UPLOAD_FILENAME, sourceZip } from "./keyo-upload-zip";
 
 const exec = promisify(execFile);
 export const KEYO_VERSION = "0.1.0-alpha.1";
@@ -25,6 +26,14 @@ export async function buildKeyoRelease(root = process.cwd()) {
     /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file);
   if (!files.every(permitted) || !files.includes("src/engine.mjs")) throw new Error("Unexpected files in KEYO distribution; refusing publication.");
   const bytes = await readFile(path.join(directory, KEYO_FILENAME));
+  const uploadFiles = await Promise.all(files.map(async name => {
+    const file = path.join(root, "packages", "keyo-studio", name);
+    if (!(await lstat(file)).isFile()) throw new Error("Non-regular source file refused.");
+    return { name, data: await readFile(file) };
+  }));
+  for (const [name, content] of Object.entries(KEYO_GIT_EXTRAS)) uploadFiles.push({ name, data: Buffer.from(content) });
+  const zip = sourceZip(uploadFiles);
+  await writeFile(path.join(directory, KEYO_UPLOAD_FILENAME), zip);
   const manifest = {
     name: "KEYO Studio LLM/SLM Runner",
     version: KEYO_VERSION,
@@ -39,6 +48,13 @@ export async function buildKeyoRelease(root = process.cwd()) {
     sha256: createHash("sha256").update(bytes).digest("hex"),
     bytes: bytes.length,
     files,
+    manualUpload: {
+      filename: KEYO_UPLOAD_FILENAME,
+      downloadUrl: `/downloads/keyo-studio/${KEYO_UPLOAD_FILENAME}`,
+      bytes: zip.length,
+      sha256: createHash("sha256").update(zip).digest("hex"),
+      files: uploadFiles.map(file => file.name),
+    },
     implementedArchitectures: ["gpt_neo", "qwen2", "llama"],
     pretrainedSmokeCheckedArchitectures: ["llama"],
     existingAfroModelCertified: false,

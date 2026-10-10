@@ -26,6 +26,19 @@ private platform repository.
 
 ## GitHub
 
+### Manual browser upload
+
+The KEYO Studio page in the running workspace includes a **GitHub upload ZIP**
+link. Extract it, then open the new repository's **uploading an existing file**
+link (or **Add file → Upload files**). Drag the files and folders *inside* the
+extracted directory into the upload area, not the ZIP or its outer wrapper
+folder. Include `.gitignore` and `.github/workflows/tests.yml`; show hidden files
+if needed. Commit directly to `main`. This workflow runs runner tests, not VPS
+deployment. The ZIP is built from the same restricted source allowlist as the
+package and includes no Git history, platform code, model weights or secrets.
+
+### Git upload
+
 1. Create an **empty** public `keyo-studio` repository on GitHub. Do not
    initialize another README/licence there; our exported files provide them.
 2. Authenticate with your normal GitHub Git/SSH or CLI credentials. Do not put
