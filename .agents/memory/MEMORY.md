@@ -34,3 +34,4 @@
 - [Navigation grouping](navigation-grouping.md) — keep related products under expandable sidebar sections instead of extending the long flat menu.
 - [Platform admin identity](platform-admin-identity.md) — avoid requiring two login systems for Afro Auth management; preserve legacy ownership and distinguish outages from expired sessions.
 - [Customer chatbot scope](customer-chatbot-scope.md) — chatbot fixes must serve all customers; never hard-code one demonstration site's identity or behavior.
+- [Open-source developer product](open-source-developer-product.md) — build downloadable software; the Ollama PDF is research, not an installation request.
