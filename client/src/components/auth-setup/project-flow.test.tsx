@@ -20,6 +20,13 @@ function renderProject(verified: boolean) {
     setup:{required:true,canCreateKeys:verified,verifiedDomainCount:verified ? 1 : 0,userStore:"D1",userFolder:"projects/fixture-project/users"},
   });
   queryClient.setQueryData(["/cf-auth/v1/admin/tenants/fixture-project/domains"],{domains:verified ? [domain] : []});
+  queryClient.setQueryData(["/cf-auth/v1/admin/tenants/fixture-project/api-upgrade"],{
+    projectId:"fixture-project",projectSlug:"sample-app",supportedVersions:["v1"],legacyAvailable:true,
+    selectedContract:null,selectedAt:null,dataStrategy:"reuse-existing-project",storage:"D1",
+    userFolder:"projects/fixture-project/users",users:{total:0,verified:0,unverified:0},activeKeys:0,
+    urls:{legacy:"https://afroaigroup.com/cf-auth/t/sample-app",v1:"https://afroaigroup.com/cf-auth/v1/t/sample-app"},
+    preserves:["userIds","passwordHashes","verificationStatus","apiKeys","sessions"],requiresDataCopy:false,
+  });
   const container=document.createElement("div"),root=createRoot(container);document.body.append(container);
   act(() => root.render(<QueryClientProvider client={queryClient}><ProjectPage /></QueryClientProvider>));
   return {container,close:()=>{act(()=>root.unmount());container.remove();}};
@@ -32,6 +39,8 @@ it("renders the owner's setup and blocks production key generation before DNS pr
     expect(ui.container.textContent).toContain("Sample app");
     expect(ui.container.textContent).toContain("DNS");
     expect(ui.container.textContent).toContain("sample-app");
+    expect(ui.container.textContent).toContain("Use v1 with existing users");
+    expect(ui.container.textContent).toContain("Keep current API");
   } finally {ui.close();}
 });
 it("enables key generation only after a real verified-state API response", () => {

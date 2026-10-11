@@ -25,3 +25,9 @@ Cloudflare D1 query authorization and schema-import authorization can differ bet
 **Why:** In this environment, a schema change through the connected MCP query API was denied while the approved project's Wrangler import applied the additive migration successfully.
 
 **How to apply:** Verify permissions for the intended operation, use an authorized tool rather than changing credentials blindly, and inspect schema metadata before retrying a migration.
+
+Customer API upgrades must be optional and preserve saved client accounts. The user explicitly objected to clients losing their customers merely because an API was updated.
+
+**Why:** Customer continuity is a standing product requirement, not just a preference for this release.
+
+**How to apply:** Prefer reusing the existing owned project and records when contracts share storage. Never silently create a replacement project, reset passwords, revoke sessions/keys, or delete users. Explain separately when a future genuinely breaking version needs a migration.

@@ -20,6 +20,12 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tenants_owner ON tenants(owner_user_id);
+CREATE TABLE IF NOT EXISTS tenant_api_adoptions (
+  tenant_id TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  selected_contract TEXT NOT NULL CHECK(selected_contract IN ('legacy','v1')),
+  selected_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tenant_domains (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,

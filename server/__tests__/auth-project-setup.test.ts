@@ -37,6 +37,48 @@ async function req(path: string, body?: any, method?: string, signedIn = true) {
   }),{DB:db,JWT_SECRET:"test-only-session-signing",RESEND_API_KEY:"mock-only",APP_URL:"https://afroaigroup.com"} as any,{waitUntil(){}} as any);
 }
 const base = "/v1/admin/tenants/a";
+it("lets an owner adopt v1 or keep legacy without modifying saved customers, keys or sessions", async () => {
+  db.exec("UPDATE tenants SET setup_required=0 WHERE id='a'");
+  await domain(true);
+  expect((await req(`${base}/keys`,{})).status).toBe(200);
+  const signup = await req("/t/alpha/signup",{email:"upgrade@example.test",password:"Long-password-for-tests!"});
+  expect(signup.status).toBe(200);
+  db.exec("UPDATE users SET email_verified=1 WHERE tenant_id='a'");
+  const original = db.query("SELECT * FROM users WHERE tenant_id='a'");
+  const firstLogin = await (await req("/t/alpha/login",{email:"upgrade@example.test",password:"Long-password-for-tests!"})).json() as any;
+  expect(firstLogin.user.id).toBe(original[0].id);
+  const beforeSessions = db.query("SELECT * FROM tenant_sessions WHERE tenant_id='a'");
+  const beforeKeys = db.query("SELECT * FROM api_keys WHERE tenant_id='a'");
+  expect(beforeKeys).toHaveLength(1);
+  expect(beforeSessions).toHaveLength(1);
+  const upgrade = await (await req(`${base}/api-upgrade`,{contract:"v1",confirmPreserveData:true})).json() as any;
+  expect(upgrade).toMatchObject({selectedContract:"v1",requiresDataCopy:false,users:{total:1,verified:1,unverified:0}});
+  expect(upgrade.urls).toMatchObject({legacy:"https://afroaigroup.com/cf-auth/t/alpha",v1:"https://afroaigroup.com/cf-auth/v1/t/alpha"});
+  expect(db.query("SELECT * FROM users WHERE tenant_id='a'")).toEqual(original);
+  expect(db.query("SELECT * FROM tenant_sessions WHERE tenant_id='a'")).toEqual(beforeSessions);
+  expect(db.query("SELECT * FROM api_keys WHERE tenant_id='a'")).toEqual(beforeKeys);
+  const stillSignedIn = await worker.fetch(new Request("https://worker.example/cf-auth/v1/t/alpha/me",{
+    headers:{Authorization:`Bearer ${firstLogin.token}`},
+  }),{DB:db,JWT_SECRET:"test-only-session-signing",APP_URL:"https://afroaigroup.com"} as any,{waitUntil(){}} as any);
+  expect(stillSignedIn.status).toBe(200);
+  expect((await (await req(`${base}/api-upgrade`)).json() as any).selectedContract).toBe("v1");
+  const nextLogin = await (await req("/v1/t/alpha/login",{email:"upgrade@example.test",password:"Long-password-for-tests!"})).json() as any;
+  expect(nextLogin.user.id).toBe(firstLogin.user.id);
+  expect((await req("/t/alpha/login",{email:"upgrade@example.test",password:"Long-password-for-tests!"})).status).toBe(200);
+  expect((await (await req(`${base}/api-upgrade`,{contract:"legacy",confirmPreserveData:true})).json() as any).selectedContract).toBe("legacy");
+  expect(db.query("SELECT * FROM users WHERE tenant_id='a'")).toEqual(original);
+});
+it("requires explicit owner consent and never uses an API upgrade to bypass activation", async () => {
+  expect((await req(`${base}/api-upgrade`,undefined,undefined,false)).status).toBe(401);
+  expect((await req("/v1/admin/tenants/b/api-upgrade",{contract:"v1",confirmPreserveData:true})).status).toBe(404);
+  expect((await req(`${base}/api-upgrade`,{contract:"v1"})).status).toBe(400);
+  expect((await req(`${base}/api-upgrade`,null)).status).toBe(400);
+  expect((await req(`${base}/api-upgrade`,{contract:"v2",confirmPreserveData:true})).status).toBe(400);
+  expect(db.query("SELECT * FROM tenant_api_adoptions")).toHaveLength(0);
+  expect((await req(`${base}/api-upgrade`,{contract:"legacy",confirmPreserveData:true})).status).toBe(200);
+  expect((await req("/t/alpha/signup",{email:"blocked@example.test",password:"Long-password-for-tests!"})).status).toBe(404);
+  expect(db.query("SELECT setup_required FROM tenants WHERE id='a'")[0].setup_required).toBe(1);
+});
 async function domain(verified = false) {
   const added = await (await req(`${base}/domains`,{domain:"example.com"})).json() as any;
   if (verified) expect((await (await req(`${base}/domains/${added.id}/verify`,{})).json() as any).verified).toBe(true);

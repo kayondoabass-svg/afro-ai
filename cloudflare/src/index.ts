@@ -22,6 +22,7 @@ import { PLATFORM_ISSUER, PLATFORM_AUDIENCE, PLATFORM_PURPOSE, verifyPlatformSes
 import bcrypt from 'bcryptjs';
 import { tenantAuth } from './tenant-auth';
 import { registerTenantSetup, tenantSetup, tenantIsActive } from './tenant-project-setup';
+import { registerTenantApiUpgrade } from './tenant-api-upgrade';
 import { platformAdminIdentity } from './platform-admin-auth';
 import { parseTenantOrigins, validTenantOrigin } from '../../shared/tenant-origins';
 import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
@@ -1595,6 +1596,7 @@ async function ownedTenantOr401(
   return tenant;
 }
 
+registerTenantApiUpgrade(app, ownedTenantOr401);
 registerTenantSetup(app, {ownedTenant: ownedTenantOr401, sendVerification: async (c, tenant, user) => {
   const key = `tenant:${tenant.id}:admin-verification:${c.req.header('CF-Connecting-IP') || 'unknown'}`;
   if (await checkThrottles(c.env.DB, [key], nowSec())) return {sent:false,rateLimited:true};

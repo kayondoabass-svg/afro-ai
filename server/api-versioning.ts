@@ -88,6 +88,16 @@ Customer login, signup, session and recovery operations gain
 <code>/cf-auth/v1/t/:slug/...</code> aliases for <code>/cf-auth/t/:slug/...</code>.
 These aliases require deployment of the updated Auth Worker. Origin allowlists, tokens and
 email verification requirements are unchanged. See <a href="/openapi.json">Afro Auth OpenAPI</a>.</p>
+<h2>Keep existing Auth users when adopting v1</h2><p>Open
+<a href="/dashboard/auth">Afro Auth projects</a>, select your existing project, and open
+<strong>API upgrade</strong>. Choose <strong>Keep current API</strong> or
+<strong>Use v1 with existing users</strong>. This saves a reversible integration preference.
+You still update your own application&rsquo;s API base URL; Afro AI cannot automatically edit
+an external customer app.</p><p>Both project URL prefixes reach the same handlers and the same
+D1 user records. No accounts are copied or deleted; user IDs, password hashes, verification
+statuses, keys and existing session records remain unchanged. Do not create a new project
+to upgrade an existing one. V2 is not available. Afro AI platform login accounts are separate
+from project customer users; this is not a cross-provider or platform-account import.</p>
 <h2>Compatibility policy</h2><p>Within v1, preserve required inputs, field names and types,
 status-code meanings and documented behaviour. Breaking changes require an explicitly introduced
 new major version and migration guide. Compatible additions and bug fixes may remain in v1.

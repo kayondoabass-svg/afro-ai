@@ -6,6 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { prepareAuthOrigins, readableApiError } from "@shared/customer-api-setup";
 import { DomainSetup } from "@/components/auth-setup/domain-setup";
 import { UserDirectory } from "@/components/auth-setup/user-directory";
+import { ApiUpgrade } from "@/components/auth-setup/api-upgrade";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,9 @@ export default function AfroAuthProjectPage() {
     retry: false,
   });
   const setup = data?.setup;
+  const { data: apiChoice } = useQuery<{selectedContract:"legacy"|"v1"|null;urls:{legacy:string;v1:string}}>({
+    queryKey:[`${detailPath}/api-upgrade`],enabled:!!id,retry:false,
+  });
   const createAllowed = setup?.canCreateKeys === true;
 
   const createKey = useMutation({
@@ -148,7 +152,8 @@ export default function AfroAuthProjectPage() {
 
   const t = data.tenant;
   const mauPct = data.stats.mauLimit > 0 ? Math.min(100, (data.stats.mau / data.stats.mauLimit) * 100) : 0;
-  const projectUrl = `https://afroaigroup.com/cf-auth/v1/t/${t.slug}`;
+  const projectUrl = apiChoice?.selectedContract === "legacy"
+    ? apiChoice.urls.legacy : `https://afroaigroup.com/cf-auth/v1/t/${t.slug}`;
   const liveKeys = data.keys.filter((key) => !key.revoked_at);
   const setupRequired = setup?.required === true || t.setup_required === 1;
   const verifiedDomainCount = setup?.verifiedDomainCount ?? 0;
@@ -267,6 +272,7 @@ return result.user;`}</code></pre>
             <p className="border-t pt-3 text-xs text-muted-foreground">Website TXT proof authorizes the website integration. It does not send signup email and does not confirm a customer's email address.</p>
           </CardContent></Card>
         </div>
+        <ApiUpgrade tenantId={id} />
       </TabsContent>
 
       <TabsContent value="keys" className="mt-4">
