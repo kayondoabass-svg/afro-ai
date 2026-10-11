@@ -14,7 +14,8 @@
     "build:native": "node native/build.mjs",
     "desktop": "electron .",
     "pack:linux": "node desktop/pack-linux.mjs",
-    "pack:windows": "node desktop/pack-windows.mjs"
+    "pack:windows": "node desktop/pack-windows.mjs",
+    "pack:macos": "node desktop/pack-macos.mjs"
   },
   "devDependencies": { "electron": "^44.7.0" }
 }

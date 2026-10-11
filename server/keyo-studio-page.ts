@@ -40,6 +40,10 @@ export function keyoStudioPage(): string {
       -webkit-font-smoothing: antialiased;
     }
     a { color: inherit; }
+    .platform-scroll { overflow-x:auto; }
+    .platform-table { width:100%; min-width:560px; border-collapse:collapse; font-size:14px; line-height:1.6; }
+    .platform-table th, .platform-table td { text-align:left; vertical-align:top; padding:16px; border-bottom:1px solid var(--line); }
+    .platform-table th { background:var(--paper-bright); }
     a:focus-visible, button:focus-visible { outline: 3px solid var(--orange); outline-offset: 4px; }
     .wrap { width: min(1120px, calc(100% - 48px)); margin-inline: auto; }
     .topbar { border-bottom: 1px solid var(--line); }
@@ -160,7 +164,7 @@ export function keyoStudioPage(): string {
     <div class="wrap nav">
       <a class="brand" href="/" aria-label="Afro AI home"><span class="brand-mark" aria-hidden="true">K</span> KEYO Studio</a>
       <nav class="nav-links" aria-label="Main navigation">
-        <a href="#install-windows">Download &amp; install</a><a href="#how-it-works">How it works</a><a href="#quickstart">Developer quickstart</a><a href="#scope">Scope</a><a href="#release">Release</a>
+        <a href="#platforms">Platforms</a><a href="#install-windows">Windows instructions</a><a href="#how-it-works">How it works</a><a href="#quickstart">Developer quickstart</a><a href="#release">Release</a>
       </nav>
       <a class="home-link" href="/"><span aria-hidden="true">←</span> Afro AI home</a>
     </div>
@@ -197,6 +201,47 @@ export function keyoStudioPage(): string {
     <div class="ticker" aria-label="Product properties">
       <div class="wrap ticker-inner"><span>JavaScript CPU inference</span><span>Local model files</span><span>Versioned localhost API</span><span>No paid API</span><span>No telemetry</span></div>
     </div>
+
+    <section class="section" id="platforms">
+      <div class="wrap">
+        <div class="section-head"><div class="section-kicker">Choose your platform</div><div><h2>Windows, Linux and Mac—not iOS.</h2><p class="section-intro">Desktop builds use our own local CPU engine. Models download separately. None of these archives installs an iPhone or iPad app.</p></div></div>
+        <div class="platform-scroll">
+          <table class="platform-table" aria-label="Desktop and mobile platform availability">
+            <thead><tr><th scope="col">Platform</th><th scope="col">Download and instructions</th><th scope="col">Verification status</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Windows x64</th><td>Portable ZIP, about 158 MB. <a href="#install-windows">Windows instructions</a>.</td><td>Unsigned developer build; execution on Windows is unverified.</td></tr>
+              <tr><th scope="row">Linux x64 desktop</th><td>Archive, about 123 MB. <a href="#install-linux">Linux instructions</a>. Requires a graphical desktop—not ARM or a headless VPS.</td><td>Packaged local model-download/chat smoke passed; not every distribution is certified.</td></tr>
+              <tr><th scope="row">macOS Apple Silicon / Intel</th><td>Separate arm64 / x64 previews, about 130 / 134 MB. <a href="#install-macos">Mac instructions</a>. No separate Node.js installation.</td><td>Must finish signing on a Mac. Not Developer ID signed or notarized; Mac GUI execution is unverified.</td></tr>
+              <tr><th scope="row">iOS iPhone / iPad</th><td>No mobile application yet.</td><td>Desktop archives do not run on iOS. Safari offers only an interface preview—not local inference.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="install-linux">
+      <div class="wrap">
+        <div class="section-head"><div class="section-kicker">Linux / x64 desktop</div><div><h2>Extract, launch, then load a model.</h2><p class="section-intro"><a href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-linux-x64.tar.gz">Download the Linux desktop archive — about 123 MB</a>. Open Terminal and run these commands as your normal user—not with sudo.</p></div></div>
+        <pre style="overflow-x:auto; padding:20px; border:1px solid var(--line); border-radius:5px">cd ~/Downloads
+tar -xzf KEYO-Studio-${KEYO_VERSION}-linux-x64.tar.gz
+cd KEYO-Studio-${KEYO_VERSION}-linux-x64
+./keyo-studio</pre>
+        <p class="section-intro">Keep the extracted files together. In Model library, select Qwen2.5 0.5B Instruct → Download model → accept the licence and bandwidth confirmation → wait for verification → Load downloaded model → create a conversation. Try “2+2=? Reply with just the number.” The model downloads separately (about 1 GB); afterwards, generation works offline without an account or AI API credits.</p>
+        <p class="alpha-note">Missing library or sandbox error? Report the exact message and Linux distribution/version. Do not disable the sandbox or run as root to bypass an error.</p>
+      </div>
+    </section>
+
+    <section class="section" id="install-macos">
+      <div class="wrap">
+        <div class="section-head"><div class="section-kicker">macOS / Developer preview</div><div><h2>Choose your Mac’s processor.</h2><p class="section-intro">macOS 13 or newer. Apple menu → About This Mac: an Apple M-series chip needs arm64 (about 130 MB); an Intel processor needs x64 (about 134 MB). Use the matching archive, not the Windows or Linux package.</p></div></div>
+        <div class="actions">
+          <a class="button secondary" href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-darwin-arm64.zip">Mac Apple Silicon — developer preview</a>
+          <a class="button secondary" href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-darwin-x64.zip">Mac Intel — developer preview</a>
+        </div>
+        <p class="section-intro">Extract the entire ZIP and read READ-ME-FIRST.txt for the runtime’s minimum macOS version. These cross-built previews require a local signing step: open Terminal, change into the extracted KEYO-Studio folder, then run <code>bash finish-on-mac.command</code>. The script only applies local ad-hoc code signatures; it is not Apple notarization and does not bypass Gatekeeper. After it succeeds, open KEYO Studio.app and follow the same Model library → download → load → new conversation steps above.</p>
+        <p class="alpha-note"><strong>Not a certified Mac release.</strong> If macOS blocks opening or the signing step fails, report the exact message and Mac processor/macOS version. Do not disable Gatekeeper, remove quarantine, or bypass security protections. A real Mac GUI test and Apple-signed/notarized distribution remain separate requirements.</p>
+      </div>
+    </section>
 
     <section class="section" id="install-windows">
       <div class="wrap">

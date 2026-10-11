@@ -18,3 +18,15 @@ platform execution and installer signing as separate release claims. Label
 unsigned/unverified developer packages plainly; never recommend disabling
 security protections. Do not mark the entire runner roadmap complete after a
 download-library milestone.
+
+Changed macOS bundles require signing on a Mac before launch testing.
+Local ad-hoc signing is not Apple Developer ID signing or notarization.
+
+**Why:** Modifying the official runtime's bundle identity and adding application
+resources invalidates its original resource seal. Cross-building on Linux
+cannot establish that the resulting bundle passes macOS launch checks.
+
+**How to apply:** Label cross-built bundles as developer previews, expose the
+required native signing step, and keep GUI execution unverified until a real
+Mac test succeeds. Never present removing quarantine or disabling Gatekeeper
+as an installation requirement.

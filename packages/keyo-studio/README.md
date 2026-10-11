@@ -39,6 +39,73 @@ tokenization and model loading are implemented in this package.
 No Ollama, llama.cpp, vLLM, ONNX or Transformers runtime is embedded or called.
 There are no production dependencies beyond Node.js 20+.
 
+## Platform status
+
+| Platform | Distribution | Verification |
+| --- | --- | --- |
+| Windows x64 | Portable ZIP, about 158 MB | Unsigned; Windows execution unverified |
+| Linux x64 desktop | tar.gz, about 123 MB | Packaged model-download/local-chat smoke passed; not every distribution |
+| macOS Apple Silicon (arm64) / Intel (x64) | Separate developer-preview ZIPs | Finish ad-hoc signing on a Mac; GUI unverified; not Developer ID signed or notarized |
+| iOS (iPhone/iPad) | No application yet | Desktop packages and the hosted preview are not iOS inference |
+
+## Linux: download and first run
+
+[Download the Linux x64 desktop archive](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.4/KEYO-Studio-0.1.0-alpha.4-linux-x64.tar.gz).
+This needs a graphical desktop, not a headless VPS. It is not an ARM Linux build.
+
+```sh
+cd ~/Downloads
+tar -xzf KEYO-Studio-0.1.0-alpha.4-linux-x64.tar.gz
+cd KEYO-Studio-0.1.0-alpha.4-linux-x64
+./keyo-studio
+```
+
+Run as your normal user, not root. Keep all extracted files together. Select
+Qwen2.5 0.5B Instruct in Model library, download with licence confirmation
+(about 1 GB), wait for verification, load it and create a conversation.
+Ask `2+2=? Reply with just the number.` After downloading/loading, generation
+works offline without an account or AI API credits. If a library or sandbox
+error appears, report the message and distribution/version; do not disable
+the sandbox or use sudo to bypass it.
+
+## macOS: Apple Silicon and Intel developer previews
+
+Apple menu → About This Mac: Apple M-series = **arm64**, Intel = **x64**.
+
+- [Apple Silicon preview ZIP](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.4/KEYO-Studio-0.1.0-alpha.4-darwin-arm64.zip)
+- [Intel preview ZIP](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.4/KEYO-Studio-0.1.0-alpha.4-darwin-x64.zip)
+
+Extract the entire ZIP. See READ-ME-FIRST.txt for its minimum runtime macOS.
+Open Terminal, change into the extracted KEYO-Studio folder, then run:
+
+```sh
+bash finish-on-mac.command
+```
+
+This locally ad-hoc signs the changed application bundle. It does **not**
+provide Apple Developer ID signing, notarization, or a Gatekeeper bypass.
+After successful signing, open **KEYO Studio.app**. No separate Node.js
+installation is needed. Follow the same Model library → Qwen2.5 0.5B →
+Download model → Load downloaded model → new conversation steps.
+The model downloads separately (about 1 GB); afterwards generation is local.
+
+**Mac GUI execution is not certified.** If signing or opening is blocked,
+report the exact message and processor/macOS version. Do not remove quarantine
+or disable security protections. Native Mac builds can run
+`npm run pack:macos -- /path/to/new-output arm64` (or `x64`) to apply and verify
+ad-hoc signatures during packaging. Developer ID signing/notarization and
+real-device model/GUI verification remain separate work.
+
+For the Mac packager, use the current GitHub main branch or the separate
+macos-source ZIP attached to the release. The earlier alpha.4 source archives
+predate this added builder; their published bytes have not been replaced.
+
+## iOS: not available
+
+iOS is for iPhone/iPad, not Mac computers. There is no KEYO iOS application.
+The hosted browser preview does not run models on these devices. A separate
+mobile app and device-tested owned engine are required.
+
 ## Windows: download and first run
 
 1. Open [the alpha.4 release](https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v0.1.0-alpha.4).

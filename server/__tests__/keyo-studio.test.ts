@@ -39,6 +39,15 @@ describe("KEYO Studio independent runner", () => {
     expect(html).toContain("Load downloaded model");
     expect(html).toContain("No account is required");
     expect(html).toContain("Do not disable antivirus");
+    expect(html).toContain('id="platforms"');
+    expect(html).toContain('id="install-linux"');
+    expect(html).toContain("./keyo-studio");
+    expect(html).toContain('id="install-macos"');
+    expect(html).toContain(`KEYO-Studio-${KEYO_VERSION}-darwin-arm64.zip`);
+    expect(html).toContain(`KEYO-Studio-${KEYO_VERSION}-darwin-x64.zip`);
+    expect(html).toContain("bash finish-on-mac.command");
+    expect(html).toContain("No mobile application yet.");
+    expect(html).toContain("Not a certified Mac release.");
     expect(html).toContain('rel="canonical" href="https://afroaigroup.com/keyo-studio"');
     expect(html).toContain(KEYO_VERSION);
     expect(html).toContain("Node.js 20");
