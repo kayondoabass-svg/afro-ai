@@ -19,3 +19,9 @@ Prefer replacement-key overlap before explicit revocation, and a deliberate emai
 **Why:** Immediate regeneration can interrupt customer apps; automated email scanners can visit links without the mailbox owner's intent.
 
 **How to apply:** Keep secrets one-time and server-only, explain deployment before revocation, and never equate accepted email delivery with verified ownership.
+
+Cloudflare D1 query authorization and schema-import authorization can differ between connected tools.
+
+**Why:** In this environment, a schema change through the connected MCP query API was denied while the approved project's Wrangler import applied the additive migration successfully.
+
+**How to apply:** Verify permissions for the intended operation, use an authorized tool rather than changing credentials blindly, and inspect schema metadata before retrying a migration.
