@@ -30,10 +30,10 @@ async function copySource(directory,prefix='') {
   for (const entry of await fs.readdir(directory,{withFileTypes:true})) {
     const relative=prefix+entry.name;
     if (entry.isSymbolicLink()) throw new Error(`Source symlink refused: ${relative}`);
-    if (entry.isDirectory() && ['src','desktop','desktop/renderer','bin'].includes(relative))
+    if (entry.isDirectory() && ['src','native','desktop','desktop/renderer','bin'].includes(relative))
       await copySource(path.join(directory,entry.name),relative+'/');
     else if (entry.isFile() && (['package.json','LICENSE','README.md','CONTRIBUTING.md','SECURITY.md','bin/keyo.mjs'].includes(relative) ||
-      /^src\/[a-z-]+\.mjs$/.test(relative) || /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(relative) ||
+      /^src\/[a-z-]+\.mjs$/.test(relative) || ['native/kernels.cc','native/build.mjs'].includes(relative) || /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(relative) ||
       /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(relative))) {
       const target=path.join(appDirectory,relative);
       await fs.mkdir(path.dirname(target),{recursive:true});
@@ -47,6 +47,6 @@ await run('tar',['-czf',path.join(output,filename),'-C',output,name],{timeout:18
 const hash=createHash('sha256'); for await (const chunk of createReadStream(path.join(output,filename))) hash.update(chunk);
 const bytes=(await fs.stat(path.join(output,filename))).size;
 const release={name:'KEYO Studio',version:pkg.version,platform:'linux',architecture:process.arch,filename,bytes,sha256:hash.digest('hex'),
-  electronVersion:electron.version,signed:false,modelsIncluded:false,engine:'keyo-cpu',modelLimits:'4 GiB single checkpoint, disk-backed above 256 MiB, 512 token context',nativeStatus:'unsigned developer alpha'};
+  electronVersion:electron.version,signed:false,modelsIncluded:false,engine:'keyo-cpu',modelLimits:'4 GiB single / 32 GiB indexed checkpoint, 512 token context',nativeStatus:'unsigned developer alpha'};
 await fs.writeFile(path.join(output,'release.json'),JSON.stringify(release,null,2));
 console.log(JSON.stringify(release,null,2));

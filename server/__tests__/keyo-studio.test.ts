@@ -48,7 +48,8 @@ describe("KEYO Studio independent runner", () => {
         expect(createHash("sha256").update(data).digest("hex")).toBe(asset.sha256);
         if (asset.filename !== KEYO_CHECKSUMS && asset.filename !== KEYO_RELEASE_BUNDLE) expect(checksums).toContain(`${asset.sha256}  ${asset.filename}`);
       }
-      expect(keyoReleaseNotes).toContain("Source-only prerelease");
+      expect(keyoReleaseNotes).toContain("Unsigned desktop packages and source");
+      expect(keyoReleaseNotes).toContain("verified downloads");
       expect(keyoReleaseNotes).toMatch(/does not establish[\s\S]*7B\/14B support/);
     } finally { await rm(directory, { recursive: true, force: true }); }
   });

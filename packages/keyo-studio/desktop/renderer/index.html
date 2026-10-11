@@ -43,7 +43,7 @@
         <div class="main-inner">
           <div class="notice" id="alpha-notice" role="note">
             <span class="notice-mark" aria-hidden="true">ALPHA</span>
-            <div><strong>Own-engine CPU alpha.</strong><p>Bring config.json, tokenizer.json, and one model.safetensors up to 4 GiB. Weights above 256 MiB use disk-backed loading rather than decoding the entire checkpoint into RAM. Context stays capped at 512 tokens; generation may be slow and has a five-minute limit for disk-backed models. GPU, GGUF, sharded weights and 7B/14B models are not supported.</p></div>
+            <div><strong>Own-engine CPU alpha.</strong><p>Download a pinned model below or choose your own compatible folder. Single checkpoints allow 4 GiB; experimental indexed shards allow 32 GiB total. Context stays capped at 512 tokens. CPU inference may be slow and generation has a five-minute limit for disk-backed models. GPU, GGUF, quantization and general 7B/14B certification are not included.</p></div>
           </div>
           <div class="notice preview-note" id="preview-notice" role="note" hidden>
             <span class="notice-mark" aria-hidden="true">PREVIEW</span>
@@ -63,6 +63,21 @@
               <button class="quiet-button" id="unload-model" type="button" disabled>Unload</button>
             </div>
           </section>
+          <details class="model-library">
+            <summary>Model library — download, resume and load local models</summary>
+            <p>Downloads require Internet and licence acceptance. Inference and conversations stay on your computer.</p>
+            <label for="library-model">Choose a public model</label>
+            <select id="library-model" aria-describedby="library-description"></select>
+            <p id="library-description"></p>
+            <div class="toolbar-actions">
+              <button class="secondary-button" id="download-model" type="button" disabled>Download model</button>
+              <button class="secondary-button" id="load-downloaded" type="button" disabled>Load downloaded model</button>
+              <button class="quiet-button" id="cancel-download" type="button" hidden>Cancel download</button>
+              <button class="danger-button" id="remove-model" type="button" disabled>Delete model files</button>
+            </div>
+            <progress id="download-progress" hidden></progress>
+            <p id="library-status" role="status" aria-live="polite"></p>
+          </details>
           <div class="conversation-toolbar">
             <h2 id="conversation-title">No conversation selected</h2>
             <div class="toolbar-actions">

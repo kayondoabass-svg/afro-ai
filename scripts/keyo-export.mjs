@@ -65,7 +65,7 @@ const [pack]=JSON.parse(stdout);
 if (!pack.files.every(file => permitted(file.path))) throw new Error('Unexpected file in the publication archive.');
 const archive=await fs.readFile(path.join(hf,pack.filename));
 const sha256=createHash('sha256').update(archive).digest('hex');
-for (const file of ['index.html','style.css','app.mjs','bridge.mjs'])
+for (const file of ['index.html','style.css','app.mjs','bridge.mjs','library-panel.mjs'])
   await fs.copyFile(path.join(source,'desktop/renderer',file),path.join(hf,file));
 // Explicit preview-only links; the Space never pretends to execute local models.
 const html=await fs.readFile(path.join(hf,'index.html'),'utf8');

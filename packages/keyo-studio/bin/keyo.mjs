@@ -6,16 +6,20 @@ import os from 'node:os';
 import { KeyoEngine } from '../src/engine.mjs';
 import { startServer } from '../src/server.mjs';
 import { KEYO_VERSION } from '../src/version.mjs';
+import { ModelLibrary } from '../src/model-library.mjs';
 
 const help = `KEYO Studio LLM/SLM Runner — ${KEYO_VERSION}
 Our CPU engine. No cloud AI API, no telemetry, no bundled model.
 Requires Node 20+ and a supported, locally downloaded model.
 
 keyo inspect MODEL_DIRECTORY
-keyo chat MODEL_DIRECTORY --prompt "Once upon a time" [--max-tokens 32]
+keyo models
+keyo download MODEL_ID --accept-license apache-2.0
+keyo remove-model MODEL_ID --confirm
+keyo chat MODEL_DIRECTORY --prompt "Hello" [--max-tokens 32] [--mode chat|completion]
 keyo serve MODEL_DIRECTORY [--port 4317]
 
-Folder: config.json + tokenizer.json + one model.safetensors (max 4 GiB).
+Folder: config.json + tokenizer.json + a single checkpoint (4 GiB) or indexed shards (32 GiB).
 Weights above 256 MiB use bounded-memory disk-backed CPU loading.
 Architectures: basic GPT-Neo, Qwen2, Llama. Unsupported variants fail explicitly.
 Not yet: GGUF, quantized weights, GPUs, Tauri desktop installers, training.
@@ -40,14 +44,32 @@ try {
   const [command,directory,...args] = process.argv.slice(2);
   if (!command || ['help','--help','-h'].includes(command)) { console.log(help); }
   else if (['--version','version'].includes(command)) console.log(KEYO_VERSION);
+  else if(['models','download','remove-model'].includes(command)){
+    const library=new ModelLibrary(path.join(os.homedir(),'.keyo-studio','models'));
+    if(command==='models'){
+      if(directory||args.length)throw new Error('keyo models does not take arguments.');
+      console.log(JSON.stringify(await library.list(),null,2));
+    }else if(command==='download'){
+      if(args.length!==2||args[0]!=='--accept-license'||args[1]!=='apache-2.0')throw new Error('Use keyo download MODEL_ID --accept-license apache-2.0');
+      const abort=new AbortController();process.once('SIGINT',()=>abort.abort());
+      let last=0;
+      const downloaded=await library.download(directory,{acceptLicense:true,signal:abort.signal,onProgress:p=>{
+        if(p.phase!=='downloading'||Date.now()-last>2000){last=Date.now();console.log(p.phase,p.file??'',`${Math.round(100*(p.received??0)/p.total)}%`);}
+      }});
+      console.log('Verified model ready:',downloaded);
+    }else{
+      if(args.length!==1||args[0]!=='--confirm')throw new Error('Use --confirm to delete this managed model and its partial files. Conversations are not deleted.');
+      await library.remove(directory,{confirmed:true});console.log('Managed model files removed; conversations retained.');
+    }
+  }
   else {
     if (!['inspect','chat','serve'].includes(command) || !directory) throw new Error('Unknown command or missing model directory. Use keyo --help.');
     const options = {};
     for (let i = 0; i < args.length; i += 2) {
-      if (!['--prompt','--max-tokens','--port'].includes(args[i]) || args[i+1] === undefined || options[args[i]] !== undefined) throw new Error('Unknown, missing or repeated option.');
+      if (!['--prompt','--max-tokens','--port','--mode'].includes(args[i]) || args[i+1] === undefined || options[args[i]] !== undefined) throw new Error('Unknown, missing or repeated option.');
       options[args[i]] = args[i+1];
     }
-    const allowed = command === 'chat' ? ['--prompt','--max-tokens'] : command === 'serve' ? ['--port'] : [];
+    const allowed = command === 'chat' ? ['--prompt','--max-tokens','--mode'] : command === 'serve' ? ['--port'] : [];
     if (Object.keys(options).some(key => !allowed.includes(key))) throw new Error('Option is not valid for this command.');
     if (command === 'serve') {
       const credentials = await apiToken();
@@ -61,10 +83,13 @@ try {
       try {
       if (command === 'inspect') console.log(JSON.stringify(engine.info(),null,2));
       else {
-        if (!options['--prompt']) throw new Error('Provide --prompt. This alpha uses text continuation; chat templates are available through the API for supported instruction models.');
+        if (!options['--prompt']) throw new Error('Provide --prompt.');
+        const mode=options['--mode']??(engine.info().chatTemplate?'chat':'completion');
+        if(!['chat','completion'].includes(mode))throw new Error('Mode must be chat or completion.');
+        const prompt=mode==='chat'?engine.chatPrompt([{role:'user',content:options['--prompt']}]):options['--prompt'];
         const abort = new AbortController();
         process.once('SIGINT',() => abort.abort());
-        for await (const event of engine.generate(options['--prompt'],{
+        for await (const event of engine.generate(prompt,{
           maxTokens:Number(options['--max-tokens'] ?? (engine.info().storage === 'disk' ? 4 : 32)),signal:abort.signal}))
           if (event.type === 'token') process.stdout.write(event.text);
         process.stdout.write('\n');

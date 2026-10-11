@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('keyo',Object.freeze({
   deleteChat:id => invoke('deleteChat',id),
   generate:request => invoke('generate',request),
   cancel:() => invoke('cancel'),
+  listModels:()=>invoke('listModels'),
+  downloadModel:id=>invoke('downloadModel',id),
+  cancelDownload:()=>invoke('cancelDownload'),
+  loadDownloaded:id=>invoke('loadDownloaded',id),
+  removeModel:id=>invoke('removeModel',id),
   onEvent:callback => {
     if (typeof callback !== 'function') throw new Error('An event callback is required.');
     const handler=(_event,payload) => callback(payload);

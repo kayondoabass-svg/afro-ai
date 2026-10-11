@@ -45,6 +45,11 @@ function makeId() {
 }
 
 const preview = {
+  async listModels(){return [];},
+  async downloadModel(){throw new Error('Downloads require the installed desktop application.');},
+  async cancelDownload(){},
+  async loadDownloaded(){throw new Error('Local inference requires the installed desktop application.');},
+  async removeModel(){throw new Error('Model management requires the installed desktop application.');},
   async state() {
     return { mode: "preview", platform: "browser", model: null, loading: false, busy: false, limits: previewLimits };
   },

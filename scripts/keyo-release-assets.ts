@@ -17,7 +17,7 @@ export const KEYO_RELEASE_ASSETS = [KEYO_SOURCE_RELEASE, KEYO_RELEASE_NOTES, KEY
 
 export const keyoReleaseNotes = `# KEYO Studio v${KEYO_VERSION}
 
-**Developer alpha · Source-only prerelease · MIT code licence**
+**Developer alpha · Unsigned desktop packages and source · MIT code licence**
 
 Ugandan-built by KEYO Technologies. A local LLM/SLM runner with our own
 JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
@@ -25,6 +25,11 @@ JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
 ## Included
 - CLI for model inspection, local generation and an authenticated localhost API.
 - Electron desktop workspace source with local conversation history.
+- Pinned public model catalogue with licence consent, verified downloads,
+  progress, cancellation/resume, private local storage and confirmed deletion.
+- Desktop download → load → local chat flow. Models are not bundled.
+- Windows x64 portable ZIP and Linux x64 archive attached separately when built.
+  Unsigned developer builds: see package metadata for execution-verification status.
 - Basic GPT-Neo, Qwen2 and Llama execution for explicitly supported variants.
 - Safetensors F32/F16/BF16 loading and byte-level BPE tokenization.
 - Experimental indexed shards with strict path, tensor and size checks.
@@ -36,12 +41,16 @@ JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
 ## Requirements and limits
 - CLI: Node.js >=20. Desktop development: Node.js >=22.12 and Electron.
 - Supply a compatible model folder containing config.json, tokenizer.json and
-  model.safetensors or model.safetensors.index.json and its shards. No model weights are included.
+  model.safetensors or model.safetensors.index.json and its shards, or explicitly
+  download a pinned model through the library. No model weights are included.
 - Single-file checkpoints up to 4 GiB; above 256 MiB, matrices stay on disk and
   are read through a bounded 256 KiB buffer. Resident vectors are capped at 8 MiB.
 - Indexed checkpoints: 8 GiB per shard, 32 GiB total, at most 128 shards.
   Each shard has a 256 KiB scratch buffer; the 8 MiB vector cap is shared.
 - Native source builds: Linux/macOS with C++ and Node development headers.
+- First desktop test: extract the entire archive, open KEYO Studio, expand
+  Model library, select Qwen2.5 0.5B, accept the licence/download, then Load downloaded model.
+  Create a conversation and ask a short question. Prompts stay local.
   Windows uses JavaScript. Native operation is opt-in, without silent fallback.
 - NFC byte-level BPE, exact literal added tokens and modern default RoPE settings.
 - Existing Afro AI checkpoint support is a CPU smoke check, not certification

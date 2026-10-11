@@ -174,9 +174,9 @@ export function keyoStudioPage(): string {
         <p class="hero-copy"><strong>KEYO Studio is a local LLM/SLM runner for developers.</strong> Inspect and own model execution on your machine, powered by our JavaScript CPU inference engine—not a wrapper around Ollama, llama.cpp, or vLLM.</p>
         <div class="actions">
           <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_VERSION}.tgz">Get the source package <span class="arrow" aria-hidden="true">↓</span></a>
-          <a class="button secondary" href="/api/keyo-studio/release">Release details <span class="arrow" aria-hidden="true">↗</span></a>
+          <a class="button secondary" href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-win32-x64.zip">Windows portable ZIP <span class="arrow" aria-hidden="true">↓</span></a>
         </div>
-        <p class="alpha-note"><strong>Developer alpha ${KEYO_VERSION}.</strong> Ugandan-built by KEYO Technologies. Includes our CPU engine, CLI and desktop workspace source, not a signed cross-platform installer or a production-readiness claim. CLI requires Node.js 20+; desktop development requires Node.js 22.12+ and Electron.</p>
+        <p class="alpha-note"><strong>Developer alpha ${KEYO_VERSION}.</strong> Ugandan-built by KEYO Technologies. Unsigned Windows portable and Linux desktop archives are available with our own CPU engine and model-download library. Extract the entire archive before opening the app. Windows runtime execution is not certified by the Linux build host. CLI requires Node.js 20+; desktop packages include their runtime.</p>
         <a class="text-link" href="/keyo-studio/workspace/">Explore the workspace interface preview →</a>
         <p>Ugandan-built by KEYO Technologies, KEYO Studio aims to contribute to the AI revolution and add value to the development of AI and future superintelligence.</p>
       </div>
@@ -200,7 +200,7 @@ export function keyoStudioPage(): string {
       <div class="wrap">
         <div class="section-head"><div class="section-kicker">01 / What it is</div><div><h2>A runner you can look inside.</h2><p class="section-intro">KEYO loads supported model assets from a folder you provide, runs our transformer engine on your CPU, and exposes a versioned API bound to localhost with authentication. It is a small, inspectable starting point for local AI development.</p></div></div>
         <div class="split">
-          <article class="work-card"><span class="mini-label">Execution, not delegation</span><h3>Your model. Your machine.</h3><p>Prompts are processed locally. There are no cloud prompts, automatic model downloads, paid inference APIs, or telemetry. You choose which model folder to provide and can inspect the source package.</p></article>
+          <article class="work-card"><span class="mini-label">Execution, not delegation</span><h3>Your model. Your machine.</h3><p>Prompts are processed locally. Explicit model downloads contact Hugging Face only after you accept the licence and bandwidth use. Downloads are pinned and checksum-verified; inference works offline afterwards. No paid inference API or telemetry is required.</p></article>
           <article class="work-card"><span class="mini-label">A real alpha, with edges</span><h3>Early and deliberately scoped.</h3><p>The engine implements basic GPT-Neo, Qwen2 and Llama architectures. One small public Llama checkpoint has produced text locally; other families have mathematical fixture tests, not pretrained certification. Your existing Afro AI model is not yet certified.</p></article>
         </div>
       </div>
@@ -208,7 +208,7 @@ export function keyoStudioPage(): string {
 
     <section class="section" id="quickstart">
       <div class="wrap">
-        <div class="section-head"><div class="section-kicker">02 / Quickstart</div><div><h2>Bring a supported model folder.</h2><p class="section-intro">Install the package on a Node.js 20+ machine, then point the CLI at model files already on disk. KEYO does not download models for you.</p></div></div>
+        <div class="section-head"><div class="section-kicker">02 / Quickstart</div><div><h2>Download a model—or bring your own.</h2><p class="section-intro">Desktop: extract the archive, open Model library, download Qwen2.5 0.5B, then load it and create a conversation. CLI: use keyo models and keyo download with explicit licence acceptance. Models are not included in the app download.</p></div></div>
         <div class="install-layout">
           <div>
             <div class="code-card">
@@ -252,7 +252,7 @@ export function keyoStudioPage(): string {
           <div class="scope-row"><span class="scope-icon" aria-hidden="true">+</span><div><strong>Authenticated localhost API</strong><p>A versioned API intended for local development and inspection.</p></div></div>
           <div class="scope-row"><span class="scope-icon no" aria-hidden="true">−</span><div><strong>Not included: fine-tuning</strong><p>Training and fine-tuning are not part of this alpha.</p></div></div>
           <div class="scope-row"><span class="scope-icon" aria-hidden="true">+</span><div><strong>No paid API, no telemetry</strong><p>Execution stays local; there is no cloud prompt service or telemetry collection.</p></div></div>
-          <div class="scope-row"><span class="scope-icon no" aria-hidden="true">−</span><div><strong>Signed installers still in development</strong><p>The source includes an Electron desktop workspace using our own engine. GPU inference, larger models and verified Windows/macOS installers are not ready.</p></div></div>
+          <div class="scope-row"><span class="scope-icon no" aria-hidden="true">−</span><div><strong>Unsigned developer desktop packages</strong><p>Windows portable ZIP and Linux archive include our own engine and model library. Windows/macOS execution certification, signing, GPU acceleration and general 14B support remain unfinished. Never disable security protections to run a package.</p></div></div>
         </div>
         <div class="boundary-note"><strong>Alpha caution:</strong> Local execution does not automatically make every workflow secure or production-ready. Review the source, keep the authenticated API on localhost, and evaluate the model and its license before use.</div>
       </div>
@@ -267,6 +267,7 @@ export function keyoStudioPage(): string {
             <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_VERSION}.tgz">Download source <span class="arrow" aria-hidden="true">↓</span></a>
             <a class="button secondary" href="/downloads/keyo-studio/${KEYO_RELEASE_BUNDLE}">Release files ZIP</a>
             <a class="button secondary" href="${KEYO_PUBLIC_LINKS.githubRelease}" target="_blank" rel="noopener noreferrer">GitHub prerelease</a>
+            <a class="button secondary" href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-linux-x64.tar.gz">Linux desktop archive</a>
             <a class="button secondary" href="/api/keyo-studio/release">Release API <span class="arrow" aria-hidden="true">↗</span></a>
           </div>
         </div>

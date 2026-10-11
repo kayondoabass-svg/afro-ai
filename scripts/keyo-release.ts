@@ -38,7 +38,7 @@ export async function buildKeyoRelease(root = process.cwd()) {
   const zip = sourceZip(uploadFiles);
   await writeFile(path.join(directory, KEYO_UPLOAD_FILENAME), zip);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const spaceFiles = await Promise.all(["index.html", "style.css", "app.mjs", "bridge.mjs"].map(async name => {
+  const spaceFiles = await Promise.all(["index.html", "style.css", "app.mjs", "bridge.mjs", "library-panel.mjs"].map(async name => {
     const file = path.join(root, "packages", "keyo-studio", "desktop", "renderer", name);
     if (!(await lstat(file)).isFile()) throw new Error("Non-regular Space asset refused.");
     let data = await readFile(file);

@@ -1,3 +1,8 @@
+.model-library { margin: 0 0 1rem; padding: 1rem; border: 1px solid #39404c; border-radius: 12px; }
+.model-library summary { cursor: pointer; font-weight: 600; }
+.model-library select { max-width: 100%; padding: .5rem; margin: .4rem 0; }
+.model-library progress { width: 100%; margin-top: .8rem; }
+.model-library p { margin: .6rem 0; overflow-wrap: anywhere; }
 :root {
   color-scheme: light;
   --paper: #eef0e7;

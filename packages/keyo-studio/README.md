@@ -44,17 +44,49 @@ There are no production dependencies beyond Node.js 20+.
 Download the source package from the Afro AI `/keyo-studio` page:
 
 ```sh
-npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.3.tgz
+npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.4.tgz
 keyo --help
+keyo models
+keyo download qwen25-05b-instruct --accept-license apache-2.0
 keyo inspect /path/to/model
-keyo chat /path/to/model --prompt "Once upon a time" --max-tokens 32
+keyo chat /path/to/model --prompt "2+2=? Reply with just the number." --max-tokens 4
 keyo serve /path/to/model --port 4317
 ```
 
 Alternatively, run `node bin/keyo.mjs` from this source directory.
 The package does **not** install Node or include model weights. First download
-Node and compatible model files; model inference then works offline without
+Node, then explicitly download a catalogue model or provide your own files.
+Model inference then works offline without
 an Afro AI account, provider API key, inference credits or network access.
+
+### Download and run in the desktop app
+
+Download the **Windows x64 portable ZIP** or **Linux x64 archive** from the
+release's assets. Extract the **entire archive**, then open `KEYO Studio.exe`
+(Windows) or `keyo-studio` (Linux). No separate Node installation is needed
+in the desktop package. These are **unsigned developer packages**, not
+certified production installers. Windows execution is not certified by the
+Linux build host; do not disable security software to work around warnings.
+
+1. Expand **Model library** and select **Qwen2.5 0.5B Instruct** for your first test.
+2. Click **Download model**, review its Apache-2.0 licence and accept the download.
+   This downloads approximately 0.93 GiB from Hugging Face. Internet/data charges
+   may apply; there is no paid inference API.
+3. Wait for checksum verification, then click **Load downloaded model**.
+4. Create a conversation and send a short prompt. Instruction models use chat mode.
+5. After download, generation is local and does not require Internet access.
+
+The library pins an immutable upstream commit plus SHA-256 and exact size for
+every file. Downloads can be cancelled and resumed; complete models are committed
+only after validation. A free-space check runs before downloads. Managed deletion
+requires confirmation, preserves conversations and refuses unrelated files.
+The CLI's managed library lives in `~/.keyo-studio/models`; the desktop uses
+its OS-specific private application-data folder. CLI and desktop stores are separate.
+`keyo remove-model MODEL_ID --confirm` deletes only the matching managed model.
+
+The Qwen2.5 7B entry is experimental and downloads approximately 14.2 GiB.
+Do not interpret a successful download as broad quality, speed or Windows
+certification. There is no general GGUF, GPU, quantization or 14B certification.
 
 ## Model compatibility: deliberately limited
 
@@ -69,7 +101,8 @@ Loading validates every tensor value and can take tens of seconds. Disk-backed
 CPU generation can be slow: prefer short prompts and a small `max_tokens`.
 Disk-backed library, CLI and API generation defaults to four output tokens
 instead of 32; explicit requests remain capped at 128 and five minutes.
-The desktop starts its output-token control at four as well.
+The desktop library sets four output tokens for models larger than 1B and
+32 for smaller models. You may reduce the limit further for your first test.
 
 ### Experimental sharded checkpoints
 

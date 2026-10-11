@@ -1,6 +1,6 @@
 {
   "name": "@afro-ai/keyo-studio",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "KEYO Studio LLM/SLM Runner: an independent, inspectable CPU inference engine",
   "type": "module",
   "license": "MIT",
@@ -13,7 +13,8 @@
     "test": "node --test test/*.test.mjs",
     "build:native": "node native/build.mjs",
     "desktop": "electron .",
-    "pack:linux": "node desktop/pack-linux.mjs"
+    "pack:linux": "node desktop/pack-linux.mjs",
+    "pack:windows": "node desktop/pack-windows.mjs"
   },
   "devDependencies": { "electron": "^44.7.0" }
 }

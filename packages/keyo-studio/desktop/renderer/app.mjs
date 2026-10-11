@@ -1,4 +1,5 @@
 import { bridge, isPreview } from "./bridge.mjs";
+import { initializeLibrary } from "./library-panel.mjs";
 
 const byId = (id) => document.getElementById(id);
 const elements = {
@@ -549,6 +550,7 @@ async function initialize() {
 }
 
 elements.newChat.addEventListener("click", createConversation);
+initializeLibrary();
 elements.chooseModel.addEventListener("click", chooseModel);
 elements.unloadModel.addEventListener("click", unloadModel);
 elements.renameChat.addEventListener("click", () => openDialog("rename"));
