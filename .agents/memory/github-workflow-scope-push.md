@@ -51,3 +51,16 @@ Do not repeatedly present the same failing integration form. Use the appropriate
 source-control authorization flow or an isolated source ZIP for manual upload,
 especially when the user chooses the ZIP. Confirm publication from the target
 repository before claiming a successful upload.
+
+For content-only Git Trees API commits, preserve the existing CI workflow through
+`base_tree` and omit `.github/workflows/` from the submitted tree when no CI change
+is intended.
+
+**Why:** A repository-write token without workflow scope could read the repository
+and advertised push rights, but a tree submission containing workflow files
+returned HTTP 404. The same content-only submission succeeded when workflows
+were left inherited from the base tree.
+
+**How to apply:** A write-side 404 is not proof that the repository is missing.
+Check credential scopes and submitted paths. Do not delete CI or edit its history
+to avoid authorization; obtain workflow permission if CI changes are required.
