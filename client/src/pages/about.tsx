@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { KEYO_VERSION } from "../../../packages/keyo-studio/src/version.mjs";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
@@ -57,6 +58,12 @@ export default function AboutPage() {
                 It adds a local AI workspace to the Afro AI family, with our own CPU inference engine rather than
                 a wrapper around another model runner. Developers can inspect the code and run supported model
                 weights on their own devices without a paid AI API.
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                Developer release {KEYO_VERSION} adds disk-backed loading for the existing merged Afro AI
+                Qwen2 model (approximately 1.5 billion parameters). A short instruction-chat check passed
+                through our own local API, but CPU responses remain slow. This is not certification of
+                general answer quality, 7B/14B support or production performance.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 This is a milestone in our work to advance Ugandan and African AI development. Our long-term

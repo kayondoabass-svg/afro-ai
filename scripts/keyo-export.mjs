@@ -13,7 +13,7 @@ const github=path.join(output,'github'), hf=path.join(output,'huggingface');
 // Refuse to overwrite a previous export or an existing Git working tree.
 await fs.mkdir(github); await fs.mkdir(hf);
 const permitted=file => ['package.json','README.md','CONTRIBUTING.md','LICENSE','SECURITY.md','bin/keyo.mjs'].includes(file) ||
-  /^src\/[a-z-]+\.mjs$/.test(file) ||
+  /^src\/[a-z-]+\.mjs$/.test(file) || file === 'src/version.d.mts' ||
   /^test\/[a-z-]+(?:\.test)?\.mjs$/.test(file) ||
   /^desktop\/[a-z-]+\.(?:cjs|mjs|md)$/.test(file) ||
   /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file);
@@ -86,6 +86,12 @@ Conversation CRUD is browser-local. Model loading and generation are disabled
 in the preview; install the desktop source on your own device to use them.
 
 Source archive: [${pack.filename}](./${pack.filename})
+
+Public source: https://github.com/kayondoabass-svg/keyo-studio
+
+Developer prerelease: https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v${pkg.version}
+
+SLM/LLM roadmap: https://github.com/kayondoabass-svg/keyo-studio/blob/main/README.md#next-steps-for-slm-and-llm-support
 
 SHA-256: \`${sha256}\`
 

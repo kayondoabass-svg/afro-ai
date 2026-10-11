@@ -75,6 +75,7 @@ Larger models, GPU inference and signed Windows/macOS installers are unfinished.
 No model weights, credentials, paid API or telemetry are included.
 
 GitHub: ${KEYO_PUBLIC_LINKS.github}
+Developer prerelease: ${KEYO_PUBLIC_LINKS.githubRelease}
 The archive above contains the complete developer-alpha package.
 MIT covers our code only, not third-party
 model weights. Listing on Hugging Face does not automatically generate payments.

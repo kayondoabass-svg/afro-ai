@@ -27,6 +27,12 @@ disabled. It does not read your device's model files or send prompts to our serv
 
 **0.1.0-alpha.2 — developer CPU alpha, not a finished desktop application.**
 
+Public source: https://github.com/kayondoabass-svg/keyo-studio
+
+Release: https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v0.1.0-alpha.2
+
+Interface preview (not hosted inference): https://huggingface.co/spaces/kayondoabass/KEYO-Studio
+
 An independent, open-source local inference engine associated with Afro AI.
 Transformer computation, attention, KV cache, RoPE, normalization, sampling,
 tokenization and model loading are implemented in this package.
@@ -64,6 +70,35 @@ CPU generation can be slow: prefer short prompts and a small `max_tokens`.
 Disk-backed library, CLI and API generation defaults to four output tokens
 instead of 32; explicit requests remain capped at 128 and five minutes.
 The desktop starts its output-token control at four as well.
+
+## Next steps for SLM and LLM support
+
+These are planned work, not capabilities of this release:
+
+1. **Certify the current SLM first.** Evaluate the existing ~1.5B model with
+   independent numerical checks, factual/structured-answer tests and recorded
+   response timings. A successful greeting alone is insufficient.
+2. **Make our engine faster.** Write KEYO native CPU/SIMD kernels and improve
+   prefill/KV reuse; then add our own tested GPU backends. Do not replace the
+   engine with another inference runtime.
+3. **Load larger checkpoints safely.** Add validated sharded safetensors,
+   indexing and hardware-aware budgets; test 3B, then 7B, then 14B independently.
+4. **Reduce memory use with our own quantized execution.** Implement and
+   validate 8-bit/4-bit loaders and kernels against floating-point references.
+   Do not claim GGUF support until its parser and supported architectures work.
+5. **Expand architecture and context support.** Validate each tokenizer,
+   chat template, attention/RoPE variant, EOS behaviour and bounded KV cache.
+   Increase context only after correctness and memory tests.
+6. **Prepare the right weights.** A 1.5B checkpoint cannot be enlarged into
+   14B by changing configuration. Select a licensed larger base and, if needed,
+   fine-tune it separately. Existing small-model adapters are not transferable
+   by assumption. Private weights stay private unless publication is approved.
+7. **Finish developer delivery.** Add checksum-verified resumable model
+   downloads, test CLI/API streaming and cancellation, and ship tested desktop
+   installers for Windows/macOS/Linux with appropriate signing.
+8. **Add opt-in diagnostics.** Keep collection off by default and inference
+   usable offline; report only privacy-safe aggregates for consenting installs,
+   with no prompts, history, secrets or raw crash dumps.
 
 Implemented architectures: basic GPT-Neo (`gelu_new`), Qwen2, and Llama
 (`silu`, conventional full-head RoPE), including grouped-query attention.

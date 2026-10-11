@@ -6,6 +6,7 @@ import { KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
 
 export const KEYO_PUBLIC_LINKS = {
   github: "https://github.com/kayondoabass-svg/keyo-studio",
+  githubRelease: `https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v${KEYO_VERSION}`,
   huggingFace: "https://huggingface.co/spaces/kayondoabass/KEYO-Studio",
 } as const;
 export const KEYO_RELEASE_BUNDLE = `KEYO-Studio-${KEYO_VERSION}-release-files.zip`;
@@ -26,8 +27,8 @@ JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
 - Electron desktop workspace source with local conversation history.
 - Basic GPT-Neo, Qwen2 and Llama execution for explicitly supported variants.
 - Safetensors F32/F16/BF16 loading and byte-level BPE tokenization.
-- Source tests passed on Linux, Windows and macOS with Node.js 22 and 24.
-  This is test-suite coverage, not signed-installer certification.
+- CI checks the source suite on Linux, Windows and macOS with Node.js 22 and 24.
+  Check the run for this release; CI is not signed-installer certification.
 
 ## Requirements and limits
 - CLI: Node.js >=20. Desktop development: Node.js >=22.12 and Electron.

@@ -266,10 +266,11 @@ export function keyoStudioPage(): string {
           <div class="actions" style="margin:0">
             <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_VERSION}.tgz">Download source <span class="arrow" aria-hidden="true">↓</span></a>
             <a class="button secondary" href="/downloads/keyo-studio/${KEYO_RELEASE_BUNDLE}">Release files ZIP</a>
+            <a class="button secondary" href="${KEYO_PUBLIC_LINKS.githubRelease}" target="_blank" rel="noopener noreferrer">GitHub prerelease</a>
             <a class="button secondary" href="/api/keyo-studio/release">Release API <span class="arrow" aria-hidden="true">↗</span></a>
           </div>
         </div>
-        <p class="section-intro" style="margin-top:24px">Published developer source: <a href="${KEYO_PUBLIC_LINKS.github}" target="_blank" rel="noopener noreferrer">GitHub — KEYO Studio</a>. Live browser interface preview: <a href="${KEYO_PUBLIC_LINKS.huggingFace}" target="_blank" rel="noopener noreferrer">Hugging Face — KEYO Studio</a>. The preview does not run models.</p>
+        <p class="section-intro" style="margin-top:24px">Published developer source: <a href="${KEYO_PUBLIC_LINKS.github}" target="_blank" rel="noopener noreferrer">GitHub — KEYO Studio</a>. <a href="${KEYO_PUBLIC_LINKS.github}/blob/main/README.md#next-steps-for-slm-and-llm-support" target="_blank" rel="noopener noreferrer">SLM/LLM roadmap</a>. Live browser interface preview: <a href="${KEYO_PUBLIC_LINKS.huggingFace}" target="_blank" rel="noopener noreferrer">Hugging Face — KEYO Studio</a>. The preview does not run models.</p>
       </div>
     </section>
   </main>
