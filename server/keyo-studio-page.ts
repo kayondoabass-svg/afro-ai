@@ -160,7 +160,7 @@ export function keyoStudioPage(): string {
     <div class="wrap nav">
       <a class="brand" href="/" aria-label="Afro AI home"><span class="brand-mark" aria-hidden="true">K</span> KEYO Studio</a>
       <nav class="nav-links" aria-label="Main navigation">
-        <a href="#how-it-works">How it works</a><a href="#quickstart">Quickstart</a><a href="#scope">Scope</a><a href="#release">Release</a>
+        <a href="#install-windows">Download &amp; install</a><a href="#how-it-works">How it works</a><a href="#quickstart">Developer quickstart</a><a href="#scope">Scope</a><a href="#release">Release</a>
       </nav>
       <a class="home-link" href="/"><span aria-hidden="true">←</span> Afro AI home</a>
     </div>
@@ -173,9 +173,11 @@ export function keyoStudioPage(): string {
         <h1>Run it here.<br><em>See how.</em></h1>
         <p class="hero-copy"><strong>KEYO Studio is a local LLM/SLM runner for developers.</strong> Inspect and own model execution on your machine, powered by our JavaScript CPU inference engine—not a wrapper around Ollama, llama.cpp, or vLLM.</p>
         <div class="actions">
-          <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_VERSION}.tgz">Get the source package <span class="arrow" aria-hidden="true">↓</span></a>
-          <a class="button secondary" href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-win32-x64.zip">Windows portable ZIP <span class="arrow" aria-hidden="true">↓</span></a>
+          <a class="button" href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-win32-x64.zip">Windows app — GitHub <span class="arrow" aria-hidden="true">↓</span></a>
+          <a class="button secondary" href="${KEYO_PUBLIC_LINKS.huggingFace}/resolve/main/KEYO-Studio-${KEYO_VERSION}-win32-x64.zip?download=true">Windows app — alternate download <span class="arrow" aria-hidden="true">↓</span></a>
         </div>
+        <p class="alpha-note"><strong>Download size: about 158 MB for Windows.</strong> Both links deliver the same portable ZIP. If GitHub is slow, try the Hugging Face mirror; speed depends on your connection and location. The first test model is a separate download of about 1 GB. No models are bundled.</p>
+        <p class="alpha-note"><strong>Slow or interrupted download?</strong> Use your browser’s Downloads menu to pause or resume when supported. If you switch hosts, start a fresh file—do not combine partial downloads. Extract All, keep the files together, then open KEYO Studio.exe. No separate Node.js installation is needed for the Windows app.</p>
         <p class="alpha-note"><strong>Developer alpha ${KEYO_VERSION}.</strong> Ugandan-built by KEYO Technologies. Unsigned Windows portable and Linux desktop archives are available with our own CPU engine and model-download library. Extract the entire archive before opening the app. Windows runtime execution is not certified by the Linux build host. CLI requires Node.js 20+; desktop packages include their runtime.</p>
         <a class="text-link" href="/keyo-studio/workspace/">Explore the workspace interface preview →</a>
         <p>Ugandan-built by KEYO Technologies, KEYO Studio aims to contribute to the AI revolution and add value to the development of AI and future superintelligence.</p>
@@ -195,6 +197,20 @@ export function keyoStudioPage(): string {
     <div class="ticker" aria-label="Product properties">
       <div class="wrap ticker-inner"><span>JavaScript CPU inference</span><span>Local model files</span><span>Versioned localhost API</span><span>No paid API</span><span>No telemetry</span></div>
     </div>
+
+    <section class="section" id="install-windows">
+      <div class="wrap">
+        <div class="section-head"><div class="section-kicker">Windows / First run</div><div><h2>Download, open, then try a model.</h2><p class="section-intro">Portable means there is no installer wizard. Use Windows x64. This is an unsigned developer alpha; execution on Windows is not yet certified.</p></div></div>
+        <div class="work-grid">
+          <article class="work-card"><span class="mini-label">Step 1 / Get the app</span><h3>Choose the Windows ZIP.</h3><p>Use either Windows app button above. The filename must be KEYO-Studio-${KEYO_VERSION}-win32-x64.zip (about 158 MB). Source code, source.tgz, github-upload and release-files ZIPs are for developers—not the runnable Windows app. Wait for the download to finish.</p></article>
+          <article class="work-card"><span class="mini-label">Step 2 / Extract everything</span><h3>Right-click → Extract All.</h3><p>In Downloads, right-click the ZIP, select Extract All, then Extract. Open the extracted folder and double-click KEYO Studio.exe. Do not run it inside the ZIP or move only the EXE. Keep the other files beside it. No separate Node.js installation is needed.</p></article>
+          <article class="work-card"><span class="mini-label">Step 3 / Get a small model</span><h3>Open Model library.</h3><p>Select Qwen2.5 0.5B Instruct, click Download model, and review the licence and bandwidth confirmation. Keep Internet connected until downloading and checksum verification finish. Allow about 1 GB for this separate model download. Start with 0.5B; 7B and 14B operation is not certified.</p></article>
+          <article class="work-card"><span class="mini-label">Step 4 / Load and chat</span><h3>Load downloaded model.</h3><p>Click Load downloaded model and wait for the loaded status. Create a new conversation, then send: “2+2=? Reply with just the number.” The expected answer is 4. CPU generation can be slow; allow it to finish or use the app’s cancellation control.</p></article>
+          <article class="work-card"><span class="mini-label">Step 5 / Test offline</span><h3>Disconnect and ask again.</h3><p>After downloading and loading, disconnect Wi-Fi and ask another short question. Generation runs locally without an AI API key or inference credits. Close and reopen the app to check saved conversations; load the downloaded model again if needed. No account is required for these local tests.</p></article>
+          <article class="work-card"><span class="mini-label">Troubleshooting / Stay safe</span><h3>Check the exact message.</h3><p>No EXE? Check the ZIP filename in step 1. Slow download? Try the alternate host or resume through your browser when supported. Windows warning, missing DLL or launch failure? Keep the exact message and report it with your Windows version. Do not disable antivirus or other security protections. Compare SHA-256 with the release checksum file if you need to verify the archive.</p></article>
+        </div>
+      </div>
+    </section>
 
     <section class="section" id="how-it-works">
       <div class="wrap">
@@ -260,12 +276,12 @@ export function keyoStudioPage(): string {
 
     <section class="section" id="release">
       <div class="wrap">
-        <div class="section-head"><div class="section-kicker">05 / Get the alpha</div><div><h2>Start with the source package.</h2><p class="section-intro">Get version ${KEYO_VERSION}, inspect what you’re installing, and try it with a supported model folder on Node.js 20 or newer.</p></div></div>
+        <div class="section-head"><div class="section-kicker">05 / Get the alpha</div><div><h2>Choose the app or developer source.</h2><p class="section-intro">To run on Windows, use a Windows app link above. Developer source and release-file bundles below are not Windows installers; they require Node.js 20 or newer.</p></div></div>
         <div class="release">
           <div><h3>KEYO Studio ${KEYO_VERSION}</h3><p>Early developer alpha · Source package · Model weights not included</p></div>
           <div class="actions" style="margin:0">
             <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_VERSION}.tgz">Download source <span class="arrow" aria-hidden="true">↓</span></a>
-            <a class="button secondary" href="/downloads/keyo-studio/${KEYO_RELEASE_BUNDLE}">Release files ZIP</a>
+            <a class="button secondary" href="/downloads/keyo-studio/${KEYO_RELEASE_BUNDLE}">Developer release files — not the Windows app</a>
             <a class="button secondary" href="${KEYO_PUBLIC_LINKS.githubRelease}" target="_blank" rel="noopener noreferrer">GitHub prerelease</a>
             <a class="button secondary" href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-linux-x64.tar.gz">Linux desktop archive</a>
             <a class="button secondary" href="/api/keyo-studio/release">Release API <span class="arrow" aria-hidden="true">↗</span></a>

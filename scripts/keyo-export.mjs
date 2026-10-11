@@ -69,7 +69,7 @@ for (const file of ['index.html','style.css','app.mjs','bridge.mjs','library-pan
   await fs.copyFile(path.join(source,'desktop/renderer',file),path.join(hf,file));
 // Explicit preview-only links; the Space never pretends to execute local models.
 const html=await fs.readFile(path.join(hf,'index.html'),'utf8');
-await fs.writeFile(path.join(hf,'index.html'),html.replace('</body>',`<footer class="notice"><a href="./${pack.filename}" download>Download KEYO Studio source — developer alpha</a></footer>\n</body>`));
+await fs.writeFile(path.join(hf,'index.html'),html.replace('</body>',`<footer class="notice"><a href="https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-${pkg.version}-win32-x64.zip?download=true">Download Windows app — about 158 MB</a> · <a href="https://github.com/kayondoabass-svg/keyo-studio/releases/download/v${pkg.version}/KEYO-Studio-${pkg.version}-win32-x64.zip">Alternate: GitHub</a> · <a href="https://github.com/kayondoabass-svg/keyo-studio#windows-download-and-first-run">Download and first-run instructions</a><p>Unsigned developer build. Extract the entire ZIP, then open KEYO Studio.exe. First test model: a separate download of about 1 GB. This browser workspace is an interface preview, not local inference.</p><a href="./${pack.filename}" download>Developer source — not the Windows application</a></footer>\n</body>`));
 await fs.copyFile(path.join(source,'LICENSE'),path.join(hf,'LICENSE'));
 await fs.writeFile(path.join(hf,'README.md'),`---
 title: KEYO Studio

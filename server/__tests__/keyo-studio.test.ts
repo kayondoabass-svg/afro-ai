@@ -29,6 +29,16 @@ describe("KEYO Studio independent runner", () => {
     expect(html).toContain(KEYO_PUBLIC_LINKS.github);
     expect(html).toContain(KEYO_PUBLIC_LINKS.huggingFace);
     expect(html).toContain(KEYO_RELEASE_BUNDLE);
+    expect(html).toContain(`${KEYO_PUBLIC_LINKS.huggingFace}/resolve/main/KEYO-Studio-${KEYO_VERSION}-win32-x64.zip?download=true`);
+    expect(html).toContain("about 158 MB");
+    expect(html).toContain("separate download of about 1 GB");
+    expect(html).toContain("not the Windows app");
+    expect(html).toContain("start a fresh file");
+    expect(html).toContain('id="install-windows"');
+    expect(html).toContain("Right-click → Extract All.");
+    expect(html).toContain("Load downloaded model");
+    expect(html).toContain("No account is required");
+    expect(html).toContain("Do not disable antivirus");
     expect(html).toContain('rel="canonical" href="https://afroaigroup.com/keyo-studio"');
     expect(html).toContain(KEYO_VERSION);
     expect(html).toContain("Node.js 20");

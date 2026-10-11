@@ -25,7 +25,7 @@ The hosted workspace is an **interface preview**, not browser inference:
 browser-local conversation CRUD is real, but model selection/generation are
 disabled. It does not read your device's model files or send prompts to our server.
 
-**0.1.0-alpha.3 — developer CPU alpha, not a finished desktop application.**
+**0.1.0-alpha.4 — developer CPU alpha, not a finished desktop application.**
 
 Public source: https://github.com/kayondoabass-svg/keyo-studio
 
@@ -39,7 +39,39 @@ tokenization and model loading are implemented in this package.
 No Ollama, llama.cpp, vLLM, ONNX or Transformers runtime is embedded or called.
 There are no production dependencies beyond Node.js 20+.
 
-## Install and run
+## Windows: download and first run
+
+1. Open [the alpha.4 release](https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v0.1.0-alpha.4).
+   Download **KEYO-Studio-0.1.0-alpha.4-win32-x64.zip** (about 158 MB).
+   [Alternate Hugging Face download](https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-0.1.0-alpha.4-win32-x64.zip?download=true).
+   Source-code, source.tgz, github-upload and release-files bundles are **not**
+   the runnable Windows app. Both app download hosts provide the same ZIP;
+   neither guarantees a particular download speed.
+2. Wait until downloading finishes. Right-click the ZIP in Downloads →
+   **Extract All** → **Extract**. Open the extracted folder and double-click
+   **KEYO Studio.exe**. Keep all files together; do not run inside the ZIP.
+   This is a portable app with no installer wizard or separate Node.js requirement.
+3. Expand **Model library**, select **Qwen2.5 0.5B Instruct**, and click
+   **Download model**. Review the licence and bandwidth confirmation.
+   Stay connected until download and verification finish. The model is a
+   separate download of about **1 GB**, not included in the Windows ZIP.
+4. Click **Load downloaded model**, wait for loaded status, and create a new
+   conversation. Send **2+2=? Reply with just the number.** Expect **4**.
+   CPU generation may be slow. Start with 0.5B; 7B/14B operation is not certified.
+5. Once downloaded and loaded, disconnect Wi-Fi and try another short question.
+   No AI API key, inference credits or account is needed for local operation.
+   Close and reopen to check saved conversations; reload the downloaded model
+   if necessary. Internet is needed for new downloads, not local generation.
+
+**If something goes wrong:** no EXE usually means you downloaded a source bundle.
+For a slow download, try your browser's pause/resume when supported. If changing
+hosts, start a fresh file rather than combining partial files. For a Windows
+warning, missing DLL or launch failure, report the exact message and Windows
+version. This is an **unsigned developer build**, not Windows execution
+certification. **Do not disable antivirus or other security protections.**
+Verify the archive using the release's desktop SHA256SUMS file when needed.
+
+## Developer CLI: install and run
 
 Download the source package from the Afro AI `/keyo-studio` page:
 
