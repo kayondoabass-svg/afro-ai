@@ -2,7 +2,8 @@ import { users, type User, type UpsertUser } from "@shared/models/auth";
 import { db } from "../../db";
 import { eq } from "drizzle-orm";
 
-export const FOUNDER_EMAILS = ["kayondoabass@gmail.com"];
+import { isFounderEmail as founderIdentity } from "../../founder-access";
+export { FOUNDER_EMAILS } from "../../founder-access";
 
 export interface IAuthStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -16,7 +17,7 @@ class AuthStorage implements IAuthStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    const isFounderEmail = FOUNDER_EMAILS.includes(userData.email || "");
+    const isFounderEmail = founderIdentity(userData.email);
 
     if (userData.email) {
       const [existingByEmail] = await db

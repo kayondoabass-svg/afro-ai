@@ -15,6 +15,8 @@ import { Copy, Plus, Trash2, Eye, EyeOff, Check, Globe, Key, BarChart3, Mail, Re
 import { formatDistanceToNow } from "date-fns";
 
 interface EmailApiKey {
+  founderAccess?: boolean;
+  quotaExempt?: boolean;
   id: number;
   name: string;
   publicKey: string;
@@ -50,6 +52,8 @@ interface EmailApiLog {
 }
 
 interface Stats {
+  founderAccess?: boolean;
+  emailProvider?: "resend" | "ses";
   totalSent: number;
   totalFailed: number;
   totalKeys: number;
@@ -205,6 +209,13 @@ console.log(data.messageId); // → "01000196..."
       </div>
 
       {/* Stats */}
+      {stats?.founderAccess && <Card className="border-primary/40">
+        <CardContent className="p-4 space-y-2">
+          <p className="font-semibold">Founder — full access</p>
+          <p className="text-sm text-muted-foreground">Your founder account and server-side secret email keys are exempt from customer subscription quotas. No paid Afro AI upgrade is needed. Public-key requests remain limited; never expose secret keys in a browser. Domain verification, security checks and external provider limits still apply.</p>
+          {stats.emailProvider === "resend" && <a className="text-sm text-primary underline" href="https://resend.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage Resend sending capacity</a>}
+        </CardContent>
+      </Card>}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "Sent This Month", value: stats?.emailsSentThisMonth ?? 0, icon: Mail, color: "text-green-500" },
@@ -267,14 +278,14 @@ console.log(data.messageId); // → "01000196..."
                         Secret: sk_live_...{key.secretKeyPreview} (hidden)
                       </div>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>{key.emailsSentMonth} / {key.monthlyLimit.toLocaleString()} emails this month</span>
+                        <span>{key.emailsSentMonth} / {key.quotaExempt ? "No customer quota (founder)" : key.monthlyLimit.toLocaleString()} emails this month</span>
                         {key.lastUsedAt && <span>Last used {formatDistanceToNow(new Date(key.lastUsedAt), { addSuffix: true })}</span>}
                       </div>
                       {/* Usage bar */}
                       <div className="w-full max-w-xs h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
                           className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${Math.min(100, (key.emailsSentMonth / key.monthlyLimit) * 100)}%` }}
+                          style={{ width: `${key.quotaExempt ? 0 : Math.min(100, (key.emailsSentMonth / Math.max(1, key.monthlyLimit)) * 100)}%` }}
                         />
                       </div>
                     </div>

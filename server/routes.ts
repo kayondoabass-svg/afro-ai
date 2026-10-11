@@ -17,6 +17,7 @@ import { createServer, type Server } from "http";
 import crypto from "crypto";
 import { setupAuth, registerAuthRoutes, isAuthenticated, isFounder, FOUNDER_EMAIL } from "./replit_integrations/auth";
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
+import { isFounderEmail, presentEmailApiKey } from "./founder-access";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerVibeRoutes } from "./vibe-routes";
 import { registerImageRoutes } from "./replit_integrations/image";
@@ -5071,8 +5072,9 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
   app.get("/api/email-api/keys", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     const keys = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.userId, userId)).orderBy(dbDesc(emailApiKeys.createdAt));
+    const owner = await storage.getUser(userId);
     // Never return the hash
-    res.json(keys.map(k => ({ ...k, secretKeyHash: undefined })));
+    res.json(keys.map(k => presentEmailApiKey(k, owner?.email)));
   });
 
   // Create a new API key
@@ -5080,6 +5082,7 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Name required" });
+    const owner = await storage.getUser(userId);
 
     const publicKey = generatePublicKey();
     const secretKey = generateSecretKey();
@@ -5092,13 +5095,13 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       publicKey,
       secretKeyHash,
       secretKeyPreview,
-      plan: "starter",
+      plan: isFounderEmail(owner?.email) ? "enterprise" : "starter",
       monthlyLimit: 1000,
       isActive: true,
     }).returning();
 
     // Return secret key ONCE — never again
-    res.json({ ...key, secretKeyHash: undefined, secretKey });
+    res.json({ ...presentEmailApiKey(key, owner?.email), secretKey });
   });
 
   // Delete an API key
@@ -5114,7 +5117,8 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
     const [key] = await db.select().from(emailApiKeys).where(dbAnd(dbEq(emailApiKeys.id, parseInt(req.params.id)), dbEq(emailApiKeys.userId, userId)));
     if (!key) return res.status(404).json({ error: "Key not found" });
     const [updated] = await db.update(emailApiKeys).set({ isActive: !key.isActive }).where(dbEq(emailApiKeys.id, key.id)).returning();
-    res.json({ ...updated, secretKeyHash: undefined });
+    const owner = await storage.getUser(userId);
+    res.json(presentEmailApiKey(updated, owner?.email));
   });
 
   // List verified domains
@@ -5162,6 +5166,13 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       } catch (e: any) {
         console.error("[EmailAPI] Resend domain create error:", e?.message || e);
         const failure = emailDomainError(e);
+        if (failure.code === "EMAIL_DOMAIN_CAPACITY" && isFounderEmail(req.user?.claims?.email)) {
+          return res.status(failure.status).json({
+            code: failure.code,
+            error: "Your founder account has full Afro AI access. The connected Resend team has reached its sending-domain limit. Increase that team's capacity in Resend settings; changing your Afro AI plan will not fix this. Existing verified domains and client data are unchanged.",
+            operatorUrl: "https://resend.com/settings/usage",
+          });
+        }
         return res.status(failure.status).json({ error: failure.error, code: failure.code });
       }
     }
@@ -5271,7 +5282,12 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
     }
 
     if (!apiKey || !apiKey.isActive) return res.status(401).json({ error: "Invalid or inactive API key" });
-    if (apiKey.emailsSentMonth >= apiKey.monthlyLimit) return res.status(429).json({ error: "Monthly email limit reached" });
+    // Resolve the key's actual owner, not a caller-supplied email or plan.
+    const emailKeyOwner = await storage.getUser(apiKey.userId);
+    if (!emailKeyOwner) return res.status(401).json({ error: "API key owner account not found" });
+    // Public keys remain limited: exposing one must never confer founder privileges.
+    const founderSecretAccess = token.startsWith("sk_live_") && isFounderEmail(emailKeyOwner.email);
+    if (!founderSecretAccess && apiKey.emailsSentMonth >= apiKey.monthlyLimit) return res.status(429).json({ error: "Monthly email limit reached" });
 
     const { from, to, subject, html, text } = req.body;
     if (!from || !to || !subject || (!html && !text)) {
@@ -5556,7 +5572,9 @@ Authorization: Bearer YOUR_API_KEY</pre>
     const totalKeys = keys.length;
     const verifiedDomains = domains.filter(d => d.status === "verified").length;
 
-    res.json({ totalSent, totalFailed, totalKeys, verifiedDomains, emailsSentThisMonth: keys.reduce((s, k) => s + k.emailsSentMonth, 0) });
+    const owner = await storage.getUser(userId);
+    const { activeEmailProvider } = await import("./email-provider");
+    res.json({ totalSent, totalFailed, totalKeys, verifiedDomains, emailsSentThisMonth: keys.reduce((s, k) => s + k.emailsSentMonth, 0), founderAccess:isFounderEmail(owner?.email), emailProvider:activeEmailProvider() });
   });
 
   // ============================================================

@@ -5,6 +5,7 @@ import { db } from "../db";
 import { users, usageLogs } from "@shared/schema";
 import { storage } from "../storage";
 import { sendQuotaReachedEmail } from "../mailer";
+import { isFounderEmail } from "../founder-access";
 
 export type AiKind = "chat" | "image" | "audio" | "video";
 export type UserPlan = "starter" | "pro" | "business" | "payg";
@@ -163,12 +164,13 @@ export async function assertOwnerDailyCap(opts: {
 }): Promise<null | { status: number; body: any; retryAfterSeconds?: number }> {
   try {
     const [u] = await db
-      .select({ plan: users.plan })
+      .select({ plan: users.plan, email: users.email })
       .from(users)
       .where(eq(users.id, opts.ownerUserId));
     if (!u) {
       return { status: 404, body: { error: "Owner account not found." } };
     }
+    if (isFounderEmail(u.email)) return null;
     const plan = planOf(u.plan);
     const dailyMax = DAILY_REQUEST_LIMITS[opts.kind][plan];
     const since = startOfUtcDay();
@@ -245,6 +247,7 @@ export function aiQuotaGuard(kind: AiKind): RequestHandler {
 
       const [u] = await db
         .select({
+          email: users.email,
           plan: users.plan,
           paygBalance: users.paygBalance,
           paygLimit: users.paygLimit,
@@ -254,6 +257,12 @@ export function aiQuotaGuard(kind: AiKind): RequestHandler {
         .where(eq(users.id, userId));
 
       if (!u) return res.status(401).json({ error: "Please sign in to continue." });
+      if (isFounderEmail(u.email)) {
+        // Exempt subscription quotas, not burst controls or provider billing.
+        anyReq.aiContext = { kind, plan:"business", cost:COST_CENTS[kind], userId };
+        res.setHeader("X-AfroAI-Quota-Exempt", "founder");
+        return next();
+      }
 
       const plan = planOf(u.plan);
       const cost = COST_CENTS[kind];

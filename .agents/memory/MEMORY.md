@@ -38,6 +38,7 @@
 - [Local currency pricing](local-currency-pricing.md) — USD is the base; each customer uses their country's currency, with conversion rather than relabeling.
 - [Navigation grouping](navigation-grouping.md) — keep related products under expandable sidebar sections instead of extending the long flat menu.
 - [Platform admin identity](platform-admin-identity.md) — avoid requiring two login systems for Afro Auth management; preserve legacy ownership and distinguish outages from expired sessions.
+- [Founder entitlements](founder-entitlements.md) — founder has full platform access without customer subscriptions; provider capacity and security safeguards remain separate.
 - [Customer chatbot scope](customer-chatbot-scope.md) — chatbot fixes must serve all customers; never hard-code one demonstration site's identity or behavior.
 - [KEYO Studio scope](open-source-developer-product.md) — downloadable open-source runner with its own engine; reference research is not an installation request or proof of global rank.
 - [Native loader environment](native-loader-environment.md) — sanitized desktop checks must preserve Replit’s public loader/audit configuration, not provider credentials.
