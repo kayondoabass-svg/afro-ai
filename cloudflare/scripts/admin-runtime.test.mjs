@@ -65,3 +65,21 @@ for (const [name, upstreamStatus, expectedStatus] of [
     }
   });
 }
+
+test("website verification checks only the fixed DNS resolver in workerd", async () => {
+  const bundled = await build({
+    stdin:{contents:`import { checkDomainDns } from './src/tenant-project-setup'; export default { async fetch() { return Response.json({verified:await checkDomainDns({domain:'example.com',challenge:'test-challenge'})}); } };`,resolveDir:fileURLToPath(new URL("../",import.meta.url))},
+    bundle:true,write:false,format:"esm",platform:"browser",
+  });
+  const mf = new Miniflare({modules:true,compatibilityDate:"2025-04-01",script:bundled.outputFiles[0].text,
+    outboundService:async request => {
+      const url = new URL(request.url);
+      assert.equal(url.hostname,"cloudflare-dns.com");
+      assert.equal(url.searchParams.get("name"),"_afro-auth.example.com");
+      assert.equal(request.headers.get("accept"),"application/dns-json");
+      return Response.json({Status:0,Answer:[{name:"_afro-auth.example.com.",type:16,data:'"afro-auth-verification=test-challenge"'}]});
+    },
+  });
+  try {assert.equal((await (await mf.dispatchFetch("https://worker.example/")).json()).verified,true);}
+  finally {await mf.dispose();}
+});

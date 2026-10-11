@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS tenants (
   slug            TEXT UNIQUE NOT NULL,         -- e.g. 'myshop' (used in /cf-auth/t/:slug/*)
   name            TEXT NOT NULL,                -- human-readable, e.g. "MyShop Login"
   owner_user_id   TEXT,                         -- platform user that owns this tenant
+  setup_required  INTEGER NOT NULL DEFAULT 0,   -- new projects explicitly set 1
   plan            TEXT NOT NULL DEFAULT 'free', -- free | builder | business | scale
   allowed_origins TEXT,                         -- JSON array of origins for CORS, NULL = none
   created_at      INTEGER NOT NULL,
@@ -19,6 +20,17 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tenants_owner ON tenants(owner_user_id);
+CREATE TABLE IF NOT EXISTS tenant_domains (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  domain TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  verified_at INTEGER,
+  last_checked_at INTEGER,
+  UNIQUE(tenant_id,domain)
+);
+CREATE INDEX IF NOT EXISTS tenant_domains_owner ON tenant_domains(tenant_id,verified_at);
 
 -- Seed the platform tenant for afroaigroup.com itself. INSERT-OR-IGNORE
 -- makes this safe to re-run; the owner_user_id stays NULL forever for the

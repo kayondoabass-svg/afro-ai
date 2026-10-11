@@ -45,7 +45,7 @@ export default function AfroAuthDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["/cf-auth/v1/admin/tenants"] });
       setCreateOpen(false);
       setName("");
-      toast({ title: "Project created", description: `${tenant.name} is ready.` });
+      toast({ title: "Project created", description: `${tenant.name} created. Add and verify its website domain next.` });
       setLocation(`/dashboard/auth/${tenant.id}`);
     },
     onError: (err: any) => {

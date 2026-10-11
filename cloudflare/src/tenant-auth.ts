@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
-import { parseTenantOrigins } from "../../shared/tenant-origins";
+import { parseTenantOrigins, validTenantOrigin } from "../../shared/tenant-origins";
+import { tenantIsActive } from "./tenant-project-setup";
 
 const issuer = "https://afroaigroup.com/cf-auth";
 const now = () => Math.floor(Date.now() / 1000);
@@ -19,7 +20,8 @@ type Dependencies = {
 
 export function tenantAuth(deps: Dependencies) {
   async function tenant(c: any) {
-    return c.env.DB.prepare("SELECT * FROM tenants WHERE slug = ? AND id != 'platform'").bind(c.req.param("slug")).first();
+    const row = await c.env.DB.prepare("SELECT * FROM tenants WHERE slug = ? AND id != 'platform'").bind(c.req.param("slug")).first();
+    return row && await tenantIsActive(c.env.DB, row) ? row : null;
   }
   async function issue(c: any, tenantId: string, userId: string) {
     const id = crypto.randomUUID();
@@ -56,9 +58,9 @@ export function tenantAuth(deps: Dependencies) {
     const result = await c.env.DB.prepare(`INSERT INTO tenant_auth_tokens (hash,tenant_id,user_id,purpose,expires_at,created_at)
       SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM tenant_auth_tokens WHERE tenant_id=? AND user_id=? AND purpose=? AND created_at>?)`)
       .bind(hash, t.id, user.id, purpose, now() + (purpose === "verify" ? 86400 : 3600), now(), t.id, user.id, purpose, now() - 60).run();
-    if (!result.meta.changes) return;
+    if (!result.meta.changes) return {sent:false};
     if (!c.env.RESEND_API_KEY) throw new Error("Email transport unavailable");
-    const url = new URL(`/cf-auth/t/${encodeURIComponent(t.slug)}/${purpose === "verify" ? "verify-email" : "reset-password"}`, c.env.APP_URL);
+    const url = new URL(`/cf-auth/v1/t/${encodeURIComponent(t.slug)}/${purpose === "verify" ? "verify-email" : "reset-password"}`, c.env.APP_URL);
     url.searchParams.set("token", raw);
     const action = purpose === "verify" ? "Confirm your email" : "Reset your password";
     const response = await fetch("https://api.resend.com/emails", {
@@ -69,6 +71,7 @@ export function tenantAuth(deps: Dependencies) {
         html: `<p>${escape(action)} for ${escape(t.name)}.</p><p><a href="${escape(url.toString())}">${escape(action)}</a></p><p>If you did not request this, ignore this email.</p>` }),
     });
     if (!response.ok) throw new Error("Email delivery failed");
+    return {sent:true};
   }
   async function actionRow(c: any, t: any, token: string, purpose: string) {
     return c.env.DB.prepare("SELECT * FROM tenant_auth_tokens WHERE hash=? AND tenant_id=? AND purpose=? AND used_at IS NULL AND expires_at>?")
@@ -116,7 +119,12 @@ export function tenantAuth(deps: Dependencies) {
         if (!t) return c.json({ message: "Project not found." }, 404);
         const form = !(c.req.header("Content-Type") || "").includes("application/json");
         const body = await (form ? c.req.parseBody() : c.req.json()).catch(() => ({}));
-        const respond = (message: string, status = 200) => form ? (c.status(status), page(c, status === 200 ? "Completed" : "Unable to continue", `<p>${escape(message)}</p>`)) : c.json({ ok: status === 200, message }, status);
+        const respond = (message: string, status = 200) => {
+          if (!form) return c.json({ok:status === 200,message}, status);
+          const origin = parseTenantOrigins(t.allowed_origins).find(validTenantOrigin);
+          c.status(status);
+          return page(c, status === 200 ? "Completed" : "Unable to continue", `<p>${escape(message)}</p>${status === 200 && origin ? `<p><a href="${escape(origin)}">Return to ${escape(t.name)}</a></p>` : ""}`);
+        };
         if (await limited(c, t, `${purpose}-consume`)) return respond("Too many attempts. Please wait.", 429);
         const row = await actionRow(c, t, String(body.token || ""), purpose);
         if (!row) return respond("Invalid, expired, or already used link. Request a new link.", 400);

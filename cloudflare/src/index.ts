@@ -21,6 +21,7 @@ import { deviceLabel, resetPasswordUrl, resetStatements } from '../../shared/dev
 import { PLATFORM_ISSUER, PLATFORM_AUDIENCE, PLATFORM_PURPOSE, verifyPlatformSession } from '../../shared/platform-session';
 import bcrypt from 'bcryptjs';
 import { tenantAuth } from './tenant-auth';
+import { registerTenantSetup, tenantSetup, tenantIsActive } from './tenant-project-setup';
 import { platformAdminIdentity } from './platform-admin-auth';
 import { parseTenantOrigins, validTenantOrigin } from '../../shared/tenant-origins';
 import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
@@ -1419,6 +1420,7 @@ interface TenantRow {
   allowed_origins: string | null;
   created_at: number;
   updated_at: number;
+  setup_required?: number;
 }
 
 const PLAN_MAU_LIMITS: Record<string, number> = {
@@ -1455,10 +1457,11 @@ function periodKey(now: number): string {
 }
 
 async function findTenantBySlug(db: D1Database, slug: string): Promise<TenantRow | null> {
-  return db
+  const tenant = await db
     .prepare('SELECT * FROM tenants WHERE slug = ?')
     .bind(slug)
     .first<TenantRow>();
+  return tenant && await tenantIsActive(db, tenant) ? tenant : null;
 }
 
 async function findTenantById(db: D1Database, id: string): Promise<TenantRow | null> {
@@ -1489,7 +1492,8 @@ async function authenticateBySecretKey(c: any): Promise<TenantRow | null> {
       .run()
       .catch(() => {}),
   );
-  return findTenantById(c.env.DB, row.tenant_id);
+  const tenant = await findTenantById(c.env.DB, row.tenant_id);
+  return tenant && await tenantIsActive(c.env.DB, tenant) ? tenant : null;
 }
 
 /** Authenticate the platform user (afroaigroup.com signed-in user). */
@@ -1559,7 +1563,7 @@ app.post('/v1/admin/tenants', async (c) => {
   const slug = genSlug(name);
   const ts = nowSec();
   await c.env.DB.prepare(
-    'INSERT INTO tenants (id, slug, name, owner_user_id, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO tenants (id, slug, name, owner_user_id, plan, created_at, updated_at, setup_required) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
   )
     .bind(id, slug, name, platformUser.id, 'free', ts, ts)
     .run();
@@ -1591,6 +1595,13 @@ async function ownedTenantOr401(
   return tenant;
 }
 
+registerTenantSetup(app, {ownedTenant: ownedTenantOr401, sendVerification: async (c, tenant, user) => {
+  const key = `tenant:${tenant.id}:admin-verification:${c.req.header('CF-Connecting-IP') || 'unknown'}`;
+  if (await checkThrottles(c.env.DB, [key], nowSec())) return {sent:false,rateLimited:true};
+  await recordThrottleFailure(c.env.DB, key, nowSec());
+  return tenantSecurity.mail(c, tenant, user, 'verify');
+}});
+
 app.get('/v1/admin/tenants/:id', async (c) => {
   const r = await ownedTenantOr401(c, c.req.param('id'));
   if (r instanceof Response) return r;
@@ -1614,6 +1625,7 @@ app.get('/v1/admin/tenants/:id', async (c) => {
       totalUsers: userCount?.n || 0,
     },
     keys: keys.results || [],
+    setup: await tenantSetup(c.env.DB, r),
   });
 });
 
@@ -1632,6 +1644,16 @@ app.patch('/v1/admin/tenants/:id', async (c) => {
     if (body.allowed_origins.length > 10 || body.allowed_origins.some((v: any) => typeof v !== 'string' || !validTenantOrigin(v))) {
       return c.json({ message: 'Use up to 10 exact HTTPS origins (localhost HTTP is allowed for development). No paths or wildcards.' }, 400);
     }
+    const domains = await c.env.DB.prepare('SELECT domain FROM tenant_domains WHERE tenant_id=? AND verified_at IS NOT NULL').bind(r.id).all<{domain:string}>();
+    const oldOrigins = parseTenantOrigins(r.allowed_origins);
+    for (const origin of body.allowed_origins) {
+      const url = new URL(origin);
+      const legacyOrigin = !r.setup_required && oldOrigins.includes(origin);
+      const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+      if (!local && !legacyOrigin && !domains.results.some(d => url.hostname === d.domain || url.hostname.endsWith(`.${d.domain}`))) {
+        return c.json({message:'Verify ownership of the website domain before adding its production origin.'}, 400);
+      }
+    }
     updates.push('allowed_origins = ?');
     values.push(JSON.stringify(body.allowed_origins.slice(0, 10).map(String)));
   }
@@ -1648,6 +1670,7 @@ app.patch('/v1/admin/tenants/:id', async (c) => {
 app.post('/v1/admin/tenants/:id/keys', async (c) => {
   const r = await ownedTenantOr401(c, c.req.param('id'));
   if (r instanceof Response) return r;
+  if (!(await tenantSetup(c.env.DB, r)).canCreateKeys) return c.json({message:'Verify a website domain before generating a production API key.'}, 409);
   let body: any = {};
   try { body = await c.req.json(); } catch { /* label optional */ }
   const label = String(body?.label || 'production').slice(0, 40);
@@ -1659,11 +1682,12 @@ app.post('/v1/admin/tenants/:id/keys', async (c) => {
   const id = genId('key_');
   const ts = nowSec();
 
-  await c.env.DB.prepare(
-    'INSERT INTO api_keys (id, tenant_id, public_key, secret_hash, secret_preview, label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  const inserted = await c.env.DB.prepare(
+    'INSERT INTO api_keys (id, tenant_id, public_key, secret_hash, secret_preview, label, created_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM api_keys WHERE tenant_id=? AND revoked_at IS NULL)<20',
   )
-    .bind(id, r.id, publicKey, secretHash, secretPreview, label, ts)
+    .bind(id, r.id, publicKey, secretHash, secretPreview, label, ts, r.id)
     .run();
+  if (!inserted.meta.changes) return c.json({message:'This project has 20 active keys. Revoke an unused key before creating another.'}, 409);
 
   // The plaintext secret is returned EXACTLY ONCE. The frontend must show it
   // in a "copy now" modal — we never see it again.
@@ -1675,6 +1699,22 @@ app.post('/v1/admin/tenants/:id/keys', async (c) => {
     label,
     created_at: ts,
   });
+});
+
+app.post('/v1/admin/tenants/:id/keys/:keyId/rotate', async (c) => {
+  const tenant = await ownedTenantOr401(c, c.req.param('id'));
+  if (tenant instanceof Response) return tenant;
+  if (!(await tenantSetup(c.env.DB, tenant)).canCreateKeys) return c.json({message:'Verify a website domain before rotating production keys.'}, 409);
+  const body: any = await c.req.json().catch(() => ({}));
+  if (body.confirm !== true) return c.json({message:'Confirm replacement: save and deploy the new keys, then explicitly revoke the old key.'}, 400);
+  const old = await c.env.DB.prepare('SELECT id,label FROM api_keys WHERE id=? AND tenant_id=? AND revoked_at IS NULL').bind(c.req.param('keyId'), tenant.id).first<{id:string;label:string}>();
+  if (!old) return c.json({message:'Active key not found.'}, 404);
+  const id = genId('key_'), publicKey = genId('pub_live_'), secretKey = genId('sk_live_'), ts = nowSec();
+  const secretPreview = secretKey.slice(0, 14) + '…', hash = await sha256Hex(secretKey);
+  const result = await c.env.DB.prepare('INSERT INTO api_keys (id,tenant_id,public_key,secret_hash,secret_preview,label,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM api_keys WHERE id=? AND tenant_id=? AND revoked_at IS NULL) AND (SELECT COUNT(*) FROM api_keys WHERE tenant_id=? AND revoked_at IS NULL)<20')
+    .bind(id, tenant.id, publicKey, hash, secretPreview, old.label, ts, old.id, tenant.id, tenant.id).run();
+  if (!result.meta.changes) return c.json({message:'The old key was revoked or this project has 20 active keys. Refresh or revoke an unused key.'}, 409);
+  return c.json({id,public_key:publicKey,secret_key:secretKey,secret_preview:secretPreview,label:old.label,created_at:ts,replaces_key_id:old.id});
 });
 
 app.delete('/v1/admin/tenants/:id/keys/:keyId', async (c) => {
@@ -1691,13 +1731,25 @@ app.delete('/v1/admin/tenants/:id/keys/:keyId', async (c) => {
 app.get('/v1/admin/tenants/:id/users', async (c) => {
   const r = await ownedTenantOr401(c, c.req.param('id'));
   if (r instanceof Response) return r;
-  const limit = Math.min(parseInt(c.req.query('limit') || '50', 10) || 50, 200);
+  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '50', 10) || 50, 100));
+  const offset = Math.max(0, parseInt(c.req.query('offset') || '0', 10) || 0);
+  const q = String(c.req.query('q') || '').trim().slice(0, 160);
+  const status = c.req.query('status') || 'all';
+  if (!['all','verified','unverified'].includes(status)) return c.json({message:'Use all, verified or unverified status.'}, 400);
+  let where = 'tenant_id = ?';
+  const values: (string | number)[] = [r.id];
+  if (status !== 'all') { where += ' AND email_verified = ?'; values.push(status === 'verified' ? 1 : 0); }
+  if (q) {
+    where += " AND (email LIKE ? ESCAPE '\\' OR first_name LIKE ? ESCAPE '\\' OR last_name LIKE ? ESCAPE '\\')";
+    const search = `%${q.replace(/[\\%_]/g, '\\$&')}%`; values.push(search, search, search);
+  }
   const rows = await c.env.DB.prepare(
-    'SELECT id, email, first_name, last_name, email_verified, created_at FROM users WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?',
+    `SELECT id, email, first_name, last_name, email_verified, created_at FROM users WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,
   )
-    .bind(r.id, limit)
+    .bind(...values, limit, offset)
     .all();
-  return c.json({ users: rows.results || [] });
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE ${where}`).bind(...values).first<{n:number}>();
+  return c.json({ users: rows.results || [],total:total?.n || 0,limit,offset,store:'D1',folder:`projects/${r.id}/users` });
 });
 
 /* --------------------------- Management API (sk_live_) --------------------------- */

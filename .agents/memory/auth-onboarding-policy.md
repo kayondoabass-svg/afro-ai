@@ -1,0 +1,21 @@
+---
+name: Auth onboarding policy
+description: DNS proof, mailbox proof, storage isolation and non-breaking credential rollout.
+---
+Keep website ownership proof distinct from email-sending DNS and individual mailbox confirmation. Auth confirmation can use the platform sender; it must not force every customer to register a sending domain.
+
+**Why:** The user wanted a complete project → domain → verification → API-key → private users flow; upstream sending-domain capacity was previously confused with auth setup.
+
+**How to apply:** Explain the three checks separately. An upstream provider's domain quota is an operator capacity issue, not something a customer's Afro AI subscription necessarily fixes.
+
+Preserve existing integrations during DNS-onboarding rollouts. Do not silently revoke legacy keys, retroactively disable established projects, or label legacy domains as verified without proof.
+
+**Why:** DNS ownership requirements were introduced after customer integrations already existed.
+
+**How to apply:** Gate new production projects and new key issuance while clearly distinguishing legacy activity from real DNS verification.
+
+Prefer replacement-key overlap before explicit revocation, and a deliberate email-confirmation POST rather than activation from a GET link preview.
+
+**Why:** Immediate regeneration can interrupt customer apps; automated email scanners can visit links without the mailbox owner's intent.
+
+**How to apply:** Keep secrets one-time and server-only, explain deployment before revocation, and never equate accepted email delivery with verified ownership.
