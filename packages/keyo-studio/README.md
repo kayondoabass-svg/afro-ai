@@ -25,7 +25,13 @@ The hosted workspace is an **interface preview**, not browser inference:
 browser-local conversation CRUD is real, but model selection/generation are
 disabled. It does not read your device's model files or send prompts to our server.
 
-**0.1.0-alpha.4 — developer CPU alpha, not a finished desktop application.**
+**0.1.0-alpha.5 — developer CPU alpha, not a finished desktop application.**
+
+The sidebar now includes System, Light and Dark appearance settings and all
+15 supported languages. Automatic language selection uses local device/browser
+settings without a location service; your explicit choice takes priority.
+Preferences persist across launches, and Arabic uses a right-to-left layout.
+Updating from an earlier release requires downloading this new desktop archive.
 
 Public source: https://github.com/kayondoabass-svg/keyo-studio
 
@@ -50,13 +56,13 @@ There are no production dependencies beyond Node.js 20+.
 
 ## Linux: download and first run
 
-[Download the Linux x64 desktop archive](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.4/KEYO-Studio-0.1.0-alpha.4-linux-x64.tar.gz).
+[Download the Linux x64 desktop archive](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.5/KEYO-Studio-0.1.0-alpha.5-linux-x64.tar.gz).
 This needs a graphical desktop, not a headless VPS. It is not an ARM Linux build.
 
 ```sh
 cd ~/Downloads
-tar -xzf KEYO-Studio-0.1.0-alpha.4-linux-x64.tar.gz
-cd KEYO-Studio-0.1.0-alpha.4-linux-x64
+tar -xzf KEYO-Studio-0.1.0-alpha.5-linux-x64.tar.gz
+cd KEYO-Studio-0.1.0-alpha.5-linux-x64
 ./keyo-studio
 ```
 
@@ -72,8 +78,8 @@ the sandbox or use sudo to bypass it.
 
 Apple menu → About This Mac: Apple M-series = **arm64**, Intel = **x64**.
 
-- [Apple Silicon preview ZIP](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.4/KEYO-Studio-0.1.0-alpha.4-darwin-arm64.zip)
-- [Intel preview ZIP](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.4/KEYO-Studio-0.1.0-alpha.4-darwin-x64.zip)
+- [Apple Silicon preview ZIP](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.5/KEYO-Studio-0.1.0-alpha.5-darwin-arm64.zip)
+- [Intel preview ZIP](https://github.com/kayondoabass-svg/keyo-studio/releases/download/v0.1.0-alpha.5/KEYO-Studio-0.1.0-alpha.5-darwin-x64.zip)
 
 Extract the entire ZIP. See READ-ME-FIRST.txt for its minimum runtime macOS.
 Open Terminal, change into the extracted KEYO-Studio folder, then run:
@@ -96,9 +102,8 @@ or disable security protections. Native Mac builds can run
 ad-hoc signatures during packaging. Developer ID signing/notarization and
 real-device model/GUI verification remain separate work.
 
-For the Mac packager, use the current GitHub main branch or the separate
-macos-source ZIP attached to the release. The earlier alpha.4 source archives
-predate this added builder; their published bytes have not been replaced.
+The source archive for this release includes the Mac packager and all language
+files. Previous releases and their published checksums remain unchanged.
 
 ## iOS: not available
 
@@ -108,9 +113,9 @@ mobile app and device-tested owned engine are required.
 
 ## Windows: download and first run
 
-1. Open [the alpha.4 release](https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v0.1.0-alpha.4).
-   Download **KEYO-Studio-0.1.0-alpha.4-win32-x64.zip** (about 158 MB).
-   [Alternate Hugging Face download](https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-0.1.0-alpha.4-win32-x64.zip?download=true).
+1. Open [the alpha.5 release](https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v0.1.0-alpha.5).
+   Download **KEYO-Studio-0.1.0-alpha.5-win32-x64.zip** (about 158 MB).
+   [Alternate Hugging Face download](https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-0.1.0-alpha.5-win32-x64.zip?download=true).
    Source-code, source.tgz, github-upload and release-files bundles are **not**
    the runnable Windows app. Both app download hosts provide the same ZIP;
    neither guarantees a particular download speed.
@@ -143,7 +148,7 @@ Verify the archive using the release's desktop SHA256SUMS file when needed.
 Download the source package from the Afro AI `/keyo-studio` page:
 
 ```sh
-npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.4.tgz
+npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.5.tgz
 keyo --help
 keyo models
 keyo download qwen25-05b-instruct --accept-license apache-2.0

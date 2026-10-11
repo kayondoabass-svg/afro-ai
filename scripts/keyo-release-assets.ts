@@ -25,11 +25,17 @@ JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
 ## Included
 - CLI for model inspection, local generation and an authenticated localhost API.
 - Electron desktop workspace source with local conversation history.
+- Persistent System/Light/Dark appearance and Automatic/manual language settings
+  for all 15 supported languages, including Arabic right-to-left layout.
+- Device-language detection works offline; explicit choices take priority.
+- Translated controls, model-library guidance and download/delete confirmations.
 - Pinned public model catalogue with licence consent, verified downloads,
   progress, cancellation/resume, private local storage and confirmed deletion.
 - Desktop download → load → local chat flow. Models are not bundled.
 - Windows x64 portable ZIP and Linux x64 archive attached separately when built.
   Unsigned developer builds: see package metadata for execution-verification status.
+- Apple Silicon and Intel macOS preview ZIPs require local signing on a Mac.
+  They are not Developer ID signed, notarized or GUI-certified. iOS is not supported.
 - Basic GPT-Neo, Qwen2 and Llama execution for explicitly supported variants.
 - Safetensors F32/F16/BF16 loading and byte-level BPE tokenization.
 - Experimental indexed shards with strict path, tensor and size checks.
@@ -62,7 +68,7 @@ JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
 
 ## Not included
 GPU inference, GGUF/integer quantization, certified 7B/14B execution, training,
-automatic model downloads, cloud inference or signed desktop installers.
+unattended model downloads, cloud inference or signed desktop installers.
 There is no prompt telemetry or paid inference API.
 
 ## Download files

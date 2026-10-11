@@ -1,6 +1,6 @@
 {
   "name": "@afro-ai/keyo-studio",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "KEYO Studio LLM/SLM Runner: an independent, inspectable CPU inference engine",
   "type": "module",
   "license": "MIT",
