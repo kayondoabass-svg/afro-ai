@@ -1,9 +1,12 @@
 import { KEYO_PUBLIC_LINKS, KEYO_RELEASE_BUNDLE, KEYO_RELEASE_NOTES } from "../scripts/keyo-release-assets";
 import { KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
+import { escapeKeyoText, keyoLanguages, keyoText, localizeKeyoMarkup, validKeyoLanguage } from "./keyo-studio-i18n";
 
-export function keyoStudioPage(): string {
-  return `<!doctype html>
-<html lang="en">
+export function keyoStudioPage(requestedLanguage = "en"): string {
+  const language = validKeyoLanguage(requestedLanguage) ?? "en";
+  const text = (value: string) => escapeKeyoText(keyoText(language, value));
+  const html = `<!doctype html>
+<html lang="${language}" dir="${language === "ar" ? "rtl" : "ltr"}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -30,6 +33,20 @@ export function keyoStudioPage(): string {
       --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       --serif: Georgia, "Times New Roman", serif;
     }
+    :root[data-theme="dark"] { color-scheme:dark; --paper:#141b17; --paper-bright:#1d2921; --ink:#f0f4e9; --muted:#b7c3b7; --line:#3b4b3e; --forest:#456c55; --forest-soft:#b1d4b9; }
+    [data-theme="dark"] .nav-links, [data-theme="dark"] .eyebrow, [data-theme="dark"] .hero-copy, [data-theme="dark"] .alpha-note, [data-theme="dark"] .work-card p, [data-theme="dark"] .model-copy p, [data-theme="dark"] .scope-row p, [data-theme="dark"] .install-side, [data-theme="dark"] .footer-inner, [data-theme="dark"] .mini-label, [data-theme="dark"] .section-kicker, [data-theme="dark"] .requirement small { color:var(--muted); }
+    [data-theme="dark"] .ticker { background:var(--paper-bright); }
+    [data-theme="dark"] .ticker-inner { color:var(--muted); }
+    [data-theme="dark"] .file-tree, [data-theme="dark"] .boundary-note { background:var(--paper-bright); color:var(--muted); }
+    [data-theme="dark"] .file-tree .required { color:var(--ink); }
+    [data-theme="dark"] .release { color:#202921; }
+    [data-theme="dark"] .button.secondary { color:var(--ink); border-color:var(--line); }
+    .page-preferences { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:12px; padding-block:12px; }
+    .page-preferences label { display:flex; align-items:center; gap:8px; font-size:12px; }
+    .page-preferences select { max-width:170px; padding:8px; border:1px solid var(--line); border-radius:5px; background:var(--paper-bright); color:var(--ink); font:inherit; }
+    [dir="rtl"] .home-link span { transform:rotate(180deg); }
+    [dir="rtl"] pre, [dir="rtl"] code, [dir="rtl"] .file-tree { direction:ltr; text-align:left; }
+    [dir="rtl"] .platform-table th, [dir="rtl"] .platform-table td { text-align:right; }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
@@ -45,7 +62,9 @@ export function keyoStudioPage(): string {
     .platform-table th, .platform-table td { text-align:left; vertical-align:top; padding:16px; border-bottom:1px solid var(--line); }
     .platform-table th { background:var(--paper-bright); }
     a:focus-visible, button:focus-visible { outline: 3px solid var(--orange); outline-offset: 4px; }
-    .wrap { width: min(1120px, calc(100% - 48px)); margin-inline: auto; }
+    .wrap { width: min(1120px, calc(100% - 48px)); margin-inline: auto; min-width:0; }
+    .wrap > *, .split > *, .install-layout > *, .model-box > * { min-width:0; }
+    .button { max-width:100%; }
     .topbar { border-bottom: 1px solid var(--line); }
     .nav { display:flex; align-items:center; justify-content:space-between; min-height:76px; gap:24px; }
     .brand { display:inline-flex; align-items:center; gap:11px; text-decoration:none; font-weight:800; letter-spacing:-.055em; font-size:19px; }
@@ -134,18 +153,20 @@ export function keyoStudioPage(): string {
     .footer-links { display:flex; flex-wrap:wrap; gap:20px; }
     .footer a { text-decoration:none; }.footer a:hover { text-decoration:underline; }
     @media (max-width:760px) {
-      .wrap { width:min(100% - 36px, 560px); }
+      .wrap { width:min(calc(100% - 36px), 560px); }
       .nav { min-height:66px; }.nav-links { display:none; }
-      .hero { grid-template-columns:1fr; padding:54px 0 55px; gap:34px; }
+      .hero { grid-template-columns:minmax(0,1fr); padding:54px 0 55px; gap:34px; }
+      .button { white-space:normal; text-align:center; overflow-wrap:anywhere; }
+      .hero-copy, .alpha-note, .section-intro, .code-hint { overflow-wrap:anywhere; }
       h1 { font-size:clamp(54px, 15vw, 76px); }
       .hero-copy { font-size:15px; }
       .hero-art { min-height:340px; padding:19px; }
       .diagram { min-height:224px; }.orbit { width:190px; height:190px; }
       .ticker-inner { justify-content:flex-start; overflow:auto; min-height:55px; gap:25px; white-space:nowrap; }
       .section { padding:64px 0; }
-      .section-head { grid-template-columns:1fr; gap:10px; margin-bottom:27px; }
+      .section-head { grid-template-columns:minmax(0,1fr); gap:10px; margin-bottom:27px; }
       .section-kicker { padding:0; }
-      .split, .install-layout, .model-box, .scope-grid { grid-template-columns:1fr; }
+      .split, .install-layout, .model-box, .scope-grid { grid-template-columns:minmax(0,1fr); }
       .install-layout { gap:22px; }
       .install-side { padding:2px 0 2px 15px; }
       .requirements { grid-template-columns:1fr; }
@@ -169,6 +190,19 @@ export function keyoStudioPage(): string {
       <a class="home-link" href="/"><span aria-hidden="true">←</span> Afro AI home</a>
     </div>
   </header>
+  <div class="wrap page-preferences" role="group" aria-label="Page preferences">
+    <label for="page-language">Language
+      <select id="page-language" aria-label="Language">
+        <option value="auto">${text("Automatic")}</option>
+        ${keyoLanguages.map(([code, name]) => `<option value="${code}"${language === code ? " selected" : ""}>${name}</option>`).join("")}
+      </select>
+    </label>
+    <label for="page-theme">Appearance
+      <select id="page-theme" aria-label="Appearance">
+        <option value="system">${text("System")}</option><option value="light">${text("Light")}</option><option value="dark">${text("Dark")}</option>
+      </select>
+    </label>
+  </div>
 
   <main>
     <div class="wrap hero">
@@ -345,6 +379,57 @@ cd KEYO-Studio-${KEYO_VERSION}-linux-x64
   </footer>
   <script>
     (function () {
+      var current = ${JSON.stringify(language)};
+      var languages = ${JSON.stringify(keyoLanguages.map(([code]) => code))};
+      var languageSelect = document.getElementById("page-language");
+      var themeSelect = document.getElementById("page-theme");
+      var media = window.matchMedia("(prefers-color-scheme: dark)");
+      function read(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+      function save(key, value) { try { if(value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch (_) {} }
+      function automaticLanguage() {
+        var tags = navigator.languages || [navigator.language];
+        for (var i = 0; i < tags.length; i++) {
+          var code = tags[i].toLowerCase().split("-")[0];
+          if (languages.indexOf(code) !== -1) return code;
+        }
+        return current;
+      }
+      function changeLanguage(code) {
+        if (code === current) return;
+        var url = new URL(location.href);
+        url.searchParams.set("lang", code);
+        location.replace(url.href);
+      }
+      var explicit = new URL(location.href).searchParams.get("lang");
+      var saved = read("africa-ai-lang");
+      var auto = read("keyo-page-language-auto") === "true";
+      if (!explicit && !auto && languages.indexOf(saved) !== -1) changeLanguage(saved);
+      if (auto) { languageSelect.value = "auto"; if (!explicit) changeLanguage(automaticLanguage()); }
+      languageSelect.addEventListener("change", function () {
+        var selected = languageSelect.value;
+        if (selected === "auto") {
+          save("keyo-page-language-auto", "true");
+          save("africa-ai-lang", null);
+          var url = new URL(location.href);
+          url.searchParams.delete("lang");
+          location.replace(url.href);
+        } else {
+          save("keyo-page-language-auto", null);
+          save("africa-ai-lang", selected);
+          changeLanguage(selected);
+        }
+      });
+      var theme = read("keyo-page-theme") || read("africa-ai-theme") || "system";
+      if (["system","light","dark"].indexOf(theme) === -1) theme = "system";
+      function applyTheme() {
+        document.documentElement.dataset.theme = theme === "system" ? (media.matches ? "dark" : "light") : theme;
+        themeSelect.value = theme;
+      }
+      themeSelect.addEventListener("change", function () { theme = themeSelect.value; save("keyo-page-theme", theme); if(theme !== "system") save("africa-ai-theme", theme); applyTheme(); });
+      media.addEventListener("change", function () { if(theme === "system") applyTheme(); });
+      applyTheme();
+    }());
+    (function () {
       var button = document.getElementById("copy-commands");
       var status = document.getElementById("copy-status");
       var commands = "npm install -g ./afro-ai-keyo-studio-${KEYO_VERSION}.tgz\\nkeyo inspect /path/to/model\\nkeyo chat /path/to/model --prompt \\"Hello\\"\\nkeyo serve /path/to/model";
@@ -365,21 +450,22 @@ cd KEYO-Studio-${KEYO_VERSION}-linux-x64
       button.addEventListener("click", function () {
         if (navigator.clipboard && window.isSecureContext) {
           navigator.clipboard.writeText(commands).then(function () {
-            status.textContent = "Commands copied. Run them in your own terminal after downloading the package.";
-            button.textContent = "Copied";
+            status.textContent = ${JSON.stringify(keyoText(language, "Commands copied. Run them in your own terminal after downloading the package."))};
+            button.textContent = ${JSON.stringify(keyoText(language, "Copied"))};
           }).catch(function () {
             var copied = fallbackCopy();
-            status.textContent = copied ? "Commands copied. Run them in your own terminal after downloading the package." : "Copy was unavailable. Select the commands above to copy them manually.";
-            button.textContent = copied ? "Copied" : "Select to copy";
+            status.textContent = copied ? ${JSON.stringify(keyoText(language, "Commands copied. Run them in your own terminal after downloading the package."))} : ${JSON.stringify(keyoText(language, "Copy was unavailable. Select the commands above to copy them manually."))};
+            button.textContent = copied ? ${JSON.stringify(keyoText(language, "Copied"))} : ${JSON.stringify(keyoText(language, "Select to copy"))};
           });
           return;
         }
         var copied = fallbackCopy();
-        status.textContent = copied ? "Commands copied. Run them in your own terminal after downloading the package." : "Copy was unavailable. Select the commands above to copy them manually.";
-        button.textContent = copied ? "Copied" : "Select to copy";
+        status.textContent = copied ? ${JSON.stringify(keyoText(language, "Commands copied. Run them in your own terminal after downloading the package."))} : ${JSON.stringify(keyoText(language, "Copy was unavailable. Select the commands above to copy them manually."))};
+        button.textContent = copied ? ${JSON.stringify(keyoText(language, "Copied"))} : ${JSON.stringify(keyoText(language, "Select to copy"))};
       });
     }());
   </script>
 </body>
 </html>`;
+  return localizeKeyoMarkup(html, language);
 }

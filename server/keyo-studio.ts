@@ -4,6 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { buildKeyoRelease, KEYO_FILENAME } from "../scripts/keyo-release";
 import { keyoStudioPage } from "./keyo-studio-page";
+import { preferredKeyoLanguage, validKeyoLanguage } from "./keyo-studio-i18n";
 import { KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME } from "../scripts/keyo-upload-zip";
 import { KEYO_RELEASE_ASSETS, KEYO_RELEASE_BUNDLE } from "../scripts/keyo-release-assets";
 
@@ -45,8 +46,10 @@ export function registerKeyoStudio(app: Express) {
       res.setHeader("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://replit.com https://*.replit.com");
     }
   }));
-  app.get("/keyo-studio", (_req, res) => {
-    res.set("Cache-Control", "no-store").type("html").send(keyoStudioPage());
+  app.get("/keyo-studio", (req, res) => {
+    const language = validKeyoLanguage(req.query.lang) ?? preferredKeyoLanguage(req.get("accept-language"), req.get("cf-ipcountry"));
+    res.set("Cache-Control", "no-store").set("Content-Language", language).set("Vary", "Accept-Language")
+      .type("html").send(keyoStudioPage(language));
   });
   app.get("/api/keyo-studio/release", async (_req, res) => {
     try { res.set("Cache-Control", "no-store").json(await release()); }

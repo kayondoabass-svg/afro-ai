@@ -6,11 +6,12 @@ const invoke = async (method, payload) => {
   return result.value;
 };
 contextBridge.exposeInMainWorld('keyo',Object.freeze({
+  setUIPreferences: preferences => invoke('setUIPreferences', preferences),
   state:() => invoke('state'),
   chooseModel:() => invoke('chooseModel'),
   unloadModel:() => invoke('unloadModel'),
   listChats:() => invoke('listChats'),
-  createChat:() => invoke('createChat'),
+  createChat:title => invoke('createChat', title),
   getChat:id => invoke('getChat',id),
   renameChat:(id,title) => invoke('renameChat',{id,title}),
   deleteChat:id => invoke('deleteChat',id),

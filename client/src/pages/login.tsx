@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SiGoogle, SiGithub } from "react-icons/si";
-import { Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   LockedPanel,
@@ -260,10 +260,16 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <div className="absolute top-4 right-4 flex items-center gap-2">
-        <LanguageSelector compact />
-        <ThemeToggle />
-      </div>
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+        <Link href="/" className="inline-flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" data-testid="link-login-home">
+          <ArrowLeft className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
+          {t("auth.backHome")}
+        </Link>
+        <div className="flex items-center gap-2">
+          <LanguageSelector compact />
+          <ThemeToggle />
+        </div>
+      </header>
 
       <div className="flex-1 flex items-center justify-center p-4">
         <Card className="w-full max-w-sm p-8 space-y-6 border-primary/20">

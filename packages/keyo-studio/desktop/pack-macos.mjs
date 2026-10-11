@@ -63,11 +63,12 @@ async function copySource(folder,prefix=''){
   for(const entry of await fs.readdir(folder,{withFileTypes:true})){
     const relative=prefix+entry.name;
     if(entry.isSymbolicLink())throw new Error(`Source symlink refused: ${relative}`);
-    if(entry.isDirectory()&&['src','native','desktop','desktop/renderer','bin'].includes(relative))
+    if(entry.isDirectory()&&['src','native','desktop','desktop/renderer','desktop/renderer/locales','bin'].includes(relative))
       await copySource(path.join(folder,entry.name),relative+'/');
     else if(entry.isFile()&&(['package.json','LICENSE','README.md','CONTRIBUTING.md','SECURITY.md','bin/keyo.mjs','bin/validate.mjs'].includes(relative)||
       /^src\/[a-z-]+\.mjs$/.test(relative)||['native/kernels.cc','native/build.mjs'].includes(relative)||
-      /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(relative)||/^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(relative))){
+      /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(relative)||/^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(relative)||
+      /^desktop\/renderer\/locales\/[a-z-]+\.mjs$/.test(relative))){
       const target=path.join(destination,relative);await fs.mkdir(path.dirname(target),{recursive:true});
       await fs.copyFile(path.join(folder,entry.name),target);
     }

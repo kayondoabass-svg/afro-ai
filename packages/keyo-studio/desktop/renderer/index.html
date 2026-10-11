@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#eef0e7">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="description" content="KEYO Studio local model workspace">
-  <title>KEYO Studio — Local workspace</title>
+  <title data-i18n="brand.title">KEYO Studio — Local workspace</title>
   <link rel="stylesheet" href="./style.css">
   <script type="module" src="./app.mjs"></script>
 </head>
@@ -15,122 +15,133 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">K</div>
-        <div><span class="brand-name">KEYO Studio</span><span class="brand-sub">Local workspace</span></div>
+         <div><span class="brand-name">KEYO Studio</span><span class="brand-sub" data-i18n="brand.localWorkspace">Local workspace</span></div>
       </div>
       <div class="top-meta" aria-live="polite">
         <span class="status-dot" id="connection-dot" aria-hidden="true"></span>
-        <span id="connection-label">Connecting</span>
+         <span id="connection-label" data-i18n="status.connecting">Connecting</span>
         <span class="platform-label" id="platform-label"></span>
       </div>
     </header>
     <div class="workspace">
-      <aside class="sidebar" aria-label="Conversations">
+       <aside class="sidebar" aria-label="Conversations" data-i18n-aria-label="sidebar.conversations">
         <div class="sidebar-head">
-          <span class="eyebrow">Workspace / history</span>
-          <button class="icon-button" id="new-chat" type="button" aria-label="Create conversation" title="Create conversation" disabled>+</button>
+           <span class="eyebrow" data-i18n="sidebar.history">Workspace / history</span>
+           <button class="icon-button" id="new-chat" type="button" aria-label="Create conversation" title="Create conversation" data-i18n-aria-label="sidebar.create" data-i18n-title="sidebar.create" disabled>+</button>
         </div>
-        <div class="conversation-list" id="conversation-list" aria-label="Saved conversations">
+         <div class="conversation-list" id="conversation-list" aria-label="Saved conversations" data-i18n-aria-label="sidebar.saved">
           <div class="skeleton" aria-hidden="true"></div>
           <div class="skeleton" aria-hidden="true"></div>
           <div class="skeleton" aria-hidden="true"></div>
         </div>
-        <div class="sidebar-foot">
-          <p>Conversations stay on this device. Desktop history is stored in your current OS user's local data folder.</p>
-        </div>
+         <details class="preferences" open>
+           <summary data-i18n="sidebar.preferences">Preferences</summary>
+           <label for="appearance-select" data-i18n="preferences.appearance">Appearance</label>
+           <select id="appearance-select">
+             <option value="system" data-i18n="preferences.system">System</option>
+             <option value="light" data-i18n="preferences.light">Light</option>
+             <option value="dark" data-i18n="preferences.dark">Dark</option>
+           </select>
+           <label for="language-select" data-i18n="preferences.language">Language</label>
+           <select id="language-select"></select>
+         </details>
+         <div class="sidebar-foot">
+           <p data-i18n="sidebar.localHistory">Conversations stay on this device. Desktop history is stored in your current OS user's local data folder.</p>
+         </div>
       </aside>
 
       <main class="main">
         <div class="main-inner">
           <div class="notice" id="alpha-notice" role="note">
-            <span class="notice-mark" aria-hidden="true">ALPHA</span>
-            <div><strong>Own-engine CPU alpha.</strong><p>Download a pinned model below or choose your own compatible folder. Single checkpoints allow 4 GiB; experimental indexed shards allow 32 GiB total. Context stays capped at 512 tokens. CPU inference may be slow and generation has a five-minute limit for disk-backed models. GPU, GGUF, quantization and general 7B/14B certification are not included.</p></div>
+            <span class="notice-mark" aria-hidden="true" data-i18n="notice.alphaMark">ALPHA</span>
+             <div><strong data-i18n="notice.alpha">Own-engine CPU alpha.</strong><p data-i18n="notice.alphaBody">Download a pinned model below or choose your own compatible folder. Single checkpoints allow 4 GiB; experimental indexed shards allow 32 GiB total. Context stays capped at 512 tokens. CPU inference may be slow and generation has a five-minute limit for disk-backed models. GPU, GGUF, quantization and general 7B/14B certification are not included.</p></div>
           </div>
           <div class="notice preview-note" id="preview-notice" role="note" hidden>
-            <span class="notice-mark" aria-hidden="true">PREVIEW</span>
-            <div><strong>Interface preview — install the desktop app to run local models.</strong><p>Conversation CRUD works here and is stored only in this browser. Model selection and generation are unavailable; no model or replies are simulated.</p></div>
+            <span class="notice-mark" aria-hidden="true" data-i18n="notice.previewMark">PREVIEW</span>
+             <div><strong data-i18n="notice.preview">Interface preview — install the desktop app to run local models.</strong><p data-i18n="notice.previewBody">Conversation CRUD works here and is stored only in this browser. Model selection and generation are unavailable; no model or replies are simulated.</p></div>
           </div>
           <section class="main-heading" aria-labelledby="page-title">
             <div>
-              <div class="heading-kicker">Local inference / inspect your run</div>
-              <h1 id="page-title">A workspace you own.</h1>
+               <div class="heading-kicker" data-i18n="heading.kicker">Local inference / inspect your run</div>
+               <h1 id="page-title" data-i18n="heading.title">A workspace you own.</h1>
             </div>
             <div class="model-select">
               <div class="model-summary">
-                <small>Active weights</small>
+                 <small data-i18n="model.active">Active weights</small>
                 <strong id="model-label">No model loaded</strong>
               </div>
-              <button class="secondary-button" id="choose-model" type="button" disabled>Choose folder</button>
-              <button class="quiet-button" id="unload-model" type="button" disabled>Unload</button>
+               <button class="secondary-button" id="choose-model" type="button" disabled data-i18n="model.choose">Choose folder</button>
+               <button class="quiet-button" id="unload-model" type="button" disabled data-i18n="model.unload">Unload</button>
             </div>
           </section>
           <details class="model-library">
-            <summary>Model library — download, resume and load local models</summary>
-            <p>Downloads require Internet and licence acceptance. Inference and conversations stay on your computer.</p>
-            <label for="library-model">Choose a public model</label>
+             <summary data-i18n="model.library">Model library — download, resume and load local models</summary>
+             <p data-i18n="model.libraryInfo">Downloads require Internet and licence acceptance. Inference and conversations stay on your computer.</p>
+             <label for="library-model" data-i18n="model.public">Choose a public model</label>
             <select id="library-model" aria-describedby="library-description"></select>
             <p id="library-description"></p>
             <div class="toolbar-actions">
-              <button class="secondary-button" id="download-model" type="button" disabled>Download model</button>
-              <button class="secondary-button" id="load-downloaded" type="button" disabled>Load downloaded model</button>
-              <button class="quiet-button" id="cancel-download" type="button" hidden>Cancel download</button>
-              <button class="danger-button" id="remove-model" type="button" disabled>Delete model files</button>
+               <button class="secondary-button" id="download-model" type="button" disabled data-i18n="model.download">Download model</button>
+               <button class="secondary-button" id="load-downloaded" type="button" disabled data-i18n="model.load">Load downloaded model</button>
+               <button class="quiet-button" id="cancel-download" type="button" hidden data-i18n="model.cancelDownload">Cancel download</button>
+               <button class="danger-button" id="remove-model" type="button" disabled data-i18n="model.deleteFiles">Delete model files</button>
             </div>
             <progress id="download-progress" hidden></progress>
             <p id="library-status" role="status" aria-live="polite"></p>
           </details>
           <div class="conversation-toolbar">
-            <h2 id="conversation-title">No conversation selected</h2>
+             <h2 id="conversation-title" data-i18n="chat.none">No conversation selected</h2>
             <div class="toolbar-actions">
-              <button class="quiet-button" id="rename-chat" type="button" disabled>Rename</button>
-              <button class="danger-button" id="delete-chat" type="button" disabled>Delete</button>
+               <button class="quiet-button" id="rename-chat" type="button" disabled data-i18n="chat.rename">Rename</button>
+               <button class="danger-button" id="delete-chat" type="button" disabled data-i18n="chat.delete">Delete</button>
             </div>
           </div>
           <div class="error-banner" id="error-banner" role="alert" data-visible="false">
             <span id="error-message"></span>
-            <button class="quiet-button" id="retry" type="button">Retry</button>
+             <button class="quiet-button" id="retry" type="button" data-i18n="error.retry">Retry</button>
           </div>
-          <section class="thread-wrap" aria-label="Conversation">
+           <section class="thread-wrap" aria-label="Conversation" data-i18n-aria-label="thread.label">
             <div class="thread" id="thread" aria-live="polite" aria-relevant="additions text">
               <div class="welcome" id="welcome">
                 <div class="welcome-glyph" aria-hidden="true">K / 01</div>
-                <h2>Start with a local conversation.</h2>
-                <p>Create a conversation, bring a compatible model folder, then choose how your prompt should be handled. Your history stays here.</p>
+                 <h2 data-i18n="welcome.title">Start with a local conversation.</h2>
+                 <p data-i18n="welcome.body">Create a conversation, bring a compatible model folder, then choose how your prompt should be handled. Your history stays here.</p>
               </div>
             </div>
             <form class="composer" id="composer">
               <div class="composer-row">
-                <label class="sr-only" for="prompt-input">Prompt</label>
-                <textarea class="prompt" id="prompt-input" name="prompt" placeholder="Write a prompt to continue or ask your instruction model…" autocomplete="off" disabled></textarea>
+                 <label class="sr-only" for="prompt-input" data-i18n="prompt.label">Prompt</label>
+                 <textarea class="prompt" id="prompt-input" name="prompt" placeholder="Write a prompt to continue or ask your instruction model…" data-i18n-placeholder="prompt.placeholder" autocomplete="off" disabled></textarea>
                 <div class="composer-actions">
-                  <button class="primary-button send-button" id="send-button" type="submit" disabled>Generate</button>
-                  <button class="secondary-button cancel-button" id="cancel-button" type="button" hidden>Cancel run</button>
+                   <button class="primary-button send-button" id="send-button" type="submit" disabled data-i18n="action.generate">Generate</button>
+                   <button class="secondary-button cancel-button" id="cancel-button" type="button" hidden data-i18n="action.cancelRun">Cancel run</button>
                 </div>
               </div>
               <div class="composer-hint">
                 <span id="composer-hint">Create a conversation to begin.</span>
-                <span><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to run</span>
+                 <span data-i18n="hint.shortcut"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to run</span>
               </div>
             </form>
           </section>
-          <section class="controls" aria-label="Generation controls">
+           <section class="controls" aria-label="Generation controls" data-i18n-aria-label="controls.label">
             <div class="control-field">
-              <label for="mode-select">Run mode</label>
+               <label for="mode-select" data-i18n="controls.mode">Run mode</label>
               <select id="mode-select">
-                <option value="completion">Completion · continue raw text</option>
-                <option value="chat">Instruction chat · use template</option>
+                 <option value="completion" data-i18n="controls.completion">Completion · continue raw text</option>
+                 <option value="chat" data-i18n="controls.chat">Instruction chat · use template</option>
               </select>
             </div>
             <div class="control-field">
-              <label for="max-tokens">Max tokens <span class="range-value" id="token-value">4</span></label>
+               <label for="max-tokens"><span data-i18n="controls.maxTokens">Max tokens</span> <span class="range-value" id="token-value">4</span></label>
               <input id="max-tokens" type="range" min="1" max="128" step="1" value="4" aria-describedby="token-help">
-              <span class="sr-only" id="token-help">Maximum generated tokens, from 1 to the alpha limit of 128.</span>
+               <span class="sr-only" id="token-help" data-i18n="controls.tokenHelp">Maximum generated tokens, from 1 to the alpha limit of 128.</span>
             </div>
             <div class="control-field">
-              <label for="temperature">Temperature <span class="range-value" id="temperature-value">0.0</span></label>
+               <label for="temperature"><span data-i18n="controls.temperature">Temperature</span> <span class="range-value" id="temperature-value">0.0</span></label>
               <input id="temperature" type="range" min="0" max="2" step="0.1" value="0" aria-describedby="temperature-help">
-              <span class="sr-only" id="temperature-help">Sampling temperature from 0 to 2.</span>
+               <span class="sr-only" id="temperature-help" data-i18n="controls.temperatureHelp">Sampling temperature from 0 to 2.</span>
             </div>
-            <div class="context-limit" id="limits-label">Context limit<br>512 tokens</div>
+           <div class="context-limit" id="limits-label"><span data-i18n="controls.context">Context limit</span><br><span data-i18n="controls.tokens" data-i18n-count="512">512 tokens</span></div>
           </section>
         </div>
       </main>
@@ -139,14 +150,14 @@
 
   <div class="dialog-backdrop" id="dialog-backdrop" hidden>
     <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-description">
-      <h2 id="dialog-title">Rename conversation</h2>
-      <p id="dialog-description">Choose a clear name for this local conversation.</p>
+       <h2 id="dialog-title" data-i18n="dialog.renameTitle">Rename conversation</h2>
+       <p id="dialog-description" data-i18n="dialog.renameDescription">Choose a clear name for this local conversation.</p>
       <form id="dialog-form">
-        <label class="sr-only" for="dialog-input">Conversation name</label>
+         <label class="sr-only" for="dialog-input" data-i18n="dialog.conversationName">Conversation name</label>
         <input id="dialog-input" maxlength="120" autocomplete="off">
         <div class="dialog-actions">
-          <button class="secondary-button" id="dialog-cancel" type="button">Cancel</button>
-          <button class="primary-button" id="dialog-confirm" type="submit">Save name</button>
+           <button class="secondary-button" id="dialog-cancel" type="button" data-i18n="dialog.cancel">Cancel</button>
+           <button class="primary-button" id="dialog-confirm" type="submit" data-i18n="dialog.save">Save name</button>
         </div>
       </form>
     </section>

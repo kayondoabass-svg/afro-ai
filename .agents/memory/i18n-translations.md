@@ -15,3 +15,11 @@ description: Durable conventions for the t()/translations.ts i18n system — how
 - **Hardcoded JSX/toast strings** (not going through `t()`) are the other half of the problem — `login.tsx` had its whole form + toasts hardcoded despite importing `useLanguage`. Grep pages for literal capitalized strings in JSX/`toast({title/description})` and wrap them.
 - **Parity is necessary but NOT sufficient — also scan for value-equals-English.** Machine translation sometimes returns the English string verbatim (or your placeholder-drift guard reverts a key to EN), so a key can exist in every block yet still render English. After bulk-translating, scan each non-`en` block for `value === en[value]` on the newly added non-brand keys and hand-patch the stragglers.
 - **Plural keys need BOTH `_one` and `_other` in every block.** When wrapping a `live site${n>1?"s":""}` ternary, emit `key_one`/`key_other` and call `t(key,{count,...})`. The placeholder-drift guard tends to revert plural strings (they carry two placeholders like `{count}`+`{list}`), so re-check plurals specifically after a bulk run.
+
+## Structured translation generation
+
+Use short translation batches and a simple ordered array schema rather than making whole English sentences JSON-schema property names.
+
+**Why:** The structured generation provider rejected long sentence-key schemas. Large batches also returned fewer translations than requested, especially for long native-script text. Structurally valid output sometimes left entire Luganda/Twi passages in English.
+
+**How to apply:** Keep long-text batches around 15–25 entries, require exact array length, validate placeholders against each source, and scan for unchanged English prose. Preserve brands, commands and filenames, but do not treat catalog key parity as proof of translation quality.

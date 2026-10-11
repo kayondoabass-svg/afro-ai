@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -13,10 +13,14 @@ const trustedUrl=url => {
 };
 const trusted=event => !!window && event.sender === window.webContents &&
   event.senderFrame === window.webContents.mainFrame && trustedUrl(event.senderFrame.url);
-const allowed=new Set(['state','chooseModel','unloadModel','listChats','createChat','getChat','renameChat','deleteChat','generate','cancel','listModels','downloadModel','cancelDownload','loadDownloaded','removeModel']);
+const allowed=new Set(['setUIPreferences','state','chooseModel','unloadModel','listChats','createChat','getChat','renameChat','deleteChat','generate','cancel','listModels','downloadModel','cancelDownload','loadDownloaded','removeModel']);
 
 app.whenReady().then(async () => {
-  const [{ChatStore},{DesktopController},{ModelLibrary}] = await Promise.all([import('./store.mjs'),import('./controller.mjs'),import('../src/model-library.mjs')]);
+  const [{ChatStore},{DesktopController},{ModelLibrary},{catalogs}] = await Promise.all([import('./store.mjs'),import('./controller.mjs'),import('../src/model-library.mjs'),import('./renderer/locales/catalogs.mjs')]);
+  let language = app.getLocale().split("-")[0];
+  if (!Object.hasOwn(catalogs, language)) language = "en";
+  const t = (key, values = {}) => (catalogs[language][key] ?? catalogs.en[key] ?? key)
+    .replace(/\{([^}]+)\}/g, (_, name) => String(values[name] ?? ""));
   const store=await new ChatStore(path.join(app.getPath('userData'),'conversations')).init();
   controller=new DesktopController(store);
   const library=new ModelLibrary(path.join(app.getPath('userData'),'models'));
@@ -26,30 +30,37 @@ app.whenReady().then(async () => {
     if (!trusted(event) || !allowed.has(method)) return {ok:false,error:'Desktop operation denied.'};
     try {
       let value;
-      if (method === 'state') value=controller.state();
+      if (method === 'setUIPreferences') {
+        if (!payload || !Object.hasOwn(catalogs, payload.language) ||
+            !['system','light','dark'].includes(payload.appearance)) throw new Error('Invalid interface preferences.');
+        language = payload.language;
+        nativeTheme.themeSource = payload.appearance;
+      }
+      else if (method === 'state') value=controller.state();
       else if(method==='listModels')value=await library.list();
       else if(method==='cancelDownload')library.cancel();
       else if(method==='downloadModel'){
         const model=library.model(payload);
-        const answer=await dialog.showMessageBox(window,{type:'question',buttons:['Cancel','Accept licence and download'],defaultId:0,cancelId:0,
-          title:'Download public model',message:`Download ${model.name}?`,
-          detail:`Licence: ${model.license}. Source: https://huggingface.co/${model.repository}\nDownload: ${(model.files.reduce((n,f)=>n+f.bytes,0)/1024**3).toFixed(2)} GiB.\nThis explicitly contacts Hugging Face and uses Internet bandwidth. Your prompts and conversations are not uploaded. Inference remains offline after download.\n${model.description}`});
+        const description = t(model.id === 'qwen25-05b-instruct' ? 'library.catalogDescription.small' : 'library.catalogDescription.large');
+        const answer=await dialog.showMessageBox(window,{type:'question',buttons:[t('dialog.cancel'),t('native.acceptDownload')],defaultId:0,cancelId:0,
+          title:t('native.downloadTitle'),message:t('native.downloadMessage',{name:model.name}),
+          detail:t('native.downloadDetail',{license:model.license,source:`https://huggingface.co/${model.repository}`,size:(model.files.reduce((n,f)=>n+f.bytes,0)/1024**3).toFixed(2),description})});
         if(answer.response===1)value=await library.download(payload,{acceptLicense:true});
       }else if(method==='loadDownloaded')value=await controller.load(await library.verifiedPath(payload));
       else if(method==='removeModel'){
         library.model(payload);
         if(controller.state().model?.id===payload)throw new Error('Unload this model before deleting its files.');
-        const answer=await dialog.showMessageBox(window,{type:'warning',buttons:['Cancel','Delete model files'],defaultId:0,cancelId:0,
-          title:'Delete downloaded model',message:'Delete this managed model and any partial downloads?',detail:'This removes the model weights from your computer. Your conversations are kept. Downloading it again will require Internet bandwidth.'});
+        const answer=await dialog.showMessageBox(window,{type:'warning',buttons:[t('dialog.cancel'),t('model.deleteFiles')],defaultId:0,cancelId:0,
+          title:t('native.deleteTitle'),message:t('native.deleteMessage'),detail:t('native.deleteDetail')});
         if(answer.response===1)await library.remove(payload,{confirmed:true});
       }
       else if (method === 'chooseModel') {
         if (controller.state().busy || controller.loading) throw new Error('Finish or cancel the current operation first.');
-        const result=await dialog.showOpenDialog(window,{title:'Choose a compatible KEYO model folder',properties:['openDirectory']});
+        const result=await dialog.showOpenDialog(window,{title:t('native.folderTitle'),properties:['openDirectory']});
         value=result.canceled ? controller.state() : await controller.load(result.filePaths[0]);
       } else if (method === 'unloadModel') value=await controller.unload();
       else if (method === 'listChats') value=await store.list();
-      else if (method === 'createChat') value=await store.create();
+      else if (method === 'createChat') value=await store.create(payload);
       else if (method === 'getChat') value=await store.get(payload);
       else if (method === 'renameChat') value=await store.rename(payload?.id,payload?.title);
       else if (method === 'deleteChat') {

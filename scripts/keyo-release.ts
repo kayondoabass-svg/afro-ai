@@ -26,7 +26,8 @@ export async function buildKeyoRelease(root = process.cwd()) {
     ["native/kernels.cc", "native/build.mjs"].includes(file) ||
     /^test\/[a-z-]+(?:\.test)?\.mjs$/.test(file) ||
     /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(file) ||
-    /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file);
+    /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file) ||
+    /^desktop\/renderer\/locales\/[a-z-]+\.mjs$/.test(file);
   if (!files.every(permitted) || !files.includes("src/engine.mjs")) throw new Error("Unexpected files in KEYO distribution; refusing publication.");
   const bytes = await readFile(path.join(directory, KEYO_FILENAME));
   const uploadFiles = await Promise.all(files.map(async name => {
@@ -38,8 +39,9 @@ export async function buildKeyoRelease(root = process.cwd()) {
   const zip = sourceZip(uploadFiles);
   await writeFile(path.join(directory, KEYO_UPLOAD_FILENAME), zip);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const spaceFiles = await Promise.all(["index.html", "style.css", "app.mjs", "bridge.mjs", "library-panel.mjs"].map(async name => {
-    const file = path.join(root, "packages", "keyo-studio", "desktop", "renderer", name);
+  const spaceFiles = await Promise.all(files.filter(name => name.startsWith("desktop/renderer/")).map(async sourceName => {
+    const name = sourceName.slice("desktop/renderer/".length);
+    const file = path.join(root, "packages", "keyo-studio", sourceName);
     if (!(await lstat(file)).isFile()) throw new Error("Non-regular Space asset refused.");
     let data = await readFile(file);
     if (name === "index.html") data = Buffer.from(data.toString().replace("</body>",

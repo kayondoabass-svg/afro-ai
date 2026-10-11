@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { translations, languages, countryToLanguage, type LanguageCode } from "@/lib/translations";
+import { authHomeTranslations } from "@/lib/auth-home-translations";
 
 type TranslationParams = Record<string, string | number>;
 
@@ -10,6 +11,7 @@ interface LanguageContextType {
 }
 
 function lookup(language: LanguageCode, key: string): string | undefined {
+  if (key === "auth.backHome") return authHomeTranslations[language] ?? authHomeTranslations.en;
   return translations[language]?.[key] ?? translations.en[key];
 }
 

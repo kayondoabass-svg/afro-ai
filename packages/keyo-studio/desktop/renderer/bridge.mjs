@@ -45,6 +45,7 @@ function makeId() {
 }
 
 const preview = {
+  async setUIPreferences(){},
   async listModels(){return [];},
   async downloadModel(){throw new Error('Downloads require the installed desktop application.');},
   async cancelDownload(){},
@@ -64,10 +65,11 @@ const preview = {
       .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
       .map(({ messages, ...summary }) => ({ ...summary, messageCount: messages.length }));
   },
-  async createChat() {
+  async createChat(title = "Untitled conversation") {
+    if (typeof title !== "string" || !title.trim() || title.length > 100) throw new Error("Use a title of 1–100 characters.");
     if (readPreviewChats().length >= 200) throw new Error("Conversation limit reached. Delete a conversation first.");
     const now = new Date().toISOString();
-    const chat = { id: makeId(), title: "Untitled conversation", createdAt: now, updatedAt: now, messages: [] };
+    const chat = { id: makeId(), title: title.trim(), createdAt: now, updatedAt: now, messages: [] };
     writePreviewChats([chat, ...readPreviewChats()]);
     return previewChat(chat);
   },

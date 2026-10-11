@@ -62,11 +62,12 @@ export class ChatStore {
     return chats.map(({id,title,createdAt,updatedAt,messages}) => ({id,title,createdAt,updatedAt,messageCount:messages.length}))
       .sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
   }
-  create() {
+  create(title = 'New conversation') {
+    if (typeof title !== 'string' || !title.trim() || title.length > 100) throw new Error('Use a title of 1–100 characters.');
     return this.serialize(async () => {
       if ((await this.list()).length >= 200) throw new Error('Conversation limit reached. Delete or archive a conversation.');
       const now = new Date().toISOString();
-      return this.put({id:randomUUID(),title:'New conversation',createdAt:now,updatedAt:now,messages:[]});
+      return this.put({id:randomUUID(),title:title.trim(),createdAt:now,updatedAt:now,messages:[]});
     });
   }
   update(id, update) {

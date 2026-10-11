@@ -17,21 +17,22 @@ const permitted=file => ['package.json','README.md','CONTRIBUTING.md','LICENSE',
   ['native/kernels.cc','native/build.mjs'].includes(file) ||
   /^test\/[a-z-]+(?:\.test)?\.mjs$/.test(file) ||
   /^desktop\/[a-z-]+\.(?:cjs|mjs|md)$/.test(file) ||
-  /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file);
+  /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file) ||
+  /^desktop\/renderer\/locales\/[a-z-]+\.mjs$/.test(file);
 async function walk(directory,prefix='') {
   const files=[];
   for (const entry of await fs.readdir(directory,{withFileTypes:true})) {
     const relative=prefix+entry.name;
     if (entry.isSymbolicLink()) throw new Error(`Symlink refused: ${relative}`);
     if (entry.isDirectory()) {
-      if (!['src','bin','test','native','desktop','desktop/renderer'].includes(relative)) continue;
+      if (!['src','bin','test','native','desktop','desktop/renderer','desktop/renderer/locales'].includes(relative)) continue;
       files.push(...await walk(path.join(directory,entry.name),relative+'/'));
     } else if (entry.isFile() && permitted(relative)) files.push(relative);
   }
   return files;
 }
 const files=await walk(source);
-for (const required of ['src/engine.mjs','native/kernels.cc','native/build.mjs','bin/validate.mjs'])
+for (const required of ['src/engine.mjs','native/kernels.cc','native/build.mjs','bin/validate.mjs','desktop/renderer/preferences.mjs','desktop/renderer/locales/catalogs.mjs','desktop/renderer/locales/en.mjs','desktop/renderer/locales/ar.mjs'])
   if (!files.includes(required)) throw new Error(`Required engine source missing from export: ${required}`);
 for (const file of files) {
   const target=path.join(github,file);
@@ -65,8 +66,12 @@ const [pack]=JSON.parse(stdout);
 if (!pack.files.every(file => permitted(file.path))) throw new Error('Unexpected file in the publication archive.');
 const archive=await fs.readFile(path.join(hf,pack.filename));
 const sha256=createHash('sha256').update(archive).digest('hex');
-for (const file of ['index.html','style.css','app.mjs','bridge.mjs','library-panel.mjs'])
-  await fs.copyFile(path.join(source,'desktop/renderer',file),path.join(hf,file));
+for (const file of files.filter(file => file.startsWith('desktop/renderer/'))) {
+  const relative = file.slice('desktop/renderer/'.length);
+  const target = path.join(hf, relative);
+  await fs.mkdir(path.dirname(target), {recursive:true});
+  await fs.copyFile(path.join(source,file),target);
+}
 // Explicit preview-only links; the Space never pretends to execute local models.
 const html=await fs.readFile(path.join(hf,'index.html'),'utf8');
 await fs.writeFile(path.join(hf,'index.html'),html.replace('</body>',`<footer class="notice"><a href="https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-${pkg.version}-win32-x64.zip?download=true">Windows app — 158 MB</a> · <a href="https://github.com/kayondoabass-svg/keyo-studio/releases/download/v${pkg.version}/KEYO-Studio-${pkg.version}-linux-x64.tar.gz">Linux x64 — 123 MB</a> · <a href="https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-${pkg.version}-darwin-arm64.zip?download=true">Mac Apple Silicon preview — 130 MB</a> · <a href="https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-${pkg.version}-darwin-x64.zip?download=true">Mac Intel preview — 134 MB</a> · <a href="https://github.com/kayondoabass-svg/keyo-studio#platform-status">Platform status and first-run instructions</a><p>Unsigned developer builds. Mac previews must finish signing on a Mac and are not notarized or GUI-certified. iOS has no app yet. Models download separately (about 1 GB). This browser workspace is an interface preview, not local inference. Do not disable security protections.</p><a href="./${pack.filename}" download>Developer source — not a desktop installer</a></footer>\n</body>`));

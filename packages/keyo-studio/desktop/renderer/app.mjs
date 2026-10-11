@@ -1,7 +1,10 @@
 import { bridge, isPreview } from "./bridge.mjs";
 import { initializeLibrary } from "./library-panel.mjs";
+import { createPreferencesRuntime, LANGUAGE_OPTIONS, LANGUAGE_NAMES } from "./preferences.mjs";
 
 const byId = (id) => document.getElementById(id);
+const preferences = createPreferencesRuntime();
+const t = (...args) => preferences.t(...args);
 const elements = {
   connectionLabel: byId("connection-label"),
   platformLabel: byId("platform-label"),
@@ -39,6 +42,8 @@ const elements = {
   dialogCancel: byId("dialog-cancel"),
   dialogConfirm: byId("dialog-confirm"),
   toast: byId("toast"),
+  appearance: byId("appearance-select"),
+  language: byId("language-select"),
 };
 
 let appState = null;
@@ -52,17 +57,29 @@ let toastTimer = null;
 const messageNodes = new Map();
 
 function showError(message) {
-  elements.errorMessage.textContent = String(message || "Something went wrong.");
+  elements.errorMessage.removeAttribute("data-message-key");
+  elements.errorMessage.textContent = String(message || t("error.generic"));
+  elements.errorBanner.dataset.visible = "true";
+}
+
+function showLocalizedError(key, values = {}) {
+  elements.errorMessage.dataset.messageKey = key;
+  elements.errorMessage.dataset.messageValues = JSON.stringify(values);
+  elements.errorMessage.textContent = t(key, values);
   elements.errorBanner.dataset.visible = "true";
 }
 
 function clearError() {
   elements.errorBanner.dataset.visible = "false";
   elements.errorMessage.textContent = "";
+  elements.errorMessage.removeAttribute("data-message-key");
+  elements.errorMessage.removeAttribute("data-message-values");
 }
 
-function showToast(message) {
-  elements.toast.textContent = message;
+function showToast(key, values = {}) {
+  elements.toast.dataset.messageKey = key;
+  elements.toast.dataset.messageValues = JSON.stringify(values);
+  elements.toast.textContent = t(key, values);
   elements.toast.hidden = false;
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => { elements.toast.hidden = true; }, 3200);
@@ -72,7 +89,26 @@ function formatDate(dateValue) {
   if (!dateValue) return "";
   const date = new Date(dateValue);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(preferences.language, { month: "short", day: "numeric" }).format(date);
+}
+
+function localizedStatus(value) {
+  const keys = { generating: "message.generating", complete: "message.complete", cancelled: "message.cancelled", error: "message.error" };
+  return keys[value] ? t(keys[value]) : (value || t("message.complete"));
+}
+
+function localizedFinish(value) {
+  const key = `message.finishReason.${value}`;
+  return t(key) === key ? value : t(key);
+}
+
+function languageName(code) {
+  const translated = t(`language.${code}`);
+  return translated === LANGUAGE_NAMES[code] ? translated : `${LANGUAGE_NAMES[code]} · ${translated}`;
+}
+
+function syncNativePreferences() {
+  bridge.setUIPreferences?.({ language: preferences.language, appearance: preferences.preferences.appearance }).catch(error => showError(error.message));
 }
 
 function isRunning() {
@@ -89,19 +125,19 @@ function renderState() {
   elements.previewNotice.hidden = !previewMode;
   const metaState = previewMode ? "preview" : (appState.busy ? "busy" : "ready");
   elements.connectionLabel.parentElement.dataset.state = metaState;
-  elements.connectionLabel.textContent = previewMode ? "Interface preview" : (appState.busy ? "Engine busy" : "Desktop ready");
-  elements.platformLabel.textContent = previewMode ? "Browser only" : (appState.platform || "Desktop");
+  elements.connectionLabel.textContent = previewMode ? t("status.preview") : (appState.busy ? t("status.busy") : t("status.ready"));
+  elements.platformLabel.textContent = previewMode ? t("status.browserOnly") : (appState.platform || t("status.desktop"));
 
   const model = appState.model;
   if (!model) {
-    elements.modelLabel.textContent = previewMode ? "Unavailable in preview" : "No model loaded";
+    elements.modelLabel.textContent = previewMode ? t("model.previewUnavailable") : t("model.none");
   } else {
     const details = [model.architecture, model.parameters].filter(Boolean).join(" · ");
     elements.modelLabel.textContent = details ? `${model.id} · ${details}` : model.id;
   }
   const running = isRunning();
   elements.chooseModel.disabled = previewMode || running;
-  elements.chooseModel.textContent = appState.loading ? "Loading…" : "Choose folder";
+  elements.chooseModel.textContent = appState.loading ? t("model.loading") : t("model.choose");
   elements.unloadModel.disabled = previewMode || !model || running;
 
   const maxAllowed = Math.max(1, Math.min(128, Number(appState.limits && appState.limits.maxTokens) || 128));
@@ -111,15 +147,15 @@ function renderState() {
    const context = Number(appState.model && appState.model.context) || Number(appState.limits && appState.limits.context) || 512;
   elements.limits.replaceChildren();
   const limitLabel = document.createElement("span");
-  limitLabel.textContent = "Context limit";
+  limitLabel.textContent = t("controls.context");
   const limitValue = document.createElement("br");
-  const limitNumber = document.createTextNode(`${context} tokens`);
+  const limitNumber = document.createTextNode(t("controls.tokens", { count: context }));
   elements.limits.append(limitLabel, limitValue, limitNumber);
 
   const chatOption = elements.mode.querySelector('option[value="chat"]');
   chatOption.disabled = !previewMode && (!model || !model.chatTemplate);
   if (!previewMode && !model && elements.mode.value === "chat") {
-    elements.composerHint.textContent = "Instruction chat requires a loaded model with a supported chat template.";
+    elements.composerHint.textContent = t("hint.chatRequiresModel");
   }
   renderControls();
 }
@@ -143,21 +179,21 @@ function renderControls() {
   elements.newChat.disabled = false;
 
   if (previewMode) {
-    elements.composerHint.textContent = "Generation is unavailable in this browser preview.";
+    elements.composerHint.textContent = t("hint.preview");
   } else if (!hasChat) {
-    elements.composerHint.textContent = "Create a conversation to begin.";
+    elements.composerHint.textContent = t("hint.create");
   } else if (!modelReady) {
-    elements.composerHint.textContent = "Choose a compatible local model folder to enable generation.";
+    elements.composerHint.textContent = t("hint.chooseModel");
   } else if (elements.mode.value === "chat" && !appState.model.chatTemplate) {
-    elements.composerHint.textContent = "This model has no supported instruction template. Choose completion mode.";
+    elements.composerHint.textContent = t("hint.noTemplate");
   } else if (generation) {
-    elements.composerHint.textContent = "Streaming locally. Cancel remains available.";
+    elements.composerHint.textContent = t("hint.streaming");
   } else if (appState.busy) {
-    elements.composerHint.textContent = "The local engine is busy.";
+    elements.composerHint.textContent = t("hint.engineBusy");
   } else {
     elements.composerHint.textContent = elements.mode.value === "completion"
-      ? "Completion continues the raw text you provide."
-      : "Instruction chat uses the model template and prior turns.";
+      ? t("hint.completion")
+      : t("hint.instruction");
   }
 }
 
@@ -167,7 +203,7 @@ function renderList() {
   if (!chats.length) {
     const empty = document.createElement("p");
     empty.className = "empty-sidebar";
-    empty.textContent = "No conversations yet. Start one with the plus button.";
+    empty.textContent = t("sidebar.empty");
     list.append(empty);
     return;
   }
@@ -176,7 +212,7 @@ function renderList() {
     item.type = "button";
     item.className = "conversation-item";
     item.setAttribute("aria-current", activeChat && activeChat.id === summary.id ? "page" : "false");
-    item.setAttribute("aria-label", `${summary.title}, ${summary.messageCount || 0} messages, ${formatDate(summary.updatedAt)}`);
+    item.setAttribute("aria-label", t("sidebar.messages", { title: summary.title, count: summary.messageCount || 0, date: formatDate(summary.updatedAt) }));
     const title = document.createElement("span");
     title.className = "conversation-title";
     title.textContent = summary.title;
@@ -198,19 +234,19 @@ function makeMessageNode(message) {
   const mark = document.createElement("span");
   mark.className = "role-mark";
   mark.setAttribute("aria-hidden", "true");
-  mark.textContent = message.role === "user" ? "YOU" : "K";
+  mark.textContent = message.role === "user" ? t("message.you") : "K";
   const role = document.createElement("span");
   role.className = "message-role";
   role.textContent = message.role === "user"
-    ? "Prompt"
-    : (message.mode === "completion" ? "Completion" : "Local output");
+    ? t("message.prompt")
+    : (message.mode === "completion" ? t("message.completion") : t("message.localOutput"));
   const status = document.createElement("span");
   status.className = "message-status";
-  status.textContent = message.status === "generating" ? "Generating" : (message.status || "complete");
+  status.textContent = localizedStatus(message.status);
   head.append(mark, role, status);
   const content = document.createElement("div");
   content.className = "message-content";
-  content.textContent = message.content || (message.status === "generating" ? "Waiting for local output…" : "");
+  content.textContent = message.content || (message.status === "generating" ? t("message.waiting") : "");
   article.append(head, content);
 
   let meta = null;
@@ -220,9 +256,9 @@ function makeMessageNode(message) {
     meta.className = "message-meta";
     const facts = [];
     if (usage && Number.isFinite(usage.prompt_tokens) && Number.isFinite(usage.completion_tokens)) {
-      facts.push(`${usage.prompt_tokens} prompt · ${usage.completion_tokens} completion tokens`);
+      facts.push(t("message.usage", { prompt: usage.prompt_tokens, completion: usage.completion_tokens }));
     }
-    if (message.finishReason) facts.push(`finish: ${message.finishReason}`);
+    if (message.finishReason) facts.push(t("message.finish", { reason: localizedFinish(message.finishReason) }));
     meta.textContent = facts.join(" · ");
     article.append(meta);
   }
@@ -240,11 +276,11 @@ function renderThread() {
     glyph.setAttribute("aria-hidden", "true");
     glyph.textContent = "K / 01";
     const title = document.createElement("h2");
-    title.textContent = activeChat ? "Conversation ready." : "Start with a local conversation.";
+    title.textContent = activeChat ? t("welcome.ready") : t("welcome.title");
     const description = document.createElement("p");
     description.textContent = activeChat
-      ? "Choose completion for a raw continuation or instruction chat for a supported template. Prompts are not sent to a cloud service."
-      : "Create a conversation, bring a compatible model folder, then choose how your prompt should be handled. Your history stays here.";
+      ? t("welcome.readyBody")
+      : t("welcome.body");
     empty.append(glyph, title, description);
     elements.thread.append(empty);
     return;
@@ -264,8 +300,8 @@ function updateMessageNode(message) {
     return;
   }
   node.article.classList.toggle("error", message.status === "error");
-  node.status.textContent = message.status === "generating" ? "Generating" : (message.status || "complete");
-  node.content.textContent = message.content || (message.status === "generating" ? "Waiting for local output…" : "");
+  node.status.textContent = localizedStatus(message.status);
+  node.content.textContent = message.content || (message.status === "generating" ? t("message.waiting") : "");
   if (message.usage || message.finishReason) {
     if (!node.meta) {
       node.meta = document.createElement("div");
@@ -274,15 +310,15 @@ function updateMessageNode(message) {
     }
     const facts = [];
     if (message.usage && Number.isFinite(message.usage.prompt_tokens) && Number.isFinite(message.usage.completion_tokens)) {
-      facts.push(`${message.usage.prompt_tokens} prompt · ${message.usage.completion_tokens} completion tokens`);
+      facts.push(t("message.usage", { prompt: message.usage.prompt_tokens, completion: message.usage.completion_tokens }));
     }
-    if (message.finishReason) facts.push(`finish: ${message.finishReason}`);
+    if (message.finishReason) facts.push(t("message.finish", { reason: localizedFinish(message.finishReason) }));
     node.meta.textContent = facts.join(" · ");
   }
 }
 
 function renderActiveChat() {
-  elements.conversationTitle.textContent = activeChat ? activeChat.title : "No conversation selected";
+  elements.conversationTitle.textContent = activeChat ? activeChat.title : t("chat.none");
   renderThread();
   renderControls();
   renderList();
@@ -313,7 +349,7 @@ async function selectChat(id) {
 async function createConversation() {
   clearError();
   try {
-    const chat = await bridge.createChat();
+    const chat = await bridge.createChat(t("chat.new"));
     activeChat = chat;
     await refreshChats();
     renderActiveChat();
@@ -328,14 +364,14 @@ function openDialog(action) {
   previousFocus = document.activeElement;
   dialogAction = action;
   const deleting = action === "delete";
-  elements.dialogTitle.textContent = deleting ? "Delete conversation?" : "Rename conversation";
+  elements.dialogTitle.textContent = deleting ? t("dialog.deleteTitle") : t("dialog.renameTitle");
   elements.dialogDescription.textContent = deleting
-    ? `“${activeChat.title}” and its local message history will be removed. This cannot be undone.`
-    : "Choose a clear name for this local conversation.";
+    ? t("dialog.deleteDescription", { title: activeChat.title })
+    : t("dialog.renameDescription");
   elements.dialogInput.value = deleting ? "" : activeChat.title;
   elements.dialogInput.hidden = deleting;
   elements.dialogInput.required = !deleting;
-  elements.dialogConfirm.textContent = deleting ? "Delete conversation" : "Save name";
+  elements.dialogConfirm.textContent = deleting ? t("dialog.delete") : t("dialog.save");
   elements.dialogConfirm.className = deleting ? "danger-button" : "primary-button";
   elements.backdrop.hidden = false;
   if (!deleting) {
@@ -365,12 +401,12 @@ async function submitDialog(event) {
         return;
       }
       activeChat = await bridge.renameChat(id, title);
-      showToast("Conversation renamed.");
+      showToast("toast.renamed");
       await refreshChats();
       renderActiveChat();
     } else if (action === "delete") {
       if (generation && generation.chatId === id) {
-        showError("This conversation cannot be deleted while its generation is running.");
+        showLocalizedError("error.deleteGenerating");
         closeDialog();
         return;
       }
@@ -379,7 +415,7 @@ async function submitDialog(event) {
       await refreshChats();
       renderActiveChat();
       if (chats.length) await selectChat(chats[0].id);
-      showToast("Conversation deleted.");
+      showToast("toast.deleted");
     }
     closeDialog();
   } catch (error) {
@@ -438,7 +474,7 @@ async function submitPrompt(event) {
   if (!prompt.trim() || !activeChat || !appState || !appState.model || isPreview) return;
   if (isRunning()) return;
   if (elements.mode.value === "chat" && !appState.model.chatTemplate) {
-    showError("Instruction chat requires a model with a supported chat template. Choose completion mode.");
+    showLocalizedError("error.chatTemplate");
     return;
   }
   clearError();
@@ -501,7 +537,7 @@ async function chooseModel() {
     renderState();
     appState = await bridge.chooseModel();
     renderState();
-    if (appState.model) showToast(`Loaded ${appState.model.id}.`);
+    if (appState.model) showToast("toast.loaded", { id: appState.model.id });
   } catch (error) {
     if (appState) appState = { ...appState, loading: false };
     renderState();
@@ -514,7 +550,7 @@ async function unloadModel() {
   try {
     appState = await bridge.unloadModel();
     renderState();
-    showToast("Model unloaded.");
+    showToast("toast.unloaded");
   } catch (error) {
     showError(error.message);
   }
@@ -525,7 +561,7 @@ async function cancelGeneration() {
   elements.cancel.disabled = true;
   try {
     await bridge.cancel();
-    showToast("Cancellation requested.");
+    showToast("toast.cancelRequested");
   } catch (error) {
     elements.cancel.disabled = false;
     showError(error.message);
@@ -549,8 +585,51 @@ async function initialize() {
   }
 }
 
+preferences.start();
+syncNativePreferences();
+elements.appearance.value = preferences.preferences.appearance;
+elements.language.replaceChildren();
+for (const language of LANGUAGE_OPTIONS) {
+  const option = document.createElement("option");
+  option.value = language;
+  option.textContent = languageName(language);
+  elements.language.append(option);
+}
+const automaticOption = document.createElement("option");
+automaticOption.value = "automatic";
+automaticOption.textContent = t("preferences.automatic");
+elements.language.prepend(automaticOption);
+elements.language.value = preferences.preferences.language;
+elements.appearance.addEventListener("change", () => preferences.setAppearance(elements.appearance.value));
+elements.language.addEventListener("change", () => preferences.setLanguage(elements.language.value));
+window.addEventListener("keyo:localechange", () => {
+  syncNativePreferences();
+  if (elements.errorMessage.dataset.messageKey) {
+    let values = {};
+    try { values = JSON.parse(elements.errorMessage.dataset.messageValues || "{}"); } catch {}
+    elements.errorMessage.textContent = t(elements.errorMessage.dataset.messageKey, values);
+  }
+  if (!elements.toast.hidden && elements.toast.dataset.messageKey) {
+    let values = {};
+    try { values = JSON.parse(elements.toast.dataset.messageValues || "{}"); } catch {}
+    elements.toast.textContent = t(elements.toast.dataset.messageKey, values);
+  }
+  elements.language.querySelectorAll("option").forEach(option => {
+    option.textContent = option.value === "automatic" ? t("preferences.automatic") : languageName(option.value);
+  });
+  if (appState) renderState();
+  renderActiveChat();
+  if (dialogAction && activeChat) {
+    const pendingName = elements.dialogInput.value;
+    const returnFocus = previousFocus;
+    openDialog(dialogAction);
+    if (dialogAction === "rename") elements.dialogInput.value = pendingName;
+    previousFocus = returnFocus;
+  }
+});
+
 elements.newChat.addEventListener("click", createConversation);
-initializeLibrary();
+initializeLibrary({ t });
 elements.chooseModel.addEventListener("click", chooseModel);
 elements.unloadModel.addEventListener("click", unloadModel);
 elements.renameChat.addEventListener("click", () => openDialog("rename"));
