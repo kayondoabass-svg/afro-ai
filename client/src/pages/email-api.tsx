@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { normalizeSendingDomain, readableApiError } from "@shared/customer-api-setup";
+import { EmailDnsRecords } from "@/components/email-dns-records";
 import { Copy, Plus, Trash2, Eye, EyeOff, Check, Globe, Key, BarChart3, Mail, RefreshCw, Code2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -111,7 +113,7 @@ export default function EmailApiPage() {
 
   const addDomainMutation = useMutation({
     mutationFn: async (domain: string) => {
-      const res = await apiRequest("POST", "/api/email-api/domains", { domain });
+      const res = await apiRequest("POST", "/api/email-api/domains", { domain: normalizeSendingDomain(domain) });
       return res.json();
     },
     onSuccess: () => {
@@ -121,7 +123,7 @@ export default function EmailApiPage() {
       setShowAddDomain(false);
       toast({ title: "Domain added — add DNS records to verify" });
     },
-    onError: () => toast({ title: "Failed to add domain", variant: "destructive" }),
+    onError: (error) => toast({ title: "Couldn't add sending domain", description: readableApiError(error, "Please try again."), variant: "destructive" }),
   });
 
   const verifyDomainMutation = useMutation({
@@ -133,6 +135,7 @@ export default function EmailApiPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/email-api/domains"] });
       toast({ title: data.status === "verified" ? "Domain verified!" : "Not verified yet — DNS changes can take up to 72h" });
     },
+    onError: (error) => toast({ title: "Couldn't check verification", description: readableApiError(error, "Try again later."), variant: "destructive" }),
   });
 
   const deleteDomainMutation = useMutation({
@@ -292,7 +295,7 @@ console.log(data.messageId); // → "01000196..."
 
         {/* Domains Tab */}
         <TabsContent value="domains" className="space-y-3 mt-4">
-          <p className="text-sm text-muted-foreground">Add and verify your sending domains. Without verification, emails may go to spam.</p>
+          <p className="text-sm text-muted-foreground">Sending-domain verification is separate from Afro Auth's allowed website origins. Add a bare domain, copy the DNS records below to the company managing that domain's DNS, then select Verify. Adding a domain alone does not grant verified sending.</p>
           {loadingDomains ? (
             <div className="text-muted-foreground text-sm p-8 text-center">Loading domains...</div>
           ) : domains.length === 0 ? (
@@ -334,35 +337,7 @@ console.log(data.messageId); // → "01000196..."
                         </button>
                       )}
                       {expandedDomain === domain.id && (
-                        <div className="mt-3 space-y-3 text-xs font-mono bg-muted/50 rounded-lg p-3">
-                          {domain.dkimToken && (
-                            <div>
-                              <div className="text-muted-foreground mb-1 font-sans font-semibold">DKIM Records (add all)</div>
-                              <div className="whitespace-pre-wrap break-all">{domain.dkimToken}</div>
-                              <button className="text-primary mt-1 font-sans flex items-center gap-1" onClick={() => copyToClipboard(domain.dkimToken!, "DKIM records", toast)}>
-                                <Copy className="w-3 h-3" /> Copy
-                              </button>
-                            </div>
-                          )}
-                          {domain.spfRecord && (
-                            <div>
-                              <div className="text-muted-foreground mb-1 font-sans font-semibold">SPF Record (TXT on @)</div>
-                              <div className="break-all">{domain.spfRecord}</div>
-                              <button className="text-primary mt-1 font-sans flex items-center gap-1" onClick={() => copyToClipboard(domain.spfRecord!, "SPF record", toast)}>
-                                <Copy className="w-3 h-3" /> Copy
-                              </button>
-                            </div>
-                          )}
-                          {domain.dmarcRecord && (
-                            <div>
-                              <div className="text-muted-foreground mb-1 font-sans font-semibold">DMARC Record (TXT on _dmarc)</div>
-                              <div className="break-all">{domain.dmarcRecord}</div>
-                              <button className="text-primary mt-1 font-sans flex items-center gap-1" onClick={() => copyToClipboard(domain.dmarcRecord!, "DMARC record", toast)}>
-                                <Copy className="w-3 h-3" /> Copy
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        <EmailDnsRecords domain={domain} onCopy={(value, label) => copyToClipboard(value, label, toast)} />
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -557,8 +532,9 @@ console.log(data.messageId); // → "01000196..."
               data-testid="input-domain"
             />
             <p className="text-xs text-muted-foreground">
-              After adding, you'll get DKIM, SPF, and DMARC records to add to your DNS. DNS changes can take up to 72 hours.
+              Enter only example.com or mail.example.com, without https://, paths or an email address. After adding, copy each record's type, name and value into your DNS provider. Use MX priority where shown; DKIM CNAME records must be DNS-only, not proxied. Do not replace existing mailbox MX records or create a second SPF record at the same name. Then select Verify; DNS changes may take up to 72 hours.
             </p>
+            {addDomainMutation.isError && <p role="alert" className="text-sm text-destructive" data-testid="domain-setup-error">{readableApiError(addDomainMutation.error, "Could not add the sending domain.")}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDomain(false)}>Cancel</Button>

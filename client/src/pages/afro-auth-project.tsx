@@ -3,6 +3,7 @@ import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { prepareAuthOrigins, readableApiError } from "@shared/customer-api-setup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -83,7 +84,7 @@ export default function AfroAuthProjectPage() {
       queryClient.invalidateQueries({ queryKey: ["/cf-auth/v1/admin/tenants", id] });
       toast({ title: "Saved" });
     },
-    onError: (e: any) => toast({ title: "Couldn't save", description: e?.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Couldn't save", description: readableApiError(e, "Please try again."), variant: "destructive" }),
   });
 
   const copy = (text: string, label: string) => {
@@ -138,7 +139,7 @@ export default function AfroAuthProjectPage() {
 
   const t = data.tenant;
   const mauPct = data.stats.mauLimit > 0 ? Math.min(100, (data.stats.mau / data.stats.mauLimit) * 100) : 0;
-  const slugUrl = `https://afroaigroup.com/cf-auth/t/${t.slug}`;
+  const slugUrl = `https://afroaigroup.com/cf-auth/v1/t/${t.slug}`;
 
   return (
     <div className="max-w-5xl mx-auto p-6">
@@ -218,12 +219,13 @@ export default function AfroAuthProjectPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <p className="text-sm text-muted-foreground mb-3">Your project slug is <code>{t.slug}</code> (not a secret). Store this project's secret key as <code>AFRO_AUTH_SECRET_KEY</code> on your server and its slug as <code>AFRO_AUTH_PROJECT_SLUG</code>. Never put the secret key in browser code or a public environment variable. An Email API key is separate and is only needed if your app sends its own emails; it is not a substitute for the Auth key.</p>
               <pre className="bg-card border rounded p-4 text-xs font-mono overflow-x-auto" data-testid="code-verify-example">
 {`fetch("https://afroaigroup.com/cf-auth/v1/sessions/verify", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "Authorization": "Bearer sk_live_..."   // your secret key
+    "Authorization": "Bearer " + process.env.AFRO_AUTH_SECRET_KEY
   },
   body: JSON.stringify({ token })
 }).then(r => r.json());
@@ -408,7 +410,7 @@ function StatCard({ label, value, sub, testId }: { label: string; value: string;
   );
 }
 
-function SettingsForm({
+export function SettingsForm({
   tenant, onSave, saving,
 }: {
   tenant: TenantDetail["tenant"];
@@ -416,6 +418,7 @@ function SettingsForm({
   saving: boolean;
 }) {
   const [name, setName] = useState(tenant.name);
+  const [originError, setOriginError] = useState("");
   const [origins, setOrigins] = useState((() => {
     try {
       return JSON.parse(tenant.allowed_origins || "[]").join("\n");
@@ -439,22 +442,25 @@ function SettingsForm({
       <Card>
         <CardHeader>
           <CardTitle>Allowed origins (CORS)</CardTitle>
-          <CardDescription>One exact HTTPS origin per line, without paths or trailing slashes. An empty list blocks cross-origin browser calls. HTTP localhost is allowed for development.</CardDescription>
+          <CardDescription>Register the websites that may call this project's Auth API. This is not sending-domain DNS verification. Add each exact origin on its own line (up to 10); www and the root domain are separate origins. No wildcards or paths. HTTP localhost is allowed for development.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <textarea
             value={origins}
-            onChange={(e) => setOrigins(e.target.value)}
+            onChange={(e) => { setOrigins(e.target.value); setOriginError(""); }}
             className="w-full min-h-[100px] rounded-md border bg-background p-3 text-sm font-mono"
             placeholder="https://yourapp.com&#10;https://www.yourapp.com"
             data-testid="textarea-origins"
+            aria-invalid={!!originError}
+            aria-describedby="origin-help origin-error"
           />
+          <p id="origin-help" className="text-xs text-muted-foreground">Example: https://example.com and https://www.example.com, on separate lines. A trailing root slash is removed when saved. An empty list blocks browser integrations. Signups require email confirmation before login; adding an origin does not verify a user's email.</p>
+          <p id="origin-error" role="alert" className="text-sm text-destructive">{originError}</p>
           <Button
-            onClick={() =>
-              onSave({
-                allowed_origins: origins.split("\n").map((s: string) => s.trim()).filter(Boolean),
-              })
-            }
+            onClick={() => {
+              try { const allowed_origins = prepareAuthOrigins(origins); setOrigins(allowed_origins.join("\n")); setOriginError(""); onSave({ allowed_origins }); }
+              catch (error) { setOriginError(readableApiError(error, "Check your website origins.")); }
+            }}
             disabled={saving}
             data-testid="button-save-origins"
           >

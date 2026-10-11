@@ -12,7 +12,7 @@ export function parseTenantOrigins(raw: string | null): string[] {
 export function validTenantOrigin(value: string): boolean {
   try {
     const u = new URL(value);
-    return u.origin === value && !u.username && !u.password &&
+    return u.origin === value && !u.username && !u.password && !u.hostname.includes("*") &&
       (u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname)));
   } catch { return false; }
 }

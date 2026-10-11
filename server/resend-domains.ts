@@ -82,7 +82,7 @@ export function formatRecordsForUi(records: ResendDnsRecord[] | undefined): {
   const spf: string[] = [];
   const dmarc: string[] = [];
   for (const r of records || []) {
-    const line = `${r.type}  ${r.name}  →  ${r.value}${r.priority ? `  (priority ${r.priority})` : ""}`;
+    const line = `${r.type}  ${r.name}  →  ${r.value}${r.priority != null ? `  (priority ${r.priority})` : ""}`;
     const upper = (r.record || r.name || "").toUpperCase();
     if (upper.includes("DKIM") || /domainkey/i.test(r.name) || r.record === "DKIM") dkim.push(line);
     else if (upper.includes("SPF") || (r.type === "TXT" && /spf/i.test(r.value))) spf.push(line);
@@ -91,7 +91,7 @@ export function formatRecordsForUi(records: ResendDnsRecord[] | undefined): {
   }
   return {
     dkimText: dkim.join("\n"),
-    spfText: spf.join("\n") || "v=spf1 include:amazonses.com include:_spf.resend.com ~all",
-    dmarcText: dmarc.join("\n") || "TXT  _dmarc  →  v=DMARC1; p=quarantine;",
+    spfText: spf.join("\n"),
+    dmarcText: dmarc.join("\n"),
   };
 }

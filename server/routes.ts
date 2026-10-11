@@ -52,6 +52,8 @@ import path from "path";
 import fs from "fs";
 import express from "express";
 import { SESClient, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIdentityVerificationAttributesCommand, SetIdentityMailFromDomainCommand } from "@aws-sdk/client-ses";
+import { normalizeSendingDomain } from "../shared/customer-api-setup";
+import { emailDomainError } from "./email-domain-errors";
 import bcrypt from "bcryptjs";
 import { affiliateApplicationInput } from "./affiliate-application";
 import { productSelfKnowledge } from "./product-self-knowledge";
@@ -5128,8 +5130,14 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
   // talk to even after the active provider is later flipped.
   app.post("/api/email-api/domains", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
-    const { domain } = req.body;
-    if (!domain) return res.status(400).json({ error: "Domain required" });
+    let domain: string;
+    try { domain = normalizeSendingDomain(req.body?.domain); }
+    catch (error) { return res.status(400).json({ error: (error as Error).message }); }
+
+    // Repeated submissions of the same owned domain should not register another
+    // upstream identity. Never reuse a different user's provider identity.
+    const [ownedDomain] = await db.select().from(emailApiDomains).where(dbAnd(dbEq(emailApiDomains.userId, userId), dbEq(emailApiDomains.domain, domain)));
+    if (ownedDomain) return res.json(ownedDomain);
 
     const { activeEmailProvider } = await import("./email-provider");
     const provider = activeEmailProvider();
@@ -5153,7 +5161,8 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
         return res.json(row);
       } catch (e: any) {
         console.error("[EmailAPI] Resend domain create error:", e?.message || e);
-        return res.status(502).json({ error: e?.message || "Failed to register domain with Resend" });
+        const failure = emailDomainError(e);
+        return res.status(failure.status).json({ error: failure.error, code: failure.code });
       }
     }
 
@@ -5166,6 +5175,8 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       dkimToken = (dkimRes.DkimTokens || []).map(t => `${t}._domainkey.${domain} → ${t}.dkim.amazonses.com`).join("\n");
     } catch (e: any) {
       console.error("[EmailAPI] DKIM error:", e.message);
+      const failure = emailDomainError(e);
+      return res.status(failure.status).json({ error: failure.error, code: failure.code });
     }
     const [created] = await db.insert(emailApiDomains).values({
       userId,
@@ -5192,7 +5203,7 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       try {
         const { verifyResendDomain, getResendDomain } = await import("./resend-domains");
         // Trigger a re-check, then read back the current status.
-        await verifyResendDomain(domainRecord.resendDomainId).catch(() => null);
+        await verifyResendDomain(domainRecord.resendDomainId);
         const fresh = await getResendDomain(domainRecord.resendDomainId);
         const isVerified = fresh.status === "verified";
         await db.update(emailApiDomains).set({
@@ -5201,7 +5212,7 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
         }).where(dbEq(emailApiDomains.id, domainRecord.id));
         return res.json({ status: isVerified ? "verified" : "pending", providerStatus: fresh.status });
       } catch (e: any) {
-        return res.json({ status: "pending", error: e?.message || "Resend check failed" });
+        return res.status(503).json({ error: "The email provider could not check DNS verification. The domain has not been marked verified. Try again later.", code: "EMAIL_VERIFICATION_UNAVAILABLE" });
       }
     }
 
@@ -5215,7 +5226,7 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       }).where(dbEq(emailApiDomains.id, domainRecord.id));
       res.json({ status: isVerified ? "verified" : "pending" });
     } catch (e: any) {
-      res.json({ status: "pending", error: e.message });
+      res.status(503).json({ error: "The email provider could not check DNS verification. The domain has not been marked verified. Try again later.", code: "EMAIL_VERIFICATION_UNAVAILABLE" });
     }
   });
 
