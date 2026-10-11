@@ -54,3 +54,13 @@ A successful short CPU chat was still much slower than an interactive runner.
 **How to apply:** Inspect the pinned model's tokenizer and configuration before
 claiming compatibility. Keep private weights outside public releases and report
 real generation timings and limits; distinguish smoke evidence from certification.
+
+Public source exports must include every required owned-engine build input and
+match the canonical npm source archive, not merely the version number.
+
+**Why:** An export can accept new file types yet skip their parent directory.
+The workspace build then passes while the sanitized developer download is incomplete.
+
+**How to apply:** Keep directory traversal and file allowlists synchronized.
+Compare archive checksums and run tests, including an owned native source build,
+from the exact sanitized tree before pushing or attaching release files.

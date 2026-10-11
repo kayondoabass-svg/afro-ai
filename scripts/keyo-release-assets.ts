@@ -27,15 +27,22 @@ JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
 - Electron desktop workspace source with local conversation history.
 - Basic GPT-Neo, Qwen2 and Llama execution for explicitly supported variants.
 - Safetensors F32/F16/BF16 loading and byte-level BPE tokenization.
+- Experimental indexed shards with strict path, tensor and size checks.
+- Optional KEYO-owned C++ CPU block kernel, explicitly selected; source only.
+- Local instruction-smoke/benchmark tool with optional JavaScript/native parity.
 - CI checks the source suite on Linux, Windows and macOS with Node.js 22 and 24.
   Check the run for this release; CI is not signed-installer certification.
 
 ## Requirements and limits
 - CLI: Node.js >=20. Desktop development: Node.js >=22.12 and Electron.
 - Supply a compatible model folder containing config.json, tokenizer.json and
-  a single model.safetensors checkpoint. No model weights are included.
+  model.safetensors or model.safetensors.index.json and its shards. No model weights are included.
 - Single-file checkpoints up to 4 GiB; above 256 MiB, matrices stay on disk and
   are read through a bounded 256 KiB buffer. Resident vectors are capped at 8 MiB.
+- Indexed checkpoints: 8 GiB per shard, 32 GiB total, at most 128 shards.
+  Each shard has a 256 KiB scratch buffer; the 8 MiB vector cap is shared.
+- Native source builds: Linux/macOS with C++ and Node development headers.
+  Windows uses JavaScript. Native operation is opt-in, without silent fallback.
 - NFC byte-level BPE, exact literal added tokens and modern default RoPE settings.
 - Existing Afro AI checkpoint support is a CPU smoke check, not certification
   of quality, speed, all Qwen variants or 7B/14B support.
@@ -45,7 +52,7 @@ JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
   useful chat quality, production performance or 7B/14B support.
 
 ## Not included
-GPU inference, GGUF/integer quantization, sharded checkpoints, training,
+GPU inference, GGUF/integer quantization, certified 7B/14B execution, training,
 automatic model downloads, cloud inference or signed desktop installers.
 There is no prompt telemetry or paid inference API.
 

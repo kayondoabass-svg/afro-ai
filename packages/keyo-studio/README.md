@@ -25,11 +25,11 @@ The hosted workspace is an **interface preview**, not browser inference:
 browser-local conversation CRUD is real, but model selection/generation are
 disabled. It does not read your device's model files or send prompts to our server.
 
-**0.1.0-alpha.2 — developer CPU alpha, not a finished desktop application.**
+**0.1.0-alpha.3 — developer CPU alpha, not a finished desktop application.**
 
 Public source: https://github.com/kayondoabass-svg/keyo-studio
 
-Release: https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v0.1.0-alpha.2
+Latest published release: https://github.com/kayondoabass-svg/keyo-studio/releases
 
 Interface preview (not hosted inference): https://huggingface.co/spaces/kayondoabass/KEYO-Studio
 
@@ -44,7 +44,7 @@ There are no production dependencies beyond Node.js 20+.
 Download the source package from the Afro AI `/keyo-studio` page:
 
 ```sh
-npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.2.tgz
+npm install -g ./afro-ai-keyo-studio-0.1.0-alpha.3.tgz
 keyo --help
 keyo inspect /path/to/model
 keyo chat /path/to/model --prompt "Once upon a time" --max-tokens 32
@@ -58,8 +58,8 @@ an Afro AI account, provider API key, inference credits or network access.
 
 ## Model compatibility: deliberately limited
 
-The model directory needs `config.json`, `tokenizer.json`, and a single
-`model.safetensors`. A single checkpoint can be **up to 4 GiB**. Above 256 MiB,
+The model directory needs `config.json`, `tokenizer.json`, and either
+`model.safetensors` or an indexed set of shards (not both). A single checkpoint can be **up to 4 GiB**. Above 256 MiB,
 matrix weights remain on disk and are read through a shared 256 KiB scratch
 buffer; normalization/bias vectors are capped at 8 MiB. This avoids allocating
 the complete multi-gigabyte checkpoint or its float32 equivalent in process RAM.
@@ -71,9 +71,57 @@ Disk-backed library, CLI and API generation defaults to four output tokens
 instead of 32; explicit requests remain capped at 128 and five minutes.
 The desktop starts its output-token control at four as well.
 
+### Experimental sharded checkpoints
+
+Supply `model.safetensors.index.json` with a complete `weight_map` and
+`metadata.total_size` (payload bytes). Shard filenames must be flat `.safetensors`
+names in that same folder. Missing/extra/duplicate tensors, symlinks, unsafe paths
+and false size declarations are rejected. Limits: 128 shards, 8 GiB per shard,
+32 GiB total files, 64 GiB decoded-equivalent dimensions, 8 MiB resident vectors
+across all shards. Each shard uses a 256 KiB scratch buffer. Model load timeout
+is five minutes. Context/output limits remain unchanged.
+
+Synthetic sharded execution is tested. **Actual 7B/14B checkpoints are not yet
+certified**, and disk streaming alone does not establish usable generation speed.
+
+### Optional KEYO native CPU kernel
+
+Our own C++/Node-API kernel accelerates disk-backed F32/FP16/BF16 matrix blocks.
+It is not a wrapper around another inference runtime, and does not provide GPU,
+SIMD-specific kernels or integer quantization. Other transformer operations
+remain in the inspectable JavaScript engine.
+
+On Linux/macOS, install a C++ compiler and Node development headers, then:
+
+```bash
+node native/build.mjs /path/to/include/node
+KEYO_CPU_KERNEL=native node bin/keyo.mjs inspect /path/to/model
+KEYO_CPU_KERNEL=native node bin/keyo.mjs chat /path/to/model --prompt "Hello"
+node bin/validate.mjs /path/to/model ./new-local-report.json native --parity
+```
+
+The selected kernel is returned in model metadata. Missing or incompatible native
+builds fail explicitly; there is no automatic fallback when native mode is requested.
+The default remains JavaScript. Windows native builds and signed installers are
+not provided. Compiled native binaries are excluded from source releases.
+The validation tool records two short instruction checks, first-token timing,
+memory and optional full-vocabulary single-step parity. It is not a broad
+quality benchmark. Reports stay local, are created with private permissions,
+and existing reports are never overwritten.
+
+In a Linux/Node 20 development check, the existing approximately 1.5B Qwen2
+checkpoint passed greeting and basic-arithmetic smoke checks. One full
+transformer step took 5.21 seconds in JavaScript and 1.32 seconds in native mode,
+with exact agreement across 151,665 logits. This approximately 4x single-step
+result is not a general speed guarantee. First-token times were about 10 seconds
+for the greeting and 25 seconds for the arithmetic prompt; loading remained slow.
+Independent two-layer causal-sequence references also test GPT-Neo, Qwen2 and
+Llama fixtures with nonzero projections, grouped-query attention and local masks.
+
 ## Next steps for SLM and LLM support
 
-These are planned work, not capabilities of this release:
+The following work remains; experimental native CPU and indexed-shard foundations
+are now implemented, but larger checkpoints still need independent validation:
 
 1. **Certify the current SLM first.** Evaluate the existing ~1.5B model with
    independent numerical checks, factual/structured-answer tests and recorded
@@ -81,8 +129,8 @@ These are planned work, not capabilities of this release:
 2. **Make our engine faster.** Write KEYO native CPU/SIMD kernels and improve
    prefill/KV reuse; then add our own tested GPU backends. Do not replace the
    engine with another inference runtime.
-3. **Load larger checkpoints safely.** Add validated sharded safetensors,
-   indexing and hardware-aware budgets; test 3B, then 7B, then 14B independently.
+3. **Validate larger checkpoints safely.** Test experimental indexed-shard
+   loading and hardware budgets with actual 3B, then 7B, then 14B checkpoints.
 4. **Reduce memory use with our own quantized execution.** Implement and
    validate 8-bit/4-bit loaders and kernels against floating-point references.
    Do not claim GGUF support until its parser and supported architectures work.
@@ -104,14 +152,14 @@ Implemented architectures: basic GPT-Neo (`gelu_new`), Qwen2, and Llama
 (`silu`, conventional full-head RoPE), including grouped-query attention.
 Only unnormalized or NFC byte-level BPE tokenizers with supported splitting rules
 are accepted. Floating-point F32/F16/BF16 checkpoint data is supported;
-computation is float32 with JavaScript-number accumulators.
+computation uses float32 values with double-precision accumulators.
 
-Unsupported variants fail explicitly. No GGUF, integer quantization, sharded
-checkpoints, scaled RoPE, sliding-window Qwen/Llama, unusual head dimensions,
+Unsupported variants fail explicitly. No GGUF, integer quantization,
+scaled RoPE, sliding-window Qwen/Llama, unusual head dimensions,
 arbitrary Jinja templates, tools, multimodal input, training or GPU kernels.
 The existing Afro AI merged Qwen2 checkpoint can now be loaded through the
 disk-backed engine. A real-checkpoint smoke check is not quality, performance
-or numerical-parity certification. 7B/14B models remain unsupported.
+or comprehensive numerical-parity certification. Actual 7B/14B models remain uncertified.
 Architecture implementation is not certification of every model in that family.
 Maximum context: 512 tokens; maximum output: 128; default generation: greedy.
 Pure JavaScript CPU execution is an inspectable correctness baseline, not yet

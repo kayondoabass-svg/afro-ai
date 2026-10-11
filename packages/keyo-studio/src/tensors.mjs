@@ -1,4 +1,4 @@
-import { open } from 'node:fs/promises';
+import { open, lstat } from 'node:fs/promises';
 import path from 'node:path';
 
 export const MAX_WEIGHTS = 256 * 1024 * 1024;
@@ -79,14 +79,25 @@ export function parseSafetensors(bytes) {
   return tensors;
 }
 
-export async function loadTensors(directory) {
+export async function loadTensors(directory, kernel = null) {
+  let indexed = false;
+  try { await lstat(path.join(directory, 'model.safetensors.index.json')); indexed = true; }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (indexed) {
+    try {
+      await lstat(path.join(directory, 'model.safetensors'));
+      throw new Error('Ambiguous checkpoint: supply either a single file or a sharded index, not both.');
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const { loadShardedTensors } = await import('./sharded-tensors.mjs');
+    return loadShardedTensors(directory, kernel);
+  }
   const handle = await open(path.join(directory, 'model.safetensors'), 'r');
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw new Error('Weights must be a regular safetensors file.');
-    if (stat.size > MAX_WEIGHTS) {
+    if (stat.size > MAX_WEIGHTS || kernel) {
       const { loadDiskTensors } = await import('./disk-tensors.mjs');
-      return loadDiskTensors(path.join(directory, 'model.safetensors'));
+      return loadDiskTensors(path.join(directory, 'model.safetensors'), {kernel});
     }
     return parseSafetensors(await handle.readFile());
   } finally { await handle.close(); }

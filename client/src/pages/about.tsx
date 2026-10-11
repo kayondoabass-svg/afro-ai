@@ -60,10 +60,11 @@ export default function AboutPage() {
                 weights on their own devices without a paid AI API.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                Developer release {KEYO_VERSION} adds disk-backed loading for the existing merged Afro AI
-                Qwen2 model (approximately 1.5 billion parameters). A short instruction-chat check passed
-                through our own local API, but CPU responses remain slow. This is not certification of
-                general answer quality, 7B/14B support or production performance.
+                Developer release {KEYO_VERSION} includes disk-backed loading, experimental indexed
+                checkpoints and an optional KEYO-owned native CPU kernel. The existing Afro AI Qwen2
+                model (approximately 1.5 billion parameters) passed greeting and basic-arithmetic smoke
+                checks, with exact JavaScript/native agreement in a single-step comparison. CPU responses
+                remain slow. This is not certification of general answer quality, 7B/14B models or production performance.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 This is a milestone in our work to advance Ugandan and African AI development. Our long-term

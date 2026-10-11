@@ -21,8 +21,9 @@ export async function buildKeyoRelease(root = process.cwd()) {
   if (result.filename !== KEYO_FILENAME || result.version !== KEYO_VERSION) throw new Error("KEYO package version does not match the release contract.");
   const files: string[] = result.files.map((file: {path: string}) => file.path);
   const permitted = (file: string) =>
-    ["package.json", "README.md", "CONTRIBUTING.md", "LICENSE", "SECURITY.md", "bin/keyo.mjs"].includes(file) ||
+    ["package.json", "README.md", "CONTRIBUTING.md", "LICENSE", "SECURITY.md", "bin/keyo.mjs", "bin/validate.mjs"].includes(file) ||
     /^src\/[a-z-]+\.mjs$/.test(file) || file === "src/version.d.mts" ||
+    ["native/kernels.cc", "native/build.mjs"].includes(file) ||
     /^test\/[a-z-]+(?:\.test)?\.mjs$/.test(file) ||
     /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(file) ||
     /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file);
@@ -70,7 +71,9 @@ SHA-256: \`${sha256}\`
 
 CLI: Node >=20. Desktop development: Node >=22.12 and Electron.
 Current limits: one checkpoint up to 4 GiB, bounded-memory disk-backed CPU loading
-above 256 MiB, 512 context tokens and 128 output tokens. No GPU, GGUF or 7B/14B support.
+above 256 MiB, 512 context tokens and 128 output tokens. Experimental indexed
+shards allow 32 GiB total (8 GiB per shard); an optional KEYO-owned native CPU
+source kernel is available. No GPU, GGUF or certified 7B/14B execution.
 Larger models, GPU inference and signed Windows/macOS installers are unfinished.
 No model weights, credentials, paid API or telemetry are included.
 
@@ -117,13 +120,14 @@ model weights. Listing on Hugging Face does not automatically generate payments.
     pretrainedSmokeCheckedArchitectures: ["llama"],
     existingAfroModelCertified: false,
     limits: { checkpointMiB: 4096, residentCheckpointMiB: 256,
+      shardedCheckpointMiB: 32768, shardMiB: 8192, maximumShards: 128,
       diskScratchKiB: 256, residentVectorsMiB: 8, contextTokens: 512, outputTokens: 128,
       diskGenerationTimeoutSeconds: 300 },
     modelWeightsIncluded: false,
     requiresPaidApi: false,
     telemetry: false,
     validatedReleaseTarget: "Linux Node CLI and desktop source; not a signed cross-platform installer",
-    notIncluded: ["GPU inference", "GGUF", "integer quantization", "sharded weights", "signed Windows/macOS installers", "training", "automatic model downloads", "cloud billing"],
+    notIncluded: ["GPU inference", "GGUF", "integer quantization", "certified 7B/14B execution", "signed Windows/macOS installers", "training", "automatic model downloads", "cloud billing"],
     documentation: "/keyo-studio",
   };
   await writeFile(path.join(directory, "release.json"), JSON.stringify(manifest, null, 2));

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { readJson, loadTensors, matvec, normalize, softmax, rotary, gelu } from './tensors.mjs';
 import { ByteBPE } from './tokenizer.mjs';
+import { cpuKernel } from './cpu-kernel.mjs';
 
 function integer(value, name, max = 500000) {
   if (!Number.isSafeInteger(value) || value <= 0 || value > max) throw new Error(`Invalid model dimension: ${name}.`);
@@ -12,10 +13,10 @@ const add = (a, b) => Float32Array.from(a, (value, i) => value + b[i]);
 // All transformer execution is our own typed-array implementation. No model
 // runner, Transformers, ONNX, Ollama, llama.cpp, vLLM or remote API is invoked.
 export class KeyoEngine {
-  static async load(directory) {
+  static async load(directory, {kernel = process.env.KEYO_CPU_KERNEL ?? 'javascript'} = {}) {
     const config = await readJson(path.join(directory, 'config.json'));
     const tokenizer = await ByteBPE.load(directory, config.model_type);
-    const tensors = await loadTensors(directory);
+    const tensors = await loadTensors(directory, cpuKernel(kernel));
     try { return new KeyoEngine(config, tensors, tokenizer, path.basename(path.resolve(directory))); }
     catch (error) { tensors.close?.(); throw error; }
   }
@@ -201,6 +202,7 @@ export class KeyoEngine {
       : this.family === 'llama' && ['<|begin_of_text|>','<|start_header_id|>','<|end_header_id|>','<|eot_id|>'].every(t => this.tokenizer.special.has(t)) ? 'llama3' : null;
     return { id:this.id, architecture:this.family, engine:'keyo-cpu', context_limit:this.context, chatTemplate,
       storage:this.tensors.storage ?? 'memory', checkpointBytes:this.tensors.checkpointBytes,
+      cpu_kernel:this.tensors.kernel ?? 'javascript', shard_count:this.tensors.shardCount ?? 1,
       generationTimeoutSeconds:this.tensors.storage === 'disk' ? 300 : 60,
       tensors:this.tensors.size, parameters:[...this.tensors.values()].reduce((sum,t) =>
         sum + t.shape.reduce((a,b) => a*b,1),0) };

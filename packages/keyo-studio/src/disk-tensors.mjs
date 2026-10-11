@@ -19,15 +19,16 @@ function decode(raw, dtype) {
 
 // Read-only, out-of-core weights. Matrix blocks are read into one bounded
 // scratch buffer, never a multi-gigabyte Buffer or decoded Float32Array.
-export function loadDiskTensors(filename) {
+export function loadDiskTensors(filename, { kernel = null, maxBytes = MAX_CHECKPOINT_BYTES,
+  maxDecodedBytes = 8 * 1024 ** 3 } = {}) {
   if (endianness() !== 'LE') throw new Error('Disk-backed weights require a little-endian machine.');
   const fd = openSync(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   let closed = false;
   const close = () => { if (!closed) { closed=true; closeSync(fd); } };
   try {
     const initial = fstatSync(fd);
-    if (!initial.isFile() || initial.size < 10 || initial.size > MAX_CHECKPOINT_BYTES)
-      throw new Error('Single-file checkpoint must fit within the 4 GiB disk-backed limit.');
+    if (!initial.isFile() || initial.size < 10 || initial.size > maxBytes)
+      throw new Error(`Checkpoint exceeds the ${maxBytes / 1024 ** 3} GiB disk-backed limit.`);
     function read(buffer, bytes, position) {
       if (closed) throw new Error('Model weights are closed.');
       let done=0;
@@ -53,8 +54,8 @@ export function loadDiskTensors(filename) {
           meta.shape.some(n => !Number.isSafeInteger(n) || n <= 0)) throw new Error(`Invalid tensor shape: ${name}.`);
       const count=meta.shape.reduce((a,b) => a*b,1), width=meta.dtype === 'F32' ? 4 : 2;
       elements+=count;
-      if (!Number.isSafeInteger(count) || !Number.isSafeInteger(elements) || elements*4 > 8*1024**3)
-        throw new Error('Decoded weight dimensions exceed the 8 GiB equivalent limit.');
+      if (!Number.isSafeInteger(count) || !Number.isSafeInteger(elements) || elements*4 > maxDecodedBytes)
+        throw new Error('Decoded weight dimensions exceed the equivalent limit.');
       const [from,to]=meta.data_offsets ?? [];
       if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from ||
           to-from !== count*width || start+to > initial.size) throw new Error(`Invalid tensor offsets: ${name}.`);
@@ -114,6 +115,10 @@ export function loadDiskTensors(filename) {
             for (let first=0;first<rows;first+=rowsPerBlock) {
               guard();
               const size=Math.min(rowsPerBlock,rows-first),raw=block(entry,first*cols,size*cols);
+               if (kernel && vector instanceof Float32Array) {
+                 output.set(kernel.multiply(raw, vector, size, entry.dtype), first);
+                 continue;
+               }
               for (let row=0;row<size;row++) {
                 guard();
                 let sum=0;
@@ -146,7 +151,8 @@ export function loadDiskTensors(filename) {
     }
     const final=fstatSync(fd);
     if (final.size !== initial.size || final.mtimeMs !== initial.mtimeMs) throw new Error('Weights changed while loading.');
-    Object.assign(tensors,{close,storage:'disk',checkpointBytes:initial.size,scratchBytes:BLOCK_BYTES,vectorBytes});
+    Object.assign(tensors,{close,storage:'disk',checkpointBytes:initial.size,scratchBytes:BLOCK_BYTES,vectorBytes,
+      kernel:kernel ? 'native' : 'javascript',payloadBytes:end});
     return tensors;
   } catch (error) { close(); throw error; }
 }

@@ -18,7 +18,7 @@ export class DesktopController extends EventEmitter {
       if (typeof directory !== 'string' || !(await fs.stat(directory)).isDirectory()) throw new Error('Choose a model directory.');
       candidate = new Worker(new URL('../src/worker.mjs',import.meta.url),{workerData:{directory}});
       const info = await new Promise((resolve,reject) => {
-        const timer = setTimeout(() => reject(new Error('Model load timed out.')),60000);
+        const timer = setTimeout(() => reject(new Error('Model load timed out.')),300000);
         const message = data => { cleanup(); data.type === 'ready' ? resolve(data.info) : reject(new Error(data.error || 'Model load failed.')); };
         const error = err => { cleanup(); reject(err); };
         const exit = () => error(new Error('Model worker exited during loading.'));

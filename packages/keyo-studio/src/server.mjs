@@ -19,7 +19,7 @@ export async function startServer({directory, token, port = 4317}) {
   let info, active, crashed = false;
   try {
     info = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Model load timed out.')), 60000);
+      const timeout = setTimeout(() => reject(new Error('Model load timed out.')), 300000);
       worker.once('error', error => { clearTimeout(timeout); reject(error); });
       worker.once('exit', () => { clearTimeout(timeout); reject(new Error('Model worker exited while loading.')); });
       worker.once('message', event => {

@@ -12,8 +12,9 @@ await fs.mkdir(output,{recursive:true});
 const github=path.join(output,'github'), hf=path.join(output,'huggingface');
 // Refuse to overwrite a previous export or an existing Git working tree.
 await fs.mkdir(github); await fs.mkdir(hf);
-const permitted=file => ['package.json','README.md','CONTRIBUTING.md','LICENSE','SECURITY.md','bin/keyo.mjs'].includes(file) ||
+const permitted=file => ['package.json','README.md','CONTRIBUTING.md','LICENSE','SECURITY.md','bin/keyo.mjs','bin/validate.mjs'].includes(file) ||
   /^src\/[a-z-]+\.mjs$/.test(file) || file === 'src/version.d.mts' ||
+  ['native/kernels.cc','native/build.mjs'].includes(file) ||
   /^test\/[a-z-]+(?:\.test)?\.mjs$/.test(file) ||
   /^desktop\/[a-z-]+\.(?:cjs|mjs|md)$/.test(file) ||
   /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file);
@@ -23,19 +24,21 @@ async function walk(directory,prefix='') {
     const relative=prefix+entry.name;
     if (entry.isSymbolicLink()) throw new Error(`Symlink refused: ${relative}`);
     if (entry.isDirectory()) {
-      if (!['src','bin','test','desktop','desktop/renderer'].includes(relative)) continue;
+      if (!['src','bin','test','native','desktop','desktop/renderer'].includes(relative)) continue;
       files.push(...await walk(path.join(directory,entry.name),relative+'/'));
     } else if (entry.isFile() && permitted(relative)) files.push(relative);
   }
   return files;
 }
 const files=await walk(source);
+for (const required of ['src/engine.mjs','native/kernels.cc','native/build.mjs','bin/validate.mjs'])
+  if (!files.includes(required)) throw new Error(`Required engine source missing from export: ${required}`);
 for (const file of files) {
   const target=path.join(github,file);
   await fs.mkdir(path.dirname(target),{recursive:true});
   await fs.copyFile(path.join(source,file),target);
 }
-await fs.writeFile(path.join(github,'.gitignore'),`node_modules/\ndist/\nmodels/\nweights/\n*.safetensors\n*.gguf\n*.bin\n*.tgz\n*.tar.gz\n.env*\n**/api-token\n`);
+await fs.writeFile(path.join(github,'.gitignore'),`node_modules/\nnative/generated/\ndist/\nmodels/\nweights/\n*.safetensors\n*.gguf\n*.bin\n*.tgz\n*.tar.gz\n.env*\n**/api-token\n`);
 await fs.mkdir(path.join(github,'.github/workflows'),{recursive:true});
 await fs.writeFile(path.join(github,'.github/workflows/tests.yml'),`name: Runner checks
 on: [push, pull_request]
@@ -97,7 +100,8 @@ SHA-256: \`${sha256}\`
 
 CLI: Node >=20. Desktop development: Node >=22.12 and Electron.
 4 GiB single checkpoint / disk-backed above 256 MiB / 512 context tokens /
-128 output tokens. 7B/14B models,
+128 output tokens. Experimental indexed shards: 32 GiB total, 8 GiB per shard.
+Optional KEYO-owned native CPU source kernel. Actual 7B/14B checkpoints,
 GPU inference and signed Windows/macOS installers are unfinished.
 No weights, credentials, paid API or billing integration are included.
 

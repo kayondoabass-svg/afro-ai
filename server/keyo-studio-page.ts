@@ -226,7 +226,7 @@ export function keyoStudioPage(): string {
               <div class="requirement"><small>Model source</small><b>Local folder</b></div>
             </div>
           </div>
-          <aside class="install-side"><strong>Model files are not bundled.</strong> Use a model folder containing <code>config.json</code>, <code>tokenizer.json</code>, and <code>model.safetensors</code>. Confirm you have the rights to use your chosen model and its files.</aside>
+          <aside class="install-side"><strong>Model files are not bundled.</strong> Use a model folder containing <code>config.json</code>, <code>tokenizer.json</code>, and either <code>model.safetensors</code> or <code>model.safetensors.index.json</code> with its shards. Confirm you have the rights to use your chosen model and its files.</aside>
         </div>
       </div>
     </section>
@@ -235,7 +235,7 @@ export function keyoStudioPage(): string {
       <div class="wrap">
         <div class="section-head"><div class="section-kicker">03 / Input contract</div><div><h2>Keep the model folder explicit.</h2><p class="section-intro">The alpha expects these files to already exist together in a supported local model directory. Missing files or incompatible model configs can prevent a model from loading.</p></div></div>
         <div class="model-box">
-          <div class="model-copy"><h3>What you provide</h3><p>A compatible model directory with one safetensors checkpoint up to 4 GiB. Above 256 MiB, KEYO reads matrix blocks from disk instead of decoding all weights into RAM. Context stays limited to 512 tokens. This CPU alpha does not support GPU, GGUF, sharded checkpoints or 7B/14B models. KEYO does not bundle private weights, automatically fetch them, or send prompts to a cloud service.</p></div>
+          <div class="model-copy"><h3>What you provide</h3><p>A compatible model directory with a single safetensors checkpoint up to 4 GiB, or experimental indexed shards up to 32 GiB total (8 GiB per shard). KEYO reads matrix blocks from disk instead of decoding all weights into RAM. Its optional KEYO-owned native CPU kernel requires a local source build. Context stays limited to 512 tokens. GPU, GGUF and actual 7B/14B checkpoint certification remain unfinished. KEYO does not bundle private weights, automatically fetch them, or send prompts to a cloud service.</p></div>
           <div class="file-tree" aria-label="Required local model folder contents"><div class="tree-heading">/path/to/model</div><div>├── <span class="required">config.json</span></div><div>├── <span class="required">tokenizer.json</span></div><div>└── <span class="required">model.safetensors</span></div><p class="tree-note">Required files · local only · not included in the package</p></div>
         </div>
       </div>
