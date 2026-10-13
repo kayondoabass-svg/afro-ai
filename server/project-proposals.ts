@@ -81,6 +81,8 @@ export async function finishProjectProposal(owner: string, conversation: string,
     const receipt = await connection.query("INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'project-proposal-receipt', $2) RETURNING id",
       [conversation, JSON.stringify({ id: p.id, status: cancel ? "cancelled" : "attempted" })]);
     if (cancel) return { cancelled: true };
+    const { captureProjectCheckpoint } = await import("./project-workbench/service");
+    await captureProjectCheckpoint(owner, conversation, "Before approved AI edits");
     const files = await applyProjectFileChanges(owner, conversation, p.changes);
     await connection.query("UPDATE messages SET content = $1 WHERE id = $2", [JSON.stringify({ id: p.id, status: "applied" }), receipt.rows[0].id]);
     return { saved: true, files };

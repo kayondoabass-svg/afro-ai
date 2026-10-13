@@ -64,6 +64,7 @@ function validMaxTokens(value: number | undefined): void {
 
 export interface ChatCompleteResult {
   text: string;
+  promptTokens?: number;
   completionTokens?: number;
   provider: "openai" | "gemini" | "afro-test";
   model: string;
@@ -119,16 +120,22 @@ function geminiKey(): string | undefined {
 
 function isAvailable(provider: Provider): boolean {
   if (provider === "openai") {
-    const key = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    return Boolean(key && !key.includes("_DUMMY_") && !key.includes("dummy"));
+    return Boolean(openAiConfiguration().apiKey);
   }
   return Boolean(geminiKey());
 }
 
+function openAiConfiguration() {
+  const usable = (key: string | undefined) => key && !key.includes("_DUMMY_") && !key.toLowerCase().includes("dummy");
+  const integration = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (usable(integration)) return { apiKey: integration, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || undefined };
+  const direct = process.env.OPENAI_API_KEY;
+  return { apiKey: usable(direct) ? direct : undefined, baseURL: undefined };
+}
+
 function makeClient(provider: Provider, tier?: UserTier): { client: OpenAI; model: string } {
   if (provider === "openai") {
-    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || undefined;
+    const { apiKey, baseURL } = openAiConfiguration();
     return {
       client: new OpenAI({ apiKey, baseURL }),
       model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
@@ -211,7 +218,7 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
       const choice = completion.choices?.[0];
       const text = choice?.message?.content?.trim() || "";
       const toolCalls = (choice?.message as any)?.tool_calls || undefined;
-      return { text, provider, model, toolCalls, finishReason: choice?.finish_reason, completionTokens: completion.usage?.completion_tokens ?? 0 };
+      return { text, provider, model, toolCalls, finishReason: choice?.finish_reason, promptTokens: completion.usage?.prompt_tokens, completionTokens: completion.usage?.completion_tokens };
     } catch (err: any) {
       if (opts.signal?.aborted) throw err;
       lastErr = err;

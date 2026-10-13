@@ -27,6 +27,7 @@ import { AgentStructuredText } from "@/components/agent-structured-text";
 import { AgentCodeBlock, AgentHtmlPreview } from "@/components/agent-code-block";
 import { AgentSearchButton, AgentSearchContext } from "@/components/agent-search-button";
 import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
+import { ProjectWorkbench } from "@/components/project-workbench";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, FULLSTACK_EXPORT_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
@@ -82,6 +83,16 @@ interface ProjectProposal {
 }
 interface ProjectToolActivity {
   tool: string; callId: string; status: "started" | "completed" | "failed";
+}
+interface ProjectUsageActivity {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  estimatedCost?: number | string;
+  estimatedCostUsd?: number | string;
+  estimatedUsd?: number | string;
+  provider?: string;
+  model?: string;
 }
 
 const ACTION_ICON: Record<ActionKind, any> = {
@@ -198,8 +209,10 @@ export default function AgentPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [toolActivity, setToolActivity] = useState<ProjectToolActivity[]>([]);
+  const [projectUsage, setProjectUsage] = useState<ProjectUsageActivity | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [openedProjectFile, setOpenedProjectFile] = useState<ProjectFile | null>(null);
+  useEffect(() => { setProjectUsage(null); }, [conversationId]);
   const conversationRef = useRef<number | null>(null);
   conversationRef.current = conversationId;
   const loadSequenceRef = useRef(0);
@@ -225,6 +238,7 @@ export default function AgentPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not complete review");
       qc.setQueryData(["/api/conversations", id, "project-proposal"], null);
+      qc.invalidateQueries({ queryKey: ["project-workbench", id] });
       if (!cancel) {
         qc.invalidateQueries({ queryKey: ["/api/d1/project-files", id] });
         if (conversationRef.current === id) setOpenedProjectFile(null);
@@ -524,6 +538,25 @@ export default function AgentPage() {
       let evt: any;
       try { evt = JSON.parse(payload); }
       catch { serverError = "Invalid response from the server"; return; }
+      if (evt?.type === "project-workbench") {
+        qc.invalidateQueries({ queryKey: ["project-workbench", convoId] });
+        qc.invalidateQueries({ queryKey: ["/api/d1/project-files", convoId] });
+        return;
+      }
+      if (evt?.type === "project-usage") {
+        const usage = evt.usage && typeof evt.usage === "object" ? evt.usage : evt;
+        setProjectUsage(previous => ({
+          inputTokens: usage.inputTokens ?? usage.input_tokens ?? usage.promptTokens ?? previous?.inputTokens,
+          outputTokens: usage.outputTokens ?? usage.output_tokens ?? usage.completionTokens ?? previous?.outputTokens,
+          totalTokens: usage.totalTokens ?? usage.total_tokens ?? usage.tokens ?? previous?.totalTokens,
+          estimatedCost: usage.estimatedCost ?? usage.estimatedCostUsd ?? usage.estimated_cost ?? usage.estimated ?? previous?.estimatedCost,
+          estimatedCostUsd: usage.estimatedCostUsd ?? usage.estimated_cost_usd ?? previous?.estimatedCostUsd,
+          estimatedUsd: usage.estimatedUsd ?? previous?.estimatedUsd,
+          provider: usage.provider ?? previous?.provider,
+          model: usage.model ?? previous?.model,
+        }));
+        return;
+      }
       if (evt?.type === "project-tool") {
         setToolActivity(list => [...list.filter(a => a.callId !== evt.callId), evt].slice(-10));
         return;
@@ -548,7 +581,7 @@ export default function AgentPage() {
         return;
       }
       if (evt?.type === "files-saved") {
-        if (evt.saved) qc.invalidateQueries({ queryKey: ["/api/d1/project-files", id] });
+        if (evt.saved) qc.invalidateQueries({ queryKey: ["/api/d1/project-files", convoId] });
         else toast({ title: "Files could not be updated", description: "The website version is saved, but index.html could not be saved to Files.", variant: "destructive" });
         return;
       }
@@ -934,10 +967,32 @@ export default function AgentPage() {
 
   // ---------- Publish ----------
 
-  const openPublishFromLatest = () => {
+  const openPublishFromLatest = async () => {
     if (staticControlsBlocked) {
       toast({ title: "Static publishing unavailable", description: isFullstack ? FULLSTACK_SOURCE_NOTICE : "Verify project metadata before publishing.", variant: "destructive" });
       return;
+    }
+    if (conversationId && projectAgent) {
+      try {
+        const response = await fetch(`/api/d1/project-files?conversationId=${conversationId}`, { credentials: "include" });
+        if (!response.ok) throw new Error("Could not load current project source.");
+        const saved = await response.json();
+        const source: ProjectFile[] = Array.isArray(saved) ? saved : saved.files || [];
+        if (source.length) {
+          const entry = source.find(f => f.path === "index.html" && !f.encoding);
+          if (!entry || typeof entry.content !== "string") throw new Error("Current source needs a build or a static index.html. Export it for customer-managed hosting.");
+          const document = new DOMParser().parseFromString(entry.content, "text/html");
+          const localDependencies = Array.from(document.querySelectorAll("[src], link[href]")).some(element => {
+            const ref = element.getAttribute("src") || element.getAttribute("href") || "";
+            return ref && !/^(?:https?:|data:|blob:|\/\/|#)/i.test(ref);
+          });
+          if (localDependencies) throw new Error("This project has local asset dependencies. Use the source ZIP or GitHub export with your hosting provider; single-page publishing would omit those files.");
+          setPublishCode(entry.content); setPublishOpen(true); return;
+        }
+      } catch (error: any) {
+        toast({ title: "Source publishing blocked", description: error.message, variant: "destructive" });
+        return;
+      }
     }
     // Find the most recent assistant message that contains a website
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -1173,6 +1228,7 @@ export default function AgentPage() {
               <p className="text-xs text-zinc-400">Project agent only reads and proposes text changes. It never runs commands or saves automatically.</p>
               {proposalLoadError && <p role="alert" className="text-xs text-red-400">{proposalLoadError.message}</p>}
               <div className="min-h-0 flex-1 overflow-y-auto space-y-4">
+                {conversationId && <ProjectWorkbench conversationId={conversationId} onRepair={request => { setProjectAgent(true); setInput(request); }} />}
                 {isFullstack && activeProject && <FullstackInfrastructure key={activeProject.id} project={activeProject} />}
                 <div className="h-64 border border-zinc-800 rounded-md overflow-hidden">
                   <FileTreeSidebar conversationId={conversationId} openedFileId={openedProjectFile?.id ?? null}
@@ -1329,12 +1385,18 @@ export default function AgentPage() {
           </div>
         )}
 
-        {toolActivity.length > 0 && (
+        {(toolActivity.length > 0 || projectUsage) && (
           <section aria-label="Project activity" className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-xs">
             <button type="button" aria-expanded={activityExpanded} onClick={() => setActivityExpanded(v => !v)} className="flex w-full items-center justify-between text-left font-medium text-amber-200">
               <span>Project activity · {toolActivity.length} {toolActivity.length === 1 ? "operation" : "operations"}</span>
               <span>{activityExpanded ? "Show less" : "Show details"}</span>
             </button>
+            {projectUsage && <p className="mt-1 text-zinc-300">
+              Usage {projectUsage.totalTokens ?? [projectUsage.inputTokens, projectUsage.outputTokens].filter(value => value != null).reduce<number>((sum, value) => sum + (value || 0), 0)} tokens
+              {projectUsage.estimatedCost != null || projectUsage.estimatedCostUsd != null || projectUsage.estimatedUsd != null ? ` · estimated ${projectUsage.estimatedCost ?? projectUsage.estimatedCostUsd ?? projectUsage.estimatedUsd}` : ""}
+              {projectUsage.provider ? ` · ${projectUsage.provider}` : ""}
+              {projectUsage.model ? ` / ${projectUsage.model}` : ""}
+            </p>}
             {activityExpanded && <ul className="mt-2 space-y-1 text-zinc-300">
               {toolActivity.map(item => <li key={item.callId} className="flex justify-between gap-2"><span className="truncate">{item.tool.replace(/_/g, " ")}</span><span className="shrink-0">{item.status}</span></li>)}
             </ul>}

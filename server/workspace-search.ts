@@ -38,6 +38,11 @@ export async function searchWorkspaceFiles(userId: string, conversationId: numbe
   const { listProjectFiles } = await import("./project-files");
   const files = await listProjectFiles(userId, conversationId);
   const index = indexWorkspaceFiles(userId, conversationId, files);
+  return rankWorkspaceIndex(index, query);
+}
+
+export function rankWorkspaceIndex(index: ReturnType<typeof indexWorkspaceFiles>, query: string) {
+  if (typeof query !== "string" || !query.trim() || query.length > 500) throw new Error("Invalid workspace query.");
   const stop = new Set(["where", "what", "which", "the", "our", "are", "defined", "does", "how", "this", "that", "with", "file", "files"]);
   const terms = Array.from(new Set(query.toLowerCase().match(new RegExp("[\\p{L}\\p{N}_-]{2,}", "gu")) || [])).filter(t => !stop.has(t));
   const results = index.chunks.map(chunk => ({

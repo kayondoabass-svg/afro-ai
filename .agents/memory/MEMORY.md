@@ -24,6 +24,8 @@
 - [SSH key line wrapping](ssh-key-format.md) — check single-line key formatting before treating parse failures as invalid credentials.
 - [Generated website boundary](generated-website-boundary.md) — assistant narration is not website HTML; enforce extraction across preview/publish/serve and repair legacy contamination on read.
 - [Project agent scope](project-agent-scope.md) — cost-sensitive, existing-services-only coding assistance with explicit review; execution and pilot-model activation need separate approval.
+- [Project validation boundary](project-validation-boundary.md) — customer-controlled checks, honest evidence labels and explicit legacy workspace imports.
+- [Provider contract checks](provider-contract-checks.md) — verify actual provider and tool results; explicitly request a final answer after a tool-only instruction.
 - [Full-stack starters](fullstack-starter-scope.md) — automatic files for full-stack projects only; paid access must be server-enforced before expanding runtime capabilities.
 - [Customer branding](customer-branding.md) — never use Afro AI/KEYO as client brands; obtain the preferred customer name before new builds.
 - [Verification requirement](verification-requirement.md) — account access must wait for email confirmation; avoid automatic resend loops during session mirroring.

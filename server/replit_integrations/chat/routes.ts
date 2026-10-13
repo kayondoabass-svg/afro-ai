@@ -19,6 +19,8 @@ import { buildAttachmentContext, isParseableAttachment } from "../../attachment-
 import { listProjectFiles, saveProjectFiles } from "../../project-files";
 import { runProjectTools } from "../../project-tools";
 import { createProjectProposal, finishProjectProposal, pendingProjectProposal } from "../../project-proposals";
+import { registerWorkbenchRoutes } from "../../project-workbench/routes";
+import { workbenchContext, mutateWorkbench, assertWorkspaceConversationDeletable } from "../../project-workbench/service";
 import { ProjectFileError } from "../../project-file-policy";
 import { buildProjectEditContext, parseProjectEditResponse } from "./project-edit";
 import { productSelfKnowledge } from "../../product-self-knowledge";
@@ -1892,6 +1894,7 @@ function canAccessConversation(conversation: any, req: any): boolean {
 }
 
 export function registerChatRoutes(app: Express): void {
+  registerWorkbenchRoutes(app, isAuthenticated);
   app.get("/api/conversations", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
@@ -1918,7 +1921,7 @@ export function registerChatRoutes(app: Express): void {
         return res.status(404).json({ error: "Conversation not found" });
       }
       const messages = await chatStorage.getMessagesByConversation(id);
-      res.json({ ...conversation, messages: messages.map(m => ({ ...m, content: redactPrivateCredentials(m.content) })) });
+      res.json({ ...conversation, messages: messages.filter(m => !m.role.startsWith("workbench-")).map(m => ({ ...m, content: redactPrivateCredentials(m.content) })) });
     } catch (error) {
       console.error("Error fetching conversation:", error);
       res.status(500).json({ error: "Failed to fetch conversation" });
@@ -1978,9 +1981,11 @@ export function registerChatRoutes(app: Express): void {
       if (!canAccessConversation(conversation, req)) {
         return res.status(404).json({ error: "Conversation not found" });
       }
+      if (conversation.projectId) await assertWorkspaceConversationDeletable(conversation.userId!, String(id));
       await chatStorage.deleteConversation(id);
       res.status(204).send();
     } catch (error) {
+      if (error instanceof ProjectFileError) return res.status(error.status).json({ error: error.message });
       console.error("Error deleting conversation:", error);
       res.status(500).json({ error: "Failed to delete conversation" });
     }
@@ -2101,7 +2106,15 @@ export function registerChatRoutes(app: Express): void {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
         const event = (value: unknown) => { if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(value)}\n\n`); };
+        let toolTokens = 0;
+        let toolModel = "";
+        let usageRecorded = false;
+        let projectJob: { id: string } | undefined;
+        let jobFinished = false;
+        const roundUsage: { tokens: number; estimated: boolean; model: string; provider: string }[] = [];
         try {
+          projectJob = await mutateWorkbench(userId, String(conversationId), "job-start", {});
+          event({ type: "project-workbench" });
           const files = await listProjectFiles(userId, conversationId);
           const ownedHistory = await chatStorage.getMessagesByConversation(conversationId);
           const history = ownedHistory
@@ -2110,11 +2123,20 @@ export function registerChatRoutes(app: Express): void {
           event({ type: "status", message: "Reviewing project files (no changes saved)..." });
           const result = await runProjectTools({
             files, request: userContent, history, tier: userPlan, signal: controller.signal,
-            briefContext: redactPrivateCredentials(customerBriefContext(ownedHistory, String(rawLanguage || "en"))),
+            onUsage: usage => {
+              toolTokens += usage.tokens; toolModel = usage.model;
+              roundUsage.push(usage);
+              event({ type: "project-usage", ...usage, totalTokens: toolTokens });
+            },
+            briefContext: redactPrivateCredentials(customerBriefContext(ownedHistory, String(rawLanguage || "en"))) + "\n" + await workbenchContext(userId, String(conversationId)),
             experience: userProfile.experienceLevel,
             onActivity: activity => event(activity),
           });
           controller.signal.throwIfAborted();
+          if (result.operations) {
+            await mutateWorkbench(userId, String(conversationId), "operations", { operations: result.operations });
+            event({ type: "project-workbench" });
+          }
           const proposal = result.changes?.length
             ? await createProjectProposal(userId, String(conversationId), result.changes)
             : null;
@@ -2124,17 +2146,31 @@ export function registerChatRoutes(app: Express): void {
           await chatStorage.createMessage(conversationId, "assistant", safeText);
           const { storage } = await import("../../storage");
           await storage.createUsageLog({
-            userId, conversationId, model: result.model, tokensUsed: 0, kind: "chat",
+            userId, conversationId, model: result.model, tokensUsed: result.tokensUsed, kind: "chat",
             costCents: paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0,
           });
+          usageRecorded = true;
           if (paygUserId === userId) await storage.deductPaygBalance(userId, PAYG_COST_PER_GENERATION_CENTS);
           event({ type: "text", content: safeText });
           if (proposal) event({ type: "project-proposal", proposal });
+          await mutateWorkbench(userId, String(conversationId), "job-finish", { id: projectJob?.id, status: proposal || result.operations ? "awaiting-approval" : "review-complete", usage: roundUsage });
+          jobFinished = true;
+          event({ type: "project-workbench" });
         } catch (error) {
           event({ type: "error", message: controller.signal.aborted
             ? "Project review stopped or timed out. No files were saved."
             : "Project review failed. No files were saved. Please retry with a smaller request." });
         } finally {
+          if (projectJob && !jobFinished) {
+            await mutateWorkbench(userId, String(conversationId), "job-finish", { id: projectJob.id, status: "stopped", usage: roundUsage }).catch(() => {});
+            event({ type: "project-workbench" });
+          }
+          if (toolTokens && !usageRecorded) {
+            // Partial/failed loops still consumed provider tokens. Billing policy
+            // is unchanged; this is a usage record, not an automatic paid retry.
+            const { storage } = await import("../../storage");
+            await storage.createUsageLog({ userId, conversationId, model: toolModel, tokensUsed: toolTokens, kind: "chat", costCents: 0 }).catch(() => {});
+          }
           clearTimeout(timeout);
           res.off("close", onClose);
           event({ done: true });

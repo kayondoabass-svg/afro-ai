@@ -47,6 +47,17 @@ describe("default chat streaming cancellation", () => {
 const messages = [{ role: "user" as const, content: "hello" }];
 
 describe("knowledge AI provider opt-in", () => {
+  it("does not let a dummy integration credential hide the direct OpenAI configuration", async () => {
+    vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "_DUMMY_");
+    vi.stubEnv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://integration.invalid");
+    vi.stubEnv("OPENAI_API_KEY", "direct-test-key");
+    vi.stubEnv("AI_PRIMARY_PROVIDER", "openai");
+    try {
+      const result = await aiChatComplete({ messages, maxTokens: 64 });
+      expect(result.provider).toBe("openai");
+      expect(clients[0]).toMatchObject({ apiKey: "direct-test-key", baseURL: undefined });
+    } finally { vi.unstubAllEnvs(); }
+  });
   beforeEach(() => {
     clients.length = 0;
     create.mockReset().mockResolvedValue({

@@ -14,6 +14,7 @@ vi.mock("../replit_integrations/chat/storage", () => ({
   chatStorage: { getConversation: mocks.conversation, getMessagesByConversation: mocks.messages, createMessage: mocks.createMessage },
 }));
 vi.mock("../db", () => ({ pool: { connect: mocks.connect } }));
+vi.mock("../project-workbench/service", () => ({ captureProjectCheckpoint: vi.fn() }));
 
 import { projectToolSession, runProjectTools } from "../project-tools";
 import { applyProjectFileChanges } from "../project-files";
@@ -34,6 +35,24 @@ beforeEach(() => {
 });
 
 describe("bounded read-only tools", () => {
+  it("reads bounded ranges, retrieves context, and proposes reviewed patches for large files", () => {
+    const content = "long line\n".repeat(3000) + "unique";
+    const session = projectToolSession([file(content)]);
+    expect(() => session.execute("read_file", { path: "src/app.ts" })).toThrow("16 KB");
+    expect(session.execute("read_file", { path: "src/app.ts", startLine: 3001, endLine: 3001 })).toMatchObject({ content: "unique", startLine: 3001 });
+    expect(session.execute("search_context", { query: "unique" })).toMatchObject({ untrusted: true });
+    expect(session.execute("propose_operations", { operations: [{ kind: "patch", path: "src/app.ts", find: "unique", replace: "fixed" }] })).toMatchObject({ saved: false });
+    expect(session.operations).toHaveLength(1);
+  });
+  it.each(["gemini", "openai"])("preserves tool messages and aggregates usage across %s calls", async provider => {
+    mocks.complete.mockResolvedValueOnce({
+      text: "", model: "test-model", provider, promptTokens: 20, completionTokens: 5,
+      toolCalls: [{ id: "r1", type: "function", function: { name: "read_file", arguments: '{"path":"src/app.ts"}' } }],
+    }).mockResolvedValueOnce({ text: "Reviewed.", model: "test-model", provider, promptTokens: 25, completionTokens: 5 });
+    const result = await runProjectTools({ files: [file()], request: "Review the source", signal: new AbortController().signal, onActivity: vi.fn() });
+    expect(result.tokensUsed).toBe(55); expect(result.usageEstimated).toBe(false);
+    expect(mocks.complete.mock.calls[1][0].messages.some((m: any) => m.role === "tool" && m.tool_call_id === "r1")).toBe(true);
+  });
   it("lists, reads and searches literally without host filesystem access", () => {
     const session = projectToolSession([file("a.b\nabc")]);
     expect(session.execute("list_files", {})).toEqual({ paths: ["src/app.ts"], nextOffset: null, binaryFilesExcluded: 0 });

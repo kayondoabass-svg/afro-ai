@@ -1,6 +1,6 @@
 import { db } from "../../db";
 import { conversations, messages } from "@shared/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, notLike } from "drizzle-orm";
 
 export interface IChatStorage {
   getConversation(id: number): Promise<typeof conversations.$inferSelect | undefined>;
@@ -50,7 +50,9 @@ export const chatStorage: IChatStorage = {
   },
 
   async getMessagesByConversation(conversationId: number) {
-    return db.select().from(messages).where(eq(messages.conversationId, conversationId)).orderBy(messages.createdAt);
+    // Recovery snapshots and workspace state are not dialogue. Never feed large
+    // checkpoint/binary payloads to model history or the conversation renderer.
+    return db.select().from(messages).where(and(eq(messages.conversationId, conversationId), notLike(messages.role, "workbench-%"))).orderBy(messages.createdAt);
   },
 
   async createMessage(conversationId: number, role: string, content: string) {

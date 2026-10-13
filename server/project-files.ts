@@ -13,6 +13,11 @@ export async function assertProjectFileOwnership(userId: string, conversationId:
   if (conversation.projectId) {
     const { guardFullstackProject } = await import("./fullstack-access");
     await guardFullstackProject(userId, conversation.projectId);
+    // Existing D1 rows stay in place. The oldest owned conversation is the
+    // stable project workspace; legacy sibling rows are explicitly importable.
+    const siblings = await chatStorage.getConversationsByProject(conversation.projectId);
+    const canonical = siblings.filter(c => c.userId === userId).sort((a, b) => a.id - b.id)[0];
+    if (canonical) return String(canonical.id);
   }
   return id;
 }
@@ -56,6 +61,8 @@ async function resolveProjectFileRecord(userId: string, fileId: string) {
 
 export async function getProjectFileRecord(userId: string, fileId: string) {
   const record = await resolveProjectFileRecord(userId, fileId);
+  const workspace = await assertProjectFileOwnership(userId, record.conversation_id);
+  if (workspace !== String(record.conversation_id)) throw new ProjectFileError(409, "legacy file preserved; download or explicitly import its original workspace");
   const normalized = record.encoding === null ? { ...record, encoding: undefined } : record;
   validateProjectFiles([normalized]);
   return normalized;
@@ -140,4 +147,26 @@ export async function applyProjectFileChanges(userId: string, conversationId: st
     SELECT ?, ?, 'merge', ? WHERE ${conditions.join(" AND ")} RETURNING id`, values);
   if (!result.results.length) throw new ProjectFileError(409, "proposal is stale; no files saved");
   return listProjectFiles(userId, id);
+}
+
+/** Atomic workspace CAS for reviewed rename/delete/restore. No partial writes.
+ * Every expected row and the row count must match, including binary encoding. */
+export async function replaceProjectFilesIfUnchanged(userId: string, conversationId: string, expected: ProjectFile[], replacement: ProjectFile[]) {
+  const id = await assertProjectFileOwnership(userId, conversationId);
+  const before = validateProjectFiles(expected);
+  const after = validateProjectFiles(replacement);
+  await initializeProjectFiles([...before, ...after].some(f => f.encoding === "base64"));
+  const conditions = ["(SELECT count(*) FROM project_files WHERE user_id = ? AND conversation_id = ?) = ?"];
+  const params: unknown[] = [userId, id, JSON.stringify(after), userId, id, before.length];
+  for (const file of before) {
+    conditions.push(`EXISTS (SELECT 1 FROM project_files WHERE user_id = ? AND conversation_id = ?
+      AND path = ? COLLATE BINARY AND language = ? AND content = ?
+      AND coalesce(encoding, 'utf8') = ?)`);
+    params.push(userId, id, file.path, file.language, file.content, file.encoding || "utf8");
+  }
+  const result = await query(`INSERT INTO project_file_commands (user_id, conversation_id, mode, files)
+    SELECT ?, ?, 'replace', ? WHERE ${conditions.join(" AND ")} RETURNING id`, params);
+  if (!result.results.length) throw new ProjectFileError(409, "workspace changed; no files saved");
+  indexWorkspaceFiles(userId, id, after);
+  return after;
 }
