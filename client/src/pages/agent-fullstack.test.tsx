@@ -40,7 +40,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     if (url === "/api/conversations/project/81") return Response.json(state.resume ? [{ id: 91 }] : []);
     if (url === "/api/conversations") return state.saved ? Response.json({ id: 91 }) : new Promise<Response>(() => {});
-    if (url === "/api/conversations/91/messages") return new Response('data: {"type":"text","content":"Review ready."}\n\ndata: {"done":true}\n\n');
+    if (url === "/api/conversations/91/messages") return new Response('data: {"type":"model-fallback","from":"gemini-2.5-pro","to":"gemini-2.5-flash"}\n\ndata: {"type":"text","content":"Review ready."}\n\ndata: {"done":true}\n\n');
     if (url === "/api/conversations/91") return Response.json({ projectId: 81, messages: state.resume ? [{ id: 1, role: "assistant", content: "```html\n<!DOCTYPE html><html><body>Studio portfolio</body></html>\n```" }] : [] });
     throw new Error(`Unexpected request ${url}`);
   }));
@@ -70,6 +70,7 @@ describe("full-stack agent workspace", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/conversations/91/messages", expect.objectContaining({
       body: JSON.stringify({ content: "Add a health endpoint", projectAgent: true }),
     })));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Using gemini-2.5-flash for this response instead"));
   });
 
   it.each(["setup_failed", "initializing"])("blocks sending and conversation creation while %s", (status) => {

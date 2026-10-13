@@ -9,7 +9,7 @@ vi.mock("openai", () => ({
   },
 }));
 
-import { aiChatComplete, aiChatCompleteStream, hasAfroAiProvider } from "../ai-chat-provider";
+import { aiChatComplete, aiChatCompleteStream, hasAfroAiProvider, publicChatError } from "../ai-chat-provider";
 
 const original = {
   HF_TOKEN: process.env.HF_TOKEN,
@@ -47,6 +47,77 @@ describe("default chat streaming cancellation", () => {
 const messages = [{ role: "user" as const, content: "hello" }];
 
 describe("knowledge AI provider opt-in", () => {
+  it("recovers a definitive Gemini Pro 404 with Flash and reports the actual model", async () => {
+    create.mockRejectedValueOnce(Object.assign(new Error("not found"), {status:404}))
+      .mockResolvedValueOnce({choices:[{message:{content:"Recovered"},finish_reason:"stop"}],usage:{prompt_tokens:4,completion_tokens:2}});
+    const onModelFallback = vi.fn();
+    const result = await aiChatComplete({messages,tier:"business",maxTokens:64,onModelFallback});
+    expect(create.mock.calls.map(c=>c[0].model)).toEqual(["gemini-2.5-pro","gemini-2.5-flash"]);
+    expect(result).toMatchObject({model:"gemini-2.5-flash",provider:"gemini",text:"Recovered"});
+    expect(onModelFallback).toHaveBeenCalledWith("gemini-2.5-pro","gemini-2.5-flash");
+  });
+  it("does not retry Gemini quota failures with a different Gemini model", async () => {
+    vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY","_DUMMY_");
+    vi.stubEnv("OPENAI_API_KEY","_DUMMY_");
+    const onModelFallback = vi.fn();
+    create.mockRejectedValue(Object.assign(new Error("quota"), {status:429}));
+    try {
+      await expect(aiChatComplete({messages,tier:"business",onModelFallback})).rejects.toThrow("quota");
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(onModelFallback).not.toHaveBeenCalled();
+    } finally {vi.unstubAllEnvs();}
+  });
+  it("does not substitute an unknown pinned model or increase a starter model's cost", async () => {
+    vi.stubEnv("GEMINI_MODEL","unknown-pinned-model");
+    vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY","_DUMMY_");
+    vi.stubEnv("OPENAI_API_KEY","_DUMMY_");
+    create.mockRejectedValue(Object.assign(new Error("not found"), {status:404}));
+    try {
+      await expect(aiChatComplete({messages,tier:"starter"})).rejects.toThrow("not found");
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {vi.unstubAllEnvs();}
+  });
+  it("does not retry a rejected model request after cancellation", async () => {
+    const controller = new AbortController();
+    create.mockImplementationOnce(async () => {
+      controller.abort(); throw Object.assign(new Error("not found"), {status:404});
+    });
+    await expect(aiChatComplete({messages,tier:"business",signal:controller.signal})).rejects.toThrow("not found");
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+  it("does not repeat a Flash 404 endlessly", async () => {
+    vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY","_DUMMY_");
+    vi.stubEnv("OPENAI_API_KEY","_DUMMY_");
+    create.mockRejectedValue(Object.assign(new Error("not found"), {status:404}));
+    try {
+      await expect(aiChatComplete({messages,tier:"business"})).rejects.toThrow("not found");
+      expect(create).toHaveBeenCalledTimes(2);
+    } finally {vi.unstubAllEnvs();}
+  });
+  it("does not restart a partially streamed answer on a model 404", async () => {
+    create.mockResolvedValue((async function*() {
+      yield {choices:[{delta:{content:"Started"}}]};
+      throw Object.assign(new Error("later failure"), {status:404});
+    })());
+    const onChunk = vi.fn(), onModelFallback = vi.fn();
+    await expect(aiChatCompleteStream({messages,tier:"business",onChunk,onModelFallback})).rejects.toThrow("later failure");
+    expect(onChunk).toHaveBeenCalledWith("Started");
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(onModelFallback).not.toHaveBeenCalled();
+  });
+  it("recovers an initial streaming 404 before emitting chunks", async () => {
+    create.mockRejectedValueOnce(Object.assign(new Error("not found"), {status:404}))
+      .mockResolvedValueOnce((async function*() {yield {choices:[{delta:{content:"Recovered"}}]};})());
+    const result = await aiChatCompleteStream({messages,tier:"business",onChunk:vi.fn()});
+    expect(result).toMatchObject({model:"gemini-2.5-flash",fullText:"Recovered"});
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+  it("distinguishes exhausted credits from rate limits without exposing raw errors", () => {
+    expect(publicChatError({status:429,code:"credit_balance_exhausted"})).toContain("no available API credits");
+    expect(publicChatError({status:429})).toContain("rate-limited");
+    expect(publicChatError({status:404})).toContain("not a request to add money");
+    expect(publicChatError({message:"secret error value"})).not.toContain("secret");
+  });
   it("does not let a dummy integration credential hide the direct OpenAI configuration", async () => {
     vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "_DUMMY_");
     vi.stubEnv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://integration.invalid");

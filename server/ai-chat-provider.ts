@@ -27,6 +27,8 @@ export interface ChatCompleteOptions {
   tools?: any[];
   /** "auto" | "none" | { type: "function", function: { name } }. Defaults to "auto" when tools are set. */
   toolChoice?: any;
+  /** Server-side notice when a definitively unavailable Gemini model is replaced. */
+  onModelFallback?: (from: string, to: string) => void;
 }
 
 // Gemini model selection per plan. Free tier uses the cheapest model so a
@@ -153,6 +155,39 @@ function makeClient(provider: Provider, tier?: UserTier): { client: OpenAI; mode
   };
 }
 
+async function withAvailableModel<T>(
+  provider: Provider,
+  opts: Pick<ChatCompleteOptions, "tier" | "signal" | "onModelFallback">,
+  run: (client: OpenAI, model: string) => Promise<T>,
+  canRetry: () => boolean = () => true,
+) {
+  const { client, model } = makeClient(provider, opts.tier);
+  try {
+    return { result: await run(client, model), model };
+  } catch (error: any) {
+    // A rejected 404 has produced no billable answer. Never repeat an ambiguous
+    // timeout, quota error, aborted request or partially streamed response here.
+    const fallback = "gemini-2.5-flash";
+    if (provider !== "gemini" || Number(error?.status || error?.response?.status) !== 404 ||
+      model !== "gemini-2.5-pro" || opts.signal?.aborted || !canRetry()) throw error;
+    console.warn(`[ai-chat] Gemini model ${model} unavailable (404); using ${fallback}.`);
+    opts.onModelFallback?.(model, fallback);
+    return { result: await run(client, fallback), model: fallback };
+  }
+}
+
+export function publicChatError(error: any): string {
+  const status = Number(error?.status || error?.response?.status);
+  const code = String(error?.code || error?.error?.code || "").toLowerCase();
+  if (code.includes("credit_balance") || code.includes("insufficient_quota")) {
+    return "The AI provider account has no available API credits. Your Afro AI subscription is not the cause. Platform support must check the provider account.";
+  }
+  if (status === 404) return "The selected AI model is unavailable. This is a model-access problem, not a request to add money.";
+  if (status === 429) return "The AI provider is temporarily rate-limited or has reached its quota. Please wait; adding money may not resolve a rate limit.";
+  if (status === 401 || status === 403) return "The AI provider could not authorise this request. Platform support must check its API access.";
+  return "Could not complete your request. Please try again later or contact platform support.";
+}
+
 function isFatalAuthOrQuotaError(err: any): boolean {
   const status = err?.status || err?.response?.status;
   if (status === 401 || status === 402 || status === 403 || status === 429) return true;
@@ -206,15 +241,14 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
   for (let i = 0; i < order.length; i++) {
     const provider = order[i];
     try {
-      const { client, model } = makeClient(provider, opts.tier);
-      const completion = await client.chat.completions.create({
+      const { result: completion, model } = await withAvailableModel(provider, opts, (client, model) => client.chat.completions.create({
         model,
         messages: opts.messages as any,
         max_tokens: effectiveMax,
         temperature: opts.temperature ?? 0.4,
         ...(opts.responseFormat ? { response_format: opts.responseFormat as any } : {}),
         ...(opts.tools ? { tools: opts.tools as any, tool_choice: (opts.toolChoice ?? "auto") as any } : {}),
-      }, { signal: opts.signal });
+      }, { signal: opts.signal }));
       const choice = completion.choices?.[0];
       const text = choice?.message?.content?.trim() || "";
       const toolCalls = (choice?.message as any)?.tool_calls || undefined;
@@ -247,6 +281,7 @@ export interface ChatStreamOptions {
   temperature?: number;
   onChunk: (text: string) => void;
   tier?: UserTier;
+  onModelFallback?: ChatCompleteOptions["onModelFallback"];
 }
 
 export interface ChatStreamResult {
@@ -282,31 +317,33 @@ export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<Cha
     const provider = order[i];
     let receivedAnyChunk = false;
     try {
-      const { client, model } = makeClient(provider, opts.tier);
-      const stream = await client.chat.completions.create({
-        model,
-        messages: opts.messages,
-        stream: true,
-        max_tokens: effectiveMax,
-        temperature: opts.temperature ?? 0.4,
-      } as any, { signal: opts.signal });
+      const { result, model } = await withAvailableModel(provider, opts, async (client, model) => {
+        const stream = await client.chat.completions.create({
+          model,
+          messages: opts.messages,
+          stream: true,
+          max_tokens: effectiveMax,
+          temperature: opts.temperature ?? 0.4,
+        } as any, { signal: opts.signal });
 
-      let fullText = "";
-      let completionTokens = 0;
-      for await (const chunk of stream as any) {
-        opts.signal?.throwIfAborted();
-        const content = chunk.choices?.[0]?.delta?.content || "";
-        if (content) {
-          fullText += content;
-          receivedAnyChunk = true;
-          opts.onChunk(content);
+        let fullText = "";
+        let completionTokens = 0;
+        for await (const chunk of stream as any) {
+          opts.signal?.throwIfAborted();
+          const content = chunk.choices?.[0]?.delta?.content || "";
+          if (content) {
+            fullText += content;
+            receivedAnyChunk = true;
+            opts.onChunk(content);
+          }
+          if (chunk.usage?.completion_tokens) {
+            completionTokens = chunk.usage.completion_tokens;
+          }
         }
-        if (chunk.usage?.completion_tokens) {
-          completionTokens = chunk.usage.completion_tokens;
-        }
-      }
-      if (!completionTokens) completionTokens = Math.ceil(fullText.length / 4);
-      return { fullText, provider, model, completionTokens };
+        if (!completionTokens) completionTokens = Math.ceil(fullText.length / 4);
+        return { fullText, completionTokens };
+      }, () => !receivedAnyChunk);
+      return { ...result, provider, model };
     } catch (err: any) {
       if (opts.signal?.aborted) throw err;
       lastErr = err;

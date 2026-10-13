@@ -8,6 +8,16 @@ import { completeWithAutomaticSearch } from "./automatic-search";
 const call = (name: string, args = '{"query":"auth middleware"}', id = "1") => ({ id, type: "function", function: { name, arguments: args } });
 const opts = () => ({ messages: [{ role: "user" as const, content: "Where is our auth middleware?" }], signal: new AbortController().signal, onActivity: vi.fn(), workspace: { userId: "owner", conversationId: 42 } });
 beforeEach(() => { model.mockReset(); web.mockReset(); files.mockReset(); });
+it("passes model-fallback notices to the provider and preserves actual model identity", async () => {
+  const onModelFallback = vi.fn();
+  model.mockImplementationOnce(async args => {
+    args.onModelFallback("gemini-2.5-pro","gemini-2.5-flash");
+    return {text:"Hello",model:"gemini-2.5-flash",provider:"gemini",completionTokens:2};
+  });
+  const result = await completeWithAutomaticSearch({...opts(),onModelFallback});
+  expect(onModelFallback).toHaveBeenCalledWith("gemini-2.5-pro","gemini-2.5-flash");
+  expect(result.model).toBe("gemini-2.5-flash");
+});
 it("executes internal file search and feeds correlated results to the final answer", async () => {
   model.mockResolvedValueOnce({ text: "internal", toolCalls: [call("search_workspace_files")] }).mockResolvedValueOnce({ text: "See auth.ts:1.", model: "test", completionTokens: 4 });
   files.mockResolvedValue({ results: [{ path: "auth.ts", startLine: 1, content: "auth" }] });

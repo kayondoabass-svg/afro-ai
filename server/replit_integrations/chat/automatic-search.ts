@@ -41,6 +41,7 @@ export async function completeWithAutomaticSearch(opts: {
   workspace?: { userId: string; conversationId: number };
   tier?: ChatCompleteOptions["tier"];
   buildTurn?: { plan: boolean; requireHtml: boolean };
+  onModelFallback?: ChatCompleteOptions["onModelFallback"];
 }) {
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(110_000)]);
   // Gemini's compatibility endpoint can discard earlier system messages.
@@ -62,6 +63,7 @@ export async function completeWithAutomaticSearch(opts: {
     signal.throwIfAborted();
     const result = await aiChatComplete({
       messages: [...messages], maxTokens: opts.maxTokens, tier: opts.tier, signal,
+      onModelFallback: opts.onModelFallback,
       tools: [SEARCH_WEB_TOOL, ...(opts.workspace ? [FILE_SEARCH_TOOL] : [])], toolChoice: round === 2 ? "none" : "auto",
     });
     signal.throwIfAborted();
@@ -76,6 +78,7 @@ export async function completeWithAutomaticSearch(opts: {
             content: systemContent + "\n\nThe previous answer did not fulfill this turn: it omitted required complete HTML, violated an explicit plan-only request, or claimed a nonexistent build/link. Correct it now, using the full original brief above.",
           }, ...messages.slice(1), { role: "assistant", content: result.text }],
           maxTokens: opts.maxTokens, tier: opts.tier, signal,
+          onModelFallback: opts.onModelFallback,
         });
         signal.throwIfAborted();
         completionTokens += repaired.completionTokens ?? 0;

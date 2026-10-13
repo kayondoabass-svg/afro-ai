@@ -125,6 +125,7 @@ export async function runProjectTools(opts: {
   briefContext?: string;
   experience?: string | null;
   tier?: "starter" | "pro" | "business" | "payg";
+  onModelFallback?: (from: string, to: string) => void;
   onUsage?: (usage: { tokens: number; estimated: boolean; model: string; provider: string }) => void;
   onActivity: (event: ProjectActivity) => void;
 }) {
@@ -149,7 +150,7 @@ export async function runProjectTools(opts: {
   for (let round = 0; round < PROJECT_TOOL_LIMITS.rounds; round++) {
     opts.signal.throwIfAborted();
     if (bytes(messages) > PROJECT_TOOL_LIMITS.contextBytes) throw new Error("Project context limit reached; narrow your request.");
-    const result = await aiChatComplete({ messages, tools: PROJECT_TOOL_DEFINITIONS, toolChoice: "auto", maxTokens: 4000, tier: opts.tier, signal: opts.signal });
+    const result = await aiChatComplete({ messages, tools: PROJECT_TOOL_DEFINITIONS, toolChoice: "auto", maxTokens: 4000, tier: opts.tier, signal: opts.signal, onModelFallback: opts.onModelFallback });
     actualModel = result.model;
     const estimated = result.promptTokens === undefined || result.completionTokens === undefined;
     const tokens = (result.promptTokens ?? Math.ceil(bytes(messages) / 4)) + (result.completionTokens ?? Math.ceil(bytes(result) / 4));

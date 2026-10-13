@@ -14,6 +14,7 @@ import { currentBuildTurn } from "./build-response-policy";
 import { buildLiveWebContext, extractUrls } from "../../url-scrape";
 import { searchEvidence } from "./search";
 import { completeWithAutomaticSearch } from "./automatic-search";
+import { publicChatError } from "../../ai-chat-provider";
 import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
 import { listProjectFiles, saveProjectFiles } from "../../project-files";
@@ -2123,6 +2124,7 @@ export function registerChatRoutes(app: Express): void {
           event({ type: "status", message: "Reviewing project files (no changes saved)..." });
           const result = await runProjectTools({
             files, request: userContent, history, tier: userPlan, signal: controller.signal,
+            onModelFallback: (from, to) => event({ type: "model-fallback", from, to }),
             onUsage: usage => {
               toolTokens += usage.tokens; toolModel = usage.model;
               roundUsage.push(usage);
@@ -2159,7 +2161,7 @@ export function registerChatRoutes(app: Express): void {
         } catch (error) {
           event({ type: "error", message: controller.signal.aborted
             ? "Project review stopped or timed out. No files were saved."
-            : "Project review failed. No files were saved. Please retry with a smaller request." });
+            : `${publicChatError(error)} No files were saved.` });
         } finally {
           if (projectJob && !jobFinished) {
             await mutateWorkbench(userId, String(conversationId), "job-finish", { id: projectJob.id, status: "stopped", usage: roundUsage }).catch(() => {});
@@ -2516,6 +2518,9 @@ You are now in EDITOR MODE. Your workflow:
       const streamResult = await completeWithAutomaticSearch({
         messages: [systemMessage, ...chatMessages],
         tier: userPlan,
+        onModelFallback: (from, to) => {
+          if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "model-fallback", from, to })}\n\n`);
+        },
         buildTurn: isFounderRequest ? undefined : buildTurn,
         workspace: { userId, conversationId },
         maxTokens,
@@ -2636,10 +2641,10 @@ You are now in EDITOR MODE. Your workflow:
       console.error("Error sending message:", error);
       if (res.destroyed || res.writableEnded) return;
       if (res.headersSent) {
-        res.write(`data: ${JSON.stringify({ error: "Failed to send message" })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: publicChatError(error) })}\n\n`);
         res.end();
       } else {
-        res.status(500).json({ error: "Failed to send message" });
+        res.status(500).json({ error: publicChatError(error) });
       }
     }
   });

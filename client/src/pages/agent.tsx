@@ -210,9 +210,10 @@ export default function AgentPage() {
   const [reviewBusy, setReviewBusy] = useState(false);
   const [toolActivity, setToolActivity] = useState<ProjectToolActivity[]>([]);
   const [projectUsage, setProjectUsage] = useState<ProjectUsageActivity | null>(null);
+  const [providerNotice, setProviderNotice] = useState<string | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [openedProjectFile, setOpenedProjectFile] = useState<ProjectFile | null>(null);
-  useEffect(() => { setProjectUsage(null); }, [conversationId]);
+  useEffect(() => { setProjectUsage(null); setProviderNotice(null); }, [conversationId]);
   const conversationRef = useRef<number | null>(null);
   conversationRef.current = conversationId;
   const loadSequenceRef = useRef(0);
@@ -519,6 +520,7 @@ export default function AgentPage() {
     setInput("");
     setPendingAttachments([]);
     setWorking(true);
+    setProviderNotice(null);
     setWorkingStatus(t("chat.statusThinking"));
     setSearchActivity(null);
     setStreamingContent("");
@@ -569,6 +571,10 @@ export default function AgentPage() {
       const activity = parseSearchActivity(evt);
       if (activity) { currentSearchActivity = activity; setSearchActivity(activity); return; }
       if (evt && evt.type === "error") { serverError = evt.message || t("chat.toastAgentError"); return; }
+      if (evt?.type === "model-fallback" && typeof evt.to === "string") {
+        setProviderNotice(`The configured Gemini model is unavailable. Using ${evt.to} for this response instead.`);
+        return;
+      }
       if (evt && typeof evt.error === "string") { serverError = evt.error; return; }
       if (evt?.type === "status" && typeof evt.message === "string") {
         setWorkingStatus(evt.message);
@@ -1385,6 +1391,7 @@ export default function AgentPage() {
           </div>
         )}
 
+        {providerNotice && <p role="status" className="rounded border border-amber-700/50 bg-amber-950/20 p-3 text-sm text-amber-200">{providerNotice}</p>}
         {(toolActivity.length > 0 || projectUsage) && (
           <section aria-label="Project activity" className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-xs">
             <button type="button" aria-expanded={activityExpanded} onClick={() => setActivityExpanded(v => !v)} className="flex w-full items-center justify-between text-left font-medium text-amber-200">
