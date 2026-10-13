@@ -30,9 +30,12 @@ any conversation anchoring source or recovery data against accidental deletion.
 Customer-visible agent progress is required product scope, not optional polish.
 Plans and audits must cover both the backend events and the customer's visible
 timeline, including expandable details and honest review/validation states.
+Screenshot evidence must be visible to customers as images they can inspect,
+not merely a capture-success message or files left on their computer.
 
 **Why:** The user reports that previously visible progress UI disappeared and
 explicitly requires plans to include how customers visualize the work.
+The user repeated that the screenshots themselves must be visible.
 
 **How to apply:** Inventory existing UI before replacing it. Check which chat
 mode mounts it, preserve existing projects and controls, and distinguish proposed

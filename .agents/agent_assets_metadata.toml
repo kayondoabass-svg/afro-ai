@@ -56,3 +56,17 @@ mtime_ms = 1791053692605
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/df30bfe2-16cd-46ff-8d35-68a4982e2315/e75f75d1-00cc-4480-a8fe-a8bdf7a30628"
 storage_version_token = "1791053720918890"
 content_type = "image/png"
+
+[[outputs]]
+id = "FseCMSAyxjC1mfAEyE6sC"
+uri = "file://generated-artifacts/design/afro-ai-studio-preview.png"
+type = "image"
+title = "Afro AI Studio — proposed UI"
+description = "Concept mockup showing the agent activity timeline, expandable file changes, visible desktop/mobile screenshot gallery, before/after views and review controls. All project content and results are illustrative, not live evidence."
+logical_id = "6d248113-20b4-4192-8e85-1a8b0fdcf176"
+content_hash = "sha256:a865633d196c41a1584a21c5d9212119ee58978d8f12551b5707ad2b6e395207"
+size = 1119233
+mtime_ms = 1791914562081
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/6d248113-20b4-4192-8e85-1a8b0fdcf176/c507e804-a142-41ce-b2bf-a7bc2b20a7c2"
+storage_version_token = "1791914605002249"
+content_type = "image/png"
