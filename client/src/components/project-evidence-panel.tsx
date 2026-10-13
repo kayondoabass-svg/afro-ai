@@ -401,7 +401,7 @@ export function ProjectEvidencePanel({ conversationId, onRepair, maxJobTokens, o
           </section>
           <section className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-[11px] leading-relaxed text-muted-foreground">
             <p className="font-semibold text-foreground">Review before spending</p>
-            <p className="mt-1">A visual review sends this image for analysis. Customer PAYG is a flat {data?.budget.paygChargeCents ?? 2}¢ per generation—not per file, tool call, or model round. Simple file reads are not charged. Provider usage estimates are separate, not the customer charge. Uploading alone never starts a review.</p>
+            <p className="mt-1">A visual review sends this image for analysis. Customer PAYG is a flat {data?.budget.paygChargeCents ?? 2}¢ per usable generation—not per file, tool call, or model round. Simple file reads are not charged. A known completed but unusable result releases the customer reservation; this does not refund provider usage. Interrupted requests with unknown outcomes need reconciliation. Uploading alone never starts a review.</p>
             <p className="mt-2">Nothing is hosted or executed here. After approved source changes, recapture the page locally and upload a fresh After image.</p>
           </section>
           {actionError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">{actionError}</div>}

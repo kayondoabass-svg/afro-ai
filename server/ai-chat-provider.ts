@@ -250,7 +250,7 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
         temperature: opts.temperature ?? 0.4,
         ...(opts.responseFormat ? { response_format: opts.responseFormat as any } : {}),
         ...(opts.tools ? { tools: opts.tools as any, tool_choice: (opts.toolChoice ?? "auto") as any } : {}),
-      }, { signal: opts.signal }));
+      }, { signal: opts.signal, maxRetries: opts.noAmbiguousRetry ? 0 : undefined }));
       const choice = completion.choices?.[0];
       const text = choice?.message?.content?.trim() || "";
       const toolCalls = (choice?.message as any)?.tool_calls || undefined;
@@ -285,6 +285,7 @@ export interface ChatStreamOptions {
   onChunk: (text: string) => void;
   tier?: UserTier;
   onModelFallback?: ChatCompleteOptions["onModelFallback"];
+  noAmbiguousRetry?: boolean;
 }
 
 export interface ChatStreamResult {
@@ -292,6 +293,8 @@ export interface ChatStreamResult {
   provider: Provider;
   model: string;
   completionTokens: number;
+  promptTokens?: number;
+  usageEstimated?: boolean;
 }
 
 /**
@@ -327,10 +330,12 @@ export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<Cha
           stream: true,
           max_tokens: effectiveMax,
           temperature: opts.temperature ?? 0.4,
-        } as any, { signal: opts.signal });
+        } as any, { signal: opts.signal, maxRetries: opts.noAmbiguousRetry ? 0 : undefined });
 
         let fullText = "";
         let completionTokens = 0;
+        let promptTokens: number | undefined;
+        let reportedOutput = false;
         for await (const chunk of stream as any) {
           opts.signal?.throwIfAborted();
           const content = chunk.choices?.[0]?.delta?.content || "";
@@ -339,16 +344,19 @@ export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<Cha
             receivedAnyChunk = true;
             opts.onChunk(content);
           }
-          if (chunk.usage?.completion_tokens) {
+          if (typeof chunk.usage?.completion_tokens === "number") {
             completionTokens = chunk.usage.completion_tokens;
+            reportedOutput = true;
           }
+          if (typeof chunk.usage?.prompt_tokens === "number") promptTokens = chunk.usage.prompt_tokens;
         }
         if (!completionTokens) completionTokens = Math.ceil(fullText.length / 4);
-        return { fullText, completionTokens };
+        return { fullText, completionTokens, promptTokens, usageEstimated: promptTokens === undefined || !reportedOutput };
       }, () => !receivedAnyChunk);
       return { ...result, provider, model };
     } catch (err: any) {
       if (opts.signal?.aborted) throw err;
+      if (opts.noAmbiguousRetry && ![400,401,403,404,429].includes(Number(err?.status))) throw err;
       lastErr = err;
       // If we already streamed bytes to the client, we can't fall back cleanly.
       if (receivedAnyChunk) throw err;

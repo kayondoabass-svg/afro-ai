@@ -85,11 +85,14 @@ export async function recordJobUsage(job: JobReservation, tokens: number, estima
     b.completed++; b.usedTokens += tokens; b.estimated ||= estimated;
   });
 }
-export async function finishJob(job: JobReservation) {
+export async function finishJob(job: JobReservation, usableResult = true) {
+  // Customer pricing remains charge-after-usable-result. Known completed but
+  // unusable responses refund the customer's reservation, NOT supplier usage.
+  // An incomplete dispatch still remains uncertain for explicit reconciliation.
   return changeJob(job, b => {
     if (b.status === "reserved") b.status = "released";
     else if (b.status === "dispatched") b.status = b.calls === b.completed
-      ? (b.calls === b.rejected ? "released" : "settled") : "uncertain";
+      ? (!usableResult || b.calls === b.rejected ? "released" : "settled") : "uncertain";
   });
 }
 export async function recordJobRejection(job: JobReservation) {

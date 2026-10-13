@@ -5,6 +5,7 @@ import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { searchWorkspaceFiles } from "../../workspace-search";
 import { searchAccountWeb } from "../../search-policy";
 import { buildTurnPolicy, invalidBuildAnswer } from "./build-response-policy";
+import { modelInputBound, measuredUsage } from "../../project-workbench/model-metering";
 
 export const SEARCH_WEB_TOOL = {
   type: "function",
@@ -42,6 +43,8 @@ export async function completeWithAutomaticSearch(opts: {
   tier?: ChatCompleteOptions["tier"];
   buildTurn?: { plan: boolean; requireHtml: boolean };
   onModelFallback?: ChatCompleteOptions["onModelFallback"];
+  beforeCall?: (input: number, output: number) => Promise<void>;
+  afterCall?: (tokens: number, estimated: boolean) => Promise<void>;
 }) {
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(110_000)]);
   // Gemini's compatibility endpoint can discard earlier system messages.
@@ -58,10 +61,18 @@ export async function completeWithAutomaticSearch(opts: {
   const seen = new Set<string>();
   let completionTokens = 0;
   let executions = 0;
+  const complete = async (call: ChatCompleteOptions) => {
+    const input = modelInputBound(call), output = call.maxTokens ?? 4000;
+    await opts.beforeCall?.(input, output);
+    const result = await aiChatComplete({ ...call, noAmbiguousRetry: true });
+    const usage = measuredUsage(result, input, output);
+    await opts.afterCall?.(usage.tokens, usage.estimated);
+    return result;
+  };
   // At most two tool-request rounds, then a mandatory final-answer-only request.
   for (let round = 0; round < 3; round++) {
     signal.throwIfAborted();
-    const result = await aiChatComplete({
+    const result = await complete({
       messages: [...messages], maxTokens: opts.maxTokens, tier: opts.tier, signal,
       onModelFallback: opts.onModelFallback,
       tools: [SEARCH_WEB_TOOL, ...(opts.workspace ? [FILE_SEARCH_TOOL] : [])], toolChoice: round === 2 ? "none" : "auto",
@@ -72,7 +83,7 @@ export async function completeWithAutomaticSearch(opts: {
       if (!result.text?.trim()) throw new Error("The model returned no usable answer.");
       if (opts.buildTurn && invalidBuildAnswer(result.text, opts.buildTurn.requireHtml, opts.buildTurn.plan)) {
         // One bounded corrective generation, before anything is shown or saved.
-        const repaired = await aiChatComplete({
+        const repaired = await complete({
           messages: [{
             role: "system",
             content: systemContent + "\n\nThe previous answer did not fulfill this turn: it omitted required complete HTML, violated an explicit plan-only request, or claimed a nonexistent build/link. Correct it now, using the full original brief above.",
@@ -83,7 +94,7 @@ export async function completeWithAutomaticSearch(opts: {
         signal.throwIfAborted();
         completionTokens += repaired.completionTokens ?? 0;
         if (!repaired.text?.trim() || repaired.toolCalls?.length || invalidBuildAnswer(repaired.text, opts.buildTurn.requireHtml, opts.buildTurn.plan)) {
-          return { fullText: "I couldn’t complete this request. No new website was created or published. Please try again.", model: repaired.model, completionTokens };
+          return { fullText: "I couldn’t complete this request. No new website was created or published. Please try again.", model: repaired.model, completionTokens, usableResult: false };
         }
         return { fullText: repaired.text, model: repaired.model, completionTokens };
       }

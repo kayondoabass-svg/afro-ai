@@ -32,6 +32,7 @@ import { extractWebsiteHtml } from "../../../shared/html-extraction";
 import { CHAT_CREDENTIAL_POLICY, containsPrivateCredential, redactPrivateCredentials, safeAssistantText } from "../../chat-credential-safety";
 import { isFounderEmail } from "../../founder-access";
 import { reserveJob, dispatchJobCall, recordJobUsage, recordJobRejection, finishJob, tokenBudget, deleteConversationWithBudgetGuard, type JobReservation } from "../../project-workbench/job-budget";
+import { modelInputBound, measuredUsage } from "../../project-workbench/model-metering";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -1629,6 +1630,8 @@ export function registerChatRoutes(app: Express): void {
 
   app.post("/api/conversations/:id/messages", isAuthenticated, chatLimiter, aiQuotaGuard("chat"), async (req: Request, res: Response) => {
     let requestBudget: JobReservation | undefined;
+    let usableResult = false;
+    let failureUsageRecorded = false;
     try {
       const conversationId = parseInt(req.params.id as string);
       const { content: userContent, attachments, language: rawLanguage, mode: rawMode } = req.body;
@@ -1771,6 +1774,7 @@ export function registerChatRoutes(app: Express): void {
           await chatStorage.createMessage(conversationId, "user", userContent);
           const safeText = safeAssistantText(result.text);
           await chatStorage.createMessage(conversationId, "assistant", safeText);
+          usableResult = true;
           const { storage } = await import("../../storage");
           await storage.createUsageLog({
             userId, conversationId, model: result.model, tokensUsed: result.tokensUsed, kind: "chat",
@@ -1796,7 +1800,8 @@ export function registerChatRoutes(app: Express): void {
             // Partial/failed loops still consumed provider tokens. Billing policy
             // is unchanged; this is a usage record, not an automatic paid retry.
             const { storage } = await import("../../storage");
-            await storage.createUsageLog({ userId, conversationId, model: toolModel, tokensUsed: toolTokens, kind: "chat", costCents: 0 }).catch(() => {});
+            await storage.createUsageLog({ userId, conversationId, model: toolModel, tokensUsed: toolTokens, kind: "chat", costCents: 0 })
+              .then(() => { failureUsageRecorded = true; }).catch(() => {});
           }
           clearTimeout(timeout);
           res.off("close", onClose);
@@ -1819,8 +1824,7 @@ export function registerChatRoutes(app: Express): void {
           const { selected, prompt } = buildProjectEditContext(files, req.body.selectedFilePath, userContent);
           if (containsPrivateCredential(prompt)) throw new Error("Private credential in selected file");
           res.write(`data: ${JSON.stringify({ type: "status", message: "Editing selected project file..." })}\n\n`);
-          await dispatchJobCall(requestBudget, 0, maxTokens);
-          const result = await aiChatCompleteStream({
+          const options = {
             messages: [
               { role: "system", content: prompt + productSelfKnowledge({
                 afroAuthorized: false, channel: "selected-file", languageCode, plan: userPlan,
@@ -1829,10 +1833,16 @@ export function registerChatRoutes(app: Express): void {
               { role: "user", content: userContent },
             ],
             maxTokens,
+            tier: userPlan,
+            noAmbiguousRetry: true,
             // Buffer untrusted model output: no code or secrets reach the client before validation.
             onChunk: () => {},
-          });
-          await recordJobUsage(requestBudget, result.completionTokens, true);
+          } as Parameters<typeof aiChatCompleteStream>[0];
+          const inputBound = modelInputBound(options);
+          await dispatchJobCall(requestBudget, inputBound, maxTokens);
+          const result = await aiChatCompleteStream(options);
+          const usage = measuredUsage(result, inputBound, maxTokens);
+          await recordJobUsage(requestBudget, usage.tokens, usage.estimated);
           const edit = parseProjectEditResponse(result.fullText, selected);
           if (containsPrivateCredential(edit.file.content)) throw new Error("Private credential in generated file");
           const safeSummary = safeAssistantText(edit.summary);
@@ -1842,6 +1852,7 @@ export function registerChatRoutes(app: Express): void {
           }
           await saveProjectFiles(userId, conversationId, [edit.file], "merge");
           saved = true;
+          usableResult = true;
           res.write(`data: ${JSON.stringify({ type: "project-files-saved", saved: true, paths: [edit.file.path] })}\n\n`);
           // Persist only the summary, not another copy of project source in chat history.
           await chatStorage.createMessage(conversationId, "user", userContent);
@@ -2150,7 +2161,6 @@ You are now in EDITOR MODE. Your workflow:
       };
 
       const buildTurn = currentBuildTurn(userContent, Boolean(customerProjectName || lastGeneratedCode));
-      await dispatchJobCall(requestBudget, 0, maxTokens);
       const streamResult = await completeWithAutomaticSearch({
         messages: [systemMessage, ...chatMessages],
         tier: userPlan,
@@ -2160,6 +2170,8 @@ You are now in EDITOR MODE. Your workflow:
         buildTurn: isFounderRequest ? undefined : buildTurn,
         workspace: { userId, conversationId },
         maxTokens,
+        beforeCall: (input, output) => dispatchJobCall(requestBudget!, input, output).then(() => {}),
+        afterCall: (tokens, estimated) => recordJobUsage(requestBudget!, tokens, estimated).then(() => {}),
         signal: requestAbort.signal,
         onActivity: async activity => {
           emitSearch(activity);
@@ -2168,7 +2180,6 @@ You are now in EDITOR MODE. Your workflow:
           }
         },
       });
-      await recordJobUsage(requestBudget, streamResult.completionTokens, true);
       if (requestAbort.signal.aborted) return;
 
       let fullResponse = safeAssistantText(streamResult.fullText);
@@ -2241,6 +2252,7 @@ You are now in EDITOR MODE. Your workflow:
         res.write(`data: ${JSON.stringify({ content: nextStep })}\n\n`);
       }
       await chatStorage.createMessage(conversationId, "assistant", fullResponse);
+      usableResult = streamResult.usableResult !== false;
 
       try {
         const authUser = (req as any).user;
@@ -2282,7 +2294,22 @@ You are now in EDITOR MODE. Your workflow:
         res.status(500).json({ error: publicChatError(error) });
       }
     } finally {
-      if (requestBudget) await finishJob(requestBudget).catch(error => console.error("[chat] reservation needs reconciliation", error instanceof Error ? error.name : "unknown"));
+      if (requestBudget) {
+        try {
+          const settlement = await finishJob(requestBudget, usableResult);
+          // Refunding a failed customer result doesn't erase upstream usage or
+          // exempt repeated failed requests from the daily provider quota.
+          if (!usableResult && !failureUsageRecorded && settlement.calls) {
+            const { storage } = await import("../../storage");
+            await storage.createUsageLog({
+              userId: requestBudget.owner, conversationId: Number(requestBudget.conversation),
+              model: "job-unsuccessful", tokensUsed: settlement.usedTokens, kind: "chat", costCents: 0,
+            });
+          }
+        } catch (error) {
+          console.error("[chat] reservation or failure usage needs reconciliation", error instanceof Error ? error.name : "unknown");
+        }
+      }
     }
   });
 }

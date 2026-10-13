@@ -5,6 +5,27 @@ vi.mock("./search", async importOriginal => ({ ...await importOriginal<any>(), r
 vi.mock("../../workspace-search", () => ({ searchWorkspaceFiles: files }));
 vi.mock("../../search-policy", () => ({ searchAccountWeb: vi.fn() }));
 import { completeWithAutomaticSearch } from "./automatic-search";
+it("meters each search round and final synthesis, and blocks before a disallowed extra call", async () => {
+  model.mockResolvedValueOnce({text:"",toolCalls:[call("search_workspace_files")]})
+    .mockResolvedValueOnce({text:"Answer",promptTokens:20,completionTokens:5});
+  const beforeCall = vi.fn(async (_input: number, _output: number) => {}), afterCall = vi.fn(async (_tokens: number, _estimated: boolean) => {});
+  await completeWithAutomaticSearch({...opts(),workspace:{userId:"owner",conversationId:1},beforeCall,afterCall});
+  expect(beforeCall).toHaveBeenCalledTimes(2); expect(afterCall).toHaveBeenCalledTimes(2);
+  expect(beforeCall.mock.calls[0][0]).toBeGreaterThan(4096);
+  expect(afterCall).toHaveBeenLastCalledWith(25,false);
+  model.mockReset(); beforeCall.mockReset();
+  model.mockResolvedValueOnce({text:"",toolCalls:[call("search_workspace_files")]});
+  beforeCall.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("Job budget reached"));
+  await expect(completeWithAutomaticSearch({...opts(),workspace:{userId:"owner",conversationId:1},beforeCall})).rejects.toThrow("budget");
+  expect(model).toHaveBeenCalledTimes(1);
+});
+it("meters the corrective call and identifies a second unusable build as unchargeable", async () => {
+  model.mockResolvedValue({text:"I have created your website at a nonexistent link",promptTokens:20,completionTokens:5});
+  const beforeCall = vi.fn(async (_input: number, _output: number) => {}), afterCall = vi.fn(async (_tokens: number, _estimated: boolean) => {});
+  const result = await completeWithAutomaticSearch({...opts(),buildTurn:{plan:false,requireHtml:true},beforeCall,afterCall});
+  expect(beforeCall).toHaveBeenCalledTimes(2); expect(afterCall).toHaveBeenCalledTimes(2);
+  expect(result).toHaveProperty("usableResult",false);
+});
 const call = (name: string, args = '{"query":"auth middleware"}', id = "1") => ({ id, type: "function", function: { name, arguments: args } });
 const opts = () => ({ messages: [{ role: "user" as const, content: "Where is our auth middleware?" }], signal: new AbortController().signal, onActivity: vi.fn(), workspace: { userId: "owner", conversationId: 42 } });
 beforeEach(() => { model.mockReset(); web.mockReset(); files.mockReset(); });

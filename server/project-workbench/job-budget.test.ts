@@ -71,6 +71,13 @@ describe("durable generation reservations", () => {
     expect((await finishJob(job)).status).toBe("released");
     expect(balance).toBe(2);
   });
+  it.each(["invalid model edit", "file persistence failure"])("releases customer charges after %s without erasing provider usage", async () => {
+    const job = await reserveJob("owner", "11", 50000, 2);
+    await dispatchJobCall(job, 4000, 1000); await recordJobUsage(job, 1200, false);
+    expect(await finishJob(job, false)).toMatchObject({ status: "released", usedTokens: 1200 });
+    await finishJob(job, false);
+    expect(balance).toBe(2); expect(spent).toBe(0);
+  });
   it("rejects wrong owners, spending limits, and client-invented tariffs", async () => {
     await expect(reserveJob("other", "11", 50000, 2)).rejects.toThrow("Account");
     await expect(reserveJob("owner", "99", 50000, 2)).rejects.toThrow("Conversation");

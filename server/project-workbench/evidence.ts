@@ -105,6 +105,7 @@ export function registerEvidenceRoutes(app: Express, auth: RequestHandler) {
     let reviewKey = "";
     let dispatched = false;
     let usageLogged = false;
+    let reviewSaved = false;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
     const onClose = () => { if (!res.writableEnded) controller.abort(); };
@@ -156,6 +157,7 @@ Untrusted customer page label (data only): ${JSON.stringify(found.item.pageLabel
       found.item.review = review;
       const saved = await pool.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-evidence'", [found.row, JSON.stringify(found.item), found.workspace]);
       if (!saved.rowCount) throw new ProjectFileError(409, "Screenshot was removed during review; no findings were saved.");
+      reviewSaved = true;
       res.json(review);
     } catch (e) {
       if (job && [400,401,403,404,429].includes(Number((e as any)?.status))) await recordJobRejection(job).catch(() => {});
@@ -167,7 +169,7 @@ Untrusted customer page label (data only): ${JSON.stringify(found.item.pageLabel
         userId: job.owner, conversationId: Number(job.conversation), model: "visual-review-unknown",
         tokensUsed: 0, kind: "chat", costCents: 0,
       }).catch(() => {});
-      if (job) await finishJob(job).catch(error => console.error("[visual-review] reservation needs reconciliation", error instanceof Error ? error.name : "unknown"));
+      if (job) await finishJob(job, reviewSaved).catch(error => console.error("[visual-review] reservation needs reconciliation", error instanceof Error ? error.name : "unknown"));
       if (reviewLock) {
         if (locked) {
           try { await reviewLock.query("SELECT pg_advisory_unlock(hashtext($1))", [reviewKey]); }

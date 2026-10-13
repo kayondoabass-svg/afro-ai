@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getConversation: vi.fn(),
   search: vi.fn(),
   inference: vi.fn(),
+  stream: vi.fn(),
   saveFiles: vi.fn(),
   listFiles: vi.fn(),
   getUser: vi.fn(),
@@ -28,12 +29,13 @@ vi.mock("../../project-workbench/job-budget", () => ({
   dispatchJobCall: vi.fn(async () => {}),
   recordJobUsage: vi.fn(async () => {}),
   recordJobRejection: vi.fn(async () => {}),
-  finishJob: vi.fn(async () => {}),
+  finishJob: vi.fn(async () => ({ calls: 1, usedTokens: 250 })),
   jobHistory: vi.fn(async () => []),
   deleteConversationWithBudgetGuard: vi.fn(async () => {}),
 }));
 vi.mock("../../storage", () => ({ storage: {
   getUser: mocks.getUser,
+  createUsageLog: vi.fn(async () => ({})),
   getAppVersions: vi.fn(async () => []),
   saveAppVersion: vi.fn(async () => ({ id: 1, label: "Version 1" })),
 } }));
@@ -41,7 +43,7 @@ vi.mock("../auth/replitAuth", () => ({ isAuthenticated: vi.fn(), FOUNDER_EMAIL: 
 vi.mock("../quota", () => ({ aiQuotaGuard: () => vi.fn() }));
 vi.mock("../../ai-chat-provider", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../ai-chat-provider")>(),
-  aiChatComplete: mocks.inference, aiChatCompleteStream: vi.fn(),
+  aiChatComplete: mocks.inference, aiChatCompleteStream: mocks.stream,
 }));
 vi.mock("../../web-search", () => ({ searchWeb: mocks.search, webSearchConfigured: () => Boolean(process.env.JINA_API_KEY) }));
 vi.mock("../../search-policy", () => ({ searchAccountWeb: (_id: string, q: string, s: AbortSignal) => mocks.search(q, s) }));
@@ -50,6 +52,7 @@ vi.mock("../../attachment-parse", () => ({ isParseableAttachment: () => false, b
 vi.mock("../../project-files", () => ({ listProjectFiles: mocks.listFiles, saveProjectFiles: mocks.saveFiles }));
 vi.mock("../../knowledge", () => ({ retrieveKnowledge: async () => [], formatKnowledgeContext: () => "" }));
 import { registerChatRoutes } from "./routes";
+import { dispatchJobCall, recordJobUsage, finishJob } from "../../project-workbench/job-budget";
 
 function handler() {
   let route: any;
@@ -74,6 +77,8 @@ const req = (content = "Search Kampala AI conference", webSearch = true) => ({
 });
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
+  vi.mocked(dispatchJobCall).mockClear(); vi.mocked(recordJobUsage).mockClear(); vi.mocked(finishJob).mockClear();
+  mocks.stream.mockReset();
   mocks.getUser.mockReset().mockResolvedValue(null);
   mocks.listFiles.mockReset().mockResolvedValue([]);
   mocks.saveFiles.mockReset().mockResolvedValue([]);
@@ -89,6 +94,28 @@ beforeEach(() => {
   vi.stubEnv("JINA_API_KEY", "test-only");
 });
 describe("main chat search route wiring", () => {
+  it.each(["invalid response", "save failure"])("does not charge a selected-file %s and counts its prompt", async (failure) => {
+    const content = "<html><body>Existing page</body></html>";
+    mocks.listFiles.mockResolvedValue([{ path: "index.html", name: "index.html", language: "html", content }]);
+    mocks.stream.mockResolvedValue({
+      fullText: failure === "invalid response" ? "Not an edit" : JSON.stringify({
+        protocol: "project-file-edit/v1", path: "index.html", content: "<html><body>Changed page</body></html>", summary: "Updated page",
+      }),
+      model: "test", promptTokens: 200, completionTokens: 50,
+    });
+    if (failure === "save failure") mocks.saveFiles.mockRejectedValue(new Error("Storage unavailable"));
+    const request = req("Edit my page", false);
+    request.body = { ...request.body, selectedFilePath: "index.html" } as any;
+    const reply = response();
+    await handler()(request, reply);
+    expect(mocks.stream).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dispatchJobCall).mock.calls[0][1]).toBeGreaterThan(Buffer.byteLength(content) + 4096);
+    expect(recordJobUsage).toHaveBeenCalledWith(expect.anything(), 250, false);
+    expect(finishJob).toHaveBeenCalledWith(expect.anything(), false);
+    expect(reply.write).toHaveBeenCalledWith(expect.stringContaining("No AI edit was saved"));
+    if (failure === "save failure") expect(mocks.saveFiles).toHaveBeenCalledTimes(1);
+    else expect(mocks.saveFiles).not.toHaveBeenCalled();
+  });
   it("includes hosting trial limits and upgrade requirements in pricing guidance", async () => {
     mocks.inference.mockResolvedValue({ text: "Starter includes one published app for 30 days. Upgrade for continued hosting.", model: "test" });
     await handler()(req("Do I need to pay for hosting?", false), response());
