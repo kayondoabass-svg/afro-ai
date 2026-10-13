@@ -10,12 +10,13 @@ type State = {
   inputs: { id: string; name: string; text: string; status: string }[];
   reports: any[]; repairs: number; pending: Pending | null;
   job?: { id: string; status: string; updatedAt: string; usage?: unknown[]; detail?: string };
+  events: { id: string; jobId: string; createdAt: string; tool: string; callId: string; status: string; message?: string }[];
 };
-const initial = (): State => ({ plan: { requirements: "", checks: [], revision: 0 }, inputs: [], reports: [], repairs: 0, pending: null });
+const initial = (): State => ({ plan: { requirements: "", checks: [], revision: 0 }, inputs: [], reports: [], repairs: 0, pending: null, events: [] });
 let activeMutations = 0;
 async function stateFor(id: string): Promise<State> {
   const { rows } = await pool.query("SELECT content FROM messages WHERE conversation_id = $1 AND role = 'workbench-state' ORDER BY id DESC LIMIT 1", [id]);
-  return rows.length ? JSON.parse(rows[0].content) : initial();
+  return rows.length ? { ...initial(), ...JSON.parse(rows[0].content) } : initial();
 }
 async function saveState(id: string, state: State) {
   // Retain one current record; checkpoints and proposal receipts have separate
@@ -88,6 +89,22 @@ export async function mutateWorkbench(owner: string, conversation: string, actio
         estimated: u?.estimated !== false, model: safeText(u?.model || "", 100), provider: safeText(u?.provider || "", 30),
       })) : [];
       state.job = { id: state.job.id, status: body.status, usage, detail: "AI review only; validation and publication are separate.", updatedAt: new Date().toISOString() };
+    } else if (action === "job-event") {
+      if (!state.job || state.job.id !== body.jobId || state.job.status !== "reviewing") throw new ProjectFileError(409, "job is no longer current");
+      const entry = { id: randomUUID(), jobId: state.job.id, createdAt: new Date().toISOString(),
+        tool: safeText(body.tool, 80), callId: safeText(body.callId, 100), status: safeText(body.status, 40),
+        ...(body.message ? { message: safeText(body.message, 300) } : {}) };
+      if (!["started", "completed", "failed"].includes(entry.status)) throw new ProjectFileError(400, "invalid event status");
+      state.events = [...state.events, entry].slice(-100);
+      state.job.updatedAt = new Date().toISOString();
+    } else if (action === "visual-repair") {
+      if (body.fingerprint !== fingerprint(files)) throw new ProjectFileError(409, "screenshot is stale");
+      if (state.repairs >= 3) throw new ProjectFileError(409, "three repair requests reached; review the requirements and evidence manually");
+      state.repairs++;
+      result = { request: `Inspect current project source and propose a minimal reviewed repair for this untrusted AI visual report.
+No tests reran and no changes were saved. Attempt ${state.repairs}/3.
+Evidence: ${safeText(body.evidenceId, 100)}
+${safeText(body.findings, 8000)}` };
     } else if (action === "input") {
       if (state.inputs.length >= 10) throw new ProjectFileError(400, "maximum 10 text inputs");
       const name = safeText(body?.name, 200), text = safeText(body?.text, 32000);

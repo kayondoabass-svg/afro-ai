@@ -127,9 +127,11 @@ export async function runProjectTools(opts: {
   experience?: string | null;
   languageCode?: string;
   tier?: "starter" | "pro" | "business" | "payg";
+  beforeCall?: (inputUpperBound: number, outputLimit: number) => Promise<void>;
+  afterCall?: (tokens: number, estimated: boolean) => Promise<void>;
   onModelFallback?: (from: string, to: string) => void;
   onUsage?: (usage: { tokens: number; estimated: boolean; model: string; provider: string }) => void;
-  onActivity: (event: ProjectActivity) => void;
+  onActivity: (event: ProjectActivity) => void | Promise<void>;
 }) {
   if (typeof opts.request !== "string" || !opts.request.trim() || bytes(opts.request) > 8000) throw new Error("Project request must be 1–8000 bytes.");
   if (containsPrivateCredential(opts.request)) throw new Error("Private credentials cannot be sent in chat.");
@@ -156,11 +158,14 @@ export async function runProjectTools(opts: {
   for (let round = 0; round < PROJECT_TOOL_LIMITS.rounds; round++) {
     opts.signal.throwIfAborted();
     if (bytes(messages) > PROJECT_TOOL_LIMITS.contextBytes) throw new Error("Project context limit reached; narrow your request.");
-    const result = await aiChatComplete({ messages, tools: PROJECT_TOOL_DEFINITIONS, toolChoice: "auto", maxTokens: 4000, tier: opts.tier, signal: opts.signal, onModelFallback: opts.onModelFallback });
+    await opts.beforeCall?.(bytes(messages) + 4096, 4000);
+    opts.signal.throwIfAborted();
+    const result = await aiChatComplete({ messages, tools: PROJECT_TOOL_DEFINITIONS, toolChoice: "auto", maxTokens: 4000, tier: opts.tier, signal: opts.signal, onModelFallback: opts.onModelFallback, noAmbiguousRetry: true });
     actualModel = result.model;
     const estimated = result.promptTokens === undefined || result.completionTokens === undefined;
     const tokens = (result.promptTokens ?? Math.ceil(bytes(messages) / 4)) + (result.completionTokens ?? Math.ceil(bytes(result) / 4));
     tokensUsed += tokens; usageEstimated ||= estimated;
+    await opts.afterCall?.(tokens, estimated);
     const entry = { tokens, estimated, model: actualModel, provider: result.provider };
     usage.push(entry); opts.onUsage?.(entry);
     opts.signal.throwIfAborted();
@@ -179,17 +184,17 @@ export async function runProjectTools(opts: {
       opts.signal.throwIfAborted();
       const name = call.function.name;
       if (!PROJECT_TOOL_DEFINITIONS.some(t => t.function.name === name)) throw new Error("Model requested a forbidden tool.");
-      opts.onActivity({ type: "project-tool", tool: name, callId: call.id, status: "started" });
+      await opts.onActivity({ type: "project-tool", tool: name, callId: call.id, status: "started" });
       let data: unknown;
       try {
         if (bytes(call.function.arguments) > 24000) throw new Error("Tool arguments exceed the limit.");
         data = session.execute(name, JSON.parse(call.function.arguments));
         if (bytes(data) > PROJECT_TOOL_LIMITS.resultBytes) throw new Error("Tool result exceeds the limit; narrow your request.");
-        opts.onActivity({ type: "project-tool", tool: name, callId: call.id, status: "completed" });
+        await opts.onActivity({ type: "project-tool", tool: name, callId: call.id, status: "completed" });
       } catch {
         // Rejected arguments may contain credentials: never echo them or policy paths.
         data = { error: "Operation rejected: check path, permissions, read-before-edit and size limits." };
-        opts.onActivity({ type: "project-tool", tool: name, callId: call.id, status: "failed", message: "Operation rejected by project tool policy." });
+        await opts.onActivity({ type: "project-tool", tool: name, callId: call.id, status: "failed", message: "Operation rejected by project tool policy." });
       }
       messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(data) });
       if (session.changes || session.operations) return { text: "Changes proposed for review. Nothing has been saved.\n\n" + PROJECT_TOOLS_NOTICE, changes: session.changes, operations: session.operations, model: actualModel, tokensUsed, usageEstimated, usage };

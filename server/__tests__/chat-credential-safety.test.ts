@@ -27,7 +27,7 @@ describe("chat credential boundary", () => {
   });
 });
 
-vi.mock("../ai-chat-provider", () => ({ aiChatComplete: vi.fn() }));
+vi.mock("../ai-chat-provider", () => ({ aiChatComplete: vi.fn(), hasAfroAiProvider: () => false }));
 import { aiChatComplete } from "../ai-chat-provider";
 import { projectToolSession, runProjectTools } from "../project-tools";
 

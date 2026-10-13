@@ -127,4 +127,13 @@ describe("trusted product context", () => {
     expect(context).not.toContain("gemini-2.5");
     expect(context).not.toContain("gpt-4");
   });
+  it("describes the delivered evidence and metering flow without claiming hosted execution", () => {
+    const context = productSelfKnowledge({ afroAuthorized: false, channel: "project-agent" });
+    for (const feature of ["In-chat Visual evidence", "actual image", "latest 100 tool events",
+      "two-cent generation charge atomically", "there is no six-year archival guarantee",
+      "stale screenshots cannot authorize repairs", "customer-approved steps"])
+      expect(context).toContain(feature);
+    expect(context).toContain("hosted customer-code execution sandboxes");
+    expect(context).toContain("customer charges are not exact provider-invoice costs");
+  });
 });

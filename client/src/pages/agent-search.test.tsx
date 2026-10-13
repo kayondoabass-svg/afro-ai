@@ -12,6 +12,7 @@ vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({
 vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()], useSearch: () => window.location.search.slice(1) }));
 vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>Project file tree</div> }));
 vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => null }));
+vi.mock("@/components/project-evidence-panel", () => ({ ProjectEvidencePanel: () => <div data-testid="project-evidence">Private visual evidence</div> }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
     data: queryKey[0] === "/api/auth/user" ? { firstName: "Test" } : queryKey[2] === "project-proposal" ? null : [],
@@ -89,7 +90,7 @@ describe("active /chat Agent search", () => {
     fireEvent.click(screen.getByTestId("button-send"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "/api/conversations/45/messages", expect.objectContaining({
-        body: JSON.stringify({ content: "Review my project", projectAgent: true }),
+        body: JSON.stringify({ content: "Review my project", projectAgent: true, maxJobTokens: 50000 }),
       }),
     ));
     await waitFor(() => expect(screen.getByText("list_files: completed")).toBeInTheDocument());

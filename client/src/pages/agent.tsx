@@ -28,6 +28,7 @@ import { AgentCodeBlock, AgentHtmlPreview } from "@/components/agent-code-block"
 import { AgentSearchButton, AgentSearchContext } from "@/components/agent-search-button";
 import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import { ProjectWorkbench } from "@/components/project-workbench";
+import { ProjectEvidencePanel } from "@/components/project-evidence-panel";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, FULLSTACK_EXPORT_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
@@ -210,6 +211,7 @@ export default function AgentPage() {
   const [reviewBusy, setReviewBusy] = useState(false);
   const [toolActivity, setToolActivity] = useState<ProjectToolActivity[]>([]);
   const [projectUsage, setProjectUsage] = useState<ProjectUsageActivity | null>(null);
+  const [maxJobTokens, setMaxJobTokens] = useState(50000);
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [openedProjectFile, setOpenedProjectFile] = useState<ProjectFile | null>(null);
@@ -240,6 +242,7 @@ export default function AgentPage() {
       if (!response.ok) throw new Error(result.error || "Could not complete review");
       qc.setQueryData(["/api/conversations", id, "project-proposal"], null);
       qc.invalidateQueries({ queryKey: ["project-workbench", id] });
+      qc.invalidateQueries({ queryKey: ["project-workbench-evidence", id] });
       if (!cancel) {
         qc.invalidateQueries({ queryKey: ["/api/d1/project-files", id] });
         if (conversationRef.current === id) setOpenedProjectFile(null);
@@ -542,6 +545,7 @@ export default function AgentPage() {
       catch { serverError = "Invalid response from the server"; return; }
       if (evt?.type === "project-workbench") {
         qc.invalidateQueries({ queryKey: ["project-workbench", convoId] });
+        qc.invalidateQueries({ queryKey: ["project-workbench-evidence", convoId] });
         qc.invalidateQueries({ queryKey: ["/api/d1/project-files", convoId] });
         return;
       }
@@ -572,7 +576,7 @@ export default function AgentPage() {
       if (activity) { currentSearchActivity = activity; setSearchActivity(activity); return; }
       if (evt && evt.type === "error") { serverError = evt.message || t("chat.toastAgentError"); return; }
       if (evt?.type === "model-fallback" && typeof evt.to === "string") {
-        setProviderNotice(`The configured Gemini model is unavailable. Using ${evt.to} for this response instead.`);
+        setProviderNotice("The configured service was unavailable. A compatible service handled this response instead.");
         return;
       }
       if (evt && typeof evt.error === "string") { serverError = evt.error; return; }
@@ -603,7 +607,10 @@ export default function AgentPage() {
 
     try {
       const body: any = { content: text };
-      if (mode === "project") body.projectAgent = true;
+      if (mode === "project") {
+        body.projectAgent = true;
+        body.maxJobTokens = maxJobTokens;
+      }
       if (attachments.length > 0) body.attachments = attachments;
 
       const res = await fetch(`/api/conversations/${convoId}/messages`, {
@@ -1392,6 +1399,12 @@ export default function AgentPage() {
         )}
 
         {providerNotice && <p role="status" className="rounded border border-amber-700/50 bg-amber-950/20 p-3 text-sm text-amber-200">{providerNotice}</p>}
+        {conversationId && (projectAgent || activeProjectId !== null) && <ProjectEvidencePanel
+          conversationId={conversationId}
+          onRepair={request => { setProjectAgent(true); setInput(request); }}
+          maxJobTokens={maxJobTokens}
+          onMaxJobTokensChange={setMaxJobTokens}
+        />}
         {(toolActivity.length > 0 || projectUsage) && (
           <section aria-label="Project activity" className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-xs">
             <button type="button" aria-expanded={activityExpanded} onClick={() => setActivityExpanded(v => !v)} className="flex w-full items-center justify-between text-left font-medium text-amber-200">
@@ -1401,8 +1414,6 @@ export default function AgentPage() {
             {projectUsage && <p className="mt-1 text-zinc-300">
               Usage {projectUsage.totalTokens ?? [projectUsage.inputTokens, projectUsage.outputTokens].filter(value => value != null).reduce<number>((sum, value) => sum + (value || 0), 0)} tokens
               {projectUsage.estimatedCost != null || projectUsage.estimatedCostUsd != null || projectUsage.estimatedUsd != null ? ` · estimated ${projectUsage.estimatedCost ?? projectUsage.estimatedCostUsd ?? projectUsage.estimatedUsd}` : ""}
-              {projectUsage.provider ? ` · ${projectUsage.provider}` : ""}
-              {projectUsage.model ? ` / ${projectUsage.model}` : ""}
             </p>}
             {activityExpanded && <ul className="mt-2 space-y-1 text-zinc-300">
               {toolActivity.map(item => <li key={item.callId} className="flex justify-between gap-2"><span className="truncate">{item.tool.replace(/_/g, " ")}</span><span className="shrink-0">{item.status}</span></li>)}

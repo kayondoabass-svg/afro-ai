@@ -15,6 +15,7 @@ vi.mock("wouter", () => ({ useLocation: () => ["/chat", vi.fn()], useSearch: () 
 vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>Saved starter files</div> }));
 vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => <div data-testid="fullstack-infrastructure">Infrastructure controls</div> }));
 vi.mock("@/components/project-workbench", () => ({ ProjectWorkbench: () => <div data-testid="project-workbench">Project workbench</div> }));
+vi.mock("@/components/project-evidence-panel", () => ({ ProjectEvidencePanel: () => <div data-testid="project-evidence">Private visual evidence</div> }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
     data: queryKey[0] === "/api/auth/user" ? { firstName: "Amina" }
@@ -68,9 +69,10 @@ describe("full-stack agent workspace", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Message to Afro AI" }), { target: { value: "Add a health endpoint" } });
     fireEvent.click(screen.getByTestId("button-send"));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/conversations/91/messages", expect.objectContaining({
-      body: JSON.stringify({ content: "Add a health endpoint", projectAgent: true }),
+      body: JSON.stringify({ content: "Add a health endpoint", projectAgent: true, maxJobTokens: 50000 }),
     })));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Using gemini-2.5-flash for this response instead"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("A compatible service handled this response instead."));
+    expect(screen.getByRole("status")).not.toHaveTextContent("gemini");
   });
 
   it.each(["setup_failed", "initializing"])("blocks sending and conversation creation while %s", (status) => {

@@ -21,6 +21,17 @@ vi.mock("./storage", () => ({ chatStorage: {
   updateConversationTitle: vi.fn(),
 } }));
 vi.mock("../../db", () => ({ db: {} }));
+vi.mock("../../project-workbench/job-budget", () => ({
+  JOB_BUDGET: { maxTokens: 50000, maxRounds: 5, paygChargeCents: 2 },
+  tokenBudget: () => 50000,
+  reserveJob: vi.fn(async () => ({ id: "job", owner: "owner", conversation: "12" })),
+  dispatchJobCall: vi.fn(async () => {}),
+  recordJobUsage: vi.fn(async () => {}),
+  recordJobRejection: vi.fn(async () => {}),
+  finishJob: vi.fn(async () => {}),
+  jobHistory: vi.fn(async () => []),
+  deleteConversationWithBudgetGuard: vi.fn(async () => {}),
+}));
 vi.mock("../../storage", () => ({ storage: {
   getUser: mocks.getUser,
   getAppVersions: vi.fn(async () => []),
@@ -43,7 +54,7 @@ import { registerChatRoutes } from "./routes";
 function handler() {
   let route: any;
   const app = {
-    get: vi.fn(), delete: vi.fn(),
+    get: vi.fn(), delete: vi.fn(), use: vi.fn(),
     post: (path: string, ...handlers: any[]) => {
       if (path === "/api/conversations/:id/messages") route = handlers.at(-1);
     },

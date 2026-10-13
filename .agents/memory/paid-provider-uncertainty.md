@@ -3,7 +3,7 @@ name: Paid provider uncertainty
 description: Retry and accounting policy when generation may have already been billed
 ---
 
-Do not automatically resubmit paid audio or media work after a timeout, disconnect, or worker crash with an unknown provider outcome.
+Do not automatically resubmit paid AI, visual-review, audio or media work after a timeout, disconnect, or worker crash with an unknown provider outcome.
 
 **Why:** Cancelling the local request does not prove that the provider stopped generation or billing. Automatic retries can duplicate charges. The pilot conservatively retains reservations for dispatched work and requires reconciliation rather than claiming a refund or successful cancellation.
 

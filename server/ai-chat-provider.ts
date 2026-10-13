@@ -2,7 +2,7 @@ import OpenAI from "openai";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "high" | "low" | "auto" } })[];
 }
 
 export type UserTier = "starter" | "pro" | "business" | "payg";
@@ -29,6 +29,8 @@ export interface ChatCompleteOptions {
   toolChoice?: any;
   /** Server-side notice when a definitively unavailable Gemini model is replaced. */
   onModelFallback?: (from: string, to: string) => void;
+  /** Never resubmit an ambiguous paid completion to another provider. */
+  noAmbiguousRetry?: boolean;
 }
 
 // Gemini model selection per plan. Free tier uses the cheapest model so a
@@ -255,6 +257,7 @@ export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCom
       return { text, provider, model, toolCalls, finishReason: choice?.finish_reason, promptTokens: completion.usage?.prompt_tokens, completionTokens: completion.usage?.completion_tokens };
     } catch (err: any) {
       if (opts.signal?.aborted) throw err;
+      if (opts.noAmbiguousRetry && ![400, 401, 403, 404, 429].includes(Number(err?.status))) throw err;
       lastErr = err;
       const fatal = isFatalAuthOrQuotaError(err);
       const hasFallback = i < order.length - 1;

@@ -30,6 +30,8 @@ import { CUSTOMER_BRANDING_POLICY, customerNameQuestion, hasForbiddenCustomerBra
 import { CUSTOMER_DESIGN_POLICY, customerIntake, customerBriefContext } from "../../customer-intake";
 import { extractWebsiteHtml } from "../../../shared/html-extraction";
 import { CHAT_CREDENTIAL_POLICY, containsPrivateCredential, redactPrivateCredentials, safeAssistantText } from "../../chat-credential-safety";
+import { isFounderEmail } from "../../founder-access";
+import { reserveJob, dispatchJobCall, recordJobUsage, recordJobRejection, finishJob, tokenBudget, deleteConversationWithBudgetGuard, type JobReservation } from "../../project-workbench/job-budget";
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -1597,7 +1599,7 @@ export function registerChatRoutes(app: Express): void {
         return res.status(404).json({ error: "Conversation not found" });
       }
       if (conversation.projectId) await assertWorkspaceConversationDeletable(conversation.userId!, String(id));
-      await chatStorage.deleteConversation(id);
+      await deleteConversationWithBudgetGuard(conversation.userId!, String(id));
       res.status(204).send();
     } catch (error) {
       if (error instanceof ProjectFileError) return res.status(error.status).json({ error: error.message });
@@ -1626,6 +1628,7 @@ export function registerChatRoutes(app: Express): void {
   });
 
   app.post("/api/conversations/:id/messages", isAuthenticated, chatLimiter, aiQuotaGuard("chat"), async (req: Request, res: Response) => {
+    let requestBudget: JobReservation | undefined;
     try {
       const conversationId = parseInt(req.params.id as string);
       const { content: userContent, attachments, language: rawLanguage, mode: rawMode } = req.body;
@@ -1677,7 +1680,7 @@ export function registerChatRoutes(app: Express): void {
               experienceLevel: dbUser.experienceLevel || null,
             };
             // PAYG balance check
-            if (dbUser.plan === "payg") {
+            if (dbUser.plan === "payg" && !(isFounderEmail(authUser.claims.email) && isFounderEmail(dbUser.email))) {
               paygUserId = dbUser.id;
               const balance = dbUser.paygBalance ?? 0;
               const limit = dbUser.paygLimit ?? 1000;
@@ -1702,6 +1705,14 @@ export function registerChatRoutes(app: Express): void {
       }
 
       const { model, maxTokens } = getModelForPlan(userPlan);
+      try {
+        requestBudget = await reserveJob(userId, String(conversationId), tokenBudget(req.body.maxJobTokens),
+          paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0);
+      } catch (error) {
+        return res.status(error instanceof ProjectFileError ? error.status : 503).json({
+          error: error instanceof ProjectFileError ? error.message : "Could not reserve this job. No AI request was started.",
+        });
+      }
 
       if (req.body.projectAgent === true) {
         if (attachments?.length || req.body.selectedFilePath !== undefined || Buffer.byteLength(userContent, "utf8") > 8000) {
@@ -1737,10 +1748,16 @@ export function registerChatRoutes(app: Express): void {
               roundUsage.push(usage);
               event({ type: "project-usage", ...usage, totalTokens: toolTokens });
             },
+            beforeCall: (inputUpperBound, outputLimit) => dispatchJobCall(requestBudget!, inputUpperBound, outputLimit).then(() => {}),
+            afterCall: (tokens, estimated) => recordJobUsage(requestBudget!, tokens, estimated).then(() => {}),
             briefContext: redactPrivateCredentials(customerBriefContext(ownedHistory, String(rawLanguage || "en"))) + "\n" + await workbenchContext(userId, String(conversationId)),
             experience: userProfile.experienceLevel,
             languageCode,
-            onActivity: activity => event(activity),
+            onActivity: async activity => {
+              await mutateWorkbench(userId, String(conversationId), "job-event", { ...activity, jobId: projectJob!.id });
+              event(activity);
+              event({ type: "project-workbench" });
+            },
           });
           controller.signal.throwIfAborted();
           if (result.operations) {
@@ -1760,16 +1777,16 @@ export function registerChatRoutes(app: Express): void {
             costCents: paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0,
           });
           usageRecorded = true;
-          if (paygUserId === userId) await storage.deductPaygBalance(userId, PAYG_COST_PER_GENERATION_CENTS);
           event({ type: "text", content: safeText });
           if (proposal) event({ type: "project-proposal", proposal });
           await mutateWorkbench(userId, String(conversationId), "job-finish", { id: projectJob?.id, status: proposal || result.operations ? "awaiting-approval" : "review-complete", usage: roundUsage });
           jobFinished = true;
           event({ type: "project-workbench" });
         } catch (error) {
+          if ([400,401,403,404,429].includes(Number((error as any)?.status))) await recordJobRejection(requestBudget).catch(() => {});
           event({ type: "error", message: controller.signal.aborted
             ? "Project review stopped or timed out. No files were saved."
-            : `${publicChatError(error)} No files were saved.` });
+            : `${error instanceof ProjectFileError ? error.message : publicChatError(error)} No files were saved.` });
         } finally {
           if (projectJob && !jobFinished) {
             await mutateWorkbench(userId, String(conversationId), "job-finish", { id: projectJob.id, status: "stopped", usage: roundUsage }).catch(() => {});
@@ -1802,6 +1819,7 @@ export function registerChatRoutes(app: Express): void {
           const { selected, prompt } = buildProjectEditContext(files, req.body.selectedFilePath, userContent);
           if (containsPrivateCredential(prompt)) throw new Error("Private credential in selected file");
           res.write(`data: ${JSON.stringify({ type: "status", message: "Editing selected project file..." })}\n\n`);
+          await dispatchJobCall(requestBudget, 0, maxTokens);
           const result = await aiChatCompleteStream({
             messages: [
               { role: "system", content: prompt + productSelfKnowledge({
@@ -1814,6 +1832,7 @@ export function registerChatRoutes(app: Express): void {
             // Buffer untrusted model output: no code or secrets reach the client before validation.
             onChunk: () => {},
           });
+          await recordJobUsage(requestBudget, result.completionTokens, true);
           const edit = parseProjectEditResponse(result.fullText, selected);
           if (containsPrivateCredential(edit.file.content)) throw new Error("Private credential in generated file");
           const safeSummary = safeAssistantText(edit.summary);
@@ -1833,8 +1852,10 @@ export function registerChatRoutes(app: Express): void {
             userId, conversationId, model: result.model, tokensUsed: result.completionTokens, kind: "chat",
             costCents: paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0,
           });
-          if (paygUserId === userId) await storage.deductPaygBalance(userId, PAYG_COST_PER_GENERATION_CENTS);
-        } catch {
+        } catch (cause: any) {
+          if (requestBudget && [400, 401, 403, 404, 429].includes(Number(cause?.status))) {
+            await recordJobRejection(requestBudget).catch(() => {});
+          }
           // Never echo model text, source, credentials, or provider/storage errors.
           const error = saved
             ? "File saved, but chat history or usage recording failed. Reload files before retrying."
@@ -2129,6 +2150,7 @@ You are now in EDITOR MODE. Your workflow:
       };
 
       const buildTurn = currentBuildTurn(userContent, Boolean(customerProjectName || lastGeneratedCode));
+      await dispatchJobCall(requestBudget, 0, maxTokens);
       const streamResult = await completeWithAutomaticSearch({
         messages: [systemMessage, ...chatMessages],
         tier: userPlan,
@@ -2146,6 +2168,7 @@ You are now in EDITOR MODE. Your workflow:
           }
         },
       });
+      await recordJobUsage(requestBudget, streamResult.completionTokens, true);
       if (requestAbort.signal.aborted) return;
 
       let fullResponse = safeAssistantText(streamResult.fullText);
@@ -2231,10 +2254,7 @@ You are now in EDITOR MODE. Your workflow:
             kind: "chat",
             costCents: paygUserId === authUser.claims.sub ? PAYG_COST_PER_GENERATION_CENTS : 0,
           });
-          // Deduct PAYG credits after successful generation
-          if (paygUserId && authUser.claims.sub === paygUserId) {
-            await storage.deductPaygBalance(paygUserId, PAYG_COST_PER_GENERATION_CENTS);
-          }
+          // PAYG was atomically reserved before dispatch; never debit it twice.
         }
       } catch (usageErr) {
         console.error("Error logging usage:", usageErr);
@@ -2252,6 +2272,7 @@ You are now in EDITOR MODE. Your workflow:
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (error) {
+      if (requestBudget && [400,401,403,404,429].includes(Number((error as any)?.status))) await recordJobRejection(requestBudget).catch(() => {});
       console.error("Error sending message:", error);
       if (res.destroyed || res.writableEnded) return;
       if (res.headersSent) {
@@ -2260,6 +2281,8 @@ You are now in EDITOR MODE. Your workflow:
       } else {
         res.status(500).json({ error: publicChatError(error) });
       }
+    } finally {
+      if (requestBudget) await finishJob(requestBudget).catch(error => console.error("[chat] reservation needs reconciliation", error instanceof Error ? error.name : "unknown"));
     }
   });
 }

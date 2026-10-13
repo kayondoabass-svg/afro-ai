@@ -81,6 +81,7 @@ export function ProjectWorkbench({ conversationId, onRepair }: { conversationId:
   const invalidate = async (proposal = false) => {
     await Promise.all([
       qc.invalidateQueries({ queryKey: workbenchKey(conversationId) }),
+      qc.invalidateQueries({ queryKey: ["project-workbench-evidence", conversationId] }),
       qc.invalidateQueries({ queryKey: filesKey(conversationId) }),
       ...(proposal ? [qc.invalidateQueries({ queryKey: ["/api/conversations", conversationId, "project-proposal"] })] : []),
     ]);
