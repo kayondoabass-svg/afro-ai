@@ -1,6 +1,7 @@
 import { KEYO_PUBLIC_LINKS, KEYO_RELEASE_BUNDLE, KEYO_RELEASE_NOTES } from "../scripts/keyo-release-assets";
 import { KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
 import { escapeKeyoText, keyoLanguages, keyoText, localizeKeyoMarkup, validKeyoLanguage } from "./keyo-studio-i18n";
+import { keyoTrackedHref } from "../shared/keyo-downloads";
 
 export function keyoStudioPage(requestedLanguage = "en"): string {
   const language = validKeyoLanguage(requestedLanguage) ?? "en";
@@ -467,5 +468,17 @@ cd KEYO-Studio-${KEYO_VERSION}-linux-x64
   </script>
 </body>
 </html>`;
-  return localizeKeyoMarkup(html, language);
+  const linked = html.replace(/\bhref="([^"]+)"/g, (attribute, href: string) => {
+    for (const destination of ["github", "hugging-face"] as const) {
+      const root=destination==="github"?KEYO_PUBLIC_LINKS.github:KEYO_PUBLIC_LINKS.huggingFace;
+      if (href===root) return `href="${keyoTrackedHref(destination)}" data-public-destination="${href}"`;
+      const prefix=destination==="github"?`${root}/releases/download/v${KEYO_VERSION}/`:`${root}/resolve/main/`;
+      if(href.startsWith(prefix)){
+        const asset=href.slice(prefix.length).split("?")[0];
+        if(/^[A-Za-z0-9_.-]+$/.test(asset)) return `href="${keyoTrackedHref(destination,asset)}" data-public-destination="${href}"`;
+      }
+    }
+    return attribute;
+  });
+  return localizeKeyoMarkup(linked, language);
 }

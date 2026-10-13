@@ -25,3 +25,16 @@ establish that the requested platform integration was finished.
 
 **How to apply:** Check each requested entry point and permission path
 separately. Distinguish code pushed to GitHub from the VPS actually running it.
+
+The user also requires visible download numbers separated by Afro AI, GitHub
+and Hugging Face. Never substitute studio presence, page views or link clicks
+for completed downloads, and do not invent historical counts.
+
+**Why:** The founder could see authorized/active viewers but no download
+numbers. GitHub exposes release-asset counters, while the public Hugging Face
+Space response did not expose a download count.
+
+**How to apply:** Keep source-specific definitions and timestamps visible.
+Distinguish missing upstream statistics from a genuine zero; label tracked
+outbound clicks separately. Account for older releases, not just the newest
+release. Do not describe download counts as unique customers or installations.

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { KeyoDownloadAnalytics } from "@shared/keyo-downloads";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   ArrowDownToLine,
   ArrowUpRight,
   Check,
+  ChevronDown,
   CircleAlert,
   Code2,
   ExternalLink,
@@ -66,6 +68,7 @@ type AdminData = {
 };
 
 const ADMIN_KEY = ["/api/keyo-studio/admin"];
+const DOWNLOADS_KEY = ["/api/keyo-studio/admin/downloads"];
 
 function safeDownloadHref(value?: string): string | null {
   if (!value) return null;
@@ -96,6 +99,131 @@ function dateLabel(date: string): string {
     : parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function countLabel(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value.toLocaleString()
+    : "Unavailable";
+}
+
+function timestampLabel(value: string | null): string {
+  if (!value) return "Not reported";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? "Not reported"
+    : parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function DownloadsSection({
+  query,
+}: {
+  query: ReturnType<typeof useQuery<KeyoDownloadAnalytics>>;
+}) {
+  const analytics = query.data;
+  return (
+    <section className="mb-6" aria-labelledby="download-evidence-title">
+      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Operational evidence</p>
+          <h2 id="download-evidence-title" className="mt-1 text-lg font-semibold tracking-tight">Download activity</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-5 text-muted-foreground">Independent source measurements, not a combined audience or installation total.</p>
+        </div>
+        {analytics && <p className="text-xs text-muted-foreground">External source checks are cached for up to 5 minutes.</p>}
+      </div>
+      {query.isPending ? (
+        <div className="grid gap-4 md:grid-cols-3" aria-label="Loading download analytics">
+          {[0, 1, 2].map(item => <div key={item} className="h-52 animate-pulse rounded-xl border border-border/70 bg-muted/35" />)}
+        </div>
+      ) : query.isError ? (
+        <Card className="border-amber-600/25 bg-amber-500/[0.035]">
+          <CardContent className="flex flex-col items-start justify-between gap-4 p-5 sm:flex-row sm:items-center">
+            <div className="flex gap-3">
+              <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div><p className="text-sm font-semibold">Download evidence could not be loaded</p><p className="mt-1 text-sm text-muted-foreground">The rest of the private dashboard remains available. Retry the analytics endpoint.</p></div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => query.refetch()} disabled={query.isFetching}><RefreshCw className={`mr-2 h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />Retry downloads</Button>
+          </CardContent>
+        </Card>
+      ) : analytics ? (
+        <div className="grid items-start gap-4 md:grid-cols-3">
+          <Card className="h-full border-border/70">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base"><ArrowDownToLine className="h-4 w-4 text-primary" />Afro AI transfers</CardTitle>
+              <CardDescription>Successful full-file transfers recorded by this service.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {analytics.platform.status === "available" ? (
+                <>
+                  <p className="font-mono text-3xl font-semibold tabular-nums">{countLabel(analytics.platform.total)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Since {analytics.platform.trackingSince ? dateLabel(analytics.platform.trackingSince) : "tracking start not reported"}</p>
+                  <p className="mt-3 rounded-lg bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">Historical transfers before tracking began are unknown and are not included.</p>
+                  {analytics.platform.byArtifact.length > 0 && <div className="mt-4 space-y-2 border-t border-border/60 pt-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">By artifact</p>
+                    {analytics.platform.byArtifact.map(item => <div key={item.name} className="flex items-center justify-between gap-3 text-sm"><span className="min-w-0 truncate">{item.name}</span><span className="font-mono tabular-nums">{countLabel(item.count)}</span></div>)}
+                  </div>}
+                </>
+              ) : <SourceUnavailable note={analytics.platform.note} />}
+              {!analytics.platform.recordingHealthy && <div role="alert" className="mt-4 flex gap-2 rounded-lg border border-amber-600/25 bg-amber-500/[0.06] p-3 text-xs leading-5 text-amber-900 dark:text-amber-200"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>Transfer recording health needs attention. Counts may be incomplete. {analytics.platform.note}</span></div>}
+            </CardContent>
+          </Card>
+
+          <Card className="h-full border-border/70">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base"><Github className="h-4 w-4 text-primary" />GitHub release assets</CardTitle>
+              <CardDescription>Real lifetime download counts reported for release archive assets.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {analytics.github.status === "available" ? <>
+                <p className="font-mono text-3xl font-semibold tabular-nums">{countLabel(analytics.github.total)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Asset downloads across reported releases</p>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  {[["Desktop", analytics.github.desktop], ["Source", analytics.github.source], ["Developer bundles", analytics.github.bundles]].map(([label, value]) => <div key={String(label)} className="rounded-lg bg-muted/45 p-2.5"><p className="font-mono text-lg font-semibold tabular-nums">{countLabel(value as number | null)}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{label}</p></div>)}
+                </div>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">These are asset downloads—not unique people, users, or installations.</p>
+                <p className="mt-2 text-[11px] text-muted-foreground">Checked {timestampLabel(analytics.github.checkedAt)}</p>
+                {analytics.github.byRelease.length > 0 && <div className="mt-3 border-t border-border/60 pt-2">
+                  {analytics.github.byRelease.map(releaseRow => <details key={releaseRow.version} className="group border-b border-border/50 last:border-0">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2.5 text-sm [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-2"><ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180" />{releaseRow.version}</span><span className="font-mono tabular-nums">{countLabel(releaseRow.total)}</span></summary>
+                    <div className="space-y-2 pb-3 pl-6">{releaseRow.assets.map(asset => <div key={`${releaseRow.version}-${asset.name}`} className="flex items-start justify-between gap-3 text-xs"><span className="min-w-0 break-all text-muted-foreground">{asset.name}<span className="ml-1.5 uppercase tracking-wide text-[10px]">{asset.category}</span></span><span className="shrink-0 font-mono tabular-nums">{countLabel(asset.count)}</span></div>)}</div>
+                  </details>)}
+                </div>}
+              </> : <SourceUnavailable note={analytics.github.note} />}
+              <div className="mt-4 border-t border-border/60 pt-3">
+                <p className="text-xs font-medium">Tracked archive-link clicks</p>
+                <p className="mt-1 font-mono text-xl font-semibold tabular-nums">{countLabel(analytics.outboundClicks.github)}</p>
+                <p className="text-xs leading-5 text-muted-foreground">Separate from GitHub’s downloaded-asset counts.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="h-full border-border/70">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base"><Fingerprint className="h-4 w-4 text-primary" />Hugging Face</CardTitle>
+              <CardDescription>Public Space download reporting and tracked referral clicks.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {analytics.huggingFace.status === "available" ? <>
+                <p className="font-mono text-2xl font-semibold tabular-nums">{countLabel(analytics.huggingFace.total)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Public Space download count</p>
+                <p className="mt-2 text-[11px] text-muted-foreground">Checked {timestampLabel(analytics.huggingFace.checkedAt)}</p>
+              </> : <div className="rounded-lg bg-muted/45 p-3"><p className="text-sm font-semibold">{analytics.huggingFace.status === "not_published" ? "Not published / Unavailable" : "Unavailable"}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{analytics.huggingFace.note || "No public Space download count is available."}</p></div>}
+              <div className="mt-4 border-t border-border/60 pt-3">
+                <p className="text-xs font-medium">Tracked archive-link clicks</p>
+                <p className="mt-1 font-mono text-xl font-semibold tabular-nums">{countLabel(analytics.outboundClicks.huggingFace)}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">Clicks tracked by Afro AI—not completed downloads and not direct Hugging Face traffic.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+      {analytics?.note && <p className="mt-3 text-xs leading-5 text-muted-foreground">{analytics.note}</p>}
+    </section>
+  );
+}
+
+function SourceUnavailable({ note }: { note: string }) {
+  return <div className="rounded-lg bg-muted/45 p-3"><p className="text-sm font-semibold">Unavailable</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{note || "This source did not provide a count."}</p></div>;
+}
+
 export default function KeyoStudioAdmin() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -110,9 +238,20 @@ export default function KeyoStudioAdmin() {
     staleTime: 0,
     retry: false,
   });
+  const downloadsQuery = useQuery<KeyoDownloadAnalytics>({
+    queryKey: DOWNLOADS_KEY,
+    queryFn: async () => (await apiRequest("GET", "/api/keyo-studio/admin/downloads")).json(),
+    enabled: Boolean(adminQuery.data) && !adminQuery.isError,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+  });
   dataRef.current = adminQuery.data;
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ADMIN_KEY });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ADMIN_KEY });
+    void queryClient.invalidateQueries({ queryKey: DOWNLOADS_KEY });
+  };
   const heartbeatMutation = useMutation({
     mutationFn: async () => apiRequest("POST", "/api/keyo-studio/admin/presence", {}),
     onSuccess: refresh,
@@ -239,7 +378,7 @@ export default function KeyoStudioAdmin() {
           </div>
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <Badge variant="outline" className="gap-1.5 border-primary/25 bg-primary/5 px-3 py-1.5 text-primary"><ShieldCheck className="h-3.5 w-3.5" />{data.isFounder ? "Founder access" : "Granted access"}</Badge>
-            <Button aria-label="Refresh studio data" variant="ghost" size="icon" onClick={() => adminQuery.refetch()} disabled={adminQuery.isFetching}><RefreshCw className={`h-4 w-4 ${adminQuery.isFetching ? "animate-spin" : ""}`} /></Button>
+            <Button aria-label="Refresh studio data" variant="ghost" size="icon" onClick={refresh} disabled={adminQuery.isFetching || downloadsQuery.isFetching}><RefreshCw className={`h-4 w-4 ${adminQuery.isFetching || downloadsQuery.isFetching ? "animate-spin" : ""}`} /></Button>
           </div>
         </header>
 
@@ -278,6 +417,8 @@ export default function KeyoStudioAdmin() {
             </CardContent>
           </Card>
         </section>
+
+        <DownloadsSection query={downloadsQuery} />
 
         <section className="grid items-start gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <Card className="border-border/70">

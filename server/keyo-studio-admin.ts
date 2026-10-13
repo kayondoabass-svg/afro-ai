@@ -2,6 +2,8 @@ import type { Express, RequestHandler } from "express";
 import { z } from "zod";
 import type { KeyoAdminStore } from "./keyo-studio-admin-store";
 import { KEYO_PUBLIC_LINKS } from "../scripts/keyo-release-assets";
+import { getKeyoDownloadAnalytics } from "./keyo-download-analytics";
+import type { KeyoDownloadAnalytics } from "../shared/keyo-downloads";
 
 const emailSchema = z.string().trim().toLowerCase().max(254).email();
 const BASE = "/api/keyo-studio/admin";
@@ -12,6 +14,7 @@ export function registerKeyoStudioAdmin(app: Express, options: {
   store: KeyoAdminStore;
   getRelease: () => Promise<unknown>;
   allowedOrigins?: readonly string[];
+  getDownloads?: () => Promise<KeyoDownloadAnalytics>;
 }) {
   const { store, authenticate, getRelease } = options;
   const founderEmail = options.founderEmail.trim().toLowerCase();
@@ -40,6 +43,9 @@ export function registerKeyoStudioAdmin(app: Express, options: {
   const handle = (fn: (req: any, res: any) => Promise<void>): RequestHandler =>
     (req, res, next) => { void fn(req, res).catch(next); };
 
+  app.get(`${BASE}/downloads`, authenticate, guard(), handle(async (_req,res)=>{
+    res.json(await (options.getDownloads || getKeyoDownloadAnalytics)());
+  }));
   app.get(BASE, authenticate, guard(), handle(async (req, res) => {
     const isFounder = identity(req).email === founderEmail;
     const [invites, activeViewersCount, release] = await Promise.all([

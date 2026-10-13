@@ -7,6 +7,7 @@ import { keyoStudioPage } from "./keyo-studio-page";
 import { preferredKeyoLanguage, validKeyoLanguage } from "./keyo-studio-i18n";
 import { KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME } from "../scripts/keyo-upload-zip";
 import { KEYO_RELEASE_ASSETS, KEYO_RELEASE_BUNDLE } from "../scripts/keyo-release-assets";
+import { recordKeyoTransfer, registerKeyoOutbound } from "./keyo-download-analytics";
 
 let pending: Promise<Awaited<ReturnType<typeof buildKeyoRelease>>> | undefined;
 export async function release() {
@@ -34,6 +35,7 @@ export async function release() {
 }
 
 export function registerKeyoStudio(app: Express) {
+  registerKeyoOutbound(app);
   app.get("/keyo-studio/workspace", (req,res,next) => {
     if (req.path.endsWith("/")) return next();
     res.redirect(302,"/keyo-studio/workspace/");
@@ -56,7 +58,7 @@ export function registerKeyoStudio(app: Express) {
     catch { res.status(503).json({ message: "KEYO release is unavailable. Please try again later." }); }
   });
   for (const filename of KEYO_RELEASE_ASSETS) {
-    app.get(`/downloads/keyo-studio/${filename}`, async (_req, res) => {
+    app.get(`/downloads/keyo-studio/${filename}`, async (req, res) => {
       try {
         const manifest = await release();
         const asset = manifest.releaseAssets.find((entry: {filename: string}) => entry.filename === filename);
@@ -65,40 +67,44 @@ export function registerKeyoStudio(app: Express) {
         res.set("X-Content-SHA256", asset.sha256);
         res.set("X-Content-Type-Options", "nosniff");
         res.download(path.resolve("dist/keyo-studio", filename), filename, error => {
+          recordKeyoTransfer(req,res,filename,error);
           if (error && !res.headersSent) res.status(503).json({ message: "KEYO release asset is unavailable." });
         });
       } catch { res.status(503).json({ message: "KEYO release asset is unavailable." }); }
     });
   }
-  app.get(`/downloads/keyo-studio/${KEYO_UPLOAD_FILENAME}`, async (_req, res) => {
+  app.get(`/downloads/keyo-studio/${KEYO_UPLOAD_FILENAME}`, async (req, res) => {
     try {
       const manifest = await release();
       res.set("Cache-Control", "no-store");
       res.set("X-Content-SHA256", manifest.manualUpload.sha256);
       res.set("X-Content-Type-Options", "nosniff");
       res.download(path.resolve("dist/keyo-studio", KEYO_UPLOAD_FILENAME), KEYO_UPLOAD_FILENAME, error => {
+        recordKeyoTransfer(req,res,KEYO_UPLOAD_FILENAME,error);
         if (error && !res.headersSent) res.status(503).json({ message: "KEYO ZIP is unavailable." });
       });
     } catch { res.status(503).json({ message: "KEYO ZIP is unavailable." }); }
   });
-  app.get(`/downloads/keyo-studio/${KEYO_SPACE_UPLOAD_FILENAME}`, async (_req, res) => {
+  app.get(`/downloads/keyo-studio/${KEYO_SPACE_UPLOAD_FILENAME}`, async (req, res) => {
     try {
       const manifest = await release();
       res.set("Cache-Control", "no-store");
       res.set("X-Content-SHA256", manifest.huggingFaceUpload.sha256);
       res.set("X-Content-Type-Options", "nosniff");
       res.download(path.resolve("dist/keyo-studio", KEYO_SPACE_UPLOAD_FILENAME), KEYO_SPACE_UPLOAD_FILENAME, error => {
+        recordKeyoTransfer(req,res,KEYO_SPACE_UPLOAD_FILENAME,error);
         if (error && !res.headersSent) res.status(503).json({ message: "KEYO Space ZIP is unavailable." });
       });
     } catch { res.status(503).json({ message: "KEYO Space ZIP is unavailable." }); }
   });
-  app.get(`/downloads/keyo-studio/${KEYO_FILENAME}`, async (_req, res) => {
+  app.get(`/downloads/keyo-studio/${KEYO_FILENAME}`, async (req, res) => {
     try {
       const manifest = await release();
       res.set("Cache-Control", "no-store");
       res.set("X-Content-SHA256", manifest.sha256);
       res.set("X-Content-Type-Options", "nosniff");
       res.download(path.resolve("dist/keyo-studio", KEYO_FILENAME), KEYO_FILENAME, error => {
+        recordKeyoTransfer(req,res,KEYO_FILENAME,error);
         if (error && !res.headersSent) res.status(503).json({ message: "KEYO download is unavailable." });
       });
     } catch { res.status(503).json({ message: "KEYO download is unavailable." }); }
