@@ -25,6 +25,7 @@
 - [Generated website boundary](generated-website-boundary.md) — assistant narration is not website HTML; enforce extraction across preview/publish/serve and repair legacy contamination on read.
 - [Project agent scope](project-agent-scope.md) — cost-sensitive, existing-services-only coding assistance with explicit review; execution and pilot-model activation need separate approval.
 - [Project validation boundary](project-validation-boundary.md) — customer-controlled checks, honest evidence labels and explicit legacy workspace imports.
+- [Project retention policy](project-retention-policy.md) — founder requests hidden deletion and long retention; confirm legal scope before implementing an archive.
 - [Provider contract checks](provider-contract-checks.md) — verify actual provider and tool results; explicitly request a final answer after a tool-only instruction.
 - [Full-stack starters](fullstack-starter-scope.md) — automatic files for full-stack projects only; paid access must be server-enforced before expanding runtime capabilities.
 - [Customer branding](customer-branding.md) — never use Afro AI/KEYO as client brands; obtain the preferred customer name before new builds.
