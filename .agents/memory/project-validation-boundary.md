@@ -41,3 +41,15 @@ The user repeated that the screenshots themselves must be visible.
 mode mounts it, preserve existing projects and controls, and distinguish proposed
 edits from saved changes and local reports from server-executed tests. Do not
 assume a working backend automatically means the customer can see its progress.
+
+Plans must explicitly compare the supplied screenshot-to-model inspection,
+metered execution budget and tenant-isolation requirements with the existing
+product, rather than treating a screenshot gallery as the whole request.
+
+**Why:** The user repeated that these parts of their supplied research had been
+omitted from the plan.
+
+**How to apply:** Separate customer-visible images from actual model inspection,
+usage logging from enforceable job budgets, and owner-scoped storage from runtime
+isolation. Preserve bounded, reviewed changes and the execution boundary above;
+research snippets are proposals, not proof of a complete or secure implementation.
