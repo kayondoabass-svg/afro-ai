@@ -26,3 +26,15 @@ conversations; a convenient shared workspace must not destroy those snapshots.
 
 **How to apply:** Keep originals downloadable, enforce owner scope, and protect
 any conversation anchoring source or recovery data against accidental deletion.
+
+Customer-visible agent progress is required product scope, not optional polish.
+Plans and audits must cover both the backend events and the customer's visible
+timeline, including expandable details and honest review/validation states.
+
+**Why:** The user reports that previously visible progress UI disappeared and
+explicitly requires plans to include how customers visualize the work.
+
+**How to apply:** Inventory existing UI before replacing it. Check which chat
+mode mounts it, preserve existing projects and controls, and distinguish proposed
+edits from saved changes and local reports from server-executed tests. Do not
+assume a working backend automatically means the customer can see its progress.

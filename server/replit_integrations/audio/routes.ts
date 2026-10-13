@@ -44,7 +44,7 @@ export function registerAudioRoutes(app: Express): void {
         if (!authorized) return res.status(403).json({ message: "Afro test is restricted to administrators." });
         if (!hasAfroAiProvider()) return res.status(503).json({ message: "Afro test is unavailable." });
       }
-      const selfKnowledge = productSelfKnowledge({ afroAuthorized: authorized });
+      const selfKnowledge = productSelfKnowledge({ afroAuthorized: authorized, channel: "voice" });
       // Normalize all inputs to a bounded two-minute mono stream.
       const normalized = await convertToWav(raw, controller.signal, 120);
       controller.signal.throwIfAborted();
@@ -214,7 +214,7 @@ export function registerAudioRoutes(app: Express): void {
         model: "gpt-audio",
         modalities: ["text", "audio"],
         audio: { voice, format: "pcm16" },
-        messages: [{ role: "system" as const, content: productSelfKnowledge({ afroAuthorized: false }) }, ...chatHistory],
+        messages: [{ role: "system" as const, content: productSelfKnowledge({ afroAuthorized: false, channel: "voice" }) }, ...chatHistory],
         stream: true,
         max_completion_tokens: 1200,
       }, { signal: controller.signal });

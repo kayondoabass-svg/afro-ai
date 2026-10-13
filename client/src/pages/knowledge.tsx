@@ -69,7 +69,7 @@ function safeWebUrl(value: string): string | null {
 }
 
 export default function KnowledgePage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { toast } = useToast();
 
   const [addOpen, setAddOpen] = useState(false);
@@ -172,6 +172,7 @@ export default function KnowledgePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: question.trim(),
+          language,
           provider: provider === "afro-test" && capabilities?.afroAvailable ? "afro-test" : "default",
           enabledTools,
         }),

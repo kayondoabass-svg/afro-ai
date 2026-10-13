@@ -4204,7 +4204,10 @@ Never invent features or pricing not listed above.`;
           ? "You are Afro AI's knowledge assistant. For questions about the user's own documents, ALWAYS call the search_knowledge tool before answering. If their knowledge base has no answer, say so plainly. For questions about Afro AI itself, use the trusted product self-knowledge below; a missing user document is not evidence that product information is missing. Be concise and friendly."
           : "You are Afro AI's assistant. Use only enabled tools when useful. Cite actual search results, never invent facts or sources. Be concise and friendly.",
       };
-      system.content += productSelfKnowledge({ afroAuthorized: body.provider === "afro-test" });
+      system.content += productSelfKnowledge({
+        afroAuthorized: body.provider === "afro-test", channel: "knowledge",
+        languageCode: typeof body.language === "string" ? body.language : undefined, plan,
+      });
       const result = await runChatWithTools({
         messages: [system, ...history.map((m: any) => ({ role: m.role, content: m.content })), { role: "user", content: question }],
         tier,

@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   inference: vi.fn(),
   saveFiles: vi.fn(),
+  listFiles: vi.fn(),
+  getUser: vi.fn(),
 }));
 vi.mock("openai", () => ({ default: class {} }));
 vi.mock("./storage", () => ({ chatStorage: {
@@ -20,7 +22,7 @@ vi.mock("./storage", () => ({ chatStorage: {
 } }));
 vi.mock("../../db", () => ({ db: {} }));
 vi.mock("../../storage", () => ({ storage: {
-  getUser: vi.fn(async () => null),
+  getUser: mocks.getUser,
   getAppVersions: vi.fn(async () => []),
   saveAppVersion: vi.fn(async () => ({ id: 1, label: "Version 1" })),
 } }));
@@ -34,8 +36,7 @@ vi.mock("../../web-search", () => ({ searchWeb: mocks.search, webSearchConfigure
 vi.mock("../../search-policy", () => ({ searchAccountWeb: (_id: string, q: string, s: AbortSignal) => mocks.search(q, s) }));
 vi.mock("../../url-scrape", () => ({ extractUrls: () => [], buildLiveWebContext: vi.fn() }));
 vi.mock("../../attachment-parse", () => ({ isParseableAttachment: () => false, buildAttachmentContext: vi.fn() }));
-vi.mock("../../project-files", () => ({ listProjectFiles: vi.fn(), saveProjectFiles: mocks.saveFiles }));
-vi.mock("../../product-self-knowledge", () => ({ productSelfKnowledge: () => "Current capabilities" }));
+vi.mock("../../project-files", () => ({ listProjectFiles: mocks.listFiles, saveProjectFiles: mocks.saveFiles }));
 vi.mock("../../knowledge", () => ({ retrieveKnowledge: async () => [], formatKnowledgeContext: () => "" }));
 import { registerChatRoutes } from "./routes";
 
@@ -62,6 +63,8 @@ const req = (content = "Search Kampala AI conference", webSearch = true) => ({
 });
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
+  mocks.getUser.mockReset().mockResolvedValue(null);
+  mocks.listFiles.mockReset().mockResolvedValue([]);
   mocks.saveFiles.mockReset().mockResolvedValue([]);
   mocks.rows = [];
   mocks.getConversation.mockResolvedValue({ id: 12, userId: "owner" });
@@ -79,13 +82,12 @@ describe("main chat search route wiring", () => {
     mocks.inference.mockResolvedValue({ text: "Starter includes one published app for 30 days. Upgrade for continued hosting.", model: "test" });
     await handler()(req("Do I need to pay for hosting?", false), response());
     const system = mocks.inference.mock.calls[0][0].messages[0].content;
-    expect(system).toContain("ONE published app with a 30-day hosting trial");
-    expect(system).toContain("Continued hosting after the trial requires an upgrade");
-    expect(system).toContain("state the one-app and 30-day limits in the same answer");
-    expect(system).toContain("do not invent prices or assume the customer's plan");
-    expect(system).toContain("Occasionally offer a brief, relevant upgrade recommendation");
-    expect(system).toContain("last five assistant replies");
-    expect(system).toContain("payment does not fix technical bugs");
+    expect(system).toContain("Starter allows one published app and a 30-day hosting trial");
+    expect(system).toContain("continued hosting requires an upgrade");
+    expect(system).toContain("State these limits whenever discussing free hosting");
+    expect(system).toContain("use current Plans/Billing");
+    expect(system).toContain("pitch an upgrade during failures/recovery");
+    expect(system).toContain("payment fixes a technical/provider problem");
   });
   it("does not let a stale Plan toggle block generating and saving a website", async () => {
     mocks.inference.mockResolvedValue({ text: "<html><body><h1>A complete generated website</h1></body></html>", model: "test" });

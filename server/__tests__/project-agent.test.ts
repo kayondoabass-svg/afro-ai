@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   createMessage: vi.fn(),
   connect: vi.fn(),
 }));
-vi.mock("../ai-chat-provider", () => ({ aiChatComplete: mocks.complete }));
+vi.mock("../ai-chat-provider", () => ({ aiChatComplete: mocks.complete, hasAfroAiProvider: () => false }));
 vi.mock("../d1", () => ({ d1Query: mocks.query, isD1Configured: () => true }));
 vi.mock("../replit_integrations/chat/storage", () => ({
   chatStorage: { getConversation: mocks.conversation, getMessagesByConversation: mocks.messages, createMessage: mocks.createMessage },
