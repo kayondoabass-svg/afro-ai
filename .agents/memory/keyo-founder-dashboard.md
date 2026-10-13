@@ -38,3 +38,13 @@ Space response did not expose a download count.
 Distinguish missing upstream statistics from a genuine zero; label tracked
 outbound clicks separately. Account for older releases, not just the newest
 release. Do not describe download counts as unique customers or installations.
+
+Download accounting requires a full public production transfer and a persisted
+counter increase as verification, not only mocked response flags or HEAD checks.
+
+**Why:** Healthy deployment and passing mock tests still missed actual transfers;
+the public download succeeded while its counter remained unchanged.
+
+**How to apply:** Verify the real serving path through the proxy and compare
+stored totals before/after a small complete archive transfer. Label verification
+traffic honestly; it is not a customer installation.

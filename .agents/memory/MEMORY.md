@@ -45,3 +45,4 @@
 - [KEYO Studio scope](open-source-developer-product.md) — downloadable open-source runner with its own engine; reference research is not an installation request or proof of global rank.
 - [Native loader environment](native-loader-environment.md) — sanitized desktop checks must preserve Replit’s public loader/audit configuration, not provider credentials.
 - [KEYO founder dashboard](keyo-founder-dashboard.md) — private Command Center runner oversight, founder-managed email access, and separate authorized/active viewer counts.
+- [Customer agent labels](customer-agent-labels.md) — use Agent 1/2/3 in customer-facing chat notices; retain real provider identities privately.
