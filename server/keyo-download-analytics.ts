@@ -16,6 +16,13 @@ export function recordKeyoTransfer(req: Request, res: Response, name: string, er
     console.warn("[KEYO metrics] Transfer accounting failed; download itself is unchanged.");
   });
 }
+export function observeKeyoTransfer(req: Request, res: Response, name: string, store = keyoDownloadStore) {
+  // Observe the HTTP response, not sendFile's completion callback: middleware
+  // can invoke that callback before the underlying response has finished.
+  const finished=()=>recordKeyoTransfer(req,res,name,undefined,store);
+  res.once("finish",finished);
+  res.once("close",()=>res.removeListener("finish",finished));
+}
 export function registerKeyoOutbound(app: Express, store = keyoDownloadStore) {
   const allowed = new Set([...KEYO_RELEASE_ASSETS, KEYO_FILENAME,
     ...["win32-x64.zip","linux-x64.tar.gz","darwin-arm64.zip","darwin-x64.zip"].map(s=>`KEYO-Studio-${KEYO_VERSION}-${s}`)]);

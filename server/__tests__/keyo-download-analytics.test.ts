@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import type { Server } from "node:http";
 vi.mock("../db",()=>({pool:{query:vi.fn()}}));
-import { createKeyoDownloadAnalytics, recordKeyoTransfer, registerKeyoOutbound } from "../keyo-download-analytics";
+import { createKeyoDownloadAnalytics, observeKeyoTransfer, recordKeyoTransfer, registerKeyoOutbound } from "../keyo-download-analytics";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { registerKeyoStudioAdmin } from "../keyo-studio-admin";
 import { KEYO_VERSION } from "../../scripts/keyo-release";
 import { keyoStudioPage } from "../keyo-studio-page";
@@ -60,6 +63,21 @@ describe("KEYO source-specific download statistics",()=>{
     recordKeyoTransfer(request(),response,"SHA256SUMS.txt",undefined,s);
     await Promise.resolve();
     expect(s.record).toHaveBeenCalledTimes(1);expect(s.record).toHaveBeenCalledWith("platform","app.zip");
+  });
+  it("records a real Express file transfer on HTTP finish, excluding HEAD and range transfers",async()=>{
+    const directory=await mkdtemp(path.join(tmpdir(),"keyo-metrics-"));
+    try {
+      const file=path.join(directory,"test.tgz");await writeFile(file,"download fixture");
+      const s=store(),app=express();
+      app.get("/file",(req,res)=>{observeKeyoTransfer(req,res,"test.tgz",s);res.download(file);});
+      const url=await listen(app);
+      const full=await fetch(`${url}/file`);expect(await full.text()).toBe("download fixture");
+      expect(s.record).toHaveBeenCalledWith("platform","test.tgz");
+      await fetch(`${url}/file`,{method:"HEAD"});
+      const partial=await fetch(`${url}/file`,{headers:{Range:"bytes=0-2"}});
+      expect(partial.status).toBe(206);await partial.text();
+      expect(s.record).toHaveBeenCalledTimes(1);
+    } finally {await rm(directory,{recursive:true,force:true});}
   });
   it("records outbound archive clicks separately and prevents open redirects and HEAD inflation",async()=>{
     const s=store(),app=express();registerKeyoOutbound(app,s);

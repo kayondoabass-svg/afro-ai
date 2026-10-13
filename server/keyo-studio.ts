@@ -7,7 +7,7 @@ import { keyoStudioPage } from "./keyo-studio-page";
 import { preferredKeyoLanguage, validKeyoLanguage } from "./keyo-studio-i18n";
 import { KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME } from "../scripts/keyo-upload-zip";
 import { KEYO_RELEASE_ASSETS, KEYO_RELEASE_BUNDLE } from "../scripts/keyo-release-assets";
-import { recordKeyoTransfer, registerKeyoOutbound } from "./keyo-download-analytics";
+import { observeKeyoTransfer, registerKeyoOutbound } from "./keyo-download-analytics";
 
 let pending: Promise<Awaited<ReturnType<typeof buildKeyoRelease>>> | undefined;
 export async function release() {
@@ -66,8 +66,8 @@ export function registerKeyoStudio(app: Express) {
         res.set("Cache-Control", "no-store");
         res.set("X-Content-SHA256", asset.sha256);
         res.set("X-Content-Type-Options", "nosniff");
+        observeKeyoTransfer(req,res,filename);
         res.download(path.resolve("dist/keyo-studio", filename), filename, error => {
-          recordKeyoTransfer(req,res,filename,error);
           if (error && !res.headersSent) res.status(503).json({ message: "KEYO release asset is unavailable." });
         });
       } catch { res.status(503).json({ message: "KEYO release asset is unavailable." }); }
@@ -79,8 +79,8 @@ export function registerKeyoStudio(app: Express) {
       res.set("Cache-Control", "no-store");
       res.set("X-Content-SHA256", manifest.manualUpload.sha256);
       res.set("X-Content-Type-Options", "nosniff");
+      observeKeyoTransfer(req,res,KEYO_UPLOAD_FILENAME);
       res.download(path.resolve("dist/keyo-studio", KEYO_UPLOAD_FILENAME), KEYO_UPLOAD_FILENAME, error => {
-        recordKeyoTransfer(req,res,KEYO_UPLOAD_FILENAME,error);
         if (error && !res.headersSent) res.status(503).json({ message: "KEYO ZIP is unavailable." });
       });
     } catch { res.status(503).json({ message: "KEYO ZIP is unavailable." }); }
@@ -91,8 +91,8 @@ export function registerKeyoStudio(app: Express) {
       res.set("Cache-Control", "no-store");
       res.set("X-Content-SHA256", manifest.huggingFaceUpload.sha256);
       res.set("X-Content-Type-Options", "nosniff");
+      observeKeyoTransfer(req,res,KEYO_SPACE_UPLOAD_FILENAME);
       res.download(path.resolve("dist/keyo-studio", KEYO_SPACE_UPLOAD_FILENAME), KEYO_SPACE_UPLOAD_FILENAME, error => {
-        recordKeyoTransfer(req,res,KEYO_SPACE_UPLOAD_FILENAME,error);
         if (error && !res.headersSent) res.status(503).json({ message: "KEYO Space ZIP is unavailable." });
       });
     } catch { res.status(503).json({ message: "KEYO Space ZIP is unavailable." }); }
@@ -103,8 +103,8 @@ export function registerKeyoStudio(app: Express) {
       res.set("Cache-Control", "no-store");
       res.set("X-Content-SHA256", manifest.sha256);
       res.set("X-Content-Type-Options", "nosniff");
+      observeKeyoTransfer(req,res,KEYO_FILENAME);
       res.download(path.resolve("dist/keyo-studio", KEYO_FILENAME), KEYO_FILENAME, error => {
-        recordKeyoTransfer(req,res,KEYO_FILENAME,error);
         if (error && !res.headersSent) res.status(503).json({ message: "KEYO download is unavailable." });
       });
     } catch { res.status(503).json({ message: "KEYO download is unavailable." }); }
