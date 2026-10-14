@@ -19,6 +19,15 @@ export function assertNextCall(b: Budget, inputUpperBound: number, outputLimit: 
     throw new ProjectFileError(402, "Job budget reached. Progress is preserved; review it before starting another request.");
 }
 
+export function fitJobOutput(b: Pick<Budget, "maxTokens" | "usedTokens">, input: number, requested: number) {
+  const available = b.maxTokens - b.usedTokens - input;
+  const granted = Math.min(requested, available);
+  if (!Number.isSafeInteger(input) || input < 0 || !Number.isSafeInteger(requested) || requested <= 0 ||
+      granted < Math.min(requested, 256))
+    throw new ProjectFileError(402, "Job token allowance is too small for this context. Use fewer attachments, a shorter conversation, or a larger allowance if available. No additional AI call was started.");
+  return granted;
+}
+
 // Durable reservations use the existing application database, not in-memory
 // counters. Debit BOTH balance and spending allowance before provider dispatch.
 // Retain ambiguous dispatched charges; never promise a provider refund.
@@ -71,12 +80,15 @@ async function changeJob(job: JobReservation, mutate: (b: Budget) => void) {
   } catch (error) { await conn.query("ROLLBACK"); throw error; }
   finally { conn.release(); }
 }
-export async function dispatchJobCall(job: JobReservation, inputUpperBound: number, outputLimit: number) {
-  return changeJob(job, b => {
+export async function dispatchJobCall(job: JobReservation, inputUpperBound: number, outputLimit: number, fitOutput = false) {
+  let granted = outputLimit;
+  const budget = await changeJob(job, b => {
     if (!["reserved", "dispatched"].includes(b.status)) throw new ProjectFileError(409, "Job is no longer active.");
-    assertNextCall(b, inputUpperBound, outputLimit);
+    if (fitOutput) granted = fitJobOutput(b, inputUpperBound, outputLimit);
+    assertNextCall(b, inputUpperBound, granted);
     b.calls++; b.status = "dispatched";
   });
+  return { ...budget, outputLimit: granted };
 }
 export async function recordJobUsage(job: JobReservation, tokens: number, estimated: boolean) {
   return changeJob(job, b => {

@@ -43,7 +43,7 @@ export async function completeWithAutomaticSearch(opts: {
   tier?: ChatCompleteOptions["tier"];
   buildTurn?: { plan: boolean; requireHtml: boolean };
   onModelFallback?: ChatCompleteOptions["onModelFallback"];
-  beforeCall?: (input: number, output: number) => Promise<void>;
+  beforeCall?: (input: number, output: number) => Promise<void | number>;
   afterCall?: (tokens: number, estimated: boolean) => Promise<void>;
 }) {
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(110_000)]);
@@ -62,9 +62,10 @@ export async function completeWithAutomaticSearch(opts: {
   let completionTokens = 0;
   let executions = 0;
   const complete = async (call: ChatCompleteOptions) => {
-    const input = modelInputBound(call), output = call.maxTokens ?? 4000;
-    await opts.beforeCall?.(input, output);
-    const result = await aiChatComplete({ ...call, noAmbiguousRetry: true });
+    const input = modelInputBound(call), requested = call.maxTokens ?? 4000;
+    const granted = await opts.beforeCall?.(input, requested);
+    const output = typeof granted === "number" ? Math.min(requested, granted) : requested;
+    const result = await aiChatComplete({ ...call, maxTokens: output, noAmbiguousRetry: true });
     const usage = measuredUsage(result, input, output);
     await opts.afterCall?.(usage.tokens, usage.estimated);
     return result;

@@ -21,18 +21,27 @@ vi.mock("./storage", () => ({ chatStorage: {
   }),
   updateConversationTitle: vi.fn(),
 } }));
-vi.mock("../../db", () => ({ db: {} }));
-vi.mock("../../project-workbench/job-budget", () => ({
+vi.mock("../../db", () => ({ db: { select: () => ({ from: () => ({ where: async () => {
+  const user = await mocks.getUser(); return user ? [user] : [];
+} }) }) } }));
+vi.mock("../../project-workbench/job-budget", async importOriginal => {
+  const real = await importOriginal<typeof import("../../project-workbench/job-budget")>();
+  return {
   JOB_BUDGET: { maxTokens: 50000, maxRounds: 5, paygChargeCents: 2 },
   tokenBudget: () => 50000,
   reserveJob: vi.fn(async () => ({ id: "job", owner: "owner", conversation: "12" })),
-  dispatchJobCall: vi.fn(async () => {}),
+  dispatchJobCall: vi.fn(async (_job, input, output, fit) => {
+    const budget = { maxTokens: 50000, usedTokens: 0, calls: 0 } as any;
+    const granted = fit ? real.fitJobOutput(budget, input, output) : output;
+    real.assertNextCall(budget, input, granted);
+    return { ...budget, outputLimit: granted };
+  }),
   recordJobUsage: vi.fn(async () => {}),
   recordJobRejection: vi.fn(async () => {}),
   finishJob: vi.fn(async () => ({ calls: 1, usedTokens: 250 })),
   jobHistory: vi.fn(async () => []),
   deleteConversationWithBudgetGuard: vi.fn(async () => {}),
-}));
+}; });
 vi.mock("../../storage", () => ({ storage: {
   getUser: mocks.getUser,
   createUsageLog: vi.fn(async () => ({})),
@@ -94,6 +103,19 @@ beforeEach(() => {
   vi.stubEnv("JINA_API_KEY", "test-only");
 });
 describe("main chat search route wiring", () => {
+  it.each(["starter", "pro", "business", "payg"])("allows an actual %s builder greeting within the real budget", async plan => {
+    mocks.getUser.mockResolvedValue({ id: "owner", plan, firstName: "Test", paygBalance: 1000, paygLimit: 1000, paygSpent: 0 });
+    mocks.inference.mockResolvedValue({ text: "Hello! I can help with your project.", model: "test", promptTokens: 18000, completionTokens: 10 });
+    const reply = response();
+    await handler()(req("hello. what can you do?", false), reply);
+    expect(mocks.inference).toHaveBeenCalledTimes(1);
+    const options = mocks.inference.mock.calls[0][0];
+    const input = vi.mocked(dispatchJobCall).mock.calls[0][1];
+    expect(input).toBeLessThan(50000);
+    expect(input + options.maxTokens).toBeLessThanOrEqual(50000);
+    expect(reply.write).toHaveBeenCalledWith(expect.stringContaining("Hello! I can help"));
+    expect(finishJob).toHaveBeenCalledWith(expect.anything(), true);
+  });
   it.each(["invalid response", "save failure"])("does not charge a selected-file %s and counts its prompt", async (failure) => {
     const content = "<html><body>Existing page</body></html>";
     mocks.listFiles.mockResolvedValue([{ path: "index.html", name: "index.html", language: "html", content }]);

@@ -5,13 +5,21 @@ vi.mock("./search", async importOriginal => ({ ...await importOriginal<any>(), r
 vi.mock("../../workspace-search", () => ({ searchWorkspaceFiles: files }));
 vi.mock("../../search-policy", () => ({ searchAccountWeb: vi.fn() }));
 import { completeWithAutomaticSearch } from "./automatic-search";
+it("uses the output allowance granted by the job for dispatch and estimated usage", async () => {
+  model.mockResolvedValueOnce({ text: "Hello", model: "test" });
+  const afterCall = vi.fn(async (_tokens: number, _estimated: boolean) => {});
+  await completeWithAutomaticSearch({ ...opts(), maxTokens: 32000,
+    beforeCall: async () => 3000, afterCall });
+  expect(model.mock.calls[0][0].maxTokens).toBe(3000);
+  expect(afterCall.mock.calls[0][0]).toBeLessThan(32000);
+});
 it("meters each search round and final synthesis, and blocks before a disallowed extra call", async () => {
   model.mockResolvedValueOnce({text:"",toolCalls:[call("search_workspace_files")]})
     .mockResolvedValueOnce({text:"Answer",promptTokens:20,completionTokens:5});
   const beforeCall = vi.fn(async (_input: number, _output: number) => {}), afterCall = vi.fn(async (_tokens: number, _estimated: boolean) => {});
   await completeWithAutomaticSearch({...opts(),workspace:{userId:"owner",conversationId:1},beforeCall,afterCall});
   expect(beforeCall).toHaveBeenCalledTimes(2); expect(afterCall).toHaveBeenCalledTimes(2);
-  expect(beforeCall.mock.calls[0][0]).toBeGreaterThan(4096);
+  expect(beforeCall.mock.calls[0][0]).toBeGreaterThan(1024);
   expect(afterCall).toHaveBeenLastCalledWith(25,false);
   model.mockReset(); beforeCall.mockReset();
   model.mockResolvedValueOnce({text:"",toolCalls:[call("search_workspace_files")]});

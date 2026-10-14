@@ -64,6 +64,7 @@
     "hono": "^4.13.12",
     "input-otp": "^1.4.2",
     "jose": "^6.2.2",
+    "js-tiktoken": "^1.0.21",
     "lucide-react": "^0.453.0",
     "multer": "^2.0.2",
     "node-pty": "^1.1.0",
@@ -89,7 +90,6 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "electron": "^44.7.0",
     "@replit/vite-plugin-cartographer": "^0.4.4",
     "@replit/vite-plugin-dev-banner": "^0.1.1",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
@@ -109,6 +109,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.8",
+    "electron": "^44.7.0",
     "esbuild": "^0.25.0",
     "jsdom": "^29.0.2",
     "postcss": "^8.4.47",

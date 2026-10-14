@@ -49,6 +49,15 @@ describe("durable generation reservations", () => {
     await finishJob(job);
     expect(balance).toBe(2); expect(spent).toBe(0);
   });
+  it("atomically fits the requested output to the remaining job allowance", async () => {
+    const job = await reserveJob("owner", "11", 50000, 2);
+    const dispatched = await dispatchJobCall(job, 25000, 32000, true);
+    expect(dispatched.outputLimit).toBe(25000);
+    await recordJobUsage(job, 20000, false);
+    expect((await dispatchJobCall(job, 25000, 32000, true)).outputLimit).toBe(5000);
+    await recordJobUsage(job, 29000, false);
+    await expect(dispatchJobCall(job, 750, 1000, true)).rejects.toThrow("too small");
+  });
   it("settles completed usage and retains ambiguous dispatches", async () => {
     const job = await reserveJob("owner", "11", 50000, 2);
     await dispatchJobCall(job, 4000, 1000); await recordJobUsage(job, 1200, false);

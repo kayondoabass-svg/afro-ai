@@ -1839,9 +1839,10 @@ export function registerChatRoutes(app: Express): void {
             onChunk: () => {},
           } as Parameters<typeof aiChatCompleteStream>[0];
           const inputBound = modelInputBound(options);
-          await dispatchJobCall(requestBudget, inputBound, maxTokens);
+          const dispatch = await dispatchJobCall(requestBudget, inputBound, maxTokens, true);
+          options.maxTokens = dispatch.outputLimit;
           const result = await aiChatCompleteStream(options);
-          const usage = measuredUsage(result, inputBound, maxTokens);
+          const usage = measuredUsage(result, inputBound, options.maxTokens);
           await recordJobUsage(requestBudget, usage.tokens, usage.estimated);
           const edit = parseProjectEditResponse(result.fullText, selected);
           if (containsPrivateCredential(edit.file.content)) throw new Error("Private credential in generated file");
@@ -2170,7 +2171,7 @@ You are now in EDITOR MODE. Your workflow:
         buildTurn: isFounderRequest ? undefined : buildTurn,
         workspace: { userId, conversationId },
         maxTokens,
-        beforeCall: (input, output) => dispatchJobCall(requestBudget!, input, output).then(() => {}),
+        beforeCall: (input, output) => dispatchJobCall(requestBudget!, input, output, true).then(b => b.outputLimit),
         afterCall: (tokens, estimated) => recordJobUsage(requestBudget!, tokens, estimated).then(() => {}),
         signal: requestAbort.signal,
         onActivity: async activity => {
@@ -2288,10 +2289,10 @@ You are now in EDITOR MODE. Your workflow:
       console.error("Error sending message:", error);
       if (res.destroyed || res.writableEnded) return;
       if (res.headersSent) {
-        res.write(`data: ${JSON.stringify({ error: publicChatError(error) })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: error instanceof ProjectFileError ? error.message : publicChatError(error) })}\n\n`);
         res.end();
       } else {
-        res.status(500).json({ error: publicChatError(error) });
+        res.status(error instanceof ProjectFileError ? error.status : 500).json({ error: error instanceof ProjectFileError ? error.message : publicChatError(error) });
       }
     } finally {
       if (requestBudget) {
