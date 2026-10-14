@@ -37,3 +37,16 @@ status 200. This is not evidence that the feature's backend was deployed.
 **How to apply:** Compare the live frontend's feature references and the
 endpoint's expected JSON/authentication response against the verified build
 before recommending browser-cache clearing or rewriting working UI code.
+
+Resolve the current origin through authoritative Cloudflare DNS metadata before
+attempting authorized VPS SSH access; do not use a public proxied DNS address as
+if it were the server.
+
+**Why:** Public resolution of a proxied website returns Cloudflare edge addresses,
+not the VPS. Missing an SSH hostname in the repository does not mean the existing
+deployment credentials are unusable.
+
+**How to apply:** Read the relevant zone's actual origin records without changing
+DNS, confirm the remote checkout and service with read-only checks, then use the
+existing deployment script. Never store the key or a fixed origin address in
+source or memory.

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, Check, ChevronDown, CircleHelp, Download, LoaderCircle, LockKeyhole, RefreshCw, Smartphone, Monitor, WandSparkles } from "lucide-react";
+import { AlertTriangle, Camera, Check, ChevronDown, CircleHelp, Download, LoaderCircle, LockKeyhole, RefreshCw, Smartphone, Monitor, WandSparkles, Image as ImageIcon, Plus, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import type { ReactNode } from "react";
+import type { WorkspacePreviewTarget } from "@/components/project-workspace-preview";
 
 type CaptureRun = {
   id: string;
@@ -27,12 +30,15 @@ type VisualAuditResponse = { capability: Capability; runs: CaptureRun[]; visualV
 type Activity = {
   id: string;
   sequence?: string;
+  jobId?: string;
   createdAt: string;
   tool: string;
   status: string;
   title: string;
   message?: string;
   paths?: string[];
+  evidenceIds?: string[];
+  artifactId?: string;
 };
 type ActivityPage = {
   items: Activity[];
@@ -123,18 +129,21 @@ function orderActivity(items: Activity[]): Activity[] {
 }
 
 function mergeActivity(previous: Activity[], incoming: Activity[]): Activity[] {
-  const byId = new Map(previous.map(item => [item.id, item]));
-  incoming.forEach(item => byId.set(item.id, { ...byId.get(item.id), ...item }));
+  const stableKey = (item: Activity) => item.tool === "design_proposal" && item.artifactId ? `proposal:${item.artifactId}` : item.id;
+  const byId = new Map(previous.map(item => [stableKey(item), item]));
+  incoming.forEach(item => byId.set(stableKey(item), { ...byId.get(stableKey(item)), ...item }));
   return orderActivity(Array.from(byId.values()));
 }
 
 export function ProjectVisualAuditChat({
-  conversationId, onRepair, visualAuditConsent, onVisualAuditConsentChange,
+  conversationId, onRepair, visualAuditConsent, onVisualAuditConsentChange, messageItems = [], onOpenPreview,
 }: {
   conversationId: number;
   onRepair: (request: string) => void;
   visualAuditConsent: boolean;
   onVisualAuditConsentChange: (consent: boolean) => void;
+  messageItems?: { id: string; timestamp: number; node: ReactNode }[];
+  onOpenPreview?: (target: WorkspacePreviewTarget) => void;
 }) {
   const queryClient = useQueryClient();
   const [activity, setActivity] = useState<Activity[]>([]);
@@ -144,7 +153,7 @@ export function ProjectVisualAuditChat({
   const [olderError, setOlderError] = useState("");
   const [activityPage, setActivityPage] = useState<ActivityPage | null>(null);
   const [streamState, setStreamState] = useState("connecting");
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [captureTarget, setCaptureTarget] = useState<"before" | "after" | null>(null);
   const [reviewTarget, setReviewTarget] = useState<CaptureRun | null>(null);
   const [repairTarget, setRepairTarget] = useState<CaptureRun | null>(null);
@@ -155,6 +164,13 @@ export function ProjectVisualAuditChat({
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const [proposalDialogOpen, setProposalDialogOpen] = useState(false);
+  const [selectedMediaJob, setSelectedMediaJob] = useState("");
+  const [proposalTitle, setProposalTitle] = useState("");
+  const [proposalBusy, setProposalBusy] = useState(false);
+  const [proposalError, setProposalError] = useState("");
+  const proposalRequest = useRef<{ signature: string; id: string } | null>(null);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const audit = useQuery<VisualAuditResponse>({
@@ -180,6 +196,17 @@ export function ProjectVisualAuditChat({
       return data;
     },
   });
+  const mediaJobs = useQuery<{ jobs: { id: string; kind: string; status: string; prompt: string; createdAt: string }[] }>({
+    queryKey: ["/api/media/jobs"],
+    enabled: proposalDialogOpen,
+    queryFn: async () => {
+      const response = await fetch("/api/media/jobs", { credentials: "include" });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      return response.json();
+    },
+  });
+  const completedImageJobs = (mediaJobs.data?.jobs ?? []).filter(job => job.kind === "image" && job.status === "succeeded");
+  const selectedJob = completedImageJobs.find(job => job.id === selectedMediaJob);
   const runs = useMemo(() => audit.data?.runs ?? [], [audit.data?.runs]);
   const fingerprint = evidence.data?.fingerprint;
   const capturePending = runs.some(run => run.status === "capturing");
@@ -286,6 +313,37 @@ export function ProjectVisualAuditChat({
     queryClient.invalidateQueries({ queryKey: evidenceKey(conversationId) }),
   ]);
 
+  const createProposal = async () => {
+    if (!selectedJob || !proposalTitle.trim() || proposalBusy) return;
+    setProposalBusy(true);
+    setProposalError("");
+    try {
+      const signature = JSON.stringify([selectedJob.id, proposalTitle.trim()]);
+      if (proposalRequest.current?.signature !== signature) proposalRequest.current = { signature, id: crypto.randomUUID() };
+      const response = await fetch(`/api/conversations/${conversationId}/workbench/proposals`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: proposalRequest.current.id, mediaJobId: selectedJob.id, title: proposalTitle.trim() }),
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const proposal = await response.json();
+      if (typeof proposal?.id !== "string" || typeof proposal?.createdAt !== "string" || !Number.isFinite(Date.parse(proposal.createdAt)) || typeof proposal?.title !== "string") {
+        throw new Error("Saved proposal response is incomplete.");
+      }
+      const savedEvent: Activity = {
+        id: `proposal:${proposal.id}`, artifactId: proposal.id,
+        createdAt: proposal.createdAt, tool: "design_proposal", status: "saved", title: proposal.title,
+      };
+      setActivity(previous => mergeActivity(previous, [savedEvent]));
+      setProposalDialogOpen(false);
+      setProposalTitle("");
+      setSelectedMediaJob("");
+      proposalRequest.current = null;
+      // This action explicitly attaches an already-finished owned image job; the event stream supplies its saved card.
+    } catch (reason) {
+      setProposalError(reason instanceof Error ? reason.message : "Proposal could not be saved.");
+    } finally { setProposalBusy(false); }
+  };
+
   const capture = async () => {
     if (!captureTarget || !fingerprint || actionBusy) return;
     setActionBusy(true);
@@ -352,6 +410,23 @@ export function ProjectVisualAuditChat({
     } finally { setActionBusy(false); }
   };
 
+  const groupedActivity = useMemo(() => {
+    const groups = new Map<string, Activity[]>();
+    activity.forEach(event => {
+      const key = event.jobId || event.id;
+      groups.set(key, [...(groups.get(key) ?? []), event]);
+    });
+    return Array.from(groups, ([key, events]) => ({
+      key,
+      events: orderActivity(events),
+      timestamp: Math.min(...events.map(event => Date.parse(event.createdAt) || 0)),
+    }));
+  }, [activity]);
+  const timeline = useMemo(() => [
+    ...messageItems.map(item => ({ kind: "message" as const, key: item.id, timestamp: item.timestamp, item })),
+    ...groupedActivity.map(group => ({ kind: "activity" as const, key: group.key, timestamp: group.timestamp, group })),
+  ].sort((a, b) => a.timestamp - b.timestamp || a.key.localeCompare(b.key)), [messageItems, groupedActivity]);
+
   return <section aria-label="Visual audit and saved activity" className="my-4 overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/70 text-zinc-100 shadow-lg shadow-black/10">
     <div className="flex flex-col gap-3 border-b border-zinc-800 p-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex gap-3">
@@ -364,7 +439,7 @@ export function ProjectVisualAuditChat({
       <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400"><LockKeyhole className="h-3.5 w-3.5" />Private evidence</span>
     </div>
 
-    <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(260px,.8fr)]">
+    <div className="grid gap-4 p-4">
       <div className="min-w-0 space-y-4">
         <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-700 bg-zinc-950/50 p-3 text-xs leading-relaxed text-zinc-300">
           <Checkbox checked={visualAuditConsent} onCheckedChange={value => onVisualAuditConsentChange(value === true)} className="mt-0.5" />
@@ -413,7 +488,15 @@ export function ProjectVisualAuditChat({
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {([{ label: "Desktop", icon: Monitor, src: desktop }, { label: "Mobile", icon: Smartphone, src: mobile }] as const).map(view => <div key={view.label} className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-900">
                     <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-medium text-zinc-400"><view.icon className="h-3 w-3" />{view.label}</div>
-                    {view.src && !failedImages[view.src] ? <a href={view.src} target="_blank" rel="noreferrer" className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200" aria-label={`Open private ${view.label.toLowerCase()} screenshot in a new tab`}>
+                    {view.src && !failedImages[view.src] ? <a href={view.src} target="_blank" rel="noreferrer" onClick={event => {
+                      if (onOpenPreview) {
+                        const item = evidence.data?.items?.find(saved => `/api/conversations/${conversationId}/workbench/evidence/${encodeURIComponent(saved.id)}/image` === view.src);
+                        if (item) {
+                          event.preventDefault();
+                          onOpenPreview({ kind: "evidence", id: item.id, label: `${view.label} screenshot` });
+                        }
+                      }
+                    }} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200" aria-label={`Open private ${view.label.toLowerCase()} screenshot ${onOpenPreview ? "in preview pane" : "in a new tab"}`}>
                       <img src={view.src} alt={`${phaseLabel(run.phase)} ${view.label.toLowerCase()} screenshot`} loading="lazy" onError={() => setFailedImages(previous => ({ ...previous, [view.src!]: true }))} className="aspect-[4/3] w-full bg-zinc-950 object-contain" />
                     </a> : <div className="flex aspect-[4/3] items-center justify-center p-4 text-center text-xs text-amber-100"><AlertTriangle className="mr-2 h-4 w-4 shrink-0" />{evidence.isError ? "Image details unavailable." : "This profile image is not available in saved evidence."}</div>}
                     {view.src && <a href={view.src} download={`${run.phase}-${view.label.toLowerCase()}-${run.id}.jpg`} className="flex items-center gap-1.5 border-t border-zinc-800 px-2 py-1.5 text-[10px] text-zinc-300 hover:text-amber-100"><Download className="h-3 w-3" />Download private image</a>}
@@ -458,17 +541,17 @@ export function ProjectVisualAuditChat({
         {error && <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-red-900/70 bg-red-950/30 p-3 text-xs text-red-200"><span>{error}</span><Button size="sm" variant="outline" className="shrink-0 border-red-900" onClick={() => { setError(""); void refresh(); }}>Check saved history</Button></div>}
       </div>
 
-      <aside className="min-w-0 space-y-3">
+      <aside className="order-first min-w-0 space-y-3">
         <section className="rounded-lg border border-zinc-700 bg-zinc-950/45 p-3" aria-label="Saved project activity history">
           <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="flex w-full items-center justify-between gap-2 text-left">
             <span><span className="block text-xs font-semibold uppercase tracking-wide text-zinc-300">Saved activity</span><span className="mt-1 block text-[10px] text-zinc-500">Read-only · {streamState}</span></span>
             <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${expanded ? "rotate-180" : ""}`} />
           </button>
-          {expanded && <>
+          <>
             {audit.isError && <p role="alert" className="mt-3 text-xs text-amber-100">Saved run history could not be loaded. {audit.error.message}<button type="button" className="ml-2 underline" onClick={() => void audit.refetch()}>Retry</button></p>}
-            <p className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/60 p-2.5 text-[10px] leading-relaxed text-zinc-400">
+            {expanded && <p className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/60 p-2.5 text-[10px] leading-relaxed text-zinc-400">
               Retained for this project’s lifetime. Only surviving legacy activity can be imported; missing older legacy events cannot be recovered.
-            </p>
+            </p>}
             {activityLoading && activity.length === 0 && <div role="status" aria-label="Loading saved activity" className="mt-3 space-y-2">
               <div className="h-10 animate-pulse rounded-md bg-zinc-800/70" /><div className="h-10 animate-pulse rounded-md bg-zinc-800/70" />
             </div>}
@@ -491,14 +574,52 @@ export function ProjectVisualAuditChat({
                   .finally(() => { if (mounted.current && conversationId === conversationIdRef.current) setActivityLoading(false); });
               }}>Retry activity</Button>
             </div>}
-            {!activityLoading && !activityError && activity.length === 0 && <p className="mt-3 rounded-md border border-dashed border-zinc-700 p-3 text-center text-xs text-zinc-500">No saved workbench events yet.</p>}
-            <ol className="mt-3 max-h-80 space-y-2 overflow-y-auto">
-              {activity.map(event => <li key={event.id} className="border-l-2 border-amber-200/30 pl-2.5">
-                <p className="text-xs font-medium text-zinc-200">{event.title || `${event.tool} · ${event.status}`}</p>
-                <time className="mt-1 block text-[10px] text-zinc-500">{new Date(event.createdAt).toLocaleString()}</time>
-                {event.message && <p className="mt-1 break-words text-[10px] leading-relaxed text-zinc-400">{event.message}</p>}
-                {event.paths?.length ? <p className="mt-1 break-all font-mono text-[10px] text-zinc-500">{event.paths.join(", ")}</p> : null}
-              </li>)}
+            {!activityLoading && !activityError && activity.length === 0 && messageItems.length === 0 && <p className="mt-3 rounded-md border border-dashed border-zinc-700 p-3 text-center text-xs text-zinc-500">No saved workbench events yet.</p>}
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Conversation timeline</p>
+              <Button type="button" size="sm" variant="outline" className="h-7 border-zinc-700 px-2 text-[10px]" onClick={() => { setProposalError(""); setProposalDialogOpen(true); }}>
+                <Plus className="mr-1 h-3 w-3" />Save design proposal
+              </Button>
+            </div>
+            <ol className="mt-2 max-h-[32rem] space-y-2 overflow-y-auto pr-1" aria-label="Chronological conversation and project activity">
+              {timeline.map(entry => entry.kind === "message"
+                ? <li key={`message-${entry.key}`} className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2 text-[10px] text-zinc-500"><span className="font-semibold uppercase tracking-wide text-zinc-400">Conversation</span><time>{new Date(entry.timestamp).toLocaleString()}</time></div>
+                  <div className="min-w-0 text-sm text-zinc-200">{entry.item.node}</div>
+                </li>
+                : <li key={`job-${entry.key}`} className="overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950/50">
+                  <button type="button" aria-expanded={openGroups[entry.key] ?? true} onClick={() => setOpenGroups(previous => ({ ...previous, [entry.key]: !(previous[entry.key] ?? true) }))} className="flex w-full items-center gap-2 p-3 text-left hover:bg-zinc-900/80">
+                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-200 transition-transform ${(openGroups[entry.key] ?? true) ? "rotate-180" : ""}`} />
+                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-zinc-200">{entry.group.events.length > 1 ? `${entry.group.events.length} project actions` : "Project action group"}</span>
+                    <time className="shrink-0 text-[10px] text-zinc-500">{new Date(entry.timestamp).toLocaleString()}</time>
+                  </button>
+                  {(openGroups[entry.key] ?? true) && <ol className="space-y-2 border-t border-zinc-800 px-3 py-2">
+                    {entry.group.events.map(event => {
+                      const ownedEvidence = (event.evidenceIds ?? []).map(id => evidence.data?.items.find(item => item.id === id)).filter((item): item is Evidence => !!item);
+                      return <li key={event.id} className="border-l-2 border-amber-200/25 py-1 pl-2.5">
+                        <p className="text-xs font-medium text-zinc-200">{event.title || `${event.tool} · ${event.status}`}</p>
+                        <time className="mt-1 block text-[10px] text-zinc-500">{new Date(event.createdAt).toLocaleString()} · {event.status}</time>
+                        {event.message && <p className="mt-1 break-words text-[10px] leading-relaxed text-zinc-400">{event.message}</p>}
+                        {event.paths?.length ? <p className="mt-1 break-all font-mono text-[10px] text-zinc-500">{event.paths.join(", ")}</p> : null}
+                        {event.tool === "design_proposal" && event.artifactId && <div className="mt-2 overflow-hidden rounded-md border border-amber-200/20 bg-[#25231f]">
+                          <div className="flex items-center gap-2 px-2.5 py-2"><ImageIcon className="h-3.5 w-3.5 text-amber-200" /><span className="min-w-0 flex-1 truncate text-xs font-semibold text-amber-50">{event.title || "Saved design proposal"}</span><span className="text-[9px] uppercase tracking-wide text-amber-200/70">Saved</span></div>
+                          {event.message && <p className="px-2.5 pb-2 text-[10px] leading-relaxed text-zinc-400">{event.message}</p>}
+                          <Button type="button" size="sm" variant="outline" className="m-2 mt-0 h-7 border-amber-200/25 px-2 text-[10px]" onClick={() => onOpenPreview?.({ kind: "proposal", id: event.artifactId!, label: event.title || "Saved design proposal" })} disabled={!onOpenPreview}>
+                            Open in preview <ExternalLink className="ml-1 h-3 w-3" />
+                          </Button>
+                        </div>}
+                        {event.evidenceIds?.length ? <div className="mt-2 flex flex-wrap gap-1.5">
+                          {event.evidenceIds.map(id => {
+                            const saved = ownedEvidence.find(item => item.id === id);
+                            return saved ? <Button key={id} type="button" size="sm" variant="outline" className="h-7 border-zinc-700 px-2 text-[10px]" onClick={() => onOpenPreview?.({ kind: "evidence", id, label: saved.name || "Saved screenshot" })} disabled={!onOpenPreview}>
+                              <ImageIcon className="mr-1 h-3 w-3" />Open {saved.profile || "saved"} screenshot
+                            </Button> : <span key={id} role={evidence.isPending ? "status" : "alert"} className="rounded border border-amber-900/50 px-2 py-1 text-[10px] text-amber-200">{evidence.isPending ? "Checking saved image…" : evidence.isError ? "Image details unavailable" : "Saved image unavailable"}</span>;
+                          })}
+                        </div> : event.tool.includes("screenshot") && <p className="mt-2 text-[10px] text-amber-200">No owned screenshot image is attached to this historical activity.</p>}
+                      </li>;
+                    })}
+                  </ol>}
+                </li>)}
             </ol>
             {olderError && <div role="alert" className="mt-3 text-xs text-amber-100">
               <p>Older activity could not be loaded. {olderError}</p>
@@ -507,7 +628,7 @@ export function ProjectVisualAuditChat({
             {activityPage?.hasMore && <Button type="button" variant="outline" className="mt-3 w-full border-zinc-700 text-xs text-zinc-200" disabled={olderLoading || activityLoading} onClick={() => void loadOlderActivity()}>
               {olderLoading ? <><LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />Loading older activity</> : "Load older activity"}
             </Button>}
-          </>}
+          </>
           <p className="mt-3 border-t border-zinc-800 pt-3 text-[10px] leading-relaxed text-zinc-500">History and the live stream read saved events only. The stream resumes from its event cursor and closes when this conversation changes; neither starts nor replays a job.</p>
         </section>
         <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 text-[11px] leading-relaxed text-zinc-400">
@@ -537,6 +658,27 @@ export function ProjectVisualAuditChat({
         <DialogHeader><DialogTitle>Prepare a repair request</DialogTitle><DialogDescription className="text-zinc-400">A reviewed request will be placed in the chat composer. It will not be sent or saved until you inspect and submit it yourself.</DialogDescription></DialogHeader>
         <p className="rounded-md border border-zinc-800 bg-zinc-900 p-3 text-xs text-zinc-300">Only the current source review can be used. No project files will be changed by preparing the request.</p>
         <DialogFooter><Button variant="outline" className="border-zinc-700" onClick={() => setRepairTarget(null)}>Cancel</Button><Button disabled={actionBusy} onClick={() => void prepareRepair()}>Prepare in chat</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={proposalDialogOpen} onOpenChange={open => { if (!open) setProposalDialogOpen(false); }}>
+      <DialogContent className="border-zinc-700 bg-zinc-950 text-zinc-100">
+        <DialogHeader><DialogTitle>Save a design proposal</DialogTitle><DialogDescription className="text-zinc-400">Attach an image generation that already finished. This does not start a new generation.</DialogDescription></DialogHeader>
+        {mediaJobs.isPending && <div role="status" aria-label="Loading completed image generations" className="space-y-2"><div className="h-10 animate-pulse rounded bg-zinc-800" /><div className="h-4 w-2/3 animate-pulse rounded bg-zinc-800" /></div>}
+        {mediaJobs.isError && <div role="alert" className="rounded-md border border-amber-900/50 p-3 text-xs text-amber-100">Completed image generations could not be loaded. {mediaJobs.error.message}<Button type="button" size="sm" variant="outline" className="ml-2 border-amber-900" onClick={() => void mediaJobs.refetch()}>Retry</Button></div>}
+        {mediaJobs.isSuccess && completedImageJobs.length === 0 && <p className="rounded-md border border-dashed border-zinc-700 p-3 text-xs text-zinc-400">No completed image generations are available to attach.</p>}
+        {completedImageJobs.length > 0 && <>
+          <label className="grid gap-1.5 text-xs text-zinc-300">Completed image generation
+            <select aria-label="Completed image generation" value={selectedMediaJob} onChange={event => { const value = event.target.value; setSelectedMediaJob(value); const job = completedImageJobs.find(item => item.id === value); if (!proposalTitle.trim() && job?.prompt) setProposalTitle(job.prompt.slice(0, 120)); }} className="h-10 rounded-md border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100">
+              <option value="">Choose a saved generation</option>
+              {completedImageJobs.map(job => <option key={job.id} value={job.id}>{job.prompt || "Image generation"} · {new Date(job.createdAt).toLocaleDateString()}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-xs text-zinc-300">Proposal title
+            <Input value={proposalTitle} maxLength={120} onChange={event => setProposalTitle(event.target.value)} placeholder="Name this design proposal" className="border-zinc-700 bg-zinc-900 text-zinc-100" />
+          </label>
+        </>}
+        {proposalError && <p role="alert" className="text-xs text-rose-300">{proposalError}</p>}
+        <DialogFooter><Button type="button" variant="outline" className="border-zinc-700" onClick={() => setProposalDialogOpen(false)}>Cancel</Button><Button type="button" disabled={!selectedJob || !proposalTitle.trim() || proposalBusy} onClick={() => void createProposal()}>{proposalBusy ? "Saving proposal…" : "Save proposal"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   </section>;

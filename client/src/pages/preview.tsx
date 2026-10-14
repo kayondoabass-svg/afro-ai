@@ -179,7 +179,7 @@ export default function PreviewPage() {
             <iframe
               title="Preview"
               srcDoc={data.htmlContent}
-              sandbox="allow-scripts allow-forms allow-same-origin"
+              sandbox="allow-scripts allow-forms"
               className="w-full h-full border-0"
               data-testid="iframe-preview"
             />

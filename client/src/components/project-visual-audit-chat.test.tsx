@@ -34,8 +34,27 @@ function renderAudit(fetcher: (url: string) => unknown, conversationId = 51) {
   </QueryClientProvider>);
 }
 
+function openSavedActivity() {
+  const button = screen.getByRole("button", { name: /Saved activity/ });
+  if (button.getAttribute("aria-expanded") !== "true") fireEvent.click(button);
+}
+
 beforeEach(() => { eventSourceInstance = undefined; });
 afterEach(() => { vi.unstubAllGlobals(); });
+it("keeps conversation replies visible when saved-activity information is collapsed", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true, status: 200, json: async () => ({ items: [], runs: [], capability: { enabled: false } }),
+  })));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><ProjectVisualAuditChat
+    conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()}
+    messageItems={[{ id: "reply", timestamp: Date.now(), node: <p>The real assistant reply</p> }]}
+  /></QueryClientProvider>);
+  await screen.findByText("The real assistant reply");
+  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  expect(screen.getByText("The real assistant reply")).toBeInTheDocument();
+});
 
 it("shows blocked capability without starting a capture and closes its passive stream on unmount", async () => {
   const view = renderAudit(url => url.endsWith("/visual-audit")
@@ -106,7 +125,7 @@ it("renders only safe saved activity received over the read-only stream", async 
     ? { capability: { enabled: false }, runs: [] }
     : { items: [], events: [], fingerprint: "source-abc" });
   await screen.findByText(/No saved screenshot runs/);
-  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  openSavedActivity();
   eventSourceInstance?.emit("activity", JSON.stringify({
     id: "event-1", createdAt: new Date().toISOString(), tool: "read_project_file",
     status: "completed", title: "read project file · completed", message: "index.html was inspected",
@@ -140,7 +159,7 @@ it("restores saved history on initial load, merges live duplicates by stable eve
       : { items: [], fingerprint: "source-abc" };
   });
   await screen.findByText(/No saved screenshot runs/);
-  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  openSavedActivity();
   expect(await screen.findByText("Saved older")).toBeInTheDocument();
   expect(screen.getByText(/project’s lifetime/)).toBeInTheDocument();
   eventSourceInstance?.emit("activity", JSON.stringify(savedEvent("ev-2", "90071992547409930", "Updated live title")), "90071992547409930");
@@ -165,7 +184,7 @@ it("pages older history without losing newer events and deduplicates overlap", a
       : { items: [], fingerprint: "source-abc" };
   });
   await screen.findByText(/No saved screenshot runs/);
-  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  openSavedActivity();
   await screen.findByText("Newest event");
   fireEvent.click(screen.getByRole("button", { name: "Load older activity" }));
   await screen.findByText("Old event");
@@ -187,7 +206,7 @@ it("shows a retry for initial history errors and keeps history fetch independent
       : { items: [], fingerprint: "source-abc" };
   });
   await screen.findByText(/No saved screenshot runs/);
-  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  openSavedActivity();
   expect(await screen.findByText(/History is temporarily offline/)).toBeInTheDocument();
   fail = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
@@ -218,8 +237,71 @@ it("discards a late activity page after switching conversations and closes the o
   await screen.findByText(/No saved screenshot runs/);
   resolvePage?.(new Response(JSON.stringify(activityPage([savedEvent("stale", "7", "Stale conversation activity")], null, false)),
     { status: 200, headers: { "Content-Type": "application/json" } }));
-  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  openSavedActivity();
   expect(await screen.findByText("New conversation activity")).toBeInTheDocument();
   expect(screen.queryByText("Stale conversation activity")).not.toBeInTheDocument();
   expect(oldSource?.closed).toBe(true);
+});
+
+it("interleaves conversation replies with expandable saved actions and opens owned proposal art in preview", async () => {
+  const onOpenPreview = vi.fn();
+  const now = new Date().toISOString();
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    const payload = url.includes("/workbench/activity")
+      ? activityPage([
+        { id: "action-1", jobId: "job-1", sequence: "1", createdAt: now, tool: "read_project_file", status: "completed", title: "Inspected project source" },
+        { id: "proposal-event", jobId: "job-2", sequence: "2", createdAt: now, tool: "design_proposal", status: "saved", title: "Header direction", artifactId: "artifact-uuid" },
+      ], null, false)
+      : url.endsWith("/visual-audit") ? { capability: { enabled: false }, runs: [] }
+        : { items: [], fingerprint: "source-abc" };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()}
+      onOpenPreview={onOpenPreview} messageItems={[{ id: "msg-1", timestamp: Date.parse(now) - 1000, node: <p>Customer asked for a narrower header</p> }]} />
+  </QueryClientProvider>);
+  await screen.findByText(/No saved screenshot runs/);
+  openSavedActivity();
+  expect(await screen.findByText("Customer asked for a narrower header")).toBeInTheDocument();
+  expect(await screen.findByText("Inspected project source")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Open in preview/ }));
+  expect(onOpenPreview).toHaveBeenCalledWith({ kind: "proposal", id: "artifact-uuid", label: "Header direction" });
+});
+
+it("attaches an already-completed image only after an explicit save action", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === "/api/media/jobs") return new Response(JSON.stringify({ jobs: [
+      { id: "image-job-1", kind: "image", status: "succeeded", prompt: "A cobalt and cream landing page header", createdAt: new Date().toISOString() },
+      { id: "text-job", kind: "text", status: "succeeded", prompt: "Ignore", createdAt: new Date().toISOString() },
+      { id: "pending-job", kind: "image", status: "running", prompt: "Ignore", createdAt: new Date().toISOString() },
+    ] }), { status: 200 });
+    if (init?.method === "POST") return new Response(JSON.stringify({ id: "proposal-id", title: "A cobalt and cream landing page header", createdAt: new Date().toISOString() }), { status: 201 });
+    const payload = url.includes("/workbench/activity")
+      ? activityPage([], null, false)
+      : url.endsWith("/visual-audit") ? { capability: { enabled: false }, runs: [] }
+        : { items: [], fingerprint: "source-abc" };
+    return new Response(JSON.stringify(payload), { status: 200 });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
+  </QueryClientProvider>);
+  await screen.findByText(/No saved screenshot runs/);
+  openSavedActivity();
+  fireEvent.click(screen.getByRole("button", { name: /Save design proposal/ }));
+  await screen.findByRole("combobox", { name: "Completed image generation" });
+  expect(screen.getByRole("option", { name: /cobalt and cream/ })).toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: /Ignore/ })).not.toBeInTheDocument();
+  expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
+  fireEvent.change(screen.getByRole("combobox", { name: "Completed image generation" }), { target: { value: "image-job-1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save proposal" }));
+  await screen.findByRole("button", { name: /Open in preview/ });
+  const post = vi.mocked(fetch).mock.calls.find(([, options]) => options?.method === "POST");
+  expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ mediaJobId: "image-job-1", title: "A cobalt and cream landing page header" });
+  expect(JSON.parse(String(post?.[1]?.body)).requestId).toMatch(/^[a-f0-9-]{36}$/i);
 });

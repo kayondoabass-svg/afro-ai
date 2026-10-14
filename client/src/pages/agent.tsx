@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import { ProjectWorkbench } from "@/components/project-workbench";
 import { ProjectEvidencePanel } from "@/components/project-evidence-panel";
 import { ProjectVisualAuditChat } from "@/components/project-visual-audit-chat";
+import { ProjectWorkspacePreview, type WorkspacePreviewTarget } from "@/components/project-workspace-preview";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, FULLSTACK_EXPORT_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
@@ -218,6 +219,13 @@ export default function AgentPage() {
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [openedProjectFile, setOpenedProjectFile] = useState<ProjectFile | null>(null);
+  const [workspaceMobileView, setWorkspaceMobileView] = useState<"chat" | "preview">("chat");
+  const [workspaceChatWidth, setWorkspaceChatWidth] = useState(52);
+  const [workspacePreviewTarget, setWorkspacePreviewTarget] = useState<WorkspacePreviewTarget>(null);
+  useEffect(() => { setWorkspacePreviewTarget(null); setWorkspaceMobileView("chat"); }, [conversationId, activeProjectId]);
+  useEffect(() => {
+    if (!working && activeProjectId) void qc.invalidateQueries({ queryKey: ["/api/projects", activeProjectId, "preview"] });
+  }, [working, activeProjectId, qc]);
   useEffect(() => { setProjectUsage(null); setProviderNotice(null); }, [conversationId]);
   const conversationRef = useRef<number | null>(null);
   conversationRef.current = conversationId;
@@ -942,7 +950,10 @@ export default function AgentPage() {
 
   const goToProjectPreview = () => {
     if (staticControlsBlocked) return;
-    if (activeProjectId) setLocation(`/preview/${activeProjectId}`);
+    if (activeProjectId) {
+      setWorkspacePreviewTarget({ kind: "website" });
+      setWorkspaceMobileView("preview");
+    }
     else setLocation("/dashboard");
   };
   const goToShell = () => setLocation("/shell");
@@ -1049,11 +1060,11 @@ export default function AgentPage() {
   const emptyEntry = messages.length === 0 && !working && !activeProjectId && !projectName && !projectPanelOpen;
 
   return (
-    <div ref={shellRef} className={`agent-shell flex flex-col bg-zinc-950 text-zinc-100 ${emptyEntry ? "agent-new-entry" : ""}`} data-testid="agent-shell">
+    <div ref={shellRef} style={{ "--studio-chat-width": `${workspaceChatWidth}%` } as CSSProperties} className={`agent-shell workspace-split flex flex-col bg-zinc-950 text-zinc-100 md:grid md:grid-rows-[auto_auto_minmax(0,1fr)_auto_auto_auto_auto] ${emptyEntry ? "agent-new-entry" : ""}`} data-testid="agent-shell">
       <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.md,.csv,.json" multiple className="hidden" onChange={handleFileChange} data-testid="input-file" />
 
       {/* Top bar */}
-      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800/80 flex-shrink-0 min-w-0">
+      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800/80 flex-shrink-0 min-w-0 md:col-span-2">
         <div className="flex items-center gap-1 shrink-0">
           <Button variant="ghost" size="icon" aria-label={t("chat.goBack")} title={t("chat.goBack")} className="agent-tooltip h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-hint="Back to dashboard" onClick={() => setLocation("/dashboard")} data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
@@ -1251,7 +1262,12 @@ export default function AgentPage() {
                 {isFullstack && activeProject && <FullstackInfrastructure key={activeProject.id} project={activeProject} />}
                 <div className="h-64 border border-zinc-800 rounded-md overflow-hidden">
                   <FileTreeSidebar conversationId={conversationId} openedFileId={openedProjectFile?.id ?? null}
-                    onFileOpen={setOpenedProjectFile} onClose={() => setProjectPanelOpen(false)} />
+                    onFileOpen={file => {
+                      setOpenedProjectFile(file);
+                      setWorkspacePreviewTarget({ kind: "file", path: file.path, content: file.content, encoding: file.encoding });
+                      setWorkspaceMobileView("preview");
+                      setProjectPanelOpen(false);
+                    }} onClose={() => setProjectPanelOpen(false)} />
                 </div>
                 {openedProjectFile && <div className="text-xs">
                   <strong>{openedProjectFile.path}</strong>
@@ -1371,19 +1387,24 @@ export default function AgentPage() {
         </div>
       </header>
 
-      {isFullstack && !projectBlocked && <div className="shrink-0 border-b border-amber-400/25 bg-amber-400/5 px-4 py-3 text-xs text-amber-200" role="note" data-testid="fullstack-source-notice">
+      {isFullstack && !projectBlocked && <div className="shrink-0 border-b border-amber-400/25 bg-amber-400/5 px-4 py-3 text-xs text-amber-200 md:col-span-2" role="note" data-testid="fullstack-source-notice">
         <strong className="block mb-1">Full-stack project · source export, customer-managed hosting</strong>
         {FULLSTACK_SOURCE_NOTICE}
         <Button size="sm" variant="outline" className="ml-2 mt-2" onClick={() => setProjectPanelOpen(true)}>Database infrastructure</Button>
       </div>}
-      {projectBlocked && <div className="shrink-0 border-b border-violet-500/25 bg-violet-500/5 px-4 py-3 text-xs text-zinc-300" role="status">
+      {projectBlocked && <div className="shrink-0 border-b border-violet-500/25 bg-violet-500/5 px-4 py-3 text-xs text-zinc-300 md:col-span-2" role="status">
         {setupBlocked ? activeProject?.status === "initializing" ? "Starter setup is still initializing. Return to the dashboard to check progress." : "Starter setup failed. Return to the dashboard and use Retry setup on this project." : projectMetadata.isError ? "Could not verify project metadata. Sending, Preview and Publish are blocked until verified." : projectMetadata.isSuccess ? "Project not found. Return to the dashboard or retry the project check." : "Checking project metadata…"}
         {(projectMetadata.isError || projectMetadata.isSuccess) && !setupBlocked && <Button size="sm" variant="ghost" className="ml-2" onClick={() => projectMetadata.refetch()}>Retry project check</Button>}
         {setupBlocked && <Button size="sm" variant="ghost" className="ml-2" onClick={() => setLocation("/dashboard")}>Back to dashboard</Button>}
       </div>}
 
+      <div className="flex shrink-0 border-b border-zinc-800 bg-[#171923] px-2 py-1.5 md:hidden" role="group" aria-label="Workspace view">
+        {(["chat", "preview"] as const).map(view => <button key={view} type="button" aria-pressed={workspaceMobileView === view} onClick={() => setWorkspaceMobileView(view)} className={`flex-1 rounded-md px-3 py-2 text-xs font-semibold capitalize ${workspaceMobileView === view ? "bg-amber-200 text-zinc-950" : "text-zinc-400 hover:text-zinc-100"}`}>{view === "chat" ? "Chat" : "Preview"}</button>)}
+        <button type="button" onClick={() => setProjectPanelOpen(true)} className="flex-1 rounded-md px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-100">Files</button>
+      </div>
+
       {/* Messages */}
-      <div ref={scrollRef} className="agent-scroll flex-1 overflow-y-auto px-4 py-4 space-y-5" data-testid="agent-messages">
+      <div id="agent-messages" role="region" aria-label="Conversation" ref={scrollRef} className={`agent-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-5 md:col-start-1 md:row-start-3 ${workspaceMobileView === "preview" ? "hidden md:block" : ""}`} data-testid="agent-messages">
         {messages.length === 0 && !working && (
           <NewChatEntry name={user?.firstName} onSuggestion={value => {
             setInput(value);
@@ -1391,19 +1412,13 @@ export default function AgentPage() {
           }} />
         )}
 
-        <AgentSearchContext.Provider value={messages.flatMap(m => m.searchActivity ? [m.searchActivity] : [])}>
-        {messages.map(msg => msg.role === "web-search" ? (
-          msg.searchActivity && <ChatSearchCard key={msg.id} activity={msg.searchActivity} />
-        ) : <MessageBlock key={msg.id} msg={msg} previewBlocked={staticControlsBlocked} onPublish={staticControlsBlocked ? undefined : openPublishFor} />)}
-        </AgentSearchContext.Provider>
-
-        {working && searchActivity && <ChatSearchCard activity={searchActivity} />}
-        {working && streamingContent && (
-          <div data-testid="text-streaming">
-            <AgentStructuredText text={streamingContent} renderText={(value) => <MarkdownText text={value} previewBlocked={staticControlsBlocked} />} />
-          </div>
-        )}
-
+        {!conversationId && <AgentSearchContext.Provider value={messages.flatMap(m => m.searchActivity ? [m.searchActivity] : [])}>
+          {messages.map(msg => msg.role === "web-search"
+            ? msg.searchActivity && <ChatSearchCard key={msg.id} activity={msg.searchActivity} />
+            : <MessageBlock key={msg.id} msg={msg} previewBlocked={staticControlsBlocked} onPublish={staticControlsBlocked ? undefined : openPublishFor} />)}
+          {working && searchActivity && <ChatSearchCard activity={searchActivity} />}
+          {working && streamingContent && <div data-testid="text-streaming"><AgentStructuredText text={streamingContent} renderText={value => <MarkdownText text={value} previewBlocked={staticControlsBlocked} />} /></div>}
+        </AgentSearchContext.Provider>}
         {providerNotice && <p role="status" className="rounded border border-amber-700/50 bg-amber-950/20 p-3 text-sm text-amber-200">{providerNotice}</p>}
         {conversationId && <ProjectVisualAuditChat
           key={conversationId}
@@ -1411,6 +1426,17 @@ export default function AgentPage() {
           onRepair={request => { setProjectAgent(true); setInput(request); }}
           visualAuditConsent={visualAuditConsent}
           onVisualAuditConsentChange={setVisualAuditConsent}
+          onOpenPreview={target => { setWorkspacePreviewTarget(target); setWorkspaceMobileView("preview"); }}
+          messageItems={[
+            ...messages.map(msg => ({
+              id: msg.id, timestamp: msg.timestamp,
+              node: <AgentSearchContext.Provider value={msg.searchActivity ? [msg.searchActivity] : []}>
+                {msg.role === "web-search" ? msg.searchActivity ? <ChatSearchCard activity={msg.searchActivity} /> : null : <MessageBlock msg={msg} previewBlocked={staticControlsBlocked} onPublish={staticControlsBlocked ? undefined : openPublishFor} />}
+              </AgentSearchContext.Provider>,
+            })),
+            ...(working && searchActivity ? [{ id: "live-search", timestamp: Date.now(), node: <ChatSearchCard activity={searchActivity} /> }] : []),
+            ...(working && streamingContent ? [{ id: "live-response", timestamp: Date.now() + 1, node: <div data-testid="text-streaming"><AgentStructuredText text={streamingContent} renderText={(value) => <MarkdownText text={value} previewBlocked={staticControlsBlocked} />} /></div> }] : []),
+          ]}
         />}
         {conversationId && (projectAgent || activeProjectId !== null) && <ProjectEvidencePanel
           conversationId={conversationId}
@@ -1440,10 +1466,25 @@ export default function AgentPage() {
           </div>
         )}
       </div>
+      <div id="workspace-preview-container" role="region" aria-label="Preview" className={`${workspaceMobileView === "preview" ? "flex" : "hidden"} min-h-0 flex-1 md:flex md:col-start-2 md:row-start-3`}>
+        <ProjectWorkspacePreview conversationId={conversationId} projectId={activeProjectId} projectType={isFullstack ? "fullstack" : activeProject?.type} blocked={projectBlocked} target={workspacePreviewTarget} onTargetChange={setWorkspacePreviewTarget} />
+      </div>
+      <div role="separator" aria-label="Resize chat and preview panes" aria-orientation="vertical"
+        aria-valuemin={30} aria-valuemax={70} aria-valuenow={workspaceChatWidth} tabIndex={0}
+        className="workspace-divider hidden md:block" onPointerDown={event => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }} onPointerMove={(event: ReactPointerEvent<HTMLDivElement>) => {
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const rect = shellRef.current?.getBoundingClientRect();
+          if (rect?.width) setWorkspaceChatWidth(Math.min(70, Math.max(30, Math.round(100 * (event.clientX - rect.left) / rect.width))));
+        }} onKeyDown={event => {
+          if (event.key === "ArrowLeft") { event.preventDefault(); setWorkspaceChatWidth(width => Math.max(30, width - 5)); }
+          if (event.key === "ArrowRight") { event.preventDefault(); setWorkspaceChatWidth(width => Math.min(70, width + 5)); }
+        }} />
 
       {/* Queue panel */}
       {queue.length > 0 && (
-        <div className="border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0">
+        <div className={`border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0 md:col-start-1 ${workspaceMobileView === "preview" ? "hidden md:block" : ""}`}>
           <div
             className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-zinc-300"
           >
@@ -1489,7 +1530,7 @@ export default function AgentPage() {
 
       {/* Pending attachments */}
       {pendingAttachments.length > 0 && (
-        <div className="border-t border-zinc-800/80 bg-zinc-950 px-3 py-2 flex-shrink-0 flex flex-wrap gap-2">
+        <div className={`border-t border-zinc-800/80 bg-zinc-950 px-3 py-2 flex-shrink-0 flex flex-wrap gap-2 md:col-start-1 ${workspaceMobileView === "preview" ? "hidden md:flex" : ""}`}>
           {pendingAttachments.map((att, idx) => (
             <div key={idx} className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 text-xs text-zinc-300" data-testid={`attachment-pending-${idx}`}>
               {att.mimetype.startsWith("image/") ? <ImageIcon className="w-3 h-3" /> : <Paperclip className="w-3 h-3" />}
@@ -1503,7 +1544,7 @@ export default function AgentPage() {
       )}
 
       {/* Input area */}
-      <div className="agent-composer border-t border-zinc-800/80 bg-zinc-950 px-3 py-3 flex-shrink-0 min-w-0">
+      <div className={`agent-composer border-t border-zinc-800/80 bg-zinc-950 px-3 py-3 flex-shrink-0 min-w-0 md:col-start-1 ${workspaceMobileView === "preview" ? "hidden md:block" : ""}`}>
         {projectAgent && <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-amber-400/25 bg-amber-400/5 px-2.5 py-1.5 text-xs text-amber-200">
           <span>Project agent · text only · review before saving</span>
           <button type="button" onClick={toggleProjectAgent} className="shrink-0 underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">{isFullstack ? "Open files" : "Turn off"}</button>
@@ -1546,7 +1587,7 @@ export default function AgentPage() {
       </div>
 
       {/* Bottom nav */}
-      <nav aria-label="Builder navigation" className="hidden md:flex items-center justify-around px-2 py-2 border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0">
+      <nav aria-label="Builder navigation" className="hidden md:flex md:col-span-2 md:row-start-7 items-center justify-around px-2 py-2 border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0">
         {[
           { icon: Square, key: "code", label: t("chat.nav.classic"), testid: "nav-code", action: goToCode },
           { icon: Monitor, key: "preview", label: isFullstack ? "Preview unavailable · source-only full-stack project" : activeProjectId ? t("chat.nav.preview") : "Preview (open a project first)", testid: "nav-preview", action: activeProjectId && !staticControlsBlocked ? goToProjectPreview : undefined },

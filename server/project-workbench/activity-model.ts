@@ -3,7 +3,7 @@ import { safeAssistantText } from "../chat-credential-safety";
 export type Activity = {
   id: string; jobId: string; createdAt: string; tool: string; callId: string;
   status: string; title: string; message?: string; paths?: string[];
-  sequence?: string; evidenceIds?: string[];
+  sequence?: string; evidenceIds?: string[]; artifactId?: string;
 };
 
 // Only this public projection enters the ledger; never store raw tool outputs,
@@ -19,6 +19,7 @@ export function safeActivity(input: Activity): Activity {
     ...(input.message ? { message: text(input.message, 700) } : {}),
     ...(input.paths?.length ? { paths: input.paths.slice(0, 8).map(p => text(p, 240)) } : {}),
     ...(input.evidenceIds?.length ? { evidenceIds: input.evidenceIds.slice(0, 2).map(p => text(p, 100)) } : {}),
+    ...(input.artifactId ? { artifactId: text(input.artifactId, 100) } : {}),
   };
 }
 
