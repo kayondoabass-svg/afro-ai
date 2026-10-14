@@ -100,9 +100,13 @@ is not, or that an iPhone-sized browser viewport proves actual Safari behavior.
 Customers must see real execution activity and screenshot evidence inside the
 project chat, not only in a separate activity log. Turning the project agent off
 must not remove access to saved evidence.
+The requested unified feed also includes design-proposal artifact cards and
+grouped, expandable operations alongside conversational replies.
 
 **Why:** The user repeatedly distinguished the promised in-chat client experience
 from backend functionality and an activity-log-only implementation.
+They also repeated that the unified frontend feed needs its own explanation,
+not just an explanation of the backend artifact-emission function.
 
 **How to apply:** Keep passive history separate from permission to execute.
 Verify customer-visible integration as well as backend tests; a release is not
