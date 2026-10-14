@@ -38,7 +38,11 @@ die() {
 
 require_clean_tree() {
   local dirty
-  dirty=$(git -C "$APP_DIR" status --porcelain)
+  # These are this script's generated rollback snapshots, not source changes.
+  # Keep all tracked edits visible, including any mistakenly tracked snapshot.
+  dirty=$(git -C "$APP_DIR" status --porcelain --untracked-files=all) || \
+    die "Cannot read working tree status — refusing to deploy."
+  dirty=$(printf '%s\n' "$dirty" | grep -vE '^\?\? dist\.(prev|prev\.kept|broken)/' || true)
   if [ -n "$dirty" ]; then
     log "Working tree is DIRTY — refusing to deploy:"
     log "$dirty"
@@ -104,8 +108,8 @@ install_deps_if_changed() {
       # fails with EAI_AGAIN and leaves a partial node_modules (a different
       # module missing each run) that crash-loops the service. Fail loudly here
       # instead of half-installing.
-      if grep -q "package-firewall.replit.local" package-lock.json; then
-        echo "FATAL: package-lock.json contains package-firewall.replit.local resolved URLs (Replit-internal registry, unreachable here). Normalize them with: sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json" >&2
+      if grep -qE "package-firewall\.replit\.(local|internal)" package-lock.json; then
+        echo "FATAL: package-lock.json contains Replit-internal registry URLs, unreachable here. Fix and commit the lockfile to use https://registry.npmjs.org/ before deploying." >&2
         exit 1
       fi
       # Pin the PUBLIC npm registry as belt-and-suspenders for env/.npmrc too.

@@ -3,7 +3,17 @@ name: Replit lockfile registry URLs break npm ci off-Replit
 description: Why package-lock.json generated inside Replit fails npm ci on droplets/CI, and the safe fix.
 ---
 
-# package-firewall.replit.local in package-lock.json
+# Replit-internal registry hosts in package-lock.json
+
+The firewall hostname may end in either `.local` or `.internal`. Check both;
+checking only `.local` misses newly generated entries.
+
+**Why:** subsequent package additions used `.internal` and escaped the older
+guard, leaving clean CI installs unable to load dependencies.
+
+**How to apply:** validate every resolved URL before installation and smoke-test
+dependency loading after a clean install. A passing test run against existing
+workspace node_modules does not certify GitHub or VPS installations.
 
 `package-lock.json` generated inside Replit bakes the Replit-internal registry
 host into each package's `resolved` field, e.g.

@@ -2,6 +2,9 @@
 node_modules
 /generated-artifacts/
 dist
+/dist.prev/
+/dist.prev.kept/
+/dist.broken/
 .DS_Store
 server/public
 vite.config.ts.*
