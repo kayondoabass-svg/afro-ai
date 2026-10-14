@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+vi.mock("@/components/project-visual-audit-chat", () => ({ ProjectVisualAuditChat: () => <div data-testid="chat-visual-evidence">In-chat visual evidence and saved activity</div> }));
 
 vi.mock("@/pages/ai-chat", () => ({
   PublishDialog: ({ open, code, onOpenChange }: { open: boolean; code: string; onOpenChange: (open: boolean) => void }) => open

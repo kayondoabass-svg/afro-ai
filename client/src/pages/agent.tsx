@@ -29,6 +29,7 @@ import { AgentSearchButton, AgentSearchContext } from "@/components/agent-search
 import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import { ProjectWorkbench } from "@/components/project-workbench";
 import { ProjectEvidencePanel } from "@/components/project-evidence-panel";
+import { ProjectVisualAuditChat } from "@/components/project-visual-audit-chat";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, FULLSTACK_EXPORT_NOTICE, isSetupBlocked } from "@/lib/fullstack-project";
@@ -206,6 +207,8 @@ export default function AgentPage() {
   useEffect(() => { setVersionPreviewHtml(null); }, [conversationId, activeProjectId]);
   const [manualProjectAgent, setProjectAgent] = useState(false);
   const projectAgent = isFullstack || manualProjectAgent;
+  const [visualAuditConsent, setVisualAuditConsent] = useState(false);
+  useEffect(() => { setVisualAuditConsent(false); }, [conversationId]);
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -610,6 +613,7 @@ export default function AgentPage() {
       if (mode === "project") {
         body.projectAgent = true;
         body.maxJobTokens = maxJobTokens;
+        if (visualAuditConsent) { body.visualAuditConsent = true; setVisualAuditConsent(false); }
       }
       if (attachments.length > 0) body.attachments = attachments;
 
@@ -832,6 +836,7 @@ export default function AgentPage() {
       setProjectAgent(projectMetadata.data?.find(p => p.id === loadedProjectId)?.type === "fullstack");
       setMessages(msgs);
       setConversationId(id);
+      setVisualAuditConsent(false);
       setHistoryOpen(false);
       // Reset composer + queue when switching conversations so the previous
       // chat's typed-but-unsent prompt (often the URL-based project
@@ -874,6 +879,7 @@ export default function AgentPage() {
         setProjectPanelOpen(false);
         setProjectAgent(false);
         setConversationId(null);
+        setVisualAuditConsent(false);
         setMessages([]);
         setQueue([]);
         // Clear the composer and any in-flight UI so the user gets a truly
@@ -1399,6 +1405,13 @@ export default function AgentPage() {
         )}
 
         {providerNotice && <p role="status" className="rounded border border-amber-700/50 bg-amber-950/20 p-3 text-sm text-amber-200">{providerNotice}</p>}
+        {conversationId && <ProjectVisualAuditChat
+          key={conversationId}
+          conversationId={conversationId}
+          onRepair={request => { setProjectAgent(true); setInput(request); }}
+          visualAuditConsent={visualAuditConsent}
+          onVisualAuditConsentChange={setVisualAuditConsent}
+        />}
         {conversationId && (projectAgent || activeProjectId !== null) && <ProjectEvidencePanel
           conversationId={conversationId}
           onRepair={request => { setProjectAgent(true); setInput(request); }}

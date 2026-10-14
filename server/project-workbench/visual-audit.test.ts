@@ -61,6 +61,7 @@ beforeEach(async () => {
       else if (sql.includes("'workbench-evidence'")) selected = selected.filter(r => r.role === "workbench-evidence");
       if (sql.includes("->>'id'")) selected = selected.filter(r => JSON.parse(r.content).id === args[1]);
       if (sql.includes("->>'captureId'")) selected = selected.filter(r => JSON.parse(r.content).captureId === args[1]);
+      if (sql.includes("->>'parentRunId'")) selected = selected.filter(r => JSON.parse(r.content).parentRunId === args[1]);
       return { rows: selected };
     }
     return { rows: [] };
@@ -99,6 +100,64 @@ describe("paired visual-audit backend", () => {
     const response = await fetch(url, { headers: { "x-user": "owner" } });
     expect(JSON.stringify(await response.json())).not.toContain("test-image");
     expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(run.target).toMatchObject({ workspace: "11", source, profileVersion: 1 });
+  });
+  it("exports private report metadata without images or fabricated verification", async () => {
+    await capture();
+    const response = await fetch(`${url}/${requestId}/report`, { headers: { "x-user": "owner" } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-disposition")).toContain(".json");
+    const report = await response.json();
+    expect(report.functionalVerified).toBe(false);
+    expect(report.deploymentVerified).toBe(false);
+    expect(JSON.stringify(report)).not.toContain("test-image");
+    expect((await fetch(`${url}/${requestId}/report`, { headers: { "x-user": "other" } })).status).toBe(404);
+  });
+  it("prepares one durable repair request and returns the saved request on retry", async () => {
+    await capture();
+    const row = rows.find(r => r.role === "workbench-capture")!;
+    const run = JSON.parse(row.content);
+    row.content = JSON.stringify({ ...run, review: { id: "review", fingerprint: source, findings: "Mobile clips" } });
+    expect((await request(`/${requestId}/repair`, { confirm: true })).status).toBe(200);
+    expect((await request(`/${requestId}/repair`, { confirm: true })).status).toBe(200);
+    expect(m.mutate).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(row.content).repair.status).toBe("awaiting-reviewed-save");
+  });
+  it("blocks recapture until a repair is reviewed and saved and bounds the lineage", async () => {
+    await capture();
+    const next = { ...body(), requestId: "00000000-0000-4000-8000-000000000002", parentRunId: requestId };
+    await expect(capturePair("owner", "11", next, new AbortController().signal)).rejects.toThrow("Save an approved repair");
+    const row = rows.find(r => r.role === "workbench-capture")!;
+    row.content = JSON.stringify({ ...JSON.parse(row.content), repairDepth: 3 });
+    await expect(capturePair("owner", "11", next, new AbortController().signal)).rejects.toThrow("Three");
+    expect(m.capture).toHaveBeenCalledTimes(2);
+  });
+  it("continues saved repair source once and persists depth rather than resetting on reload", async () => {
+    await capture();
+    const row = rows.find(r => r.role === "workbench-capture")!;
+    row.content = JSON.stringify({ ...JSON.parse(row.content), review: { fingerprint: source }, repair: { request: "Fix CSS" } });
+    const changed = [{ ...files[0], content: "<button style='max-width:100%'>Neon</button>" }];
+    m.files.mockResolvedValue(changed);
+    const next = { ...body(), fingerprint: fingerprint(changed), requestId: "00000000-0000-4000-8000-000000000002", parentRunId: requestId };
+    const run = await capturePair("owner", "11", next, new AbortController().signal);
+    expect(run.repairDepth).toBe(1);
+    expect(run.parentRunId).toBe(requestId);
+    expect(run.target?.source).toBe(fingerprint(changed));
+    expect(await capturePair("owner", "11", next, new AbortController().signal)).toEqual(run);
+    await expect(capturePair("owner", "11", { ...next, requestId: "00000000-0000-4000-8000-000000000003" }, new AbortController().signal)).rejects.toThrow("already has a capture");
+    expect(m.capture).toHaveBeenCalledTimes(4);
+  });
+  it("accepts only the complete bounded two-view checklist as structured observations", async () => {
+    await capture();
+    const checks = ["text-clipping", "overflow", "wrapping", "alignment", "readability", "obscured-controls"];
+    const view = checks.map(check => ({ check, status: "uncertain", detail: "Only initial viewport observed" }));
+    m.complete.mockResolvedValue({ text: JSON.stringify({ desktop: view, mobile: view, summary: "No functional tests performed" }), promptTokens: 1000, completionTokens: 300 });
+    const response = await request(`/${requestId}/review`, { confirm: true });
+    expect(response.status).toBe(200);
+    const review = await response.json();
+    expect(review.inspection.mobile).toHaveLength(6);
+    expect(review.inspection.functionalVerified).toBe(false);
+    expect(review.findings).toContain("Only initial viewport observed");
   });
   it("does not reuse an idempotency key for another source", async () => {
     await capture();

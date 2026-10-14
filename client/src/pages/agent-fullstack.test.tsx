@@ -16,6 +16,7 @@ vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>S
 vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => <div data-testid="fullstack-infrastructure">Infrastructure controls</div> }));
 vi.mock("@/components/project-workbench", () => ({ ProjectWorkbench: () => <div data-testid="project-workbench">Project workbench</div> }));
 vi.mock("@/components/project-evidence-panel", () => ({ ProjectEvidencePanel: () => <div data-testid="project-evidence">Private visual evidence</div> }));
+vi.mock("@/components/project-visual-audit-chat", () => ({ ProjectVisualAuditChat: () => <div data-testid="chat-visual-evidence">In-chat visual evidence and saved activity</div> }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
     data: queryKey[0] === "/api/auth/user" ? { firstName: "Amina" }

@@ -1,3 +1,31 @@
+# Chat visual inspection integration
+
+The chat now has passive saved activity and private paired visual evidence for
+every saved conversation, including when Project Agent is off. Source generation,
+capture and model review remain separate: remote capture is explicitly gated by
+Browser Rendering permission and consent. The permission probe still returns
+HTTP 401 in this workspace; real capture/vision roundtrip is **not certified**.
+
+The runtime's administrator-controlled inspector profile is versioned separately
+from customer files. New capture receipts bind canonical workspace, saved source,
+profile and checklist versions. Structured AI reviews must include all six checks
+independently for desktop and mobile. Nonconforming model output is retained as
+an **unstructured review**, not silently converted into a passing checklist.
+
+Private JSON reports: `GET visual-audit/:runId/report`. Reports reference evidence
+IDs instead of duplicating image bytes and always distinguish visual observations
+from functional verification and deployment. Capture may include `parentRunId`
+after an approved repair has been saved with a different source fingerprint.
+Each parent accepts one capture attempt (uncertain attempts are not replayed),
+with three repair depths and the existing per-plan budget/repair constraints.
+Repair preparation is idempotent in both the capture receipt and workbench state.
+
+Reconnect and history reads never trigger captures or paid reviews. The UI
+refreshes saved run/evidence metadata on activity; capture, image sharing and
+review require explicit confirmation. Prepared repairs enter the composer for
+inspection and deliberate submission, then use the existing source approval
+flow. No model-authored “PASSED” field triggers publication.
+
 # Visual audit backend contract
 
 ## Release readiness

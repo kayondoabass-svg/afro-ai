@@ -96,3 +96,14 @@ repairs, not a capture-success message or desktop-only verification.
 repairs within approved scope and bounded spending. Report blocked capture
 honestly; never imply the online take_ui_screenshot tool is connected when it
 is not, or that an iPhone-sized browser viewport proves actual Safari behavior.
+
+Customers must see real execution activity and screenshot evidence inside the
+project chat, not only in a separate activity log. Turning the project agent off
+must not remove access to saved evidence.
+
+**Why:** The user repeatedly distinguished the promised in-chat client experience
+from backend functionality and an activity-log-only implementation.
+
+**How to apply:** Keep passive history separate from permission to execute.
+Verify customer-visible integration as well as backend tests; a release is not
+complete merely because its endpoints or build exist.

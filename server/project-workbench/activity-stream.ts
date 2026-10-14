@@ -28,6 +28,12 @@ export function publicActivitySnapshot(rows: { role: string; content: string }[]
       if (item.review) events.push({ id: `${item.id}:reviewed`, jobId: item.id, callId: item.review.id,
         createdAt: item.review.createdAt, tool: "visual_review", status: "reviewed",
         title: "Desktop and mobile images reviewed — functional checks remain separate" });
+      else if (item.reviewAttempt) events.push({ id: `${item.id}:review:${item.reviewAttempt.status}`, jobId: item.id, callId: item.reviewAttempt.jobId,
+        createdAt: item.updatedAt, tool: "visual_review", status: item.reviewAttempt.status,
+        title: `Visual review · ${item.reviewAttempt.status} — no automatic retry` });
+      if (item.repair) events.push({ id: `${item.id}:repair`, jobId: item.id, callId: item.id,
+        createdAt: item.repair.preparedAt, tool: "visual_repair", status: "awaiting-approval",
+        title: "Responsive repair requested — approve source changes before recapture" });
     }
   }
   return events.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).slice(-140);

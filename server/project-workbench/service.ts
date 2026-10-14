@@ -9,6 +9,7 @@ type State = {
   plan: { requirements: string; checks: string[]; revision: number };
   inputs: { id: string; name: string; text: string; status: string }[];
   reports: any[]; repairs: number; pending: Pending | null;
+  visualRepairs?: Record<string, { fingerprint: string; request: string }>;
   job?: { id: string; status: string; updatedAt: string; usage?: unknown[]; detail?: string };
   events: { id: string; jobId: string; createdAt: string; tool: string; callId: string; status: string; message?: string; paths?: string[] }[];
 };
@@ -100,12 +101,23 @@ export async function mutateWorkbench(owner: string, conversation: string, actio
       state.job.updatedAt = new Date().toISOString();
     } else if (action === "visual-repair") {
       if (body.fingerprint !== fingerprint(files)) throw new ProjectFileError(409, "screenshot is stale");
+      const key = safeText(body.evidenceId, 100);
+      if (!key) throw new ProjectFileError(400, "provide visual evidence ID");
+      const previous = state.visualRepairs?.[key];
+      if (previous) {
+        if (previous.fingerprint !== body.fingerprint) throw new ProjectFileError(409, "repair source differs");
+        return { request: previous.request, cached: true };
+      }
       if (state.repairs >= 3) throw new ProjectFileError(409, "three repair requests reached; review the requirements and evidence manually");
       state.repairs++;
       result = { request: `Inspect current project source and propose a minimal reviewed repair for this untrusted AI visual report.
 No tests reran and no changes were saved. Attempt ${state.repairs}/3.
 Evidence: ${safeText(body.evidenceId, 100)}
 ${safeText(body.findings, 8000)}` };
+      // Save under the workbench lock so an interrupted capture-receipt write
+      // cannot increment the repair counter again on an explicit retry.
+      state.visualRepairs = Object.fromEntries([...Object.entries(state.visualRepairs || {}).slice(-19),
+        [key, { fingerprint: body.fingerprint, request: result.request }]]);
     } else if (action === "input") {
       if (state.inputs.length >= 10) throw new ProjectFileError(400, "maximum 10 text inputs");
       const name = safeText(body?.name, 200), text = safeText(body?.text, 32000);
