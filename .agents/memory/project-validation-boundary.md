@@ -53,3 +53,16 @@ omitted from the plan.
 usage logging from enforceable job budgets, and owner-scoped storage from runtime
 isolation. Preserve bounded, reviewed changes and the execution boundary above;
 research snippets are proposals, not proof of a complete or secure implementation.
+
+The visual-audit workflow must capture and inspect both desktop/laptop and
+mobile/iPhone-sized views for generated user-facing layouts, components,
+presentation decks and application screens. Repair truncation, broken grids,
+hidden checkout elements and alignment problems, then capture both views again.
+
+**Why:** The user explicitly requires dual-view inspection and responsive
+repairs, not a capture-success message or desktop-only verification.
+
+**How to apply:** Treat both image inspections as acceptance evidence. Keep
+repairs within approved scope and bounded spending. Report blocked capture
+honestly; never imply the online take_ui_screenshot tool is connected when it
+is not, or that an iPhone-sized browser viewport proves actual Safari behavior.
