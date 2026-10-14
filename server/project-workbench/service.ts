@@ -10,7 +10,7 @@ type State = {
   inputs: { id: string; name: string; text: string; status: string }[];
   reports: any[]; repairs: number; pending: Pending | null;
   job?: { id: string; status: string; updatedAt: string; usage?: unknown[]; detail?: string };
-  events: { id: string; jobId: string; createdAt: string; tool: string; callId: string; status: string; message?: string }[];
+  events: { id: string; jobId: string; createdAt: string; tool: string; callId: string; status: string; message?: string; paths?: string[] }[];
 };
 const initial = (): State => ({ plan: { requirements: "", checks: [], revision: 0 }, inputs: [], reports: [], repairs: 0, pending: null, events: [] });
 let activeMutations = 0;
@@ -93,7 +93,8 @@ export async function mutateWorkbench(owner: string, conversation: string, actio
       if (!state.job || state.job.id !== body.jobId || state.job.status !== "reviewing") throw new ProjectFileError(409, "job is no longer current");
       const entry = { id: randomUUID(), jobId: state.job.id, createdAt: new Date().toISOString(),
         tool: safeText(body.tool, 80), callId: safeText(body.callId, 100), status: safeText(body.status, 40),
-        ...(body.message ? { message: safeText(body.message, 300) } : {}) };
+        ...(body.message ? { message: safeText(body.message, 300) } : {}),
+        ...(Array.isArray(body.paths) ? { paths: body.paths.slice(0, 8).map((p: unknown) => safeText(p, 240)) } : {}) };
       if (!["started", "completed", "failed"].includes(entry.status)) throw new ProjectFileError(400, "invalid event status");
       state.events = [...state.events, entry].slice(-100);
       state.job.updatedAt = new Date().toISOString();

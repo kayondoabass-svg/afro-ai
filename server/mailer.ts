@@ -1,5 +1,5 @@
 import { isSuppressed } from "./ses-webhook";
-import { sendEmail, activeEmailProvider } from "./email-provider";
+import { sendEmail } from "./email-provider";
 import { platformEmailHeader } from "../shared/email-branding";
 
 const FROM = process.env.EMAIL_API_DEMO_FROM || "noreply@afroaigroup.com";
@@ -23,20 +23,21 @@ function shell(title: string, bodyHtml: string, bodyText: string) {
 async function send(to: string, subject: string, html: string, text: string): Promise<boolean> {
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return false;
   if (!FROM) {
-    console.warn("[mailer] EMAIL_API_DEMO_FROM not set — skipping send to", to);
+    console.warn("[mailer] EMAIL_API_DEMO_FROM not set — skipping send");
     return false;
   }
   // Honor the suppression list — never email an address that hard-bounced or complained.
   if (await isSuppressed(to)) {
-    console.warn(`[mailer] Skipped "${subject}" to ${to} — recipient is on suppression list`);
+    console.warn("[mailer] Skipped suppressed recipient");
     return false;
   }
   try {
-    const result = await sendEmail({ from: FROM, to, subject, html, text });
-    console.log(`[mailer] Sent "${subject}" to ${to} via ${result.provider} (${result.messageId})`);
+    await sendEmail({ from: FROM, to, subject, html, text });
+    console.log("[mailer] Message sent");
     return true;
   } catch (e: any) {
-    console.error(`[mailer] Failed to send "${subject}" to ${to} via ${activeEmailProvider()}:`, e?.message || e);
+    // Provider errors can contain message bodies, links or authentication tokens.
+    console.error("[mailer] Message send failed");
     return false;
   }
 }

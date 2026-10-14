@@ -19,6 +19,8 @@ import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
 import { listProjectFiles, saveProjectFiles } from "../../project-files";
 import { runProjectTools } from "../../project-tools";
+import { captureForAgent } from "../../project-workbench/visual-audit";
+import { fingerprint as sourceFingerprint } from "../../project-workbench/model";
 import { createProjectProposal, finishProjectProposal, pendingProjectProposal } from "../../project-proposals";
 import { registerWorkbenchRoutes } from "../../project-workbench/routes";
 import { workbenchContext, mutateWorkbench, assertWorkspaceConversationDeletable } from "../../project-workbench/service";
@@ -1745,13 +1747,18 @@ export function registerChatRoutes(app: Express): void {
           event({ type: "status", message: "Reviewing project files (no changes saved)..." });
           const result = await runProjectTools({
             files, request: userContent, history, tier: userPlan, signal: controller.signal,
+            // Consent covers source disclosure to the remote browser and both
+            // screenshots entering the vision model, not automatic publication.
+            takeScreenshot: req.body?.visualAuditConsent === true
+              ? () => captureForAgent(userId, String(conversationId), sourceFingerprint(files), controller.signal)
+              : undefined,
             onModelFallback: (from, to) => event({ type: "model-fallback", from, to }),
             onUsage: usage => {
               toolTokens += usage.tokens; toolModel = usage.model;
               roundUsage.push(usage);
               event({ type: "project-usage", ...usage, totalTokens: toolTokens });
             },
-            beforeCall: (inputUpperBound, outputLimit) => dispatchJobCall(requestBudget!, inputUpperBound, outputLimit).then(() => {}),
+            beforeCall: (inputUpperBound, outputLimit) => dispatchJobCall(requestBudget!, inputUpperBound, outputLimit, true).then(b => b.outputLimit),
             afterCall: (tokens, estimated) => recordJobUsage(requestBudget!, tokens, estimated).then(() => {}),
             briefContext: redactPrivateCredentials(customerBriefContext(ownedHistory, String(rawLanguage || "en"))) + "\n" + await workbenchContext(userId, String(conversationId)),
             experience: userProfile.experienceLevel,

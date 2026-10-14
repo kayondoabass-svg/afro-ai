@@ -8,9 +8,13 @@ import { assertProjectFileOwnership } from "../project-files";
 import { validateProjectFiles } from "../project-file-policy";
 import { d1Query } from "../d1";
 import { registerEvidenceRoutes } from "./evidence";
+import { registerVisualAuditRoutes } from "./visual-audit";
+import { registerActivityStream } from "./activity-stream";
 
 export function registerWorkbenchRoutes(app: Express, auth: RequestHandler) {
   registerEvidenceRoutes(app, auth);
+  registerVisualAuditRoutes(app, auth);
+  registerActivityStream(app, auth);
   const limit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false });
   const base = "/api/conversations/:id/workbench";
   const owner = (req: Request) => (req as any).user?.claims?.sub || (req as any).user?.claims?.id;

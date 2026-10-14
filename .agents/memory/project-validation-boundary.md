@@ -17,6 +17,36 @@ attestations. Publishing is a separate action and needs its own verification.
 Never turn a missing check, missing entry page, interrupted job or absent browser
 into a successful validation result.
 
+Remote visual capture is a separately authorised, isolated static-preview
+exception, not permission to execute customer packages on the Afro AI host.
+Require source/image sharing consent and independently verify browser-provider
+permission; existing DNS, D1 or R2 credentials do not prove browser access.
+Keep external page requests blocked and keep unsupported full-stack/module
+projects explicitly blocked in this mode.
+
+**Why:** The user requires screenshot-to-model inspection, while the production
+execution and paid-provider constraints still apply. A compatible capture
+adapter must not silently introduce managed customer hosting or paid retries.
+
+**How to apply:** Preserve customer-local runtime checks as the default.
+Separate backend implementation, successful real-provider capture, visible
+frontend controls and production verification. An interrupted image review or
+capture must retain an uncertain outcome rather than trigger a second paid call.
+
+An inspector's target context and output belong to an immutable owner/project/job
+record, not a shared mutable active-target file in a reusable skill directory.
+The reusable manual is static, administrator-controlled instruction, not
+customer runtime state or a grant to read credentials.
+
+**Why:** A supplied routing blueprint used one target file for all customers.
+Concurrent jobs could overwrite that pointer and inspect the wrong customer's
+source; synchronized file writing alone does not establish isolation.
+
+**How to apply:** Resolve identity from the authenticated session, validate
+workspace ownership before every operation and bind source/profile versions to
+the job. Keep exported folder manifests logical and private; do not expose
+absolute platform paths or make markdown rules a substitute for enforcement.
+
 Project workspace changes must preserve legacy conversation source. Require an
 explicit reviewed import and reject conflicting paths rather than silently
 choosing one version.
