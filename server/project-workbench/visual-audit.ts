@@ -18,6 +18,9 @@ import { EVIDENCE_LIMITS } from "./evidence-policy";
 import { BrowserCaptureError, browserCaptureCapability, remoteScreenshot, VISUAL_PROFILES } from "./browser-capture";
 import { staticVisualPreview } from "./visual-preview";
 import { INSPECTOR_PROFILE, inspectorInstructions, parseInspection, inspectionText, assertRepairDepth, type Inspection } from "./visual-inspector";
+import type { PoolClient } from "pg";
+import { appendActivities } from "./activity-history";
+import { publicActivitySnapshot } from "./activity-model";
 
 export type CaptureRun = {
   id: string; fingerprint: string; phase: "before" | "after"; entry: string;
@@ -32,6 +35,25 @@ export type CaptureRun = {
 let activeCaptures = 0;
 const requestIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const publicFailure = (e: unknown) => e instanceof ProjectFileError ? e.message : "Operation was not confirmed. Check saved history before explicitly starting another attempt.";
+async function persistCapture(conn: PoolClient, workspace: string, run: CaptureRun, receipt?: number, insideTransaction = false) {
+  run.updatedAt = new Date().toISOString();
+  if (!insideTransaction) await conn.query("BEGIN");
+  try {
+    let rowId = receipt;
+    if (rowId === undefined) {
+      rowId = (await conn.query("INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'workbench-capture', $2) RETURNING id", [workspace, JSON.stringify(run)])).rows[0].id;
+    } else {
+      const updated = await conn.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-capture'", [rowId, JSON.stringify(run), workspace]);
+      if (!updated.rowCount) throw new ProjectFileError(409, "Capture was removed before its activity could be saved.");
+    }
+    await appendActivities(conn, workspace, publicActivitySnapshot([{ role: "workbench-capture", content: JSON.stringify(run) }]));
+    if (!insideTransaction) await conn.query("COMMIT");
+    return rowId!;
+  } catch (e) {
+    if (!insideTransaction) await conn.query("ROLLBACK").catch(() => {});
+    throw e;
+  }
+}
 export async function captureHistory(owner: string, conversation: string) {
   const workspace = await assertProjectFileOwnership(owner, conversation);
   const { rows } = await pool.query("SELECT content FROM messages WHERE conversation_id = $1 AND role = 'workbench-capture' ORDER BY id DESC LIMIT 20", [workspace]);
@@ -110,7 +132,7 @@ export async function capturePair(owner: string, conversation: string, body: any
       status: "capturing", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), evidenceIds: [],
       repairDepth: depth, ...(body.parentRunId ? { parentRunId: body.parentRunId } : {}),
       target: { workspace, source, profile: INSPECTOR_PROFILE.id, profileVersion: INSPECTOR_PROFILE.version, checklistVersion: INSPECTOR_PROFILE.checklistVersion } };
-    receipt = (await conn.query("INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'workbench-capture', $2) RETURNING id", [workspace, JSON.stringify(run)])).rows[0].id;
+    receipt = await persistCapture(conn, workspace, run);
     const images = [];
     for (const profile of ["desktop", "mobile"] as const) {
       signal.throwIfAborted(); dispatched = true;
@@ -129,7 +151,7 @@ export async function capturePair(owner: string, conversation: string, body: any
         throw new ProjectFileError(409, "Screenshot storage filled during capture.");
       for (const image of images) await conn.query("INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'workbench-evidence', $2)", [workspace, JSON.stringify(image)]);
       run = { ...run, status: "captured", evidenceIds: images.map(i => i.id), updatedAt: new Date().toISOString() };
-      await conn.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-capture'", [receipt, JSON.stringify(run), workspace]);
+      await persistCapture(conn, workspace, run, receipt, true);
     await conn.query("COMMIT");
     } catch (e) { await conn.query("ROLLBACK"); throw e; }
     return run;
@@ -138,7 +160,7 @@ export async function capturePair(owner: string, conversation: string, body: any
       // A timeout/cancellation does NOT prove the browser stopped billing.
       run = { ...run, status: dispatched && (!(e instanceof ProjectFileError) || (e instanceof BrowserCaptureError && e.uncertain)) ? "uncertain" : "failed",
         reason: publicFailure(e), updatedAt: new Date().toISOString() };
-      await conn.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-capture'", [receipt, JSON.stringify(run), workspace]).catch(() => {});
+      await persistCapture(conn, workspace, run, receipt).catch(() => {});
     }
     throw e;
   } finally {
@@ -222,8 +244,7 @@ Do not claim functional tests passed, changes saved, real Safari tested or deplo
 ${inspectorInstructions()}` }, { role: "user", content }];
       job = await reserveJob(user, found.workspace, JOB_BUDGET.maxTokens, fee);
       run.reviewAttempt = { jobId: job.id, status: "reviewing" };
-      const intent = await conn.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-capture'", [latest.rowId, JSON.stringify(run), found.workspace]);
-      if (!intent.rowCount) throw new ProjectFileError(409, "Capture was removed before review dispatch.");
+      await persistCapture(conn, found.workspace, run, latest.rowId);
       const input = modelInputBound({ messages });
       const { outputLimit } = await dispatchJobCall(job, input, 2000, true);
       dispatched = true;
@@ -243,8 +264,7 @@ ${inspectorInstructions()}` }, { role: "user", content }];
           const updated = await conn.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-evidence'", [image.row, JSON.stringify({ ...image.item, review }), found.workspace]);
           if (!updated.rowCount) throw new ProjectFileError(409, "Screenshot removed during review.");
         }
-        const updated = await conn.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-capture'", [latest.rowId, JSON.stringify({ ...run, review, reviewAttempt: { jobId: job.id, status: "reviewed" } }), found.workspace]);
-        if (!updated.rowCount) throw new ProjectFileError(409, "Capture removed during review.");
+        await persistCapture(conn, found.workspace, { ...run, review, reviewAttempt: { jobId: job.id, status: "reviewed" } }, latest.rowId, true);
         await conn.query("COMMIT"); saved = true;
       } catch (e) { await conn.query("ROLLBACK"); throw e; }
       let usageLogPending = false;
@@ -268,7 +288,7 @@ ${inspectorInstructions()}` }, { role: "user", content }];
       if (job && !saved && runRecord) {
         const status = dispatched && !usageRecorded && !providerRejected ? "uncertain" : "failed";
         const update = { ...runRecord.run, reviewAttempt: { jobId: job.id, status } };
-        await conn?.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-capture'", [runRecord.rowId, JSON.stringify(update), runRecord.workspace])
+        if (conn) await persistCapture(conn, runRecord.workspace, update as CaptureRun, runRecord.rowId)
           .catch(() => console.error("[visual-audit] Review outcome requires reconciliation"));
       }
       if (job) await finishJob(job, saved).catch(() => console.error("[visual-audit] Reservation requires reconciliation"));
@@ -296,7 +316,7 @@ ${inspectorInstructions()}` }, { role: "user", content }];
       assertRepairDepth(run.repairDepth || 0);
       const result = await mutateWorkbench(user, workspace, "visual-repair", { fingerprint: run.fingerprint, evidenceId: run.id, findings: run.review.findings });
       const repair = { request: String(result.request), preparedAt: new Date().toISOString(), status: "awaiting-reviewed-save" as const };
-      await conn.query("UPDATE messages SET content = $2 WHERE id = $1 AND conversation_id = $3 AND role = 'workbench-capture'", [rowId, JSON.stringify({ ...run, repair }), workspace]);
+      await persistCapture(conn, workspace, { ...run, repair }, rowId);
       res.json({ ...result, saved: false });
     } catch (e) { fail(res, e); }
     finally {

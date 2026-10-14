@@ -15,12 +15,12 @@ class FakeEventSource {
     this.handlers.set(type, [...(this.handlers.get(type) ?? []), callback]);
   }
   close() { this.closed = true; this.readyState = FakeEventSource.CLOSED; }
-  emit(type: string, data = "") {
-    this.handlers.get(type)?.forEach(callback => callback({ data } as MessageEvent));
+  emit(type: string, data = "", lastEventId = "") {
+    this.handlers.get(type)?.forEach(callback => callback({ data, lastEventId } as MessageEvent));
   }
 }
 
-function renderAudit(fetcher: (url: string) => unknown) {
+function renderAudit(fetcher: (url: string) => unknown, conversationId = 51) {
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -30,7 +30,7 @@ function renderAudit(fetcher: (url: string) => unknown) {
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>
-    <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
+     <ProjectVisualAuditChat conversationId={conversationId} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
   </QueryClientProvider>);
 }
 
@@ -120,4 +120,106 @@ it("surfaces unavailable history rather than replacing it with fabricated state"
   await screen.findByText(/Capture capability could not be checked/);
   expect(screen.queryByText(/No saved screenshot runs/)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Retry check" })).toBeInTheDocument();
+});
+
+const activityPage = (items: Array<Record<string, unknown>>, nextBefore: string | null, hasMore: boolean) => ({
+  items, nextBefore, hasMore, retention: "project-lifetime", legacyHistory: "Only surviving legacy activity can be imported.",
+});
+const savedEvent = (id: string, sequence: string, title: string) => ({
+  id, sequence, createdAt: "2024-02-01T10:00:00.000Z", tool: "read_project_file", status: "completed", title,
+});
+
+it("restores saved history on initial load, merges live duplicates by stable event ID and orders unsafe integers exactly", async () => {
+  renderAudit(url => {
+    if (url.includes("/workbench/activity")) return activityPage([
+      savedEvent("ev-2", "90071992547409930", "Saved newest"),
+      savedEvent("ev-1", "90071992547409929", "Saved older"),
+    ], "90071992547409929", false);
+    return url.endsWith("/visual-audit")
+      ? { capability: { enabled: false }, runs: [] }
+      : { items: [], fingerprint: "source-abc" };
+  });
+  await screen.findByText(/No saved screenshot runs/);
+  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  expect(await screen.findByText("Saved older")).toBeInTheDocument();
+  expect(screen.getByText(/project’s lifetime/)).toBeInTheDocument();
+  eventSourceInstance?.emit("activity", JSON.stringify(savedEvent("ev-2", "90071992547409930", "Updated live title")), "90071992547409930");
+  await screen.findByText("Updated live title");
+  expect(screen.queryByText("Saved newest")).not.toBeInTheDocument();
+  const titles = screen.getAllByText(/Saved older|Updated live title/).map(element => element.textContent);
+  expect(titles).toEqual(["Saved older", "Updated live title"]);
+  expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
+});
+
+it("pages older history without losing newer events and deduplicates overlap", async () => {
+  const olderRequest = savedEvent("ev-1", "1", "Old event");
+  const newestRequest = savedEvent("ev-2", "2", "Newest event");
+  renderAudit(url => {
+    if (url.includes("/workbench/activity")) {
+      return url.includes("before=")
+        ? activityPage([olderRequest, newestRequest], null, false)
+        : activityPage([newestRequest], "2", true);
+    }
+    return url.endsWith("/visual-audit")
+      ? { capability: { enabled: false }, runs: [] }
+      : { items: [], fingerprint: "source-abc" };
+  });
+  await screen.findByText(/No saved screenshot runs/);
+  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  await screen.findByText("Newest event");
+  fireEvent.click(screen.getByRole("button", { name: "Load older activity" }));
+  await screen.findByText("Old event");
+  expect(screen.getAllByText("Newest event")).toHaveLength(1);
+  expect(vi.mocked(fetch).mock.calls.map(([request]) => String(request)).find(url => url.includes("before=")))
+    .toContain("before=2");
+});
+
+it("shows a retry for initial history errors and keeps history fetch independent of EventSource", async () => {
+  vi.stubGlobal("EventSource", undefined);
+  let fail = true;
+  renderAudit(url => {
+    if (url.includes("/workbench/activity")) {
+      if (fail) return new Error("History is temporarily offline.");
+      return activityPage([savedEvent("ev-1", "1", "Restored after retry")], null, false);
+    }
+    return url.endsWith("/visual-audit")
+      ? { capability: { enabled: false }, runs: [] }
+      : { items: [], fingerprint: "source-abc" };
+  });
+  await screen.findByText(/No saved screenshot runs/);
+  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  expect(await screen.findByText(/History is temporarily offline/)).toBeInTheDocument();
+  fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
+  expect(await screen.findByText("Restored after retry")).toBeInTheDocument();
+});
+
+it("discards a late activity page after switching conversations and closes the old stream", async () => {
+  let resolvePage: ((value: Response) => void) | undefined;
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/workbench/activity") && url.includes("/51/")) {
+      return await new Promise<Response>(resolve => { resolvePage = resolve; });
+    }
+    const body = url.includes("/workbench/activity")
+      ? activityPage([savedEvent("new-conversation", "8", "New conversation activity")], null, false)
+      : url.endsWith("/visual-audit") ? { capability: { enabled: false }, runs: [] } : { items: [], fingerprint: "source-abc" };
+    return { ok: true, status: 200, json: async () => body } as Response;
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}>
+    <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
+  </QueryClientProvider>);
+  const oldSource = eventSourceInstance;
+  view.rerender(<QueryClientProvider client={client}>
+    <ProjectVisualAuditChat conversationId={52} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
+  </QueryClientProvider>);
+  await screen.findByText(/No saved screenshot runs/);
+  resolvePage?.(new Response(JSON.stringify(activityPage([savedEvent("stale", "7", "Stale conversation activity")], null, false)),
+    { status: 200, headers: { "Content-Type": "application/json" } }));
+  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
+  expect(await screen.findByText("New conversation activity")).toBeInTheDocument();
+  expect(screen.queryByText("Stale conversation activity")).not.toBeInTheDocument();
+  expect(oldSource?.closed).toBe(true);
 });

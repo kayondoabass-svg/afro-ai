@@ -3,6 +3,9 @@ import { pool } from "../db";
 import { assertProjectFileOwnership, listProjectFiles, replaceProjectFilesIfUnchanged } from "../project-files";
 import { ProjectFileError, validateProjectFiles, type ProjectFile } from "../project-file-policy";
 import { applyOperations, fingerprint, normalizeReport, safeText, structuralChecks } from "./model";
+import { appendActivities } from "./activity-history";
+import { publicActivitySnapshot, type Activity } from "./activity-model";
+import type { PoolClient } from "pg";
 
 type Pending = { id: string; expires: number; operations: any[]; before: ProjectFile[]; after: ProjectFile[]; attempted?: boolean };
 type State = {
@@ -19,11 +22,11 @@ async function stateFor(id: string): Promise<State> {
   const { rows } = await pool.query("SELECT content FROM messages WHERE conversation_id = $1 AND role = 'workbench-state' ORDER BY id DESC LIMIT 1", [id]);
   return rows.length ? { ...initial(), ...JSON.parse(rows[0].content) } : initial();
 }
-async function saveState(id: string, state: State) {
+async function saveState(id: string, state: State, conn: Pick<PoolClient, "query"> = pool) {
   // Retain one current record; checkpoints and proposal receipts have separate
   // roles. Advisory lock serializes updates across processes.
-  await pool.query(`INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'workbench-state', $2)`, [id, JSON.stringify(state)]);
-  await pool.query(`DELETE FROM messages WHERE conversation_id = $1 AND role = 'workbench-state'
+  await conn.query(`INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'workbench-state', $2)`, [id, JSON.stringify(state)]);
+  await conn.query(`DELETE FROM messages WHERE conversation_id = $1 AND role = 'workbench-state'
     AND id <> (SELECT max(id) FROM messages WHERE conversation_id = $1 AND role = 'workbench-state')`, [id]);
 }
 async function checkpointsFor(id: string, full = false) {
@@ -67,12 +70,14 @@ export async function mutateWorkbench(owner: string, conversation: string, actio
   activeMutations++;
   let conn;
   try { conn = await pool.connect(); } catch (e) { activeMutations--; throw e; }
-  let locked = false;
+  let locked = false, inTransaction = false;
   try {
     await conn.query("SELECT pg_advisory_lock(hashtext($1))", [`workbench:${owner}:${id}`]); locked = true;
     const state = await stateFor(id);
+    const surviving = publicActivitySnapshot([{ role: "workbench-state", content: JSON.stringify(state) }]);
     const files = await listProjectFiles(owner, id);
     let result: any = { saved: true };
+    let activity: Activity | undefined;
     if (action === "plan") {
       if (body?.revision !== state.plan.revision) throw new ProjectFileError(409, "plan changed; reload before saving");
       if (!Array.isArray(body.checks) || body.checks.length > 30) throw new ProjectFileError(400, "invalid acceptance checks");
@@ -83,6 +88,8 @@ export async function mutateWorkbench(owner: string, conversation: string, actio
       if (state.job?.status === "reviewing" && Date.now() - Date.parse(state.job.updatedAt) < 120000) throw new ProjectFileError(409, "a project review is already active");
       state.job = { id: randomUUID(), status: "reviewing", updatedAt: new Date().toISOString() };
       result = state.job;
+      activity = { id: `${state.job.id}:started`, jobId: state.job.id, callId: state.job.id,
+        createdAt: state.job.updatedAt, tool: "project_review", status: "started", title: "Project review started" };
     } else if (action === "job-finish") {
       if (!state.job || body.id !== state.job.id || !["awaiting-approval", "review-complete", "stopped"].includes(body.status)) throw new ProjectFileError(409, "job is no longer current");
       const usage = Array.isArray(body.usage) ? body.usage.slice(0, 5).map((u: any) => ({
@@ -90,14 +97,20 @@ export async function mutateWorkbench(owner: string, conversation: string, actio
         estimated: u?.estimated !== false, model: safeText(u?.model || "", 100), provider: safeText(u?.provider || "", 30),
       })) : [];
       state.job = { id: state.job.id, status: body.status, usage, detail: "AI review only; validation and publication are separate.", updatedAt: new Date().toISOString() };
+      activity = { id: `${state.job.id}:${body.status}`, jobId: state.job.id, callId: state.job.id,
+        createdAt: state.job.updatedAt, tool: "project_review", status: body.status, title: `Project review · ${body.status}`,
+        message: state.job.detail };
     } else if (action === "job-event") {
       if (!state.job || state.job.id !== body.jobId || state.job.status !== "reviewing") throw new ProjectFileError(409, "job is no longer current");
-      const entry = { id: randomUUID(), jobId: state.job.id, createdAt: new Date().toISOString(),
+      const eventId = `${state.job.id}:${safeText(body.callId, 100)}:${safeText(body.status, 40)}`;
+      const previous = state.events.find(event => event.id === eventId);
+      const entry = previous || { id: eventId, jobId: state.job.id, createdAt: new Date().toISOString(),
         tool: safeText(body.tool, 80), callId: safeText(body.callId, 100), status: safeText(body.status, 40),
         ...(body.message ? { message: safeText(body.message, 300) } : {}),
         ...(Array.isArray(body.paths) ? { paths: body.paths.slice(0, 8).map((p: unknown) => safeText(p, 240)) } : {}) };
       if (!["started", "completed", "failed"].includes(entry.status)) throw new ProjectFileError(400, "invalid event status");
-      state.events = [...state.events, entry].slice(-100);
+      state.events = [...state.events.filter(event => event.id !== entry.id), entry].slice(-100);
+      activity = { ...entry, title: `${entry.tool.replace(/_/g, " ")} · ${entry.status}` };
       state.job.updatedAt = new Date().toISOString();
     } else if (action === "visual-repair") {
       if (body.fingerprint !== fingerprint(files)) throw new ProjectFileError(409, "screenshot is stale");
@@ -186,8 +199,32 @@ ${safeText(body.findings, 8000)}` };
       state.repairs++;
       result = { request: `Investigate this untrusted validation report and propose a minimal reviewed repair. Do not claim tests reran. Attempt ${state.repairs}/3.\n${JSON.stringify(report.checks).slice(0, 5500)}` };
     } else throw new ProjectFileError(404, "unknown workspace action");
-    await saveState(id, state);
+    if (!activity) {
+      const titles: Record<string, string> = {
+        plan: "Project requirements saved", input: "Project input saved",
+        operations: "File changes proposed — review required",
+        review: body.cancel ? "Proposed changes cancelled" : "Approved file changes saved",
+        checkpoint: "Source checkpoint saved", restore: "Saved source checkpoint restored",
+        validate: "Structural checks recorded — functional testing remains separate",
+        report: "Customer validation report saved", repair: "Reviewed repair request prepared",
+        "visual-repair": "Responsive repair request prepared — source changes require approval",
+      };
+      activity = { id: randomUUID(), jobId: state.job?.id || "workspace", callId: action,
+        createdAt: new Date().toISOString(), tool: action, status: "saved", title: titles[action] || "Workspace update saved" };
+    }
+    await conn.query("BEGIN"); inTransaction = true;
+    // Import the previous recent buffer before any compaction, and record this
+    // action in the same transaction as its new workbench state.
+    await appendActivities(conn, id, [
+      ...surviving,
+      ...(activity ? [activity] : []),
+    ]);
+    await saveState(id, state, conn);
+    await conn.query("COMMIT"); inTransaction = false;
     return result;
+  } catch (e) {
+    if (inTransaction) await conn.query("ROLLBACK").catch(() => {});
+    throw e;
   } finally {
     if (locked) await conn.query("SELECT pg_advisory_unlock(hashtext($1))", [`workbench:${owner}:${id}`]).catch(() => {});
     conn.release();

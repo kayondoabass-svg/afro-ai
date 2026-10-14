@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   complete: vi.fn(), reserve: vi.fn(), dispatch: vi.fn(), usage: vi.fn(), finish: vi.fn(), log: vi.fn(), mutate: vi.fn(),
 }));
 vi.mock("../db", () => ({ pool: { query: m.query, connect: m.connect } }));
+vi.mock("./activity-history", () => ({ appendActivities: vi.fn(async () => {}) }));
 vi.mock("../project-files", () => ({ assertProjectFileOwnership: m.ownership, listProjectFiles: m.files }));
 vi.mock("./browser-capture", async importOriginal => ({
   ...await importOriginal<typeof import("./browser-capture")>(),

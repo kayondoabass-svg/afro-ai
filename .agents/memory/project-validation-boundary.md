@@ -107,3 +107,12 @@ from backend functionality and an activity-log-only implementation.
 **How to apply:** Keep passive history separate from permission to execute.
 Verify customer-visible integration as well as backend tests; a release is not
 complete merely because its endpoints or build exist.
+
+Customers must be able to return to older execution activity, not merely see a
+recent rolling buffer restored after refresh.
+
+**Why:** The user supplied persistence research and explicitly asked to build it.
+
+**How to apply:** Distinguish complete stored history from a limited live view.
+Disclose gaps in legacy data that was already discarded, and keep legal retention
+and post-deletion archival separate from ordinary project activity persistence.

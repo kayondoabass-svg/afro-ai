@@ -26,12 +26,20 @@ type Evidence = { id: string; name: string; phase: "before" | "after"; profile?:
 type VisualAuditResponse = { capability: Capability; runs: CaptureRun[]; visualVerified?: false };
 type Activity = {
   id: string;
+  sequence?: string;
   createdAt: string;
   tool: string;
   status: string;
   title: string;
   message?: string;
   paths?: string[];
+};
+type ActivityPage = {
+  items: Activity[];
+  nextBefore: string | null;
+  hasMore: boolean;
+  retention: "project-lifetime";
+  legacyHistory: string;
 };
 
 const auditKey = (id: number) => ["/api/conversations", id, "workbench-visual-audit"];
@@ -90,13 +98,34 @@ function auditEventSource(url: string, onEvent: (event: Activity) => void, onRes
   const source = new EventSource(url, { withCredentials: true });
   source.addEventListener("open", () => onState("connected"));
   source.addEventListener("activity", event => {
-    try { onEvent(JSON.parse((event as MessageEvent<string>).data) as Activity); } catch { /* Ignore malformed public activity; reconnect remains available. */ }
+    try {
+      const message = event as MessageEvent<string>;
+      const activity = JSON.parse(message.data) as Activity;
+      if (!activity.sequence && /^\d+$/.test(message.lastEventId || "")) activity.sequence = message.lastEventId;
+      onEvent(activity);
+    } catch { /* Ignore malformed public activity; reconnect remains available. */ }
   });
   source.addEventListener("reset", () => onReset());
   source.addEventListener("heartbeat", () => onState("connected"));
   source.addEventListener("end", () => onState("reconnecting"));
   source.addEventListener("error", () => onState(source.readyState === EventSource.CONNECTING ? "reconnecting" : "disconnected"));
   return source;
+}
+
+function orderActivity(items: Activity[]): Activity[] {
+  return [...items].sort((a, b) => {
+    if (a.sequence && b.sequence && /^\d+$/.test(a.sequence) && /^\d+$/.test(b.sequence)) {
+      const left = a.sequence.replace(/^0+(?=\d)/, ""), right = b.sequence.replace(/^0+(?=\d)/, "");
+      return left.length - right.length || left.localeCompare(right) || a.id.localeCompare(b.id);
+    }
+    return Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id);
+  });
+}
+
+function mergeActivity(previous: Activity[], incoming: Activity[]): Activity[] {
+  const byId = new Map(previous.map(item => [item.id, item]));
+  incoming.forEach(item => byId.set(item.id, { ...byId.get(item.id), ...item }));
+  return orderActivity(Array.from(byId.values()));
 }
 
 export function ProjectVisualAuditChat({
@@ -109,6 +138,11 @@ export function ProjectVisualAuditChat({
 }) {
   const queryClient = useQueryClient();
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [activityError, setActivityError] = useState("");
+  const [olderError, setOlderError] = useState("");
+  const [activityPage, setActivityPage] = useState<ActivityPage | null>(null);
   const [streamState, setStreamState] = useState("connecting");
   const [expanded, setExpanded] = useState(false);
   const [captureTarget, setCaptureTarget] = useState<"before" | "after" | null>(null);
@@ -118,6 +152,8 @@ export function ProjectVisualAuditChat({
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState("");
   const mounted = useRef(true);
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
@@ -159,12 +195,35 @@ export function ProjectVisualAuditChat({
 
   useEffect(() => {
     setActivity([]);
+    setActivityPage(null);
+    setActivityError("");
+    setOlderError("");
+    setActivityLoading(true);
+    setOlderLoading(false);
     setStreamState("connecting");
+    let disposed = false;
+    const isCurrent = () => !disposed;
+    const loadLatest = async () => {
+      try {
+        const response = await fetch(`/api/conversations/${conversationId}/workbench/activity?limit=50`, { credentials: "include" });
+        if (!response.ok) throw new Error(await errorMessage(response));
+        const page = await response.json() as ActivityPage;
+        if (!Array.isArray(page?.items) || typeof page.hasMore !== "boolean") throw new Error("Saved activity response is incomplete.");
+        if (!isCurrent()) return;
+        setActivity(previous => mergeActivity(previous, page.items));
+        setActivityPage(page);
+        setActivityError("");
+      } catch (reason) {
+        if (isCurrent()) setActivityError(reason instanceof Error ? reason.message : "Saved activity could not be loaded.");
+      } finally {
+        if (isCurrent()) setActivityLoading(false);
+      }
+    };
+    void loadLatest();
     if (typeof EventSource === "undefined") {
       setStreamState("unavailable in this browser");
-      return;
+      return () => { disposed = true; };
     }
-    let disposed = false;
     let source: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -175,16 +234,18 @@ export function ProjectVisualAuditChat({
       source = auditEventSource(
         `/api/conversations/${conversationId}/workbench/events${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`,
         event => {
-          cursor = event.id;
-          setActivity(previous => [...previous.filter(item => item.id !== event.id), event].slice(-140));
+          if (disposed) return;
+          cursor = event.sequence || event.id;
+          setActivity(previous => mergeActivity(previous, [event]));
           if (refreshTimer) clearTimeout(refreshTimer);
           refreshTimer = setTimeout(() => {
             void queryClient.invalidateQueries({ queryKey: auditKey(conversationId) });
             void queryClient.invalidateQueries({ queryKey: evidenceKey(conversationId) });
           }, 500);
         },
-        () => setActivity([]),
+        () => { void loadLatest(); },
         state => {
+          if (disposed) return;
           setStreamState(state);
           if (state === "reconnecting" && source?.readyState === EventSource.CLOSED) {
             reconnectTimer = setTimeout(connect, 1200);
@@ -200,6 +261,25 @@ export function ProjectVisualAuditChat({
       source?.close();
     };
   }, [conversationId, queryClient]);
+
+  const loadOlderActivity = async () => {
+    if (!activityPage?.nextBefore || olderLoading) return;
+    setOlderLoading(true);
+    setOlderError("");
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}/workbench/activity?limit=50&before=${encodeURIComponent(activityPage.nextBefore)}`, { credentials: "include" });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const page = await response.json() as ActivityPage;
+      if (!Array.isArray(page?.items) || typeof page.hasMore !== "boolean") throw new Error("Saved activity response is incomplete.");
+      if (!mounted.current || conversationId !== conversationIdRef.current) return;
+      setActivity(previous => mergeActivity(previous, page.items));
+      setActivityPage(page);
+    } catch (reason) {
+      if (mounted.current && conversationId === conversationIdRef.current) setOlderError(reason instanceof Error ? reason.message : "Older activity could not be loaded.");
+    } finally {
+      if (mounted.current && conversationId === conversationIdRef.current) setOlderLoading(false);
+    }
+  };
 
   const refresh = async () => Promise.all([
     queryClient.invalidateQueries({ queryKey: auditKey(conversationId) }),
@@ -386,7 +466,32 @@ export function ProjectVisualAuditChat({
           </button>
           {expanded && <>
             {audit.isError && <p role="alert" className="mt-3 text-xs text-amber-100">Saved run history could not be loaded. {audit.error.message}<button type="button" className="ml-2 underline" onClick={() => void audit.refetch()}>Retry</button></p>}
-            {activity.length === 0 && !audit.isError && <p className="mt-3 rounded-md border border-dashed border-zinc-700 p-3 text-center text-xs text-zinc-500">No saved workbench events yet.</p>}
+            <p className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/60 p-2.5 text-[10px] leading-relaxed text-zinc-400">
+              Retained for this project’s lifetime. Only surviving legacy activity can be imported; missing older legacy events cannot be recovered.
+            </p>
+            {activityLoading && activity.length === 0 && <div role="status" aria-label="Loading saved activity" className="mt-3 space-y-2">
+              <div className="h-10 animate-pulse rounded-md bg-zinc-800/70" /><div className="h-10 animate-pulse rounded-md bg-zinc-800/70" />
+            </div>}
+            {activityError && <div role="alert" className="mt-3 rounded-md border border-amber-900/60 bg-amber-950/20 p-3 text-xs text-amber-100">
+              <p>Saved activity could not be loaded. {activityError}</p>
+              <Button size="sm" variant="outline" className="mt-2 h-8 border-amber-900 text-amber-100" onClick={() => {
+                setActivityLoading(true);
+                void fetch(`/api/conversations/${conversationId}/workbench/activity?limit=50`, { credentials: "include" })
+                  .then(async response => {
+                    if (!response.ok) throw new Error(await errorMessage(response));
+                    return response.json() as Promise<ActivityPage>;
+                  })
+                  .then(page => {
+                    if (!mounted.current || conversationId !== conversationIdRef.current) return;
+                    setActivity(previous => mergeActivity(previous, page.items));
+                    setActivityPage(page);
+                    setActivityError("");
+                  })
+                  .catch(reason => { if (mounted.current && conversationId === conversationIdRef.current) setActivityError(reason instanceof Error ? reason.message : "Saved activity could not be loaded."); })
+                  .finally(() => { if (mounted.current && conversationId === conversationIdRef.current) setActivityLoading(false); });
+              }}>Retry activity</Button>
+            </div>}
+            {!activityLoading && !activityError && activity.length === 0 && <p className="mt-3 rounded-md border border-dashed border-zinc-700 p-3 text-center text-xs text-zinc-500">No saved workbench events yet.</p>}
             <ol className="mt-3 max-h-80 space-y-2 overflow-y-auto">
               {activity.map(event => <li key={event.id} className="border-l-2 border-amber-200/30 pl-2.5">
                 <p className="text-xs font-medium text-zinc-200">{event.title || `${event.tool} · ${event.status}`}</p>
@@ -395,8 +500,15 @@ export function ProjectVisualAuditChat({
                 {event.paths?.length ? <p className="mt-1 break-all font-mono text-[10px] text-zinc-500">{event.paths.join(", ")}</p> : null}
               </li>)}
             </ol>
+            {olderError && <div role="alert" className="mt-3 text-xs text-amber-100">
+              <p>Older activity could not be loaded. {olderError}</p>
+              <Button size="sm" variant="outline" className="mt-2 h-8 border-amber-900 text-amber-100" onClick={() => void loadOlderActivity()}>Retry older activity</Button>
+            </div>}
+            {activityPage?.hasMore && <Button type="button" variant="outline" className="mt-3 w-full border-zinc-700 text-xs text-zinc-200" disabled={olderLoading || activityLoading} onClick={() => void loadOlderActivity()}>
+              {olderLoading ? <><LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />Loading older activity</> : "Load older activity"}
+            </Button>}
           </>}
-          <p className="mt-3 border-t border-zinc-800 pt-3 text-[10px] leading-relaxed text-zinc-500">The activity stream only reads saved events, resumes from its event cursor, and closes when this conversation changes. It never starts or replays a job.</p>
+          <p className="mt-3 border-t border-zinc-800 pt-3 text-[10px] leading-relaxed text-zinc-500">History and the live stream read saved events only. The stream resumes from its event cursor and closes when this conversation changes; neither starts nor replays a job.</p>
         </section>
         <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 text-[11px] leading-relaxed text-zinc-400">
           <p className="font-semibold text-zinc-200">Evidence, not a guarantee</p>
