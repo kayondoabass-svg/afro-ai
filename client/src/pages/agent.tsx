@@ -1064,7 +1064,7 @@ export default function AgentPage() {
       <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.md,.csv,.json" multiple className="hidden" onChange={handleFileChange} data-testid="input-file" />
 
       {/* Top bar */}
-      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800/80 flex-shrink-0 min-w-0 md:col-span-2">
+      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800/80 flex-shrink-0 min-w-0 md:col-span-2 md:row-start-1">
         <div className="flex items-center gap-1 shrink-0">
           <Button variant="ghost" size="icon" aria-label={t("chat.goBack")} title={t("chat.goBack")} className="agent-tooltip h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" data-hint="Back to dashboard" onClick={() => setLocation("/dashboard")} data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
@@ -1387,12 +1387,12 @@ export default function AgentPage() {
         </div>
       </header>
 
-      {isFullstack && !projectBlocked && <div className="shrink-0 border-b border-amber-400/25 bg-amber-400/5 px-4 py-3 text-xs text-amber-200 md:col-span-2" role="note" data-testid="fullstack-source-notice">
+      {isFullstack && !projectBlocked && <div className="shrink-0 border-b border-amber-400/25 bg-amber-400/5 px-4 py-3 text-xs text-amber-200 md:col-span-2 md:row-start-2" role="note" data-testid="fullstack-source-notice">
         <strong className="block mb-1">Full-stack project · source export, customer-managed hosting</strong>
         {FULLSTACK_SOURCE_NOTICE}
         <Button size="sm" variant="outline" className="ml-2 mt-2" onClick={() => setProjectPanelOpen(true)}>Database infrastructure</Button>
       </div>}
-      {projectBlocked && <div className="shrink-0 border-b border-violet-500/25 bg-violet-500/5 px-4 py-3 text-xs text-zinc-300 md:col-span-2" role="status">
+      {projectBlocked && <div className="shrink-0 border-b border-violet-500/25 bg-violet-500/5 px-4 py-3 text-xs text-zinc-300 md:col-span-2 md:row-start-2" role="status">
         {setupBlocked ? activeProject?.status === "initializing" ? "Starter setup is still initializing. Return to the dashboard to check progress." : "Starter setup failed. Return to the dashboard and use Retry setup on this project." : projectMetadata.isError ? "Could not verify project metadata. Sending, Preview and Publish are blocked until verified." : projectMetadata.isSuccess ? "Project not found. Return to the dashboard or retry the project check." : "Checking project metadata…"}
         {(projectMetadata.isError || projectMetadata.isSuccess) && !setupBlocked && <Button size="sm" variant="ghost" className="ml-2" onClick={() => projectMetadata.refetch()}>Retry project check</Button>}
         {setupBlocked && <Button size="sm" variant="ghost" className="ml-2" onClick={() => setLocation("/dashboard")}>Back to dashboard</Button>}
@@ -1466,7 +1466,7 @@ export default function AgentPage() {
           </div>
         )}
       </div>
-      <div id="workspace-preview-container" role="region" aria-label="Preview" className={`${workspaceMobileView === "preview" ? "flex" : "hidden"} min-h-0 flex-1 md:flex md:col-start-2 md:row-start-3`}>
+      <div id="workspace-preview-container" role="region" aria-label="Preview" className={`${workspaceMobileView === "preview" ? "flex" : "hidden"} min-h-0 flex-1 md:flex md:col-start-2 md:row-start-3 md:row-span-4`}>
         <ProjectWorkspacePreview conversationId={conversationId} projectId={activeProjectId} projectType={isFullstack ? "fullstack" : activeProject?.type} blocked={projectBlocked} target={workspacePreviewTarget} onTargetChange={setWorkspacePreviewTarget} />
       </div>
       <div role="separator" aria-label="Resize chat and preview panes" aria-orientation="vertical"
@@ -1484,7 +1484,7 @@ export default function AgentPage() {
 
       {/* Queue panel */}
       {queue.length > 0 && (
-        <div className={`border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0 md:col-start-1 ${workspaceMobileView === "preview" ? "hidden md:block" : ""}`}>
+        <div className={`border-t border-zinc-800/80 bg-zinc-950 flex-shrink-0 md:col-start-1 md:row-start-4 ${workspaceMobileView === "preview" ? "hidden md:block" : ""}`}>
           <div
             className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-zinc-300"
           >
@@ -1530,7 +1530,7 @@ export default function AgentPage() {
 
       {/* Pending attachments */}
       {pendingAttachments.length > 0 && (
-        <div className={`border-t border-zinc-800/80 bg-zinc-950 px-3 py-2 flex-shrink-0 flex flex-wrap gap-2 md:col-start-1 ${workspaceMobileView === "preview" ? "hidden md:flex" : ""}`}>
+        <div className={`border-t border-zinc-800/80 bg-zinc-950 px-3 py-2 flex-shrink-0 flex flex-wrap gap-2 md:col-start-1 md:row-start-5 ${workspaceMobileView === "preview" ? "hidden md:flex" : ""}`}>
           {pendingAttachments.map((att, idx) => (
             <div key={idx} className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 text-xs text-zinc-300" data-testid={`attachment-pending-${idx}`}>
               {att.mimetype.startsWith("image/") ? <ImageIcon className="w-3 h-3" /> : <Paperclip className="w-3 h-3" />}
@@ -1544,7 +1544,7 @@ export default function AgentPage() {
       )}
 
       {/* Input area */}
-      <div className={`agent-composer border-t border-zinc-800/80 bg-zinc-950 px-3 py-3 flex-shrink-0 min-w-0 md:col-start-1 ${workspaceMobileView === "preview" ? "hidden md:block" : ""}`}>
+      <div className={`agent-composer border-t border-zinc-800/80 bg-zinc-950 px-3 py-3 flex-shrink-0 min-w-0 md:col-start-1 md:row-start-6 ${workspaceMobileView === "preview" ? "hidden md:block" : ""}`}>
         {projectAgent && <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-amber-400/25 bg-amber-400/5 px-2.5 py-1.5 text-xs text-amber-200">
           <span>Project agent · text only · review before saving</span>
           <button type="button" onClick={toggleProjectAgent} className="shrink-0 underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">{isFullstack ? "Open files" : "Turn off"}</button>

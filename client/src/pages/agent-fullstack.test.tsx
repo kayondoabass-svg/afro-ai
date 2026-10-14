@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const state = vi.hoisted(() => ({
   status: "draft", type: "fullstack", verified: true, failed: false, saved: true, resume: false,
@@ -151,5 +151,22 @@ describe("full-stack agent workspace", () => {
     expect(screen.getByTestId("static-publish-dialog")).toBeInTheDocument();
     expect(screen.queryByTestId("github-export-dialog")).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith("/api/conversations/91/messages", expect.anything());
+  });
+  it("keeps the desktop composer below chat and preserves its draft when switching preview", async () => {
+    state.type = "website";
+    render(<AgentPage />);
+    const composer = screen.getByRole("textbox", { name: "Message to Afro AI" });
+    expect(composer.closest(".agent-composer")).toHaveClass("md:row-start-6");
+    expect(screen.getByRole("region", { name: "Preview" })).toHaveClass("md:row-span-4");
+    fireEvent.change(composer, { target: { value: "Keep this draft" } });
+    const tabs = screen.getByRole("group", { name: "Workspace view" });
+    fireEvent.click(within(tabs).getByRole("button", { name: "Preview" }));
+    expect(composer).toHaveValue("Keep this draft");
+    fireEvent.click(within(tabs).getByRole("button", { name: "Chat" }));
+    expect(composer).toHaveValue("Keep this draft");
+    const divider = screen.getByRole("separator", { name: "Resize chat and preview panes" });
+    expect(divider).toHaveAttribute("aria-valuenow", "52");
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(divider).toHaveAttribute("aria-valuenow", "57");
   });
 });
