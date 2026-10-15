@@ -6,6 +6,11 @@ import { registerApiVersionDocs, versionedApiNotFound } from "./api-versioning";
 import { scanFailure, manualKnowledge, CUSTOMER_CHAT_POLICY, verifyWidgetHtml } from "./chatbot-support";
 import { chatbotBrowserOrigin, registerChatbotVerificationRoutes, saveChatbotInstallation, saveChatbotReplyTest } from "./chatbot-verification";
 import { saveScan } from "./chatbot-scan-persistence";
+import { registerIntegrationProjectRoutes, integrationHandler } from "./integration-project-routes";
+import { ownedEmailProject, legacyEmailProject, linkEmailProjectDomain, storeProjectEmailDomain, createProjectEmailKey, revokeProjectEmailKey, emailKeyAccess, emailProjectAllowsDomain } from "./email-projects";
+import { resolvePrivateChatbotApiKey, chatbotLegacyApiAllowed } from "./chatbot-api-credentials";
+import { pool } from "./db";
+import { sql } from "drizzle-orm";
 import { fetchPublicPage, scrapeUrl } from "./url-scrape";
 import { registerChatbotKnowledgeRoutes, archiveScan, deleteKnowledgeFolder, createWidgetWithPrivateKnowledge, KnowledgeFileError } from "./chatbot-knowledge-files";
 import { registerAppInstallRoutes } from "./app-installs";
@@ -4515,8 +4520,14 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
     try {
       const auth = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
       if (!auth) return res.status(401).json({ message: "Missing Bearer API key in Authorization header" });
-      const widget = await storage.getChatbotWidgetByApiKey(auth);
+      const privateId = auth.startsWith("sk_chatbot_") ? await resolvePrivateChatbotApiKey(auth) : null;
+      const widget = auth.startsWith("sk_chatbot_")
+        ? (privateId ? await storage.getChatbotWidgetById(privateId) : undefined)
+        : await storage.getChatbotWidgetByApiKey(auth);
       if (!widget || !widget.isActive) return res.status(404).json({ message: "Invalid API key" });
+      if (!auth.startsWith("sk_chatbot_") && !await chatbotLegacyApiAllowed(widget.id)) {
+        return res.status(401).json({ message: "Use a private server API credential. The public widget ID is for browser embeds only." });
+      }
 
       const { enforceAgencyForApi } = await import("./chatbot-limits");
       const enforcement = await enforceAgencyForApi(widget.userId);
@@ -5162,6 +5173,7 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
   function generateSecretKey(): string {
     return "sk_live_" + crypto.randomBytes(32).toString("hex");
   }
+  registerIntegrationProjectRoutes(app, isAuthenticated, emailApiSend);
 
   // List API keys
   app.get("/api/email-api/keys", isAuthenticated, async (req: any, res) => {
@@ -5173,45 +5185,31 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
   });
 
   // Create a new API key
-  app.post("/api/email-api/keys", isAuthenticated, async (req: any, res) => {
+  app.post("/api/email-api/keys", isAuthenticated, integrationHandler(async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
-    const { name } = req.body;
-    if (!name) return res.status(400).json({ error: "Name required" });
+    const { name, projectId } = req.body;
     const owner = await storage.getUser(userId);
-
-    const publicKey = generatePublicKey();
-    const secretKey = generateSecretKey();
-    const secretKeyHash = await bcrypt.hash(secretKey, 12);
-    const secretKeyPreview = secretKey.slice(-4);
-
-    const [key] = await db.insert(emailApiKeys).values({
-      userId,
-      name,
-      publicKey,
-      secretKeyHash,
-      secretKeyPreview,
-      plan: isFounderEmail(owner?.email) ? "enterprise" : "starter",
-      monthlyLimit: 1000,
-      isActive: true,
-    }).returning();
-
-    // Return secret key ONCE — never again
-    res.json({ ...presentEmailApiKey(key, owner?.email), secretKey });
-  });
+    const project = projectId != null ? await ownedEmailProject(userId,projectId) : await legacyEmailProject(userId);
+    res.setHeader("Cache-Control","no-store");
+    res.json(await createProjectEmailKey(userId,owner?.email,project.id,name));
+  }));
 
   // Delete an API key
-  app.delete("/api/email-api/keys/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/email-api/keys/:id", isAuthenticated, integrationHandler(async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
-    await db.delete(emailApiKeys).where(dbAnd(dbEq(emailApiKeys.id, parseInt(req.params.id)), dbEq(emailApiKeys.userId, userId)));
-    res.json({ success: true });
-  });
+    res.json(await revokeProjectEmailKey(userId,req.params.id));
+  }));
 
   // Toggle API key active status
   app.patch("/api/email-api/keys/:id/toggle", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     const [key] = await db.select().from(emailApiKeys).where(dbAnd(dbEq(emailApiKeys.id, parseInt(req.params.id)), dbEq(emailApiKeys.userId, userId)));
     if (!key) return res.status(404).json({ error: "Key not found" });
-    const [updated] = await db.update(emailApiKeys).set({ isActive: !key.isActive }).where(dbEq(emailApiKeys.id, key.id)).returning();
+    const [updated] = await db.update(emailApiKeys).set({ isActive: !key.isActive }).where(dbAnd(
+      dbEq(emailApiKeys.id, key.id),
+      sql`EXISTS (SELECT 1 FROM email_key_state s WHERE s.key_id=${key.id} AND s.revoked_at IS NULL)`,
+    )).returning();
+    if (!updated) return res.status(409).json({error:"A revoked key cannot be re-enabled"});
     const owner = await storage.getUser(userId);
     res.json(presentEmailApiKey(updated, owner?.email));
   });
@@ -5227,16 +5225,20 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
   // currently active (Resend by default, falls back to SES). Either way we
   // store provider-specific identifiers so /verify and DELETE know who to
   // talk to even after the active provider is later flipped.
-  app.post("/api/email-api/domains", isAuthenticated, async (req: any, res) => {
+  app.post("/api/email-api/domains", isAuthenticated, integrationHandler(async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     let domain: string;
     try { domain = normalizeSendingDomain(req.body?.domain); }
     catch (error) { return res.status(400).json({ error: (error as Error).message }); }
+    const project = req.body.projectId != null ? await ownedEmailProject(userId,req.body.projectId) : await legacyEmailProject(userId);
 
     // Repeated submissions of the same owned domain should not register another
     // upstream identity. Never reuse a different user's provider identity.
     const [ownedDomain] = await db.select().from(emailApiDomains).where(dbAnd(dbEq(emailApiDomains.userId, userId), dbEq(emailApiDomains.domain, domain)));
-    if (ownedDomain) return res.json(ownedDomain);
+    if (ownedDomain) {
+      await linkEmailProjectDomain(userId,project.id,ownedDomain.id);
+      return res.json(ownedDomain);
+    }
 
     const { activeEmailProvider } = await import("./email-provider");
     const provider = activeEmailProvider();
@@ -5247,8 +5249,7 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
         const region = process.env.RESEND_REGION || "us-east-1";
         const created = await createResendDomain(domain, region);
         const recs = formatRecordsForUi(created.records);
-        const [row] = await db.insert(emailApiDomains).values({
-          userId,
+        const row = await storeProjectEmailDomain(userId,project.id,{
           domain,
           status: created.status === "verified" ? "verified" : "pending",
           dkimToken: recs.dkimText,
@@ -5256,7 +5257,7 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
           dmarcRecord: recs.dmarcText,
           provider: "resend",
           resendDomainId: created.id,
-        }).returning();
+        });
         return res.json(row);
       } catch (e: any) {
         console.error("[EmailAPI] Resend domain create error:", e?.message || e);
@@ -5284,17 +5285,16 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       const failure = emailDomainError(e);
       return res.status(failure.status).json({ error: failure.error, code: failure.code });
     }
-    const [created] = await db.insert(emailApiDomains).values({
-      userId,
+    const created = await storeProjectEmailDomain(userId,project.id,{
       domain,
       status: "pending",
       dkimToken,
       spfRecord,
       dmarcRecord,
       provider: "ses",
-    }).returning();
+    });
     res.json(created);
-  });
+  }));
 
   // Check domain verification status. Asks whichever provider this row was
   // registered with (provider column), not the currently-active one — so
@@ -5341,6 +5341,10 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
   app.delete("/api/email-api/domains/:id", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub || req.user?.claims?.id;
     const [row] = await db.select().from(emailApiDomains).where(dbAnd(dbEq(emailApiDomains.id, parseInt(req.params.id)), dbEq(emailApiDomains.userId, userId)));
+    if (!row) return res.status(404).json({error:"Domain not found"});
+    const shared = await pool.query(`SELECT 1 FROM email_project_domains d JOIN email_projects p ON p.id=d.project_id
+      WHERE d.domain_id=$1 AND NOT p.legacy LIMIT 1`,[row.id]);
+    if (shared.rowCount) return res.status(409).json({error:"This domain is used by an email project. Remove its project associations before deleting the provider identity."});
     if (row?.provider === "resend" && row.resendDomainId) {
       try {
         const { deleteResendDomain } = await import("./resend-domains");
@@ -5355,19 +5359,19 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
   });
 
   // Send email (public endpoint — authenticated via API key)
-  app.post("/api/email-api/send", async (req, res) => {
+  async function emailApiSend(req:any, res:any, ownerTestKey?:any) {
     const authHeader = req.headers.authorization || "";
     const token = authHeader.replace("Bearer ", "").replace("Basic ", "");
 
-    if (!token) return res.status(401).json({ error: "No API key provided" });
+    if (!token && !ownerTestKey) return res.status(401).json({ error: "No API key provided" });
 
     // Find key by public key prefix match, then verify secret
-    let apiKey;
-    if (token.startsWith("afro_live_")) {
+    let apiKey = ownerTestKey;
+    if (!apiKey && token.startsWith("afro_live_")) {
       // Public key only (limited use) — find by public key
       const [found] = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.publicKey, token));
       apiKey = found;
-    } else if (token.startsWith("sk_live_")) {
+    } else if (!apiKey && token.startsWith("sk_live_")) {
       // Secret key — need to find and bcrypt compare
       const allKeys = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.isActive, true));
       for (const k of allKeys) {
@@ -5377,12 +5381,13 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
     }
 
     if (!apiKey || !apiKey.isActive) return res.status(401).json({ error: "Invalid or inactive API key" });
+    const quota = await emailKeyAccess(apiKey.id);
     // Resolve the key's actual owner, not a caller-supplied email or plan.
     const emailKeyOwner = await storage.getUser(apiKey.userId);
     if (!emailKeyOwner) return res.status(401).json({ error: "API key owner account not found" });
     // Public keys remain limited: exposing one must never confer founder privileges.
-    const founderSecretAccess = token.startsWith("sk_live_") && isFounderEmail(emailKeyOwner.email);
-    if (!founderSecretAccess && apiKey.emailsSentMonth >= apiKey.monthlyLimit) return res.status(429).json({ error: "Monthly email limit reached" });
+    const founderSecretAccess = (Boolean(ownerTestKey) || token.startsWith("sk_live_")) && isFounderEmail(emailKeyOwner.email);
+    if (!founderSecretAccess && quota.used >= quota.quotaLimit) return res.status(429).json({ error: "Monthly email limit reached" });
 
     const { from, to, subject, html, text } = req.body;
     if (!from || !to || !subject || (!html && !text)) {
@@ -5408,6 +5413,9 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       });
     }
 
+    if (!await emailProjectAllowsDomain(quota.projectId,apiKey.userId,verifiedDomain.id)) {
+      return res.status(403).json({error:"This sending domain is not linked to this key's project"});
+    }
     // Filter out suppressed recipients (hard bounces and complaints) before hitting SES.
     // Sending to known-bad addresses is the fastest way to wreck your sender reputation.
     const recipientsRaw = Array.isArray(to) ? to : [to];
@@ -5447,9 +5455,10 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       });
 
       await db.update(emailApiKeys).set({
-        emailsSentMonth: apiKey.emailsSentMonth + 1,
+        emailsSentMonth: sql`${emailApiKeys.emailsSentMonth} + 1`,
         lastUsedAt: new Date(),
-      }).where(dbEq(emailApiKeys.id, apiKey.id));
+      }).where(dbEq(emailApiKeys.id, quota.quotaKeyId));
+      if (quota.quotaKeyId!==apiKey.id) await db.update(emailApiKeys).set({lastUsedAt:new Date()}).where(dbEq(emailApiKeys.id,apiKey.id));
 
       res.json({ success: true, messageId, suppressed: suppressedSkipped });
     } catch (e: any) {
@@ -5464,7 +5473,8 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       });
       res.status(500).json({ error: e.message });
     }
-  });
+  }
+  app.post("/api/email-api/send", integrationHandler(emailApiSend));
 
   // ─────────── SES bounce/complaint webhook (SNS notifications) ───────────
   // Configure your SES Configuration Set to publish Bounce, Complaint, and

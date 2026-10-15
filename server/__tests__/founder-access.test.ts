@@ -4,13 +4,15 @@ import ts from "typescript";
 import { readFileSync } from "node:fs";
 import { FOUNDER_EMAILS, isFounderEmail, presentEmailApiKey } from "../founder-access";
 
-const mocks = vi.hoisted(() => ({ select:vi.fn(), getUser:vi.fn() }));
+const mocks = vi.hoisted(() => ({ select:vi.fn(), getUser:vi.fn(), keyAccess:vi.fn() }));
 vi.mock("../db", () => ({db:{select:mocks.select}}));
 vi.mock("../storage", () => ({storage:{getUser:mocks.getUser,createUsageLog:vi.fn()}}));
 vi.mock("../mailer", () => ({sendQuotaReachedEmail:vi.fn()}));
 import { aiQuotaGuard, assertOwnerDailyCap } from "../replit_integrations/quota";
 
 function rows(...batches: any[][]) {
+  const key=batches[0]?.[0];
+  mocks.keyAccess.mockResolvedValue({used:key?.emailsSentMonth,quotaLimit:key?.monthlyLimit,quotaKeyId:key?.id,projectId:1});
   mocks.select.mockImplementation(() => ({from:() => ({where:() => Promise.resolve(batches.shift() || [])})}));
 }
 function response() {
@@ -23,21 +25,23 @@ function response() {
 function emailSendHandler(secretMatches = true) {
   const source=readFileSync(new URL("../routes.ts",import.meta.url),"utf8");
   const ast=ts.createSourceFile("routes.ts",source,ts.ScriptTarget.Latest,true);
-  let callback:ts.ArrowFunction|undefined;
+  let callback:ts.ArrowFunction|ts.FunctionDeclaration|undefined;
   const visit=(node:ts.Node) => {
+    if(ts.isFunctionDeclaration(node) && node.name?.text==="emailApiSend") callback=node;
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text==="post" && node.arguments[0] &&
       ts.isStringLiteral(node.arguments[0]) && node.arguments[0].text==="/api/email-api/send") {
-      callback=node.arguments.find(ts.isArrowFunction);
+      const arrow=node.arguments.find(ts.isArrowFunction);
+      if(arrow) callback=arrow;
     }
     ts.forEachChild(node,visit);
   };
   visit(ast);
   if (!callback) throw new Error("Email send callback missing");
   const js=ts.transpileModule(`const handler=${callback.getText(ast)}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
-  return new Function("db","emailApiKeys","dbEq","storage","isFounderEmail","bcrypt",`${js};return handler;`)(
+  return new Function("db","emailApiKeys","dbEq","storage","isFounderEmail","bcrypt","emailKeyAccess",`${js};return handler;`)(
     {select:mocks.select},{publicKey:"public_key",isActive:"is_active"},()=>true,
-    {getUser:mocks.getUser},isFounderEmail,{compare:vi.fn().mockResolvedValue(secretMatches)},
+    {getUser:mocks.getUser},isFounderEmail,{compare:vi.fn().mockResolvedValue(secretMatches)},mocks.keyAccess,
   );
 }
 beforeEach(() => vi.clearAllMocks());
@@ -122,5 +126,14 @@ describe("founder customer-quota exemptions", () => {
     await emailSendHandler()({headers:{authorization:"Bearer afro_live_test"},body:{}},res);
     expect(res.statusCode).toBe(401);
     expect(mocks.getUser).not.toHaveBeenCalled();
+  });
+  it("honors the original quota after key rotation instead of granting a fresh allowance",async()=>{
+    rows([{id:2,userId:"customer",isActive:true,monthlyLimit:1000,emailsSentMonth:0}]);
+    mocks.keyAccess.mockResolvedValue({used:1000,quotaLimit:1000,quotaKeyId:1,projectId:1});
+    mocks.getUser.mockResolvedValue({email:"customer@example.test"});
+    const res=response();
+    await emailSendHandler()({headers:{authorization:"Bearer sk_live_test"},body:{}},res);
+    expect(res.statusCode).toBe(429);
+    expect(mocks.keyAccess).toHaveBeenCalledWith(2);
   });
 });

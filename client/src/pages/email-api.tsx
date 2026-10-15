@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,8 @@ import { Copy, Plus, Trash2, Eye, EyeOff, Check, Globe, Key, BarChart3, Mail, Re
 import { formatDistanceToNow } from "date-fns";
 import { AppHandoffContext } from "@/components/app-handoff-context";
 import { useAppHandoff } from "@/lib/app-handoff";
+import { EmailProjectWorkspace } from "@/components/email-project-workspace";
+import { EmailProjectTest } from "@/components/email-project-test";
 
 interface EmailApiKey {
   founderAccess?: boolean;
@@ -27,6 +30,7 @@ interface EmailApiKey {
   emailsSentMonth: number;
   monthlyLimit: number;
   isActive: boolean;
+  revokedAt?: string | null;
   lastUsedAt: string | null;
   createdAt: string;
 }
@@ -64,8 +68,14 @@ interface Stats {
 }
 
 function copyToClipboard(text: string, label: string, toast: any) {
-  navigator.clipboard.writeText(text);
-  toast({ title: `Copied ${label}` });
+  try {
+    navigator.clipboard.writeText(text).then(
+      () => toast({ title: `Copied ${label}` }),
+      () => toast({ title: `Couldn't copy ${label}`, description: "Select and copy the value manually.", variant: "destructive" }),
+    );
+  } catch {
+    toast({ title: `Couldn't copy ${label}`, description: "Select and copy the value manually.", variant: "destructive" });
+  }
 }
 
 export default function EmailApiPage() {
@@ -77,20 +87,43 @@ export default function EmailApiPage() {
   const [showAddDomain, setShowAddDomain] = useState(false);
   const [newDomain, setNewDomain] = useState("");
   const [expandedDomain, setExpandedDomain] = useState<number | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(new URLSearchParams(window.location.search).get("project"));
 
-  const { data: keys = [], isLoading: loadingKeys } = useQuery<EmailApiKey[]>({ queryKey: ["/api/email-api/keys"] });
-  const { data: domains = [], isLoading: loadingDomains } = useQuery<EmailApiDomain[]>({ queryKey: ["/api/email-api/domains"] });
-  const { data: logs = [], isLoading: loadingLogs } = useQuery<EmailApiLog[]>({ queryKey: ["/api/email-api/logs"] });
-  const { data: stats } = useQuery<Stats>({ queryKey: ["/api/email-api/stats"] });
+  const { data: legacyKeys = [], isLoading: legacyLoadingKeys } = useQuery<EmailApiKey[]>({ queryKey: ["/api/email-api/keys"], enabled: !selectedProjectId, retry: false });
+  const { data: legacyDomains = [], isLoading: legacyLoadingDomains } = useQuery<EmailApiDomain[]>({ queryKey: ["/api/email-api/domains"], enabled: !selectedProjectId, retry: false });
+  const { data: legacyLogs = [], isLoading: legacyLoadingLogs } = useQuery<EmailApiLog[]>({ queryKey: ["/api/email-api/logs"], enabled: !selectedProjectId, retry: false });
+  const { data: legacyStats } = useQuery<Stats>({ queryKey: ["/api/email-api/stats"], enabled: !selectedProjectId, retry: false });
+  const projectPath = selectedProjectId ? `/api/email-api/projects/${encodeURIComponent(selectedProjectId)}` : "";
+  const { data: projectDetail, isLoading: loadingProject, isError: projectError, error: projectLoadError, refetch: refetchProject } = useQuery<{project: {id: string | number; name: string; legacy: boolean}; keys: EmailApiKey[]; domains: EmailApiDomain[]; logs: EmailApiLog[]; stats: Stats}>({
+    queryKey: [projectPath], enabled: !!selectedProjectId, retry: false,
+  });
+  const keys = selectedProjectId ? projectDetail?.keys ?? [] : legacyKeys;
+  const domains = selectedProjectId ? projectDetail?.domains ?? [] : legacyDomains;
+  const logs = selectedProjectId ? projectDetail?.logs ?? [] : legacyLogs;
+  const stats = selectedProjectId ? projectDetail?.stats : legacyStats;
+  const selectedProjectReady = !!selectedProjectId && !!projectDetail && !loadingProject && !projectError;
+  const loadingKeys = selectedProjectId ? loadingProject : legacyLoadingKeys;
+  const loadingDomains = selectedProjectId ? loadingProject : legacyLoadingDomains;
+  const loadingLogs = selectedProjectId ? loadingProject : legacyLoadingLogs;
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (selectedProjectId) params.set("project", selectedProjectId);
+    else params.delete("project");
+    const search = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`);
+  }, [selectedProjectId]);
 
   const createKeyMutation = useMutation({
+    gcTime: 0,
+    retry: false,
     mutationFn: async (name: string) => {
-      const res = await apiRequest("POST", "/api/email-api/keys", { name });
+      if (!selectedProjectReady || !selectedProjectId) throw new Error("Select a loaded email project before creating a key.");
+      const res = await apiRequest("POST", "/api/email-api/keys", { name, projectId: selectedProjectId });
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/email-api/keys"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/email-api/stats"] });
+      queryClient.invalidateQueries({ queryKey: [projectPath] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-api/projects"] });
       setNewKeyName("");
       setShowCreateKey(false);
       setNewSecretKey(data.secretKey);
@@ -100,32 +133,43 @@ export default function EmailApiPage() {
   });
 
   const deleteKeyMutation = useMutation({
+    retry: false,
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/email-api/keys/${id}`);
+      await apiRequest("POST", `/api/email-api/keys/${id}/revoke`, { confirm: true });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/email-api/keys"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/email-api/stats"] });
-      toast({ title: "Key deleted" });
+      queryClient.invalidateQueries({ queryKey: [projectPath] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-api/projects"] });
+      toast({ title: "Key permanently revoked" });
     },
   });
 
   const toggleKeyMutation = useMutation({
+    retry: false,
     mutationFn: async (id: number) => {
       const res = await apiRequest("PATCH", `/api/email-api/keys/${id}/toggle`);
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/email-api/keys"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [projectPath] }),
+  });
+
+  const rotateKeyMutation = useMutation({
+    gcTime: 0, retry: false,
+    mutationFn: async (id: number) => (await apiRequest("POST", `/api/email-api/keys/${id}/rotate`, {})).json(),
+    onSuccess: (data) => { queryClient.invalidateQueries({ queryKey: [projectPath] }); setNewSecretKey(data.secretKey); },
+    onError: (error) => toast({ title: "Couldn't rotate key", description: readableApiError(error, "Please try again."), variant: "destructive" }),
   });
 
   const addDomainMutation = useMutation({
+    retry: false,
     mutationFn: async (domain: string) => {
-      const res = await apiRequest("POST", "/api/email-api/domains", { domain: normalizeSendingDomain(domain) });
+      if (!selectedProjectReady || !selectedProjectId) throw new Error("Select a loaded email project before adding a domain.");
+      const res = await apiRequest("POST", "/api/email-api/domains", { domain: normalizeSendingDomain(domain), projectId: selectedProjectId });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/email-api/domains"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/email-api/stats"] });
+      queryClient.invalidateQueries({ queryKey: [projectPath] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-api/projects"] });
       setNewDomain("");
       setShowAddDomain(false);
       toast({ title: "Domain added — add DNS records to verify" });
@@ -134,24 +178,27 @@ export default function EmailApiPage() {
   });
 
   const verifyDomainMutation = useMutation({
+    retry: false,
     mutationFn: async (id: number) => {
       const res = await apiRequest("POST", `/api/email-api/domains/${id}/verify`);
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/email-api/domains"] });
+      queryClient.invalidateQueries({ queryKey: [projectPath] });
       toast({ title: data.status === "verified" ? "Domain verified!" : "Not verified yet — DNS changes can take up to 72h" });
     },
     onError: (error) => toast({ title: "Couldn't check verification", description: readableApiError(error, "Try again later."), variant: "destructive" }),
   });
 
   const deleteDomainMutation = useMutation({
+    retry: false,
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/email-api/domains/${id}`);
+      await apiRequest("DELETE", `/api/email-api/projects/${encodeURIComponent(selectedProjectId || "")}/domains/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/email-api/domains"] });
-      toast({ title: "Domain removed" });
+      queryClient.invalidateQueries({ queryKey: [projectPath] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-api/projects"] });
+      toast({ title: "Domain permission removed from this project" });
     },
   });
 
@@ -165,6 +212,17 @@ export default function EmailApiPage() {
     if (status === "verified") return <CheckCircle2 className="w-4 h-4 text-green-500" />;
     if (status === "failed") return <AlertTriangle className="w-4 h-4 text-red-500" />;
     return <Clock className="w-4 h-4 text-yellow-500" />;
+  };
+  const downloadEmailEnv = () => {
+    if (!newSecretKey) return;
+    const blob = new Blob([`AFRO_EMAIL_API_KEY=${newSecretKey}\n`], { type: "text/plain;charset=utf-8" });
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = ".env";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(href), 0);
+    toast({ title: ".env file downloaded", description: "Keep it on your server. Never commit secrets or expose them in browser code." });
   };
 
   const codeExample = keys[0]
@@ -201,18 +259,19 @@ console.log(data.messageId); // → "01000196..."
           </h1>
           <p className="text-muted-foreground text-sm mt-1">Send transactional emails via API. Powered by AfroAI.</p>
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => setShowAddDomain(true)} variant="outline" data-testid="button-add-domain">
+      </div>
+      <AppHandoffContext prefilledFields={handoff.project ? ["API key name"] : []} />
+      <EmailProjectWorkspace selectedId={selectedProjectId} onSelect={setSelectedProjectId}>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => setShowAddDomain(true)} variant="outline" disabled={!selectedProjectReady} data-testid="button-add-domain">
             <Globe className="w-4 h-4 mr-1" /> Add Domain
           </Button>
-          <Button size="sm" onClick={() => { setNewKeyName(handoff.project?.name ? `${handoff.project.name} email` : ""); setShowCreateKey(true); }} data-testid="button-create-key">
+          <Button size="sm" onClick={() => { setNewKeyName(handoff.project?.name ? `${handoff.project.name} email` : ""); setShowCreateKey(true); }} disabled={!selectedProjectReady || !domains.some((domain) => domain.status === "verified")} data-testid="button-create-key">
             <Plus className="w-4 h-4 mr-1" /> New API Key
           </Button>
         </div>
-      </div>
-      <AppHandoffContext prefilledFields={handoff.project ? ["API key name"] : []} />
+      </EmailProjectWorkspace>
 
-      {/* Stats */}
       {stats?.founderAccess && <Card className="border-primary/40">
         <CardContent className="p-4 space-y-2">
           <p className="font-semibold">Founder — full access</p>
@@ -220,6 +279,25 @@ console.log(data.messageId); // → "01000196..."
           {stats.emailProvider === "resend" && <a className="text-sm text-primary underline" href="https://resend.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage Resend sending capacity</a>}
         </CardContent>
       </Card>}
+
+      {!selectedProjectId ? (
+        <Card className="border-dashed"><CardContent className="p-6 text-sm text-muted-foreground">
+          Choose an email project above to manage its keys, sending domains, activity, usage and API documentation. Account-wide records are not shown as project data.
+        </CardContent></Card>
+      ) : !selectedProjectReady ? (
+        <Card className="border-border/60" data-testid="selected-project-state">
+          <CardHeader>
+            <CardTitle>{projectError ? "Couldn't load this email project" : "Loading email project"}</CardTitle>
+            <CardDescription>{projectError ? readableApiError(projectLoadError, "Project details are unavailable. Your account-wide email records are not shown here.") : "Loading this project's keys, sending domains, activity and usage."}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {projectError
+              ? <Button variant="outline" onClick={() => refetchProject()}>Try again</Button>
+              : <div className="space-y-3" aria-label="Loading selected email project"><div className="h-8 w-40 animate-pulse rounded bg-muted" /><div className="h-24 animate-pulse rounded bg-muted" /><div className="h-40 animate-pulse rounded bg-muted" /></div>}
+          </CardContent>
+        </Card>
+      ) : <>
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "Sent This Month", value: stats?.emailsSentThisMonth ?? 0, icon: Mail, color: "text-green-500" },
@@ -240,11 +318,12 @@ console.log(data.messageId); // → "01000196..."
       </div>
 
       <Tabs defaultValue="keys">
-        <TabsList>
+        <TabsList className="grid h-auto w-full grid-cols-5 sm:inline-flex sm:w-auto">
           <TabsTrigger value="keys" data-testid="tab-keys"><Key className="w-4 h-4 mr-1" />API Keys</TabsTrigger>
           <TabsTrigger value="domains" data-testid="tab-domains"><Globe className="w-4 h-4 mr-1" />Domains</TabsTrigger>
           <TabsTrigger value="logs" data-testid="tab-logs"><BarChart3 className="w-4 h-4 mr-1" />Logs</TabsTrigger>
           <TabsTrigger value="docs" data-testid="tab-docs"><Code2 className="w-4 h-4 mr-1" />API Docs</TabsTrigger>
+          <TabsTrigger value="test" data-testid="tab-test"><Mail className="w-4 h-4 mr-1" />Test</TabsTrigger>
         </TabsList>
 
         {/* API Keys Tab */}
@@ -256,7 +335,7 @@ console.log(data.messageId); // → "01000196..."
               <CardContent className="p-12 text-center">
                 <Key className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
                 <p className="text-muted-foreground">No API keys yet. Create one to start sending emails.</p>
-                <Button className="mt-4" onClick={() => setShowCreateKey(true)} data-testid="button-create-first-key">Create API Key</Button>
+                <Button className="mt-4" onClick={() => setShowCreateKey(true)} disabled={!selectedProjectReady || !domains.some((domain) => domain.status === "verified")} data-testid="button-create-first-key">Create API Key</Button>
               </CardContent>
             </Card>
           ) : (
@@ -268,8 +347,8 @@ console.log(data.messageId); // → "01000196..."
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold">{key.name}</span>
                         <Badge variant="outline" className={planColor(key.plan)}>{key.plan}</Badge>
-                        <Badge variant="outline" className={key.isActive ? "text-green-500 border-green-500/20" : "text-muted-foreground"}>
-                          {key.isActive ? "Active" : "Inactive"}
+                        <Badge variant="outline" className={key.revokedAt ? "text-red-500 border-red-500/20" : key.isActive ? "text-green-500 border-green-500/20" : "text-muted-foreground"}>
+                          {key.revokedAt ? "Revoked" : key.isActive ? "Active" : "Disabled"}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-2 text-sm font-mono text-muted-foreground bg-muted/50 rounded px-3 py-1.5 flex-wrap">
@@ -294,12 +373,19 @@ console.log(data.messageId); // → "01000196..."
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Button size="sm" variant="outline" onClick={() => toggleKeyMutation.mutate(key.id)} data-testid={`button-toggle-key-${key.id}`}>
-                        {key.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-400" onClick={() => deleteKeyMutation.mutate(key.id)} data-testid={`button-delete-key-${key.id}`}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {!key.revokedAt && <>
+                        <Button size="sm" variant="outline" disabled={!selectedProjectReady || rotateKeyMutation.isPending} onClick={() => {
+                          if (window.confirm("Generate a replacement key? The current key remains active during rollout. Deploy the replacement before revoking the old key.")) rotateKeyMutation.mutate(key.id);
+                        }} aria-label={`Rotate ${key.name}`}><RefreshCw className="mr-1 h-4 w-4" /><span>Rotate</span></Button>
+                        <Button size="sm" variant="outline" disabled={!selectedProjectReady || toggleKeyMutation.isPending} onClick={() => toggleKeyMutation.mutate(key.id)} data-testid={`button-toggle-key-${key.id}`}>
+                          {key.isActive ? <><EyeOff className="mr-1 h-4 w-4" />Disable</> : <><Eye className="mr-1 h-4 w-4" />Enable</>}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-400" disabled={!selectedProjectReady} onClick={() => {
+                          if (window.confirm("Revoke this key permanently? Any application still using it will stop sending immediately.")) deleteKeyMutation.mutate(key.id);
+                        }} data-testid={`button-delete-key-${key.id}`}>
+                          <Trash2 className="mr-1 h-4 w-4" /><span>Revoke</span>
+                        </Button>
+                      </>}
                     </div>
                   </div>
                 </CardContent>
@@ -318,7 +404,7 @@ console.log(data.messageId); // → "01000196..."
               <CardContent className="p-12 text-center">
                 <Globe className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
                 <p className="text-muted-foreground">No domains added yet. Add your domain to enable verified sending.</p>
-                <Button className="mt-4" onClick={() => setShowAddDomain(true)} data-testid="button-add-first-domain">Add Domain</Button>
+                <Button className="mt-4" onClick={() => setShowAddDomain(true)} disabled={!selectedProjectReady} data-testid="button-add-first-domain">Add Domain</Button>
               </CardContent>
             </Card>
           ) : (
@@ -357,13 +443,15 @@ console.log(data.messageId); // → "01000196..."
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {domain.status !== "verified" && (
-                        <Button size="sm" variant="outline" onClick={() => verifyDomainMutation.mutate(domain.id)} disabled={verifyDomainMutation.isPending} data-testid={`button-verify-domain-${domain.id}`}>
+                        <Button size="sm" variant="outline" onClick={() => verifyDomainMutation.mutate(domain.id)} disabled={!selectedProjectReady || verifyDomainMutation.isPending} data-testid={`button-verify-domain-${domain.id}`}>
                           <RefreshCw className={`w-4 h-4 mr-1 ${verifyDomainMutation.isPending ? "animate-spin" : ""}`} />
                           Check
                         </Button>
                       )}
-                      <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-400" onClick={() => deleteDomainMutation.mutate(domain.id)} data-testid={`button-delete-domain-${domain.id}`}>
-                        <Trash2 className="w-4 h-4" />
+                      <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-400" disabled={!selectedProjectReady} onClick={() => {
+                        if (window.confirm(`Remove ${domain.domain} from this project's sending permissions? This does not delete the upstream email identity or DNS configuration.`)) deleteDomainMutation.mutate(domain.id);
+                      }} data-testid={`button-delete-domain-${domain.id}`}>
+                        <Trash2 className="w-4 h-4 mr-1" /><span className="hidden sm:inline">Remove permission</span>
                       </Button>
                     </div>
                   </div>
@@ -474,7 +562,13 @@ console.log(data.messageId); // → "01000196..."
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="test" className="mt-4">
+          {selectedProjectId
+            ? <EmailProjectTest key={selectedProjectId} projectId={selectedProjectId} keys={keys} hasVerifiedDomain={domains.some((domain) => domain.status === "verified")} />
+            : <Card className="border-dashed"><CardContent className="p-8 text-center text-sm text-muted-foreground">Create or select an email project before sending a test.</CardContent></Card>}
+        </TabsContent>
       </Tabs>
+      </>}
 
       {/* Create Key Dialog */}
       <Dialog open={showCreateKey} onOpenChange={setShowCreateKey}>
@@ -496,7 +590,7 @@ console.log(data.messageId); // → "01000196..."
             <Button variant="outline" onClick={() => setShowCreateKey(false)}>Cancel</Button>
             <Button
               onClick={() => createKeyMutation.mutate(newKeyName.trim())}
-              disabled={!newKeyName.trim() || createKeyMutation.isPending}
+              disabled={!newKeyName.trim() || createKeyMutation.isPending || !selectedProjectReady || !domains.some((domain) => domain.status === "verified")}
               data-testid="button-confirm-create-key"
             >
               {createKeyMutation.isPending ? "Creating..." : "Create Key"}
@@ -506,7 +600,7 @@ console.log(data.messageId); // → "01000196..."
       </Dialog>
 
       {/* Secret Key Reveal Dialog */}
-      <Dialog open={!!newSecretKey} onOpenChange={() => setNewSecretKey(null)}>
+      <Dialog open={!!newSecretKey} onOpenChange={(open) => { if (!open) { setNewSecretKey(null); createKeyMutation.reset(); rotateKeyMutation.reset(); } }}>
         <DialogContent data-testid="dialog-secret-key">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-primary">
@@ -516,15 +610,18 @@ console.log(data.messageId); // → "01000196..."
           <div className="space-y-3 py-2">
             <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-sm text-yellow-400">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>This is the only time your secret key will be shown. Copy it now.</span>
+              <span>This is the only time your secret key will be shown. Copy it or download a server-side .env file now. It is a secret; your public key is only an identifier.</span>
             </div>
             <div className="font-mono text-sm bg-muted/60 rounded-lg p-3 break-all">{newSecretKey}</div>
             <Button className="w-full" onClick={() => { copyToClipboard(newSecretKey!, "secret key", toast); }} data-testid="button-copy-secret-key">
               <Copy className="w-4 h-4 mr-2" /> Copy Secret Key
             </Button>
+            <Button variant="outline" className="w-full" onClick={downloadEmailEnv} data-testid="button-download-email-env">
+              Download server .env
+            </Button>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewSecretKey(null)} data-testid="button-close-secret-dialog">
+            <Button variant="outline" onClick={() => { setNewSecretKey(null); createKeyMutation.reset(); rotateKeyMutation.reset(); }} data-testid="button-close-secret-dialog">
               I've saved it
             </Button>
           </DialogFooter>
@@ -555,7 +652,7 @@ console.log(data.messageId); // → "01000196..."
             <Button variant="outline" onClick={() => setShowAddDomain(false)}>Cancel</Button>
             <Button
               onClick={() => addDomainMutation.mutate(newDomain)}
-              disabled={!newDomain || addDomainMutation.isPending}
+              disabled={!newDomain || addDomainMutation.isPending || !selectedProjectReady}
               data-testid="button-confirm-add-domain"
             >
               {addDomainMutation.isPending ? "Adding..." : "Add Domain"}

@@ -50,5 +50,6 @@
 - [Customer agent labels](customer-agent-labels.md) — use Agent 1/2/3 in customer-facing chat notices; retain real provider identities privately.
 - [Upload-processing permission](upload-processing-permission.md) — signup disclosures should support routine requested processing without repeated prompts, not blanket reuse rights.
 - [Email API project flow](email-project-flow.md) — project-contained verification, keys and logs; explicit rotation/revocation without breaking existing integrations.
+- [Chatbot credential rollout](chatbot-credential-rollout.md) — public embed IDs stay separate from private API secrets; legacy integrations migrate only with explicit owner opt-in.
 - [App management policy](app-management-policy.md) — one app library, actionable publish recommendations and typed confirmation with verified live-site removal.
 - [Parallel visual fixtures](parallel-visual-fixtures.md) — isolate dependency caches; ignored fixture wrappers may fall outside Tailwind’s source scan.

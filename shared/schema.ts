@@ -760,6 +760,45 @@ export const insertEmailApiLogSchema = createInsertSchema(emailApiLogs).omit({ i
 export type EmailApiLog = typeof emailApiLogs.$inferSelect;
 export type InsertEmailApiLog = z.infer<typeof insertEmailApiLogSchema>;
 
+export const integrationProjectMigrations = pgTable("integration_project_migrations", {
+  name: text("name").primaryKey(),
+  appliedAt: timestamp("applied_at", {withTimezone:true}).notNull().defaultNow(),
+});
+export const emailProjects = pgTable("email_projects", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  legacy: boolean("legacy").notNull().default(false),
+  createdAt: timestamp("created_at", {withTimezone:true}).notNull().defaultNow(),
+}, table => [uniqueIndex("email_projects_one_legacy").on(table.userId).where(sql`${table.legacy}`)]);
+export const emailProjectDomains = pgTable("email_project_domains", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => emailProjects.id),
+  domainId: integer("domain_id").notNull().references(() => emailApiDomains.id, {onDelete:"cascade"}),
+}, table => [uniqueIndex("email_project_domains_project_id_domain_id_key").on(table.projectId,table.domainId)]);
+export const emailKeyState = pgTable("email_key_state", {
+  keyId: integer("key_id").primaryKey().references(() => emailApiKeys.id, {onDelete:"cascade"}),
+  projectId: integer("project_id").notNull().references(() => emailProjects.id),
+  quotaKeyId: integer("quota_key_id").notNull().references(() => emailApiKeys.id),
+  replacesKeyId: integer("replaces_key_id").references(() => emailApiKeys.id),
+  revokedAt: timestamp("revoked_at", {withTimezone:true}),
+});
+export const chatbotApiPolicy = pgTable("chatbot_api_policy", {
+  widgetId: integer("widget_id").primaryKey().references(() => chatbotWidgets.id, {onDelete:"cascade"}),
+  enforcement: text("enforcement").notNull(),
+}, table => [check("chatbot_api_policy_enforcement_check",sql`${table.enforcement} IN ('legacy','required')`)]);
+export const chatbotApiCredentials = pgTable("chatbot_api_credentials", {
+  id: varchar("id", {length:32}).primaryKey(),
+  widgetId: integer("widget_id").notNull().references(() => chatbotWidgets.id, {onDelete:"cascade"}),
+  name: text("name").notNull(),
+  prefix: text("prefix").notNull(),
+  secretHash: text("secret_hash").notNull(),
+  replacesKeyId: varchar("replaces_key_id", {length:32}).references((): any => chatbotApiCredentials.id),
+  createdAt: timestamp("created_at", {withTimezone:true}).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", {withTimezone:true}),
+  revokedAt: timestamp("revoked_at", {withTimezone:true}),
+}, table => [index("chatbot_api_credentials_widget").on(table.widgetId)]);
+
 // Permanent suppression list — never email these recipients again.
 // Populated automatically from SES bounce/complaint webhooks (and optionally by hand).
 export const emailSuppressions = pgTable("email_suppressions", {

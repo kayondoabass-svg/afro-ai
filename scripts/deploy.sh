@@ -303,6 +303,10 @@ main() {
   if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/chatbot-verification-migrate.ts"; then
     die "Chatbot ownership schema not ready; existing service remains running."
   fi
+  log "Preparing email projects and private chatbot API credentials..."
+  if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/integration-project-migrate.ts"; then
+    die "Integration project schema not ready; existing service remains running."
+  fi
 
   if ! run_build; then
     log "Build FAILED — entering recovery"

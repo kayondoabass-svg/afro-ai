@@ -20,6 +20,7 @@ import type { ChatbotWidget } from "@shared/schema";
 import { ChatbotKnowledgeBase } from "@/components/chatbot-knowledge-base";
 import { ChatbotPrivateKnowledge } from "@/components/chatbot-private-knowledge";
 import { ChatbotVerificationPanel } from "@/components/chatbot-verification-panel";
+import { ChatbotApiCredentials } from "@/components/chatbot-api-credentials";
 import { chatbotReplyAllowance } from "@shared/chatbot-display";
 import { Sparkles as SparklesIcon } from "lucide-react";
 import { AppHandoffContext } from "@/components/app-handoff-context";
@@ -564,15 +565,16 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
 
   return (
     <Tabs defaultValue="embed" className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-6 pt-4 pb-0 border-b border-border/60">
+      <div className="flex flex-col gap-2 border-b border-border/60 px-4 pt-4 pb-0 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex items-center gap-2 pb-3">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: widget.primaryColor + "25" }}>
             <Bot className="w-4 h-4" style={{ color: widget.primaryColor }} />
           </div>
           <span className="font-semibold text-sm">{widget.name}</span>
         </div>
-        <TabsList className="mb-3 h-8">
-          <TabsTrigger value="embed" className="text-xs gap-1.5"><Code2 className="w-3.5 h-3.5" />Embed</TabsTrigger>
+        <TabsList className="mb-3 grid h-auto w-full grid-cols-3 sm:flex sm:w-auto">
+          <TabsTrigger value="embed" className="gap-1.5 text-xs"><Code2 className="h-3.5 w-3.5" />Embed</TabsTrigger>
+          <TabsTrigger value="credentials" className="gap-1.5 text-xs"><Key className="h-3.5 w-3.5" />Private API</TabsTrigger>
           <TabsTrigger value="settings" className="text-xs gap-1.5"><Settings className="w-3.5 h-3.5" />Settings</TabsTrigger>
           <TabsTrigger value="knowledge" className="text-xs gap-1.5"><BookOpen className="w-3.5 h-3.5" />Knowledge</TabsTrigger>
           <TabsTrigger value="autoscan" className="text-xs gap-1.5"><SparklesIcon className="w-3.5 h-3.5" />Auto-Scan</TabsTrigger>
@@ -673,6 +675,10 @@ function WidgetDetail({ widget, onUpdate, onDelete, isUpdating, copy, copied, sh
             <Trash2 className="w-3.5 h-3.5" /> Delete Chatbot
           </Button>
         </div>
+      </TabsContent>
+
+      <TabsContent value="credentials" className="flex-1 overflow-auto mt-0">
+        <ChatbotApiCredentials key={widget.id} widgetId={widget.id} />
       </TabsContent>
 
       {/* SETTINGS TAB */}
