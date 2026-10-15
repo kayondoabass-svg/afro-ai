@@ -20,3 +20,9 @@ Deleting an app must require a second confirmation where the customer types DELE
 **Why:** The user reported deleting an app while its live site remained accessible.
 
 **How to apply:** Verify only owned app resources are removed, report incomplete cleanup honestly, and distinguish public removal from the separately reviewed source-retention policy. Never cancel a purchased domain registration as an incidental app deletion.
+
+Coordinate publishing and removal without consuming the storage-query connection pool while waiting for lifecycle locks.
+
+**Why:** Operations that hold coordination connections and then request additional storage connections can exhaust a shared pool and prevent their own progress. Nested project/publication locks must share a coordination session rather than reserve another connection.
+
+**How to apply:** Preserve consistent project-before-publication lock ordering and bounded, separate coordination capacity when extending publish/delete/unpublish operations.
