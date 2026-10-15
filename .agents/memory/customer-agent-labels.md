@@ -13,3 +13,14 @@ identifier.
 notices and operational labels. Keep the fallback explanation truthful and
 retain actual provider/model identities privately for diagnostics and billing.
 This is display naming, not permission to create additional autonomous agents.
+
+Provider/model availability alerts should go to the founder and team members
+the founder appoints, rather than exposing provider diagnostics to customers.
+
+**Why:** The user says provider availability does not concern clients and
+requests founder/team notifications instead of putting it in customers' faces.
+
+**How to apply:** Keep customer-facing failures understandable and truthful.
+Do not claim an operation succeeded when it did not, and do not silently retry
+ambiguous paid operations. Keep technical routing details in authorized
+operational notifications.
