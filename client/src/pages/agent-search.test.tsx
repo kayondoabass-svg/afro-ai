@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-vi.mock("@/components/project-visual-audit-chat", () => ({ ProjectVisualAuditChat: ({ messageItems }: { messageItems: { id: string; node: React.ReactNode }[] }) => <div data-testid="chat-visual-evidence">
+vi.mock("@/components/project-visual-audit-chat", async importOriginal => ({ ...await importOriginal<typeof import("@/components/project-visual-audit-chat")>(), ProjectVisualAuditChat: ({ messageItems }: { messageItems: { id: string; node: React.ReactNode }[] }) => <div data-testid="chat-visual-evidence">
   {messageItems.map(item => <div key={item.id}>{item.node}</div>)}
   In-chat visual evidence and saved activity
 </div> }));
@@ -27,6 +27,10 @@ vi.mock("@tanstack/react-query", () => ({
 
 import AgentPage from "./agent";
 
+beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+});
+
 afterEach(() => vi.unstubAllGlobals());
 
 const activity = {
@@ -35,6 +39,47 @@ const activity = {
 };
 
 describe("active /chat Agent search", () => {
+  it("shows real request icons in ordinary chat without pretending project tools ran", async () => {
+    let resolveResponse!: (response: Response) => void;
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/conversations") return Response.json({ id: 73 });
+      if (url === "/api/conversations/73/messages") return new Promise<Response>(resolve => { resolveResponse = resolve; });
+      if (url === "/api/conversations/73") return Response.json({ messages: [{ id: 1, role: "assistant", content: "Hello." }] });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AgentPage />);
+    fireEvent.change(screen.getByTestId("input-prompt"), { target: { value: "Hello" } });
+    fireEvent.click(screen.getByTestId("button-send"));
+    expect(await screen.findByRole("status", { name: "Chat request activity: Sending request" })).toBeVisible();
+    expect(screen.queryByRole("list", { name: "Live project operations" })).not.toBeInTheDocument();
+    act(() => resolveResponse(new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }))));
+    expect(await screen.findByRole("status", { name: "Chat request activity: Waiting for response" })).toBeVisible();
+    act(() => stream.enqueue(new TextEncoder().encode('data: {"type":"text","content":"Hello."}\n\n')));
+    expect(await screen.findByRole("status", { name: "Chat request activity: Receiving response" })).toBeVisible();
+    act(() => stream.close());
+    expect(await screen.findByRole("status", { name: "Chat request activity: Reply received" })).toBeVisible();
+    expect(screen.queryByTestId("request-activity-spinner")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Live project operations" })).not.toBeInTheDocument();
+  });
+
+  it("shows failed ordinary chat requests without a success icon or automatic retry", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/conversations") return Response.json({ id: 74 });
+      if (url === "/api/conversations/74/messages") return Response.json({ error: "Service unavailable" }, { status: 503 });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AgentPage />);
+    fireEvent.change(screen.getByTestId("input-prompt"), { target: { value: "Hello" } });
+    fireEvent.click(screen.getByTestId("button-send"));
+    expect(await screen.findByRole("status", { name: "Chat request activity: Request failed" })).toBeVisible();
+    expect(screen.queryByText("Reply received")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("request-activity-spinner")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/conversations/74/messages")).toHaveLength(1);
+  });
+
   it("starts empty without creating history and resets the same-route draft only after confirmation", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -100,7 +145,7 @@ describe("active /chat Agent search", () => {
     await waitFor(() => expect(screen.getByText("list_files: completed")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /Project activity/ })).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(screen.getByRole("button", { name: /Project activity/ }));
-    expect(screen.getByText("list files")).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Live project operations" })).getByText("List project files")).toBeVisible();
     expect(screen.getByText("Show less")).toBeInTheDocument();
   });
   it("sends no search preference, displays server activity, and restores persisted citations from history", async () => {

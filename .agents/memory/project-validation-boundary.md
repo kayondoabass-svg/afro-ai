@@ -140,4 +140,7 @@ in chat even when technical details are collapsed.
 after the split-screen UI update and asked to finish the UI first.
 
 **How to apply:** Cover both incoming live operations and saved activity, not
-only expanded log details. Never simulate tool activity during ordinary chat.
+only expanded log details. Check ordinary chat as well as project-agent mode:
+the user reported unchanged chat after deployment because icons were gated on
+project-tool events. Show browser-observed request/response progress in ordinary
+chat, but never simulate tool activity there.

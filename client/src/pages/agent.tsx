@@ -30,6 +30,7 @@ import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import { ProjectWorkbench } from "@/components/project-workbench";
 import { ProjectEvidencePanel } from "@/components/project-evidence-panel";
 import { ProjectVisualAuditChat, ProjectActionIcon, ProjectActionStatus, projectActionLabel } from "@/components/project-visual-audit-chat";
+import { ChatRequestActivity, type ChatRequestStatus } from "@/components/chat-request-activity";
 import { ProjectWorkspacePreview, type WorkspacePreviewTarget } from "@/components/project-workspace-preview";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
@@ -191,6 +192,7 @@ export default function AgentPage() {
   const [searchActivity, setSearchActivity] = useState<ChatSearchActivity | null>(null);
   const [working, setWorking] = useState(false);
   const [workingStatus, setWorkingStatus] = useState("");
+  const [requestActivity, setRequestActivity] = useState<{ status: ChatRequestStatus; mode: "chat" | "project" } | null>(null);
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
   const [queueDrainTrigger, setQueueDrainTrigger] = useState(0);
@@ -537,6 +539,7 @@ export default function AgentPage() {
     setInput("");
     setPendingAttachments([]);
     setWorking(true);
+    setRequestActivity({ status: "sending", mode });
     setProviderNotice(null);
     setWorkingStatus(t("chat.statusThinking"));
     setSearchActivity(null);
@@ -616,7 +619,10 @@ export default function AgentPage() {
       else if (evt && typeof evt.text === "string") assistantText += evt.text;
       else if (evt && typeof evt.delta === "string") assistantText += evt.delta;
       setStreamingContent(assistantText);
-      if (assistantText.length > 0) setWorkingStatus(t("chat.statusWriting"));
+      if (assistantText.length > 0) {
+        setWorkingStatus(t("chat.statusWriting"));
+        setRequestActivity({ status: "responding", mode });
+      }
     };
 
     try {
@@ -641,6 +647,8 @@ export default function AgentPage() {
         try { detail = JSON.parse(errorText).message || JSON.parse(errorText).error || errorText; } catch {}
         throw new Error(detail.slice(0, 200) || `Request failed (${res.status})`);
       }
+      if (ctrl.signal.aborted || requestId !== activeRequestRef.current) return;
+      setRequestActivity({ status: "waiting", mode });
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -667,12 +675,14 @@ export default function AgentPage() {
       // Reload authoritative history: the server persists the web-search role
       // separately and the model's complete answer (which may differ from chunks).
       let reloaded = false;
+      let replyReceived = assistantText.trim().length > 0;
       try {
         const historyRes = await fetch(`/api/conversations/${convoId}`, { credentials: "include", signal: ctrl.signal });
         if (historyRes.ok) {
           const history = await historyRes.json();
           if (Array.isArray(history.messages) && requestId === activeRequestRef.current && !ctrl.signal.aborted) {
             setMessages(mapAgentMessages(history.messages));
+            replyReceived ||= history.messages.filter((item: { role: string; content?: string }) => item.role === "assistant" && item.content?.trim()).length > messages.filter(item => item.role === "assistant").length;
             reloaded = true;
           }
         }
@@ -684,9 +694,12 @@ export default function AgentPage() {
           id: `a-${Date.now()}`, role: "assistant", content: assistantText || t("chat.noResponse"), timestamp: Date.now(),
         }]);
       }
+      if (requestId !== activeRequestRef.current || ctrl.signal.aborted) return;
+      setRequestActivity({ status: replyReceived ? "received" : "empty", mode });
       setQueueDrainTrigger(t => t + 1);
     } catch (e: any) {
       if (e.name !== "AbortError" && !ctrl.signal.aborted && requestId === activeRequestRef.current) {
+        setRequestActivity({ status: "failed", mode });
         toast({ title: t("chat.toastAgentError"), description: e.message, variant: "destructive" });
       }
     } finally {
@@ -754,6 +767,7 @@ export default function AgentPage() {
     abortRef.current?.abort();
     abortRef.current = null;
     setWorking(false);
+    setRequestActivity(previous => previous ? { ...previous, status: "stopped" } : null);
     setWorkingStatus("");
     setStreamingContent("");
     setSearchActivity(null);
@@ -838,6 +852,7 @@ export default function AgentPage() {
       abortRef.current?.abort();
       abortRef.current = null;
       setWorking(false);
+      setRequestActivity(null);
       setWorkingStatus("");
       setSearchActivity(null);
       setToolActivity([]);
@@ -882,6 +897,7 @@ export default function AgentPage() {
         abortRef.current?.abort();
         abortRef.current = null;
         setWorking(false);
+        setRequestActivity(null);
         setWorkingStatus("");
         setSearchActivity(null);
         setToolActivity([]);
@@ -1468,6 +1484,7 @@ export default function AgentPage() {
             <span className="sr-only">{toolActivity.map(item => `${item.tool}: ${item.status}`).join(", ")}</span>
           </section>
         )}
+        {requestActivity && <ChatRequestActivity status={requestActivity.status} mode={requestActivity.mode} />}
         {working && (
           <div className="text-sm text-violet-400" role="status" data-testid="text-working-status">
             {workingStatus || t("chat.working")}
