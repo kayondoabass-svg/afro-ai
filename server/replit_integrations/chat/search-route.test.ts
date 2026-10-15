@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   saveFiles: vi.fn(),
   listFiles: vi.fn(),
   getUser: vi.fn(),
+  archiveActivity: vi.fn(),
 }));
 vi.mock("openai", () => ({ default: class {} }));
 vi.mock("./storage", () => ({ chatStorage: {
@@ -59,6 +60,10 @@ vi.mock("../../search-policy", () => ({ searchAccountWeb: (_id: string, q: strin
 vi.mock("../../url-scrape", () => ({ extractUrls: () => [], buildLiveWebContext: vi.fn() }));
 vi.mock("../../attachment-parse", () => ({ isParseableAttachment: () => false, buildAttachmentContext: vi.fn() }));
 vi.mock("../../project-files", () => ({ listProjectFiles: mocks.listFiles, saveProjectFiles: mocks.saveFiles }));
+vi.mock("../../project-workbench/activity-history", async importOriginal => ({
+  ...await importOriginal<typeof import("../../project-workbench/activity-history")>(),
+  archiveActivities: mocks.archiveActivity,
+}));
 vi.mock("../../knowledge", () => ({ retrieveKnowledge: async () => [], formatKnowledgeContext: () => "" }));
 import { registerChatRoutes } from "./routes";
 import { dispatchJobCall, recordJobUsage, finishJob } from "../../project-workbench/job-budget";
@@ -175,6 +180,16 @@ describe("main chat search route wiring", () => {
     const { validateProjectFiles } = await import("../../project-file-policy");
     expect(() => validateProjectFiles(mocks.saveFiles.mock.calls.at(-1)![2])).not.toThrow();
     expect(res.write.mock.calls.join("")).toContain('"type":"files-saved","saved":true');
+    const actionPayloads = res.write.mock.calls.flatMap(([line]) => {
+      try { return [JSON.parse(String(line).replace(/^data: /, "").trim())]; } catch { return []; }
+    }).filter(event => event.type === "project-tool");
+    expect(actionPayloads).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tool: "generate_website", status: "succeeded", persisted: true }),
+      expect.objectContaining({ tool: "save_website_version", status: "succeeded", persisted: true }),
+      expect.objectContaining({ tool: "save_project_files", status: "started" }),
+      expect.objectContaining({ tool: "save_project_files", status: "succeeded", paths: ["index.html"], persisted: true }),
+    ]));
+    expect(mocks.archiveActivity).toHaveBeenCalledWith("12", [expect.objectContaining({ tool: "save_project_files", status: "succeeded" })]);
   });
   it("reports a workspace-file save failure without pretending Files was updated", async () => {
     mocks.saveFiles.mockRejectedValue(new Error("storage unavailable"));

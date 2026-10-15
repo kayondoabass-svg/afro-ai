@@ -20,7 +20,7 @@ class FakeEventSource {
   }
 }
 
-function renderAudit(fetcher: (url: string) => unknown, conversationId = 51) {
+function renderAudit(fetcher: (url: string) => unknown, conversationId = 51, liveToolActivity: { tool: string; callId: string; status: string; persisted?: boolean; summary?: string; jobId?: string; createdAt?: string }[] = []) {
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -30,7 +30,7 @@ function renderAudit(fetcher: (url: string) => unknown, conversationId = 51) {
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>
-     <ProjectVisualAuditChat conversationId={conversationId} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
+      <ProjectVisualAuditChat conversationId={conversationId} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} liveToolActivity={liveToolActivity} />
   </QueryClientProvider>);
 }
 
@@ -40,7 +40,7 @@ function openVisualTools() {
 }
 
 function openSavedActivity() {
-  screen.queryAllByRole("button", { name: /project actions|Project action group/i })
+  screen.queryAllByRole("button", { name: /project actions?/i })
     .forEach(button => {
       if (button.getAttribute("aria-expanded") !== "true") fireEvent.click(button);
     });
@@ -141,13 +141,14 @@ it("renders only safe saved activity received over the read-only stream", async 
     id: "event-1", createdAt: new Date().toISOString(), tool: "read_project_file",
     status: "completed", title: "read project file · completed", message: "index.html was inspected",
   }));
-  await screen.findAllByRole("button", { name: /Project action group/ });
-  expect(screen.getByText("Read project file")).toBeInTheDocument();
-  expect(screen.getByText("Completed")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Project action group/ })).toHaveAttribute("aria-expanded", "false");
+  await screen.findAllByRole("button", { name: /1 project action/ });
+  expect(screen.getByRole("list", { name: "Project action icons" })).toBeInTheDocument();
+  expect(screen.queryByText("Read project file")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /1 project action/ })).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByText("index.html was inspected")).not.toBeInTheDocument();
   openSavedActivity();
   await waitFor(() => expect(screen.getByText("read project file · completed")).toBeInTheDocument());
+  expect(screen.getByText("Read project file")).toBeInTheDocument();
   expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
 });
 
@@ -174,6 +175,13 @@ it("shows meaningful icons, labels, and explicit statuses for streamed project t
 
   const group = await screen.findByRole("button", { name: /3 project actions/ });
   expect(group).toHaveAttribute("aria-expanded", "false");
+  const iconStrip = screen.getByRole("list", { name: "Project action icons" });
+  expect(iconStrip.querySelector(".lucide-file-text")).toBeInTheDocument();
+  expect(iconStrip.querySelector(".lucide-search")).toBeInTheDocument();
+  expect(iconStrip.querySelector(".lucide-pencil")).toBeInTheDocument();
+  expect(screen.queryByRole("list", { name: "Project actions" })).not.toBeInTheDocument();
+  expect(screen.getByRole("listitem", { name: "Read project file: In progress" })).toBeInTheDocument();
+  fireEvent.click(group);
   expect(screen.getByText("Read project file")).toBeInTheDocument();
   expect(screen.getByText("Search project context")).toBeInTheDocument();
   expect(screen.getByText("Propose file edits")).toBeInTheDocument();
@@ -194,10 +202,34 @@ it("shows meaningful icons, labels, and explicit statuses for streamed project t
   });
   expect(screen.queryByText("In progress")).not.toBeInTheDocument();
   expect(screen.getAllByText("Read project file")).toHaveLength(1);
-  expect(screen.queryByText("Reading project source.")).not.toBeInTheDocument();
+  expect(screen.getByText("Reading project source.")).toBeInTheDocument();
 
-  fireEvent.click(group);
   expect(await screen.findByText("Reading project source.")).toBeInTheDocument();
+});
+
+it("keeps streamed website saves in one per-turn action strip before history polling catches up", async () => {
+  const createdAt = new Date().toISOString();
+  renderAudit(url => url.includes("/activity") ? { items: [], hasMore: false, nextBefore: null } : {
+    capability: { enabled: false }, runs: [], items: [], fingerprint: "source-abc",
+  }, 51, ["generate_website", "save_website_version", "save_project_files"].map(tool => ({
+    tool, callId: `chat:turn:${tool}`, jobId: "chat:turn", status: "succeeded", createdAt,
+  })));
+  expect(await screen.findByRole("button", { name: "3 project actions" })).toBeVisible();
+  expect(screen.getAllByRole("list", { name: "Project action icons" })).toHaveLength(1);
+});
+
+it("keeps a long action count accurate while limiting only the collapsed icon row", async () => {
+  renderAudit(url => url.includes("/activity") ? { items: [], hasMore: false, nextBefore: null } : {
+    capability: { enabled: false }, runs: [], items: [], fingerprint: "source-abc",
+  }, 51, Array.from({ length: 11 }, (_, index) => ({
+    tool: "read_file", callId: `read-${index}`, jobId: "long-turn", status: "succeeded",
+  })));
+  const group = await screen.findByRole("button", { name: "11 project actions" });
+  expect(group).toHaveTextContent("11 actions");
+  expect(screen.getByRole("list", { name: "Project action icons" }).querySelectorAll('[role="listitem"]')).toHaveLength(5);
+  expect(screen.getByLabelText("7 more actions; expand to see all")).toBeVisible();
+  fireEvent.click(group);
+  expect(screen.getByRole("list", { name: "Project actions" }).querySelectorAll(":scope > li")).toHaveLength(11);
 });
 
 it("surfaces unavailable history rather than replacing it with fabricated state", async () => {
@@ -227,7 +259,7 @@ it("restores saved history on initial load, merges live duplicates by stable eve
   });
   openVisualTools();
   await screen.findByText(/No saved screenshot runs/);
-  await screen.findAllByRole("button", { name: /Project action group/ });
+  await screen.findAllByRole("button", { name: /project action/ });
   openSavedActivity();
   expect(await screen.findByText("Saved older")).toBeInTheDocument();
   expect(screen.getByText(/project’s lifetime/)).toBeInTheDocument();
@@ -254,11 +286,11 @@ it("pages older history without losing newer events and deduplicates overlap", a
   });
   openVisualTools();
   await screen.findByText(/No saved screenshot runs/);
-  await screen.findByRole("button", { name: /Project action group/ });
+  await screen.findByRole("button", { name: /project action/ });
   openSavedActivity();
   await screen.findByText("Newest event");
   fireEvent.click(screen.getByRole("button", { name: "Load older activity" }));
-  await screen.findAllByRole("button", { name: /Project action group/ });
+  await screen.findAllByRole("button", { name: /project action/ });
   openSavedActivity();
   await screen.findByText("Old event");
   expect(screen.getAllByText("Newest event")).toHaveLength(1);
@@ -284,7 +316,7 @@ it("shows a retry for initial history errors and keeps history fetch independent
   expect(await screen.findByText(/History is temporarily offline/)).toBeInTheDocument();
   fail = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
-  await screen.findByRole("button", { name: /Project action group/ });
+  await screen.findByRole("button", { name: /project action/ });
   openSavedActivity();
   expect(await screen.findByText("Restored after retry")).toBeInTheDocument();
 });
@@ -314,7 +346,7 @@ it("discards a late activity page after switching conversations and closes the o
   await screen.findByText(/No saved screenshot runs/);
   resolvePage?.(new Response(JSON.stringify(activityPage([savedEvent("stale", "7", "Stale conversation activity")], null, false)),
     { status: 200, headers: { "Content-Type": "application/json" } }));
-  await screen.findByRole("button", { name: /Project action group/ });
+  await screen.findByRole("button", { name: /project action/ });
   openSavedActivity();
   expect(await screen.findByText("New conversation activity")).toBeInTheDocument();
   expect(screen.queryByText("Stale conversation activity")).not.toBeInTheDocument();
@@ -324,6 +356,7 @@ it("discards a late activity page after switching conversations and closes the o
 it("keeps saved screenshot thumbnails visible outside collapsed visual tools and action groups", async () => {
   const runId = "saved-run";
   const createdAt = new Date().toISOString();
+  const onOpenPreview = vi.fn();
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -347,7 +380,7 @@ it("keeps saved screenshot thumbnails visible outside collapsed visual tools and
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}>
-    <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
+    <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} onOpenPreview={onOpenPreview} />
   </QueryClientProvider>);
   expect(await screen.findByRole("img", { name: "After desktop saved screenshot" })).toHaveAttribute(
     "src", "/api/conversations/51/workbench/evidence/desktop-image/image",
@@ -355,7 +388,55 @@ it("keeps saved screenshot thumbnails visible outside collapsed visual tools and
   expect(screen.getByRole("img", { name: "After mobile saved screenshot" })).toBeInTheDocument();
   expect(screen.getAllByRole("img", { name: /saved screenshot/ })).toHaveLength(2);
   expect(screen.getByRole("button", { name: /Visual tools/ })).toHaveAttribute("aria-expanded", "false");
-  expect(screen.getAllByRole("button", { name: /Project action group/ }).every(button => button.getAttribute("aria-expanded") === "false")).toBe(true);
+  expect(screen.getAllByRole("button", { name: /project action/ }).every(button => button.getAttribute("aria-expanded") === "false")).toBe(true);
+  fireEvent.click(screen.getByRole("link", { name: "Open after desktop screenshot" }));
+  expect(onOpenPreview).toHaveBeenCalledWith({ kind: "evidence", id: "desktop-image", label: "After desktop screenshot" });
+});
+
+it("counts started and finished persisted ordinary-website operations once and names them when expanded", async () => {
+  const createdAt = new Date().toISOString();
+  renderAudit(url => url.endsWith("/visual-audit")
+    ? { capability: { enabled: false }, runs: [] }
+    : url.endsWith("/evidence") ? { items: [], fingerprint: "source-abc" }
+      : url.includes("/workbench/activity") ? activityPage([
+        { id: "gen-start", jobId: "ordinary-job", callId: "generate-call", createdAt, tool: "generate_website", status: "started", title: "Generating website" },
+        { id: "gen-done", jobId: "ordinary-job", callId: "generate-call", createdAt: new Date(Date.parse(createdAt) + 10).toISOString(), tool: "generate_website", status: "succeeded", title: "Generated website" },
+        { id: "version-start", jobId: "ordinary-job", callId: "version-call", createdAt, tool: "save_website_version", status: "started", title: "Saving website version" },
+        { id: "version-done", jobId: "ordinary-job", callId: "version-call", createdAt: new Date(Date.parse(createdAt) + 20).toISOString(), tool: "save_website_version", status: "succeeded", title: "Website version saved" },
+        { id: "save-failed", jobId: "ordinary-job", callId: "save-call", createdAt, tool: "save_project_files", status: "failed", title: "File save failed" },
+      ], null, false) : { items: [] });
+  const group = await screen.findByRole("button", { name: /3 project actions/ });
+  const icons = screen.getByRole("list", { name: "Project action icons" });
+  expect(icons.querySelectorAll(".lucide-code")).toHaveLength(2);
+  expect(icons.querySelector(".lucide-file-text")).toBeInTheDocument();
+  expect(screen.getByRole("listitem", { name: "Generate website: Completed" })).toBeInTheDocument();
+  expect(screen.getByRole("listitem", { name: "Save project files: Failed" })).toBeInTheDocument();
+  fireEvent.click(group);
+  expect(screen.getByText("Generate website")).toBeInTheDocument();
+  expect(screen.getByText("Save website version")).toBeInTheDocument();
+  expect(screen.getByText("Save project files")).toBeInTheDocument();
+  expect(screen.getByText("Generating website")).toBeInTheDocument();
+  expect(screen.getByText("Generated website")).toBeInTheDocument();
+  expect(screen.getByText("Website version saved")).toBeInTheDocument();
+});
+
+it("deduplicates transient activity by callId and visibly reports when the activity ledger could not be saved", async () => {
+  const createdAt = new Date().toISOString();
+  renderAudit(url => url.endsWith("/visual-audit")
+    ? { capability: { enabled: false }, runs: [] }
+    : url.endsWith("/evidence") ? { items: [], fingerprint: "source-abc" }
+      : url.includes("/workbench/activity") ? activityPage([
+        { id: "persisted-start", jobId: "chat:one", callId: "chat:one:generate_website", createdAt, tool: "generate_website", status: "started", title: "Generating website" },
+      ], null, false) : { items: [] }, 51, [
+    { tool: "generate_website", callId: "chat:one:generate_website", status: "failed", persisted: false, summary: "Activity history could not be saved for this turn." },
+  ]);
+  await screen.findByRole("listitem", { name: "Generate website: Failed" });
+  const group = screen.getByRole("button", { name: /1 project action/ });
+  expect(screen.getByRole("list", { name: "Project action icons" }).querySelectorAll(".lucide-code")).toHaveLength(1);
+  expect(screen.getByRole("status")).toHaveTextContent("Activity history could not be saved for this turn.");
+  fireEvent.click(group);
+  expect(screen.getByText("Generate website")).toBeInTheDocument();
+  expect(screen.getAllByText(/Activity history could not be saved/)).toHaveLength(1);
 });
 
 it("places proposal cards at their saved time between conversation messages", async () => {
@@ -382,7 +463,7 @@ it("places proposal cards at their saved time between conversation messages", as
         { id: "msg-after", timestamp: at + 1000, node: <p>Message after saved proposal</p> },
       ]} />
   </QueryClientProvider>);
-  await screen.findByRole("button", { name: /Project action group/ });
+  await screen.findByRole("button", { name: /project action/ });
   openSavedActivity();
   expect(await screen.findByText("Message before saved proposal")).toBeInTheDocument();
   expect(screen.getByText("Message after saved proposal")).toBeInTheDocument();

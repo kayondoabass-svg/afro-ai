@@ -138,6 +138,9 @@ conversation with expandable actions and inspectable images.
 **How to apply:** Check default collapsed states and both responsive layouts, not
 just whether components mount. Keep permission controls real and failures honest;
 hiding a capability warning does not make capture operational.
+Include a narrow desktop split-pane as well as a full-width phone viewport:
+the user supplied photos where desktop-sized viewport breakpoints compressed
+upload and consent text into letter-by-letter columns inside the chat pane.
 
 Real action icons, action names and current statuses must stay visible directly
 in chat even when technical details are collapsed.

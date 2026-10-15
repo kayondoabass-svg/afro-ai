@@ -246,11 +246,11 @@ export function ProjectEvidencePanel({ conversationId, onRepair, maxJobTokens, o
   };
 
   return (
-    <section aria-label="Project visual evidence" className="my-4 rounded-xl border border-border bg-card/90 text-card-foreground shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-border/70 p-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex gap-3">
-          <span className="mt-0.5 rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary"><Camera className="h-4 w-4" /></span>
-          <div>
+    <section aria-label="Project visual evidence" className="my-4 min-w-0 max-w-full rounded-xl border border-border bg-card/90 text-card-foreground shadow-sm">
+      <div className="flex flex-wrap items-start gap-3 border-b border-border/70 p-4">
+        <div className="flex w-full min-w-0 gap-3">
+          <span className="mt-0.5 shrink-0 self-start rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary"><Camera className="h-4 w-4" /></span>
+          <div className="min-w-0">
             <h2 className="font-semibold tracking-tight">Visual evidence</h2>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">Keep private Before / After captures with this chat. Images are stored in your account and are never public links.</p>
           </div>
@@ -260,9 +260,9 @@ export function ProjectEvidencePanel({ conversationId, onRepair, maxJobTokens, o
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(250px,.8fr)]">
+      <div data-testid="evidence-responsive-layout" className="grid min-w-0 gap-4 p-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))" }}>
         <div className="min-w-0 space-y-4">
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 12rem), 1fr))" }}>
             <label className="space-y-1 text-xs font-medium">Capture phase
               <select aria-label="Capture phase" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" value={phase} onChange={event => setPhase(event.target.value as "before" | "after")}>
                 <option value="before">Before</option><option value="after">After</option>
@@ -274,8 +274,8 @@ export function ProjectEvidencePanel({ conversationId, onRepair, maxJobTokens, o
           </div>
           <div className="rounded-lg border border-dashed border-border bg-muted/25 p-3">
             <input ref={uploadRef} type="file" accept="image/png,image/jpeg" className="sr-only" aria-label="Choose visual evidence image" onChange={event => void upload(event.target.files?.[0])} />
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-1 items-start gap-2" style={{ minWidth: "min(100%, 12rem)" }}>
                 <ImagePlus className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                 <p className="text-xs leading-relaxed text-muted-foreground">PNG or JPEG · up to {Math.round((data?.limits.fileBytes ?? 524288) / 1024)} KB · {items.length}/{data?.limits.maxItems ?? 8} captures</p>
               </div>

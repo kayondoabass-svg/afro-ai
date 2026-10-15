@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, Check, ChevronDown, CircleHelp, Download, LoaderCircle, LockKeyhole, RefreshCw, Smartphone, Monitor, WandSparkles, Image as ImageIcon, Plus, ExternalLink, FileText, Files, Search, Pencil, ScanEye, Wrench, X } from "lucide-react";
+import { AlertTriangle, Camera, Check, ChevronDown, CircleHelp, Download, LoaderCircle, LockKeyhole, RefreshCw, Smartphone, Monitor, WandSparkles, Image as ImageIcon, Plus, ExternalLink, FileText, Files, Search, Pencil, ScanEye, Wrench, X, Brain, Terminal, BookOpen, Code } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -40,6 +40,8 @@ type Activity = {
   paths?: string[];
   evidenceIds?: string[];
   artifactId?: string;
+  persisted?: boolean;
+  summary?: string;
 };
 type ActivityPage = {
   items: Activity[];
@@ -70,6 +72,13 @@ const activityToolLabels: Record<string, string> = {
   write_project_file: "Write project file",
   write_file: "Write file",
   design_proposal: "Save design proposal",
+  generate_website: "Generate website",
+  save_website_version: "Save website version",
+  save_project_files: "Save project files",
+  run_checks: "Run checks",
+  run_validation: "Validate project",
+  restart_server: "Restart server",
+  restart_dev_server: "Restart development server",
 };
 
 export function projectActionLabel(tool: string) {
@@ -87,6 +96,20 @@ export function ProjectActionIcon({ tool, className = "h-3.5 w-3.5 shrink-0" }: 
     case "write_file": return <Pencil aria-hidden="true" className={className} />;
     case "search_context":
     case "search_files": return <Search aria-hidden="true" className={className} />;
+    case "generate_website":
+    case "save_project_files": return <Code aria-hidden="true" className={className} />;
+    case "save_website_version": return <FileText aria-hidden="true" className={className} />;
+    case "thinking":
+    case "wait_for_response": return <Brain aria-hidden="true" className={className} />;
+    case "run_command":
+    case "command": return <Terminal aria-hidden="true" className={className} />;
+    case "search_docs":
+    case "read_documentation": return <BookOpen aria-hidden="true" className={className} />;
+    case "run_checks":
+    case "run_validation":
+    case "validate_project": return <Check aria-hidden="true" className={className} />;
+    case "restart_server":
+    case "restart_dev_server": return <RefreshCw aria-hidden="true" className={className} />;
     case "propose_edits":
     case "propose_operations": return <Pencil aria-hidden="true" className={className} />;
     case "project_review":
@@ -207,7 +230,7 @@ function mergeActivity(previous: Activity[], incoming: Activity[]): Activity[] {
 }
 
 export function ProjectVisualAuditChat({
-  conversationId, onRepair, visualAuditConsent, onVisualAuditConsentChange, messageItems = [], onOpenPreview,
+  conversationId, onRepair, visualAuditConsent, onVisualAuditConsentChange, messageItems = [], onOpenPreview, liveToolActivity = [],
 }: {
   conversationId: number;
   onRepair: (request: string) => void;
@@ -215,6 +238,7 @@ export function ProjectVisualAuditChat({
   onVisualAuditConsentChange: (consent: boolean) => void;
   messageItems?: { id: string; timestamp: number; node: ReactNode }[];
   onOpenPreview?: (target: WorkspacePreviewTarget) => void;
+  liveToolActivity?: { tool: string; callId: string; status: string; persisted?: boolean; summary?: string; id?: string; jobId?: string; createdAt?: string; paths?: string[] }[];
 }) {
   const queryClient = useQueryClient();
   const [activity, setActivity] = useState<Activity[]>([]);
@@ -482,9 +506,22 @@ export function ProjectVisualAuditChat({
   };
 
   const groupedActivity = useMemo(() => {
+    const canonicalStatus = (status: string) => /completed|succeeded|success/i.test(status) ? "completed" : status.toLowerCase();
+    const liveEvents: Activity[] = liveToolActivity
+      .filter(live => live.persisted === false || !activity.some(saved => saved.callId === live.callId && saved.tool === live.tool && (
+        canonicalStatus(saved.status) === canonicalStatus(live.status) ||
+        (/completed|succeeded|failed|error/i.test(saved.status) && /started|running|in_progress/i.test(live.status))
+      )))
+      .map((live, index) => ({
+        id: live.id || `live:${live.callId}:${index}:${live.status}`, callId: live.callId,
+        jobId: live.jobId, createdAt: live.createdAt || new Date(Date.now() + index).toISOString(),
+        tool: live.tool, status: live.status === "completed" ? "succeeded" : live.status,
+        title: `${projectActionLabel(live.tool)} · ${live.status}`, paths: live.paths, summary: live.summary, persisted: live.persisted,
+      }));
     const groups = new Map<string, Activity[]>();
-    activity.filter(event => event.tool !== "design_proposal").forEach(event => {
-      const key = event.jobId || event.id;
+    [...activity, ...liveEvents].filter(event => event.tool !== "design_proposal").forEach(event => {
+      const existingKey = event.callId ? Array.from(groups.entries()).find(([, events]) => events.some(item => item.callId === event.callId && item.tool === event.tool))?.[0] : undefined;
+      const key = existingKey || event.jobId || (event.callId ? `call:${event.callId}` : event.id);
       groups.set(key, [...(groups.get(key) ?? []), event]);
     });
     return Array.from(groups, ([key, events]) => ({
@@ -492,7 +529,7 @@ export function ProjectVisualAuditChat({
       events: orderActivity(events),
       timestamp: Math.min(...events.map(event => Date.parse(event.createdAt) || 0)),
     }));
-  }, [activity]);
+  }, [activity, liveToolActivity]);
   const proposalEvents = activity.filter(event => event.tool === "design_proposal" && event.artifactId);
   const timeline = useMemo(() => [
     ...messageItems.map(item => ({ kind: "message" as const, key: item.id, timestamp: item.timestamp, item })),
@@ -588,16 +625,34 @@ export function ProjectVisualAuditChat({
           })()}
         </li>
         : <li key={`job-${entry.key}`} className="min-w-0 overflow-hidden rounded-lg border border-zinc-800/80 bg-zinc-950/25">
-          <button type="button" aria-expanded={openGroups[entry.key] ?? false} onClick={() => setOpenGroups(previous => ({ ...previous, [entry.key]: !(previous[entry.key] ?? false) }))} className="flex w-full items-center gap-2 p-2.5 text-left hover:bg-zinc-900/70">
+          {(() => {
+            const actions = Array.from(new Map(orderActivity(entry.group.events).map(event => [
+              event.callId ? `${event.tool}:${event.callId}` : event.id, event,
+            ])).values());
+            const expanded = openGroups[entry.key] ?? false;
+            return <>
+          <button type="button" aria-label={`${actions.length} project ${actions.length === 1 ? "action" : "actions"}`} aria-expanded={expanded} aria-controls={`activity-${entry.key}`} onClick={() => setOpenGroups(previous => ({ ...previous, [entry.key]: !expanded }))} className="flex w-full flex-wrap items-center gap-2 p-2.5 text-left hover:bg-zinc-900/70">
             <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform ${openGroups[entry.key] ? "rotate-180" : ""}`} />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-400">{entry.group.events.length > 1 ? `${entry.group.events.length} project actions` : "Project action group"}</span>
+            <span className="mr-auto shrink-0 text-xs font-medium text-zinc-300">{actions.length} {actions.length === 1 ? "action" : "actions"}</span>
+            <span role="list" aria-label="Project action icons" className="flex shrink-0 items-center gap-1.5">
+              {actions.slice(-4).map(event => {
+                const state = activityStatus(event.status, event.createdAt);
+                return <span role="listitem" key={event.callId ? `${event.tool}:${event.callId}` : event.id} aria-label={`${projectActionLabel(event.tool)}: ${state.label}`} title={`${projectActionLabel(event.tool)} · ${state.label}`} className={`${state.tone} inline-flex`}>
+                  <ProjectActionIcon tool={event.tool} className="h-4 w-4" />
+                </span>;
+              })}
+              {actions.length > 4 && <span role="listitem" aria-label={`${actions.length - 4} more actions; expand to see all`} className="text-[10px] text-zinc-400">+{actions.length - 4}</span>}
+            </span>
             {entry.group.events.some(event => /failed|error|uncertain/i.test(event.status)) && <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-900/60 bg-amber-950/30 px-2 py-0.5 text-[10px] font-medium text-amber-200">
               <AlertTriangle className="h-3 w-3" />{entry.group.events.some(event => /uncertain/i.test(event.status)) ? "Uncertain" : "Failed"}
             </span>}
-            <time className="shrink-0 text-[10px] text-zinc-600">{new Date(entry.timestamp).toLocaleString()}</time>
+            <span className="shrink-0 text-[10px] text-zinc-500">{expanded ? "Show less" : "Show more"}</span>
           </button>
-          <ol aria-label="Project actions" className="space-y-1 px-3 pb-2">
-            {Array.from(new Map(entry.group.events.map(event => [event.callId ? `${event.tool}:${event.callId}` : event.id, event])).values()).map(event => {
+          {entry.group.events.find(event => event.persisted === false) && <p role="status" className="mx-3 mb-2 rounded-md border border-amber-800/60 bg-amber-950/25 px-2.5 py-2 text-[11px] text-amber-200">
+            {entry.group.events.find(event => event.persisted === false)?.summary || "Activity history could not be saved."}
+          </p>}
+          {expanded && <ol id={`activity-${entry.key}`} aria-label="Project actions" className="space-y-1 px-3 pb-2">
+            {actions.map(event => {
               const state = activityStatus(event.status, event.createdAt);
               return <li key={`summary-${event.id}`} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-zinc-900/40 px-2 py-1.5 text-[11px]">
                 <ProjectActionIcon tool={event.tool} className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
@@ -607,8 +662,8 @@ export function ProjectVisualAuditChat({
                 </span>
               </li>;
             })}
-          </ol>
-          {openGroups[entry.key] && <ol className="space-y-2 border-t border-zinc-800/80 px-3 py-2">
+          </ol>}
+          {expanded && <ol className="space-y-2 border-t border-zinc-800/80 px-3 py-2">
             {entry.group.events.map(event => <li key={event.id} className="border-l border-zinc-700 py-1 pl-2.5">
               <p className="text-xs font-medium text-zinc-300">{event.title || `${event.tool} · ${event.status}`}</p>
               <time className="mt-1 block text-[10px] text-zinc-500">{new Date(event.createdAt).toLocaleString()} · {event.status}</time>
@@ -616,6 +671,8 @@ export function ProjectVisualAuditChat({
               {event.paths?.length ? <p className="mt-1 break-all font-mono text-[10px] text-zinc-500">{event.paths.join(", ")}</p> : null}
             </li>)}
           </ol>}
+            </>;
+          })()}
         </li>)}
     </ol>
     {activityLoading && activity.length === 0 && <div role="status" aria-label="Loading saved activity" className="mt-3 space-y-2">

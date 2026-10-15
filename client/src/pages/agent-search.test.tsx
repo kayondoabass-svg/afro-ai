@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-vi.mock("@/components/project-visual-audit-chat", async importOriginal => ({ ...await importOriginal<typeof import("@/components/project-visual-audit-chat")>(), ProjectVisualAuditChat: ({ messageItems }: { messageItems: { id: string; node: React.ReactNode }[] }) => <div data-testid="chat-visual-evidence">
+vi.mock("@/components/project-visual-audit-chat", async importOriginal => ({ ...await importOriginal<typeof import("@/components/project-visual-audit-chat")>(), ProjectVisualAuditChat: ({ messageItems, liveToolActivity = [] }: { messageItems: { id: string; node: React.ReactNode }[]; liveToolActivity?: { tool: string; status: string }[] }) => <div data-testid="chat-visual-evidence">
   {messageItems.map(item => <div key={item.id}>{item.node}</div>)}
+  {liveToolActivity.length > 0 && <ul aria-label="Live project operations">{liveToolActivity.map((item, index) => <li key={index}>{item.tool}: {item.status}</li>)}</ul>}
   In-chat visual evidence and saved activity
 </div> }));
 
@@ -60,6 +61,8 @@ describe("active /chat Agent search", () => {
     expect(await screen.findByRole("status", { name: "Chat request activity: Receiving response" })).toBeVisible();
     act(() => stream.close());
     expect(await screen.findByRole("status", { name: "Chat request activity: Reply received" })).toBeVisible();
+    expect(screen.getByRole("status", { name: "Chat request activity: Reply received" })
+      .closest('[data-testid="chat-visual-evidence"]')).toBeInTheDocument();
     expect(screen.queryByTestId("request-activity-spinner")).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Live project operations" })).not.toBeInTheDocument();
   });
@@ -142,11 +145,7 @@ describe("active /chat Agent search", () => {
         body: JSON.stringify({ content: "Review my project", projectAgent: true, maxJobTokens: 50000 }),
       }),
     ));
-    await waitFor(() => expect(screen.getByText("list_files: completed")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: /Project activity/ })).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(screen.getByRole("button", { name: /Project activity/ }));
-    expect(within(screen.getByRole("list", { name: "Live project operations" })).getByText("List project files")).toBeVisible();
-    expect(screen.getByText("Show less")).toBeInTheDocument();
+    await waitFor(() => expect(within(screen.getByRole("list", { name: "Live project operations" })).getByText("list_files: completed")).toBeInTheDocument());
   });
   it("sends no search preference, displays server activity, and restores persisted citations from history", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {

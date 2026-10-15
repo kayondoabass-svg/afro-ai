@@ -18,6 +18,7 @@ import { publicChatError } from "../../ai-chat-provider";
 import type { ChatSearchActivity } from "../../../shared/chat-search";
 import { buildAttachmentContext, isParseableAttachment } from "../../attachment-parse";
 import { listProjectFiles, saveProjectFiles } from "../../project-files";
+import { recordChatExecutionActivity } from "../../chat-execution-activity";
 import { runProjectTools } from "../../project-tools";
 import { captureForAgent } from "../../project-workbench/visual-audit";
 import { fingerprint as sourceFingerprint } from "../../project-workbench/model";
@@ -1860,6 +1861,10 @@ export function registerChatRoutes(app: Express): void {
             throw new Error("Selected file changed while AI was editing. Retry using the latest version.");
           }
           await saveProjectFiles(userId, conversationId, [edit.file], "merge");
+          const fileActivity = await recordChatExecutionActivity(
+            userId, conversationId, requestBudget!.id, "save_project_files", "succeeded", "Saved project file", [edit.file.path],
+          );
+          if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "project-tool", ...fileActivity, summary: fileActivity.message || fileActivity.title })}\n\n`);
           saved = true;
           usableResult = true;
           res.write(`data: ${JSON.stringify({ type: "project-files-saved", saved: true, paths: [edit.file.path] })}\n\n`);
@@ -2170,6 +2175,13 @@ You are now in EDITOR MODE. Your workflow:
       };
 
       const buildTurn = currentBuildTurn(userContent, Boolean(customerProjectName || lastGeneratedCode));
+      const websiteActivity = async (
+        tool: Parameters<typeof recordChatExecutionActivity>[3],
+        status: Parameters<typeof recordChatExecutionActivity>[4], title: string, paths?: string[],
+      ) => {
+        const activity = await recordChatExecutionActivity(userId, conversationId, requestBudget!.id, tool, status, title, paths);
+        if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "project-tool", ...activity, summary: activity.message || activity.title })}\n\n`);
+      };
       const streamResult = await completeWithAutomaticSearch({
         messages: [systemMessage, ...chatMessages],
         tier: userPlan,
@@ -2209,19 +2221,24 @@ You are now in EDITOR MODE. Your workflow:
       // We log the outcome so we can see WHY a save was skipped via stdout + Sentry.
       let versionSaveResult: { saved: boolean; reason: string; versionId?: number; label?: string } =
         { saved: false, reason: "no-html-detected" };
+      let websiteVersionAttempted = false;
       try {
         const extracted = extractWebsiteHtml(fullResponse);
         const detectedVia = "shared-html-extraction";
 
         if (extracted && extracted.length > 50 && (isFounderRequest || !buildTurn.plan)) {
+          await websiteActivity("generate_website", "succeeded", "Generated website code");
           const { storage } = await import("../../storage");
           const existingVersions = await storage.getAppVersions(conversationId);
           const versionNum = existingVersions.length + 1;
+          websiteVersionAttempted = true;
+          await websiteActivity("save_website_version", "started", "Saving website snapshot");
           const saved = await storage.saveAppVersion({
             conversationId,
             htmlContent: extracted,
             label: `Version ${versionNum}`,
           });
+          await websiteActivity("save_website_version", "succeeded", "Saved website snapshot");
           try {
             const pageTitle = extracted.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]*>/g, "").trim();
             const linked = await ensureConversationProject(userId, conversationId, pageTitle);
@@ -2231,13 +2248,16 @@ You are now in EDITOR MODE. Your workflow:
           }
           {
             try {
+              await websiteActivity("save_project_files", "started", "Saving index.html", ["index.html"]);
               // A generated static website is also a real workspace file.
               // Merge updates index.html without removing CSS, assets or other files.
               await saveProjectFiles(userId, conversationId, [
                 { name: "index.html", path: "index.html", language: "html", content: extracted },
               ], "merge");
+              await websiteActivity("save_project_files", "succeeded", "Saved index.html", ["index.html"]);
               res.write(`data: ${JSON.stringify({ type: "files-saved", saved: true, paths: ["index.html"] })}\n\n`);
             } catch (fileError) {
+              await websiteActivity("save_project_files", "failed", "Could not save index.html", ["index.html"]);
               const reason = fileError instanceof ProjectFileError ? fileError.message : "Project file sync failed.";
               res.write(`data: ${JSON.stringify({ type: "files-saved", saved: false, reason })}\n\n`);
               const warning = "\n\nThe website version was saved, but updating index.html in Files failed. Your other files were not removed.";
@@ -2252,6 +2272,9 @@ You are now in EDITOR MODE. Your workflow:
           console.log(`[app-version] skip save for conversation ${conversationId}: ${versionSaveResult.reason} (response ${fullResponse.length} bytes, first 200 chars: ${JSON.stringify(fullResponse.slice(0, 200))})`);
         }
       } catch (versionErr: any) {
+        if (websiteVersionAttempted) {
+          await websiteActivity("save_website_version", "failed", "Could not save website snapshot").catch(() => {});
+        }
         versionSaveResult = { saved: false, reason: `error: ${versionErr?.message || "unknown"}` };
         console.error("[app-version] save failed:", versionErr);
         try {

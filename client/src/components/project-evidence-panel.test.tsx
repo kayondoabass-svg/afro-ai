@@ -23,6 +23,16 @@ function mount() {
   </QueryClientProvider>);
 }
 
+it("sizes upload controls and history from their pane width rather than the desktop viewport", () => {
+  mount();
+  const layout = screen.getByTestId("evidence-responsive-layout");
+  expect(layout).toHaveStyle({ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))" });
+  expect(layout.className).not.toContain("xl:grid-cols");
+  expect(screen.getByLabelText("Capture phase").parentElement?.parentElement).toHaveStyle({
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 12rem), 1fr))",
+  });
+});
+
 beforeEach(() => {
   evidence = { items: [item], events: [], job: null, budget: { maxTokens: 50000, maxRounds: 5, paygChargeCents: 2 }, limits: { fileBytes: 524288, maxItems: 8 } };
   fingerprint = "current-fingerprint";

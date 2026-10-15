@@ -29,7 +29,7 @@ import { AgentSearchButton, AgentSearchContext } from "@/components/agent-search
 import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import { ProjectWorkbench } from "@/components/project-workbench";
 import { ProjectEvidencePanel } from "@/components/project-evidence-panel";
-import { ProjectVisualAuditChat, ProjectActionIcon, ProjectActionStatus, projectActionLabel } from "@/components/project-visual-audit-chat";
+import { ProjectVisualAuditChat } from "@/components/project-visual-audit-chat";
 import { ChatRequestActivity, type ChatRequestStatus } from "@/components/chat-request-activity";
 import { ProjectWorkspacePreview, type WorkspacePreviewTarget } from "@/components/project-workspace-preview";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
@@ -86,7 +86,10 @@ interface ProjectProposal {
   changes: { file: Pick<ProjectFile, "path" | "content" | "language">; before: Pick<ProjectFile, "path" | "content" | "language"> | null }[];
 }
 interface ProjectToolActivity {
-  tool: string; callId: string; status: "started" | "completed" | "failed";
+  tool: string; callId: string; status: string;
+  persisted?: boolean;
+  summary?: string;
+  id?: string; jobId?: string; createdAt?: string; paths?: string[];
 }
 interface ProjectUsageActivity {
   inputTokens?: number;
@@ -222,7 +225,6 @@ export default function AgentPage() {
   const [projectUsage, setProjectUsage] = useState<ProjectUsageActivity | null>(null);
   const [maxJobTokens, setMaxJobTokens] = useState(50000);
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
-  const [activityExpanded, setActivityExpanded] = useState(false);
   const [openedProjectFile, setOpenedProjectFile] = useState<ProjectFile | null>(null);
   const [workspaceMobileView, setWorkspaceMobileView] = useState<"chat" | "preview">("chat");
   const [workspaceChatWidth, setWorkspaceChatWidth] = useState(52);
@@ -584,7 +586,7 @@ export default function AgentPage() {
         return;
       }
       if (evt?.type === "project-tool") {
-        setToolActivity(list => [...list.filter(a => a.callId !== evt.callId), evt].slice(-10));
+        setToolActivity(list => [...list, { ...evt, jobId: evt.jobId || `request:${requestId}`, createdAt: evt.createdAt || new Date().toISOString() }]);
         return;
       }
       if (evt?.type === "project-proposal") {
@@ -1334,7 +1336,7 @@ export default function AgentPage() {
                 </div>}
                 {toolActivity.length > 0 && <section aria-label="Project tool activity" className="text-xs space-y-1">
                   <strong>Tool activity</strong>
-                  {toolActivity.map(item => <div key={item.callId}>{item.tool}: {item.status}</div>)}
+                  {toolActivity.map((item, index) => <div key={`${item.callId}:${index}:${item.status}`}>{item.tool}: {item.status}</div>)}
                 </section>}
                 {projectProposal && <section aria-label="Pending project proposal" className="space-y-3">
                   <strong>Review changes before saving</strong>
@@ -1486,6 +1488,7 @@ export default function AgentPage() {
           visualAuditConsent={visualAuditConsent}
           onVisualAuditConsentChange={setVisualAuditConsent}
           onOpenPreview={target => { setWorkspacePreviewTarget(target); setWorkspaceMobileView("preview"); }}
+          liveToolActivity={toolActivity}
           messageItems={[
             ...messages.map(msg => ({
               id: msg.id, timestamp: msg.timestamp,
@@ -1495,36 +1498,25 @@ export default function AgentPage() {
             })),
             ...(working && searchActivity ? [{ id: "live-search", timestamp: Date.now(), node: <ChatSearchCard activity={searchActivity} /> }] : []),
             ...(working && streamingContent ? [{ id: "live-response", timestamp: Date.now() + 1, node: <div data-testid="text-streaming"><AgentStructuredText text={streamingContent} renderText={(value) => <MarkdownText text={value} previewBlocked={staticControlsBlocked} />} /></div> }] : []),
+            ...(requestActivity ? [{ id: `request-status-${requestActivity.status}`, timestamp: Date.now() + 2, node: <ChatRequestActivity status={requestActivity.status} mode={requestActivity.mode} /> }] : []),
           ]}
         />}
-        {conversationId && (projectAgent || activeProjectId !== null) && <ProjectEvidencePanel
+        {conversationId && (projectAgent || activeProjectId !== null) && <details className="my-3 min-w-0 rounded-lg border border-zinc-800/80 bg-zinc-950/25">
+          <summary className="cursor-pointer px-3 py-2.5 text-xs font-medium text-zinc-300">Screenshot uploads &amp; run history</summary>
+          <div className="min-w-0 px-2"><ProjectEvidencePanel
           conversationId={conversationId}
           onRepair={request => { setProjectAgent(true); setInput(request); }}
           maxJobTokens={maxJobTokens}
           onMaxJobTokensChange={setMaxJobTokens}
-        />}
-        {(toolActivity.length > 0 || projectUsage) && (
-          <section aria-label="Project activity" className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-xs">
-            <button type="button" aria-expanded={activityExpanded} onClick={() => setActivityExpanded(v => !v)} className="flex w-full items-center justify-between text-left font-medium text-amber-200">
-              <span>Project activity · {toolActivity.length} {toolActivity.length === 1 ? "operation" : "operations"}</span>
-              <span>{activityExpanded ? "Show less" : "Show details"}</span>
-            </button>
-            {projectUsage && <p className="mt-1 text-zinc-300">
+        /></div></details>}
+        {projectUsage && (
+          <section aria-label="Project usage" className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-xs">
+            <p className="text-zinc-300">
               Usage {projectUsage.totalTokens ?? [projectUsage.inputTokens, projectUsage.outputTokens].filter(value => value != null).reduce<number>((sum, value) => sum + (value || 0), 0)} tokens
               {projectUsage.estimatedCost != null || projectUsage.estimatedCostUsd != null || projectUsage.estimatedUsd != null ? ` · estimated ${projectUsage.estimatedCost ?? projectUsage.estimatedCostUsd ?? projectUsage.estimatedUsd}` : ""}
-            </p>}
-            <ul aria-label="Live project operations" aria-live="polite" className="mt-2 space-y-2 text-zinc-300">
-              {toolActivity.map(item => <li key={item.callId} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <ProjectActionIcon tool={item.tool} className="h-4 w-4 shrink-0 text-violet-300" />
-                <span className="min-w-0 flex-1 break-words">{projectActionLabel(item.tool)}</span>
-                <ProjectActionStatus status={item.status} />
-                {activityExpanded && <p className="w-full break-all pl-6 text-[10px] text-zinc-500">Operation {item.callId} · {item.tool} · {item.status}</p>}
-              </li>)}
-            </ul>
-            <span className="sr-only">{toolActivity.map(item => `${item.tool}: ${item.status}`).join(", ")}</span>
+            </p>
           </section>
         )}
-        {requestActivity && <ChatRequestActivity status={requestActivity.status} mode={requestActivity.mode} />}
         {sourceSyncError && conversationId && <div role="alert" className="rounded-lg border border-amber-800/60 p-3 text-xs text-amber-200">
           <p>{sourceSyncError}</p>
           <Button type="button" size="sm" variant="outline" className="mt-2" disabled={sourceSyncBusy || working} onClick={() => void retrySourceSync()}>{sourceSyncBusy ? "Syncing source…" : "Retry file sync"}</Button>

@@ -1,9 +1,9 @@
 import {
+  BrainCircuit,
   CircleAlert,
   CircleCheck,
   CircleDashed,
   CircleStop,
-  Clock3,
   LoaderCircle,
   MessageCircle,
   Send,
@@ -37,7 +37,7 @@ const activityStates: Record<ChatRequestStatus, ActivityState> = {
   },
   waiting: {
     label: "Waiting for response",
-    Icon: Clock3,
+    Icon: BrainCircuit,
     active: true,
     tone: "text-amber-200",
   },

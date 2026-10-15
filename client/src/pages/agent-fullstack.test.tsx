@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 
 const state = vi.hoisted(() => ({
   status: "draft", type: "fullstack", verified: true, failed: false, saved: true, resume: false,
+  visualProps: vi.fn(),
 }));
 vi.mock("@/pages/ai-chat", () => ({ PublishDialog: ({ open }: { open: boolean }) => open ? <div data-testid="static-publish-dialog">Static publish</div> : null }));
 vi.mock("@/components/github-project-dialog", () => ({
@@ -16,10 +17,12 @@ vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>S
 vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => <div data-testid="fullstack-infrastructure">Infrastructure controls</div> }));
 vi.mock("@/components/project-workbench", () => ({ ProjectWorkbench: () => <div data-testid="project-workbench">Project workbench</div> }));
 vi.mock("@/components/project-evidence-panel", () => ({ ProjectEvidencePanel: () => <div data-testid="project-evidence">Private visual evidence</div> }));
-vi.mock("@/components/project-visual-audit-chat", async importOriginal => ({ ...await importOriginal<typeof import("@/components/project-visual-audit-chat")>(), ProjectVisualAuditChat: ({ messageItems }: { messageItems: { id: string; node: React.ReactNode }[] }) => <div data-testid="chat-visual-evidence">
-  {messageItems.map(item => <div key={item.id}>{item.node}</div>)}
+vi.mock("@/components/project-visual-audit-chat", async importOriginal => ({ ...await importOriginal<typeof import("@/components/project-visual-audit-chat")>(), ProjectVisualAuditChat: (props: { messageItems: { id: string; node: React.ReactNode }[] }) => {
+  state.visualProps(props);
+  return <div data-testid="chat-visual-evidence">
+  {props.messageItems.map(item => <div key={item.id}>{item.node}</div>)}
   In-chat visual evidence and saved activity
-</div> }));
+</div>; } }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
     data: queryKey[0] === "/api/auth/user" ? { firstName: "Amina" }
@@ -35,6 +38,7 @@ import AgentPage from "./agent";
 
 beforeEach(() => {
   state.status = "draft";
+  state.visualProps.mockClear();
   state.type = "fullstack";
   state.verified = true;
   state.failed = false;
@@ -57,7 +61,7 @@ afterEach(() => {
 });
 
 describe("full-stack agent workspace", () => {
-  it("shows live tool icons and status in chat before expanding details", async () => {
+  it("forwards real live operations into the full-stack conversation feed", async () => {
     const original = vi.mocked(fetch).getMockImplementation()!;
     let controller: ReadableStreamDefaultController<Uint8Array>;
     vi.mocked(fetch).mockImplementation(async (...args) => {
@@ -72,17 +76,16 @@ describe("full-stack agent workspace", () => {
     fireEvent.click(screen.getByTestId("button-send"));
     await waitFor(() => expect(controller!).toBeDefined());
     controller!.enqueue(new TextEncoder().encode('data: {"type":"project-tool","tool":"read_file","callId":"read-1","status":"started"}\n\n'));
-    const operations = await screen.findByRole("list", { name: "Live project operations" });
-    expect(within(operations).getByText("Read project file")).toBeVisible();
-    expect(within(operations).getByLabelText("In progress")).toBeVisible();
-    expect(operations.querySelector("svg.lucide-file-text")).toBeInTheDocument();
-    expect(within(operations).queryByText(/Operation read-1/)).not.toBeInTheDocument();
+    await waitFor(() => expect(state.visualProps).toHaveBeenLastCalledWith(expect.objectContaining({
+      liveToolActivity: expect.arrayContaining([expect.objectContaining({ tool: "read_file", status: "started" })]),
+    })));
+    expect(screen.getByTestId("chat-visual-evidence")).toBeInTheDocument();
     controller!.enqueue(new TextEncoder().encode('data: {"type":"project-tool","tool":"read_file","callId":"read-1","status":"completed"}\n\ndata: {"done":true}\n\n'));
     controller!.close();
-    await waitFor(() => expect(within(operations).getByLabelText("Completed")).toBeVisible());
-    expect(within(operations).queryByLabelText("In progress")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Project activity/ }));
-    expect(within(operations).getByText(/Operation read-1/)).toBeVisible();
+    await waitFor(() => expect(state.visualProps).toHaveBeenLastCalledWith(expect.objectContaining({
+      liveToolActivity: expect.arrayContaining([expect.objectContaining({ tool: "read_file", callId: "read-1", status: "completed" })]),
+    })));
+    expect(state.visualProps.mock.calls.at(-1)![0].liveToolActivity).toHaveLength(2);
   });
 
   it("detects metadata without a mode hint, opens Files and disables static deployment", async () => {
