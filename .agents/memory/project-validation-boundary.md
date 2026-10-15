@@ -1,4 +1,10 @@
 ---
+
+Source-saving changes need at least one bounded real-storage write/read check in addition to mocked route tests.
+
+**Why:** A permissive save mock accepted incomplete file metadata while the real file validator rejected every write. Passing chat tests did not prove the customer's Files panel could retain generated source.
+
+**How to apply:** Validate the actual emitted payload against the real file contract and, when authorized storage is available, use isolated synthetic records with explicit cleanup. Never test by overwriting customer files.
 name: Project validation boundary
 description: Customer-controlled execution, evidence labels and legacy workspace preservation
 ---

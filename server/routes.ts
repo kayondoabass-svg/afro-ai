@@ -33,6 +33,7 @@ import {
   checkAndBumpPublicIpCap,
 } from "./replit_integrations/quota";
 import { storage } from "./storage";
+import { ensurePublishedProject, recoverPublishedProject, reconcilePublishedProjects, validatePublishConversation, ProjectLifecycleError } from "./project-lifecycle";
 import { insertProjectSchema, appViews, emailApiKeys, emailApiDomains, emailApiLogs, emailSuppressions } from "@shared/schema";
 import { handleSnsRequest, isSuppressed, addSuppression, removeSuppression, getReputationStats } from "./ses-webhook";
 import { conversations } from "@shared/models/chat";
@@ -1075,6 +1076,29 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/projects/reconcile-published", isAuthenticated, async (req: any, res) => {
+    try { res.json(await reconcilePublishedProjects(req.user.claims.sub)); }
+    catch { res.status(503).json({ message: "Could not recover published projects. Your live sites have not been changed." }); }
+  });
+
+  app.post("/api/conversations/:id/sync-source", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ message: "Invalid conversation." });
+      const { syncGeneratedSource } = await import("./project-source-sync");
+      res.json(await syncGeneratedSource(req.user.claims.sub, id));
+    } catch (error) { projectFileFailure(res, error); }
+  });
+
+  app.post("/api/published-apps/:id/project", isAuthenticated, async (req: any, res) => {
+    try { res.json(await recoverPublishedProject(req.user.claims.sub, Number(req.params.id))); }
+    catch (error) {
+      res.status(error instanceof ProjectLifecycleError ? error.status : 503).json({
+        message: error instanceof ProjectLifecycleError ? error.message : "Could not open the saved project. Your live site has not been changed.",
+      });
+    }
+  });
+
   app.get("/api/published-apps", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -1108,6 +1132,7 @@ export async function registerRoutes(
 
     try {
       sendStep("validate", "active");
+      const sourceConversationId = await validatePublishConversation(userId, req.body.conversationId);
       if (!subdomain || !htmlContent || !title) {
         sendStep("validate", "error", "Missing required fields");
         return sendError("Subdomain, HTML content, and title are required");
@@ -1164,6 +1189,10 @@ export async function registerRoutes(
 
       sendStep("check", "active");
       const existing = await storage.getPublishedAppBySubdomain(subdomainLower);
+      if (existing && existing.userId === userId && sourceConversationId) {
+        // Reject a conflicting source before replacing any live HTML or DNS.
+        await ensurePublishedProject(userId, existing.id, sourceConversationId);
+      }
       if (existing && existing.userId !== userId) {
         sendStep("check", "error", "Subdomain taken");
         return sendError("This subdomain is already taken");
@@ -1225,6 +1254,8 @@ export async function registerRoutes(
         });
       }
 
+      const linkedProject = await recoverPublishedProject(userId, result.id, sourceConversationId);
+
       // Mirror HTML to R2 (Cloudflare object storage). Read path prefers R2 if key is set.
       if (result && isR2Configured()) {
         try {
@@ -1265,7 +1296,8 @@ export async function registerRoutes(
         }
       })();
 
-      sendResult({ url, id: result.id, subdomain: subdomainLower });
+      sendResult({ url, id: result.id, subdomain: subdomainLower, projectId: linkedProject.project.id, conversationId: linkedProject.conversationId,
+        ...(linkedProject.sourceSyncWarning ? { sourceSyncWarning: linkedProject.sourceSyncWarning } : {}) });
     } catch (error: any) {
       console.error("Error publishing app:", error);
       sendError(error.message || "Failed to publish app");

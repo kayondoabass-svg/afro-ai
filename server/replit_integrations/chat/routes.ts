@@ -31,6 +31,7 @@ import { guardFullstackProject } from "../../fullstack-access";
 import { CUSTOMER_BRANDING_POLICY, customerNameQuestion, hasForbiddenCustomerBrand } from "../../customer-branding";
 import { CUSTOMER_DESIGN_POLICY, customerIntake, customerBriefContext } from "../../customer-intake";
 import { extractWebsiteHtml } from "../../../shared/html-extraction";
+import { ensureConversationProject } from "../../project-lifecycle";
 import { CHAT_CREDENTIAL_POLICY, containsPrivateCredential, redactPrivateCredentials, safeAssistantText } from "../../chat-credential-safety";
 import { isFounderEmail } from "../../founder-access";
 import { reserveJob, dispatchJobCall, recordJobUsage, recordJobRejection, finishJob, tokenBudget, deleteConversationWithBudgetGuard, type JobReservation } from "../../project-workbench/job-budget";
@@ -2221,16 +2222,24 @@ You are now in EDITOR MODE. Your workflow:
             htmlContent: extracted,
             label: `Version ${versionNum}`,
           });
-          if (!isFounderRequest) {
+          try {
+            const pageTitle = extracted.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]*>/g, "").trim();
+            const linked = await ensureConversationProject(userId, conversationId, pageTitle);
+            res.write(`data: ${JSON.stringify({ type: "project-saved", saved: true, projectId: linked.project.id })}\n\n`);
+          } catch {
+            res.write(`data: ${JSON.stringify({ type: "project-saved", saved: false })}\n\n`);
+          }
+          {
             try {
               // A generated static website is also a real workspace file.
               // Merge updates index.html without removing CSS, assets or other files.
               await saveProjectFiles(userId, conversationId, [
-                { path: "index.html", language: "html", content: extracted },
+                { name: "index.html", path: "index.html", language: "html", content: extracted },
               ], "merge");
               res.write(`data: ${JSON.stringify({ type: "files-saved", saved: true, paths: ["index.html"] })}\n\n`);
-            } catch {
-              res.write(`data: ${JSON.stringify({ type: "files-saved", saved: false })}\n\n`);
+            } catch (fileError) {
+              const reason = fileError instanceof ProjectFileError ? fileError.message : "Project file sync failed.";
+              res.write(`data: ${JSON.stringify({ type: "files-saved", saved: false, reason })}\n\n`);
               const warning = "\n\nThe website version was saved, but updating index.html in Files failed. Your other files were not removed.";
               fullResponse += warning;
               res.write(`data: ${JSON.stringify({ content: warning })}\n\n`);

@@ -193,7 +193,10 @@ export default function AgentPage() {
   const [working, setWorking] = useState(false);
   const [workingStatus, setWorkingStatus] = useState("");
   const [requestActivity, setRequestActivity] = useState<{ status: ChatRequestStatus; mode: "chat" | "project" } | null>(null);
+  const [sourceSyncError, setSourceSyncError] = useState("");
+  const [sourceSyncBusy, setSourceSyncBusy] = useState(false);
   const [conversationId, setConversationId] = useState<number | null>(null);
+  useEffect(() => { setSourceSyncError(""); }, [conversationId]);
   const [streamingContent, setStreamingContent] = useState("");
   const [queueDrainTrigger, setQueueDrainTrigger] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -608,8 +611,22 @@ export default function AgentPage() {
         return;
       }
       if (evt?.type === "files-saved") {
-        if (evt.saved) qc.invalidateQueries({ queryKey: ["/api/d1/project-files", convoId] });
-        else toast({ title: "Files could not be updated", description: "The website version is saved, but index.html could not be saved to Files.", variant: "destructive" });
+        if (evt.saved) {
+          setSourceSyncError("");
+          qc.invalidateQueries({ queryKey: ["/api/d1/project-files", convoId] });
+        } else {
+          setSourceSyncError("The website version is saved, but index.html has not reached Files. You can retry the source sync without another AI request.");
+          toast({ title: "Files could not be updated", description: "The website version is saved, but index.html could not be saved to Files.", variant: "destructive" });
+        }
+        return;
+      }
+      if (evt?.type === "project-saved") {
+        if (evt.saved && Number.isSafeInteger(evt.projectId)) {
+          setActiveProjectId(evt.projectId);
+          qc.invalidateQueries({ queryKey: ["/api/projects"] });
+        } else if (!evt.saved) {
+          toast({ title: "Project link could not be saved", description: "Your website version is retained. Publish or return to the dashboard to recover the project.", variant: "destructive" });
+        }
         return;
       }
       if (evt?.done) return;
@@ -772,6 +789,26 @@ export default function AgentPage() {
     setStreamingContent("");
     setSearchActivity(null);
     setToolActivity([]);
+  };
+
+  const retrySourceSync = async () => {
+    if (!conversationId || sourceSyncBusy || working) return;
+    const sourceConversation = conversationId;
+    setSourceSyncBusy(true);
+    try {
+      const result = await fetch(`/api/conversations/${sourceConversation}/sync-source`, { method: "POST", credentials: "include" });
+      if (!result.ok) {
+        const detail = await result.json().catch(() => ({}));
+        throw new Error(detail.message || detail.error || "Source sync failed. The saved website version is retained.");
+      }
+      qc.invalidateQueries({ queryKey: ["/api/d1/project-files", sourceConversation] });
+      if (conversationRef.current === sourceConversation) {
+        setSourceSyncError("");
+        toast({ title: "Source synchronized", description: "The saved website source is in Files. Other files were preserved." });
+      }
+    } catch (error) {
+      if (conversationRef.current === sourceConversation) setSourceSyncError(error instanceof Error ? error.message : "Source sync failed.");
+    } finally { setSourceSyncBusy(false); }
   };
 
   // ---------- Attachments ----------
@@ -1278,6 +1315,9 @@ export default function AgentPage() {
               {proposalLoadError && <p role="alert" className="text-xs text-red-400">{proposalLoadError.message}</p>}
               <div className="min-h-0 flex-1 overflow-y-auto space-y-4">
                 {conversationId && <ProjectWorkbench conversationId={conversationId} onRepair={request => { setProjectAgent(true); setInput(request); }} />}
+                {conversationId && !isFullstack && <Button variant="outline" disabled={sourceSyncBusy || working} onClick={() => void retrySourceSync()}>
+                  {sourceSyncBusy ? "Syncing source…" : "Sync saved website to Files"}
+                </Button>}
                 {isFullstack && activeProject && <FullstackInfrastructure key={activeProject.id} project={activeProject} />}
                 <div className="h-64 border border-zinc-800 rounded-md overflow-hidden">
                   <FileTreeSidebar conversationId={conversationId} openedFileId={openedProjectFile?.id ?? null}
@@ -1485,6 +1525,10 @@ export default function AgentPage() {
           </section>
         )}
         {requestActivity && <ChatRequestActivity status={requestActivity.status} mode={requestActivity.mode} />}
+        {sourceSyncError && conversationId && <div role="alert" className="rounded-lg border border-amber-800/60 p-3 text-xs text-amber-200">
+          <p>{sourceSyncError}</p>
+          <Button type="button" size="sm" variant="outline" className="mt-2" disabled={sourceSyncBusy || working} onClick={() => void retrySourceSync()}>{sourceSyncBusy ? "Syncing source…" : "Retry file sync"}</Button>
+        </div>}
         {working && (
           <div className="text-sm text-violet-400" role="status" data-testid="text-working-status">
             {workingStatus || t("chat.working")}
@@ -1650,6 +1694,7 @@ export default function AgentPage() {
       </nav>
 
       <PublishDialog
+        conversationId={conversationId ?? undefined}
         code={publishCode}
         open={publishOpen && !staticControlsBlocked}
         onOpenChange={setPublishOpen}

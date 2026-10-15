@@ -3,8 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), toast: vi.fn(), apiRequest: vi.fn() }));
-vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { firstName: "Amina", plan: "business" } }) }));
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), toast: vi.fn(), apiRequest: vi.fn(), user: { firstName: "Amina", plan: "business" } as any }));
+vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: mocks.user }) }));
 vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({ t: (key: string) => key }) }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("wouter", () => ({ useLocation: () => ["/dashboard", mocks.navigate] }));
@@ -25,6 +25,7 @@ import { queryClient } from "@/lib/queryClient";
 
 const project = { id: 81, name: "Kampala Studio", description: "Never autogenerate", type: "fullstack", status: "draft", createdAt: "2026-06-15" };
 beforeEach(() => {
+  mocks.user = { firstName: "Amina", plan: "business" };
   queryClient.clear();
   mocks.apiRequest.mockReset();
   mocks.navigate.mockReset();
@@ -119,5 +120,22 @@ describe("dashboard paid full-stack creation", () => {
     fireEvent.click(screen.getByTestId("button-retry-setup-81"));
     await waitFor(() => expect(mocks.apiRequest).toHaveBeenCalledWith("POST", "/api/projects/81/initialize"));
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("/chat?projectId=81&project=Kampala%20Studio&projectMode=fullstack"));
+  });
+
+  it("reconciles published sites once after an owned user is available", async () => {
+    mocks.user = { id: "owner-123", firstName: "Amina", plan: "business" };
+    mocks.apiRequest.mockResolvedValue(Response.json({ projects: [], failures: 0 }));
+    render(<QueryClientProvider client={queryClient}><DashboardPage /></QueryClientProvider>);
+    await waitFor(() => expect(mocks.apiRequest).toHaveBeenCalledWith("POST", "/api/projects/reconcile-published"));
+    await waitFor(() => expect(mocks.apiRequest).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows a visible retry action when published-site reconciliation fails", async () => {
+    mocks.user = { id: "owner-456", firstName: "Amina", plan: "business" };
+    mocks.apiRequest.mockRejectedValue(new Error("503: Reconciliation unavailable"));
+    render(<QueryClientProvider client={queryClient}><DashboardPage /></QueryClientProvider>);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not fully restore your live-site projects");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+    expect(mocks.apiRequest).toHaveBeenCalledWith("POST", "/api/projects/reconcile-published");
   });
 });

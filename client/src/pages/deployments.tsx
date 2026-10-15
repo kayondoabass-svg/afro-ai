@@ -112,6 +112,39 @@ export default function DeploymentsPage() {
     enabled: !!versionApp,
   });
 
+  const sourceProjectMutation = useMutation({
+    mutationFn: async ({ appId, action }: { appId: number; action: "build" | "auth" }) => {
+      const response = await apiRequest("POST", `/api/published-apps/${appId}/project`);
+      const result = await response.json() as {
+        project?: { id?: number };
+        conversationId?: number;
+        sourceSyncWarning?: string;
+      };
+      if (!result.project?.id || !result.conversationId) {
+        throw new Error("The source project could not be opened because its project or conversation is missing.");
+      }
+      return { ...result, action };
+    },
+    onSuccess: (result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      if (result.sourceSyncWarning?.trim()) {
+        toast({
+          title: "Source recovery warning",
+          description: result.sourceSyncWarning,
+        });
+      }
+      if (variables.action === "build") {
+        setLocation(`/chat?projectId=${result.project!.id}&conversationId=${result.conversationId}`);
+      } else {
+        setLocation(`/dashboard/auth?projectId=${result.project!.id}&appId=${variables.appId}`);
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not open the source project", description: error.message, variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/published-apps/${id}`);
@@ -259,7 +292,7 @@ export default function DeploymentsPage() {
                 <Card key={app.id} className="overflow-hidden" data-testid={`card-deployment-${app.id}`}>
                   <CardContent className="p-0">
                     <div className="p-6">
-                      <div className="flex items-start justify-between gap-4">
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                         <div className="flex items-center gap-4 min-w-0">
                           <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${app.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
                             <Globe className={`w-5 h-5 ${app.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
@@ -281,7 +314,27 @@ export default function DeploymentsPage() {
                             <p className="text-sm text-muted-foreground">Published {formatDate(app.createdAt)}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+                        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto md:justify-end">
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => sourceProjectMutation.mutate({ appId: app.id, action: "build" })}
+                            disabled={sourceProjectMutation.isPending}
+                            data-testid={`button-open-build-${app.id}`}
+                          >
+                            <Rocket className="w-3.5 h-3.5" />
+                            <span className="ml-1">Open &amp; Build</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => sourceProjectMutation.mutate({ appId: app.id, action: "auth" })}
+                            disabled={sourceProjectMutation.isPending}
+                            data-testid={`button-add-auth-${app.id}`}
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                            <span className="ml-1">Add authentication</span>
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"

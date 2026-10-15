@@ -58,7 +58,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import type { Project, PublishedApp } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, isSetupBlocked, projectChatUrl, projectRequestError } from "@/lib/fullstack-project";
@@ -74,6 +74,9 @@ export default function DashboardPage() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [paymentSuccess, setPaymentSuccess] = useState<{ plan: string } | null>(null);
+  const [reconcileError, setReconcileError] = useState<string | null>(null);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const reconciledOwnerRef = useRef<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -111,6 +114,53 @@ export default function DashboardPage() {
 
   const { data: publishedApps } = useQuery<PublishedApp[]>({
     queryKey: ["/api/published-apps"],
+  });
+
+  const reconcilePublishedApps = async (ownerId: string) => {
+    setIsReconciling(true);
+    setReconcileError(null);
+    try {
+      const response = await apiRequest("POST", "/api/projects/reconcile-published");
+      const result = await response.json() as { failures?: number };
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      if ((result.failures || 0) > 0) {
+        setReconcileError(`Some live sites could not be connected to projects (${result.failures} failure${result.failures === 1 ? "" : "s"}). Retry to try again.`);
+      }
+      reconciledOwnerRef.current = ownerId;
+    } catch (error) {
+      setReconcileError(error instanceof Error ? error.message : "Could not connect existing live sites to projects.");
+    } finally {
+      setIsReconciling(false);
+    }
+  };
+
+  const ownerId = user?.id ? String(user.id) : null;
+  useEffect(() => {
+    if (!ownerId || reconciledOwnerRef.current === ownerId) return;
+    reconciledOwnerRef.current = ownerId;
+    void reconcilePublishedApps(ownerId);
+  }, [ownerId]);
+
+  const restorePublishedMutation = useMutation({
+    mutationFn: async ({ appId, action }: { appId: number; action: "edit" | "auth" }) => {
+      const response = await apiRequest("POST", `/api/published-apps/${appId}/project`);
+      return { ...(await response.json()), action } as { project: Project; conversationId?: number | null; action: "edit" | "auth" };
+    },
+    onSuccess: ({ project, conversationId, action }, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      if (action === "auth") {
+        navigate(`/dashboard/auth?projectId=${project.id}&appId=${variables.appId}`);
+      } else if (conversationId) {
+        navigate(`/chat?conversation=${conversationId}`);
+      } else {
+        navigate(projectChatUrl(project));
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Couldn't open this site’s project", description: error.message, variant: "destructive" });
+    },
   });
 
   const userPlan = (user as any)?.plan || "starter";
@@ -317,7 +367,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {publishedApps.slice(0, 6).map((app) => (
                 <Card key={app.id} className="hover-elevate" data-testid={`card-published-${app.id}`}>
-                  <CardContent className="p-4 flex items-center gap-3">
+                  <CardContent className="p-4 flex flex-wrap items-center gap-3">
                     <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${app.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
                       <Globe className={`w-4 h-4 ${app.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
                     </div>
@@ -333,10 +383,39 @@ export default function DashboardPage() {
                         {app.subdomain}.afroaigroup.com
                       </a>
                     </div>
+                    <div className="flex w-full flex-wrap gap-2 pl-12 sm:w-auto sm:pl-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={restorePublishedMutation.isPending}
+                        onClick={() => restorePublishedMutation.mutate({ appId: app.id, action: "edit" })}
+                        data-testid={`button-open-edit-published-${app.id}`}
+                      >
+                        Open &amp; edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={restorePublishedMutation.isPending}
+                        onClick={() => restorePublishedMutation.mutate({ appId: app.id, action: "auth" })}
+                        data-testid={`button-add-auth-published-${app.id}`}
+                      >
+                        Add authentication
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
+          </div>
+        )}
+
+        {reconcileError && (
+          <div role="alert" className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-destructive">Could not fully restore your live-site projects: {reconcileError}</p>
+            <Button size="sm" variant="outline" disabled={isReconciling || !ownerId} onClick={() => ownerId && void reconcilePublishedApps(ownerId)}>
+              {isReconciling ? "Retrying…" : "Retry"}
+            </Button>
           </div>
         )}
 

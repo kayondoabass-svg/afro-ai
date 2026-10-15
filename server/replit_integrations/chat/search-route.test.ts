@@ -172,6 +172,8 @@ describe("main chat search route wiring", () => {
     expect(mocks.saveFiles).toHaveBeenCalledWith("owner", 12, [
       expect.objectContaining({ path: "index.html", language: "html" }),
     ], "merge");
+    const { validateProjectFiles } = await import("../../project-file-policy");
+    expect(() => validateProjectFiles(mocks.saveFiles.mock.calls.at(-1)![2])).not.toThrow();
     expect(res.write.mock.calls.join("")).toContain('"type":"files-saved","saved":true');
   });
   it("reports a workspace-file save failure without pretending Files was updated", async () => {

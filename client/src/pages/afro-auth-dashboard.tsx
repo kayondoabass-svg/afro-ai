@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { authAdminRequest } from "@/lib/afro-auth-admin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Plus, ShieldCheck, ArrowRight, KeyRound } from "lucide-react";
+import type { Project, PublishedApp } from "@shared/schema";
 
 interface TenantSummary {
   id: string;
@@ -30,12 +31,52 @@ export default function AfroAuthDashboardPage() {
   const [, setLocation] = useLocation();
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
+  const contextOpenedRef = useRef(false);
+  const searchParams = new URLSearchParams(window.location.search);
+  const hasHandoffContext = searchParams.has("projectId") || searchParams.has("appId");
+  const requestedProjectId = Number(searchParams.get("projectId"));
+  const requestedAppId = Number(searchParams.get("appId"));
+
+  const { data: ownedProjects, isLoading: projectsLoading, isError: projectsError } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+    enabled: !!user,
+  });
+  const { data: ownedApps, isLoading: appsLoading, isError: appsError } = useQuery<PublishedApp[]>({
+    queryKey: ["/api/published-apps"],
+    enabled: !!user,
+  });
 
   const { data, isLoading, error, refetch } = useQuery<{ tenants: TenantSummary[] }>({
     queryKey: ["/cf-auth/v1/admin/tenants"],
     queryFn: () => authAdminRequest("/cf-auth/v1/admin/tenants"),
     enabled: !!user,
   });
+
+  const tenants = data?.tenants || [];
+  const selectedProject = Number.isInteger(requestedProjectId) && requestedProjectId > 0
+    ? ownedProjects?.find((project) => project.id === requestedProjectId)
+    : undefined;
+  const selectedApp = Number.isInteger(requestedAppId) && requestedAppId > 0
+    ? ownedApps?.find((app) => app.id === requestedAppId)
+    : undefined;
+  const association = useQuery<{ project: Project; conversationId?: number | null }>({
+    queryKey: ["/api/published-apps", requestedAppId, "project", requestedProjectId],
+    enabled: !!user && !!selectedProject && !!selectedApp,
+    queryFn: async () => {
+      if (!selectedApp) throw new Error("The selected live site is not in this account.");
+      const response = await apiRequest("POST", `/api/published-apps/${selectedApp.id}/project`);
+      return response.json();
+    },
+  });
+  const contextLoading = hasHandoffContext && (
+    authLoading || !user || projectsLoading || appsLoading ||
+    (!!selectedProject && !!selectedApp && association.isLoading)
+  );
+  const contextError = projectsError || appsError || association.isError;
+  const validHandoff = !!selectedProject && !!selectedApp &&
+    association.data?.project?.id === requestedProjectId && !contextError;
+  const tenantUrl = (tenantId: string) =>
+    `/dashboard/auth/${tenantId}${validHandoff && selectedApp ? `?appId=${selectedApp.id}` : ""}`;
 
   const createMutation = useMutation({
     mutationFn: async (projectName: string) => {
@@ -45,13 +86,22 @@ export default function AfroAuthDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["/cf-auth/v1/admin/tenants"] });
       setCreateOpen(false);
       setName("");
-      toast({ title: "Project created", description: `${tenant.name} created. Add and verify its website domain next.` });
-      setLocation(`/dashboard/auth/${tenant.id}`);
+      toast({ title: "Project created", description: `${tenant.name} created. Add and verify its website domain next; login is not enabled automatically.` });
+      setLocation(tenantUrl(tenant.id));
     },
     onError: (err: any) => {
       toast({ title: "Couldn't create project", description: err?.message || "Try again", variant: "destructive" });
     },
   });
+
+  useEffect(() => {
+    if (contextOpenedRef.current || authLoading || !user || contextLoading || !requestedProjectId || !requestedAppId) return;
+    contextOpenedRef.current = true;
+    if (validHandoff && selectedProject) {
+      setName(selectedProject.name);
+      setCreateOpen(true);
+    }
+  }, [authLoading, user, contextLoading, requestedProjectId, requestedAppId, validHandoff, selectedProject]);
 
   if (authLoading) {
     return (
@@ -74,8 +124,6 @@ export default function AfroAuthDashboardPage() {
     );
   }
 
-  const tenants = data?.tenants || [];
-
   return (
     <div className="max-w-5xl mx-auto p-6">
       <div className="flex items-center justify-between mb-8">
@@ -89,6 +137,37 @@ export default function AfroAuthDashboardPage() {
           <Plus className="h-4 w-4 mr-2" /> New project
         </Button>
       </div>
+
+      {hasHandoffContext && (
+        <Card className="mb-6" data-testid="card-auth-handoff-context">
+          <CardContent className="p-4">
+            {contextLoading ? (
+              <div className="space-y-2" aria-label="Checking selected app ownership">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 w-64" />
+              </div>
+            ) : contextError ? (
+              <div role="alert" className="text-sm text-destructive">
+                Could not verify that this live site belongs to the selected project. Refresh the page and try again.
+              </div>
+            ) : validHandoff ? (
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Adding Afro Auth to {selectedProject.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  Selected live site: {selectedApp.customDomain || `${selectedApp.subdomain}.afroaigroup.com`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Creating this Afro Auth project will not enable login automatically. You will still need to add and verify the site domain.
+                </p>
+              </div>
+            ) : (
+              <div role="alert" className="text-sm text-muted-foreground">
+                The requested project and live site could not be confirmed as a source pair in your account. Choose an existing Afro Auth project or start from a live site in your dashboard.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {error ? (
         <div role="alert" className="rounded-lg border p-6 space-y-3">
@@ -119,7 +198,7 @@ export default function AfroAuthDashboardPage() {
             <Card
               key={t.id}
               className="cursor-pointer hover-elevate active-elevate-2 transition"
-              onClick={() => setLocation(`/dashboard/auth/${t.id}`)}
+              onClick={() => setLocation(tenantUrl(t.id))}
               data-testid={`card-project-${t.id}`}
             >
               <CardHeader className="pb-3">
@@ -149,6 +228,14 @@ export default function AfroAuthDashboardPage() {
               Pick a name your team will recognise. You can rename it later.
             </DialogDescription>
           </DialogHeader>
+          {validHandoff && selectedProject && selectedApp && (
+            <div className="rounded-md border bg-muted/40 p-3 text-sm">
+              <p className="font-medium">{selectedProject.name}</p>
+              <p className="text-muted-foreground">
+                {selectedApp.customDomain || `${selectedApp.subdomain}.afroaigroup.com`}
+              </p>
+            </div>
+          )}
           <div className="space-y-2 py-2">
             <Label htmlFor="project-name">Project name</Label>
             <Input

@@ -611,11 +611,12 @@ function FeedbackPanel({ appId, publishedUrl, feedbackCopied, setFeedbackCopied,
   );
 }
 
-export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
+export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, conversationId }: {
   code: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAutoFixSecurity?: (hint: string) => void;
+  conversationId?: number | null;
 }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -631,7 +632,9 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
   const [linkCopied, setLinkCopied] = useState(false);
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
-  const [existingApp, setExistingApp] = useState<{ id?: number; subdomain: string; title: string } | null>(null);
+  const [existingApp, setExistingApp] = useState<{ id?: number; projectId?: number; subdomain: string; title: string } | null>(null);
+  const [publishedProjectId, setPublishedProjectId] = useState<number | null>(null);
+  const [publishedConversationId, setPublishedConversationId] = useState<number | null>(null);
   const [feedbackCopied, setFeedbackCopied] = useState(false);
   const [showFeedbackInbox, setShowFeedbackInbox] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(true);
@@ -668,6 +671,8 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
       setExistingApp(null);
       loadedRef.current = false;
       setPublishedUrl(null);
+      setPublishedProjectId(null);
+      setPublishedConversationId(null);
       setPublishSteps([]);
       setPublishError(null);
       setSecurityBlock(null);
@@ -717,7 +722,7 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ subdomain, htmlContent: code, title }),
+        body: JSON.stringify({ subdomain, htmlContent: code, title, ...(conversationId ? { conversationId } : {}) }),
       });
 
       const reader = res.body?.getReader();
@@ -744,9 +749,13 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
               ));
             } else if (data.type === "result") {
               setPublishedUrl(data.url);
-              setExistingApp({ id: data.id, subdomain: data.subdomain || subdomain, title });
+              setExistingApp({ id: data.id, projectId: data.projectId, subdomain: data.subdomain || subdomain, title });
+              setPublishedProjectId(typeof data.projectId === "number" ? data.projectId : null);
+              setPublishedConversationId(typeof data.conversationId === "number" ? data.conversationId : null);
               toast({ title: "Published!", description: `Your app is live at ${data.url}` });
               queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+              if (data.sourceSyncWarning) toast({ title: "Source sync needs attention", description: data.sourceSyncWarning, variant: "destructive" });
+              queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
             } else if (data.type === "error") {
               setPublishError(data.message);
               if (data.kind === "security" && Array.isArray(data.warnings) && data.autoFixHint) {
@@ -950,6 +959,29 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity }: {
                       </div>
                     </div>
                   </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(conversationId || publishedConversationId) && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          onOpenChange(false);
+                          setLocation(`/chat?conversation=${conversationId || publishedConversationId}`);
+                        }}
+                        data-testid="button-open-edit-published"
+                      >
+                        Open &amp; edit
+                      </Button>
+                    )}
+                    {existingApp?.id && (existingApp.projectId || publishedProjectId) && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setLocation(`/dashboard/auth?projectId=${existingApp.projectId || publishedProjectId}&appId=${existingApp.id}`)}
+                        data-testid="button-add-auth-published"
+                      >
+                        Add authentication
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {existingApp?.id && (
                   <FeedbackPanel
@@ -1090,7 +1122,7 @@ const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
   phone: { width: "375px", label: "Phone" },
 };
 
-function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onRedo, canRedo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth, onGithubExport, onSelectElement, isSelectMode, onToggleSelectMode }: {
+function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownload, onBackToChat, onUndo, canUndo, onRedo, canRedo, onAutoFix, onVerify, onShowHistory, historyCount, onAddAuth, onGithubExport, onSelectElement, isSelectMode, onToggleSelectMode, conversationId }: {
   code: string;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -1110,6 +1142,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
   onSelectElement?: (sel: { selector: string; tagName: string; textPreview: string; outerHtmlPreview: string }) => void;
   isSelectMode?: boolean;
   onToggleSelectMode?: () => void;
+  conversationId?: number | null;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPublish, setShowPublish] = useState(false);
@@ -1387,7 +1420,7 @@ function LivePreview({ code, isFullscreen, onToggleFullscreen, onClose, onDownlo
           data-testid="iframe-preview"
         />
       </div>
-      <PublishDialog code={code} open={showPublish} onOpenChange={setShowPublish} />
+      <PublishDialog code={code} open={showPublish} onOpenChange={setShowPublish} conversationId={conversationId} />
     </div>
   );
 }
@@ -3628,6 +3661,7 @@ export default function AIChatPage() {
           <div className={`${isFullscreen ? "" : "w-full lg:w-1/2"} ${mobileView === "chat" ? "hidden lg:flex" : "flex"}`}>
             <LivePreview
               code={previewCode}
+              conversationId={activeConversation}
               isFullscreen={isFullscreen}
               onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
               onClose={() => { setShowPreview(false); setIsFullscreen(false); setMobileView("chat"); }}
@@ -3808,6 +3842,7 @@ export default function AIChatPage() {
           open={showPublishFromChat}
           onOpenChange={setShowPublishFromChat}
           onAutoFixSecurity={(hint) => sendDirectMessage(hint)}
+          conversationId={activeConversation}
         />
       )}
 
