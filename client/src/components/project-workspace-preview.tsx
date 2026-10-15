@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowUpRight, Image as ImageIcon, Monitor, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Download, Image as ImageIcon, Monitor, RefreshCw, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export type WorkspacePreviewTarget =
@@ -20,16 +20,18 @@ type PreviewData = {
 };
 
 export function ProjectWorkspacePreview({
-  conversationId, projectId, projectType, blocked = false, target, onTargetChange,
+  conversationId, projectId, projectType, blocked = false, conversationHtml, target, onTargetChange,
 }: {
   conversationId: number | null;
   projectId: number | null;
   projectType?: string;
   blocked?: boolean;
+  conversationHtml?: string | null;
   target: WorkspacePreviewTarget;
   onTargetChange: (target: WorkspacePreviewTarget) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [viewport, setViewport] = useState<"desktop" | "mobile">("desktop");
   useEffect(() => setImageFailed(false), [target?.kind, target && "id" in target ? target.id : ""]);
   const website = useQuery<PreviewData>({
     queryKey: ["/api/projects", projectId, "preview"],
@@ -49,9 +51,11 @@ export function ProjectWorkspacePreview({
     : target?.kind === "proposal" && conversationId
       ? `/api/conversations/${conversationId}/workbench/proposals/${encodeURIComponent(target.id)}/image`
       : null;
-  const title = target?.kind === "website" ? website.data?.project.name || "Website preview"
+  const title = target?.kind === "website" ? website.data?.project?.name || "Website preview"
     : target?.kind === "file" ? target.path
     : target?.kind === "evidence" || target?.kind === "proposal" ? target.label : "Project preview";
+  const previewHtml = projectId ? website.data?.htmlContent : conversationHtml;
+  const hasPreview = projectId ? website.data?.hasContent : !!conversationHtml;
 
   return <aside className="workspace-preview min-h-0 min-w-0 w-full flex flex-1 flex-col border-l border-zinc-800 bg-[#171923]" aria-label="Project preview pane" data-testid="workspace-preview">
     <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-zinc-800 px-3">
@@ -63,22 +67,30 @@ export function ProjectWorkspacePreview({
         </div>
       </div>
       <div className="flex shrink-0 gap-1">
-        <Button size="icon" variant="ghost" aria-label="Show website preview" title="Website" disabled={!projectId || projectType === "fullstack" || blocked} className="h-8 w-8 text-zinc-400" onClick={() => onTargetChange({ kind: "website" })}><Monitor className="h-4 w-4" /></Button>
-        {target?.kind === "website" && <Button size="icon" variant="ghost" aria-label="Refresh website preview" title="Refresh preview" className="h-8 w-8 text-zinc-400" onClick={() => void website.refetch()}><RefreshCw className="h-3.5 w-3.5" /></Button>}
+        <Button size="icon" variant="ghost" aria-label="Show website preview" title="Website" disabled={(!projectId && !conversationHtml) || projectType === "fullstack" || blocked} className="h-8 w-8 text-zinc-400" onClick={() => onTargetChange({ kind: "website" })}><Monitor className="h-4 w-4" /></Button>
+        {target?.kind === "website" && projectId && <Button size="icon" variant="ghost" aria-label="Refresh website preview" title="Refresh preview" className="h-8 w-8 text-zinc-400" onClick={() => void website.refetch()}><RefreshCw className="h-3.5 w-3.5" /></Button>}
+        {imageSrc && <a href={imageSrc} target="_blank" rel="noreferrer" aria-label="Open full-size private image" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-white"><ArrowUpRight className="h-4 w-4" /></a>}
       </div>
     </header>
+    {target?.kind === "website" && (projectId || conversationHtml) && projectType !== "fullstack" && !blocked && <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
+      <div role="group" aria-label="Preview viewport" className="flex rounded-lg bg-zinc-950/50 p-1">
+        <button type="button" aria-pressed={viewport === "desktop"} onClick={() => setViewport("desktop")} className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${viewport === "desktop" ? "bg-zinc-700 text-white" : "text-zinc-400"}`}><Monitor className="h-3.5 w-3.5" />Desktop</button>
+        <button type="button" aria-pressed={viewport === "mobile"} onClick={() => setViewport("mobile")} className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${viewport === "mobile" ? "bg-zinc-700 text-white" : "text-zinc-400"}`}><Smartphone className="h-3.5 w-3.5" />Mobile</button>
+      </div>
+      <span className="text-[10px] text-zinc-500">Interactive preview · not a screenshot</span>
+    </div>}
     <div className="min-h-0 flex-1 overflow-auto bg-[#20212a] p-3">
       {target?.kind === "website" && projectType === "fullstack" && <div role="status" className="mx-auto mt-12 max-w-sm rounded-xl border border-amber-700/40 bg-amber-950/20 p-5 text-center">
         <AlertTriangle className="mx-auto h-5 w-5 text-amber-300" /><h3 className="mt-3 text-sm font-semibold text-zinc-100">Preview unavailable</h3>
         <p className="mt-2 text-xs leading-relaxed text-zinc-400">This source-only full-stack project has no runtime preview. Its source files remain available for review and export.</p>
       </div>}
       {target?.kind === "website" && blocked && projectType !== "fullstack" && <div role="status" className="mx-auto mt-12 max-w-sm rounded-xl border border-amber-700/40 bg-amber-950/20 p-5 text-center"><AlertTriangle className="mx-auto h-5 w-5 text-amber-300" /><h3 className="mt-3 text-sm font-semibold text-zinc-100">Preview paused</h3><p className="mt-2 text-xs leading-relaxed text-zinc-400">Project metadata or setup must be verified before its website preview can be loaded.</p></div>}
-      {target?.kind === "website" && projectType !== "fullstack" && !projectId && <PreviewEmpty text="Open a website project to preview its saved version." />}
+      {target?.kind === "website" && projectType !== "fullstack" && !blocked && !projectId && !conversationHtml && <PreviewEmpty text="Your website will appear here when a page is created in this conversation. You can also open an existing project." />}
       {target?.kind === "website" && projectType !== "fullstack" && !blocked && projectId && website.isPending && <div role="status" aria-label="Loading website preview" className="mx-auto mt-8 max-w-xl space-y-3"><div className="h-56 animate-pulse rounded-lg bg-zinc-800" /><div className="h-4 w-2/3 animate-pulse rounded bg-zinc-800" /><div className="h-4 w-1/2 animate-pulse rounded bg-zinc-800" /></div>}
       {target?.kind === "website" && !blocked && website.isError && <div role="alert" className="mx-auto mt-8 max-w-sm rounded-xl border border-rose-900/50 bg-rose-950/20 p-4 text-sm text-rose-200"><p>Website preview could not load. {website.error.message}</p><Button variant="outline" size="sm" className="mt-3 border-rose-900" onClick={() => void website.refetch()}>Retry preview</Button></div>}
-      {target?.kind === "website" && projectType !== "fullstack" && !blocked && website.data && (website.data.hasContent
-        ? <div className="mx-auto h-full min-h-[420px] max-w-5xl overflow-hidden rounded-lg border border-zinc-700 bg-white shadow-xl">
-          <iframe title={`Saved website preview${website.data.project.name ? `: ${website.data.project.name}` : ""}`} srcDoc={website.data.htmlContent} sandbox="allow-scripts allow-forms" referrerPolicy="no-referrer" className="h-full min-h-[420px] w-full border-0" />
+      {target?.kind === "website" && projectType !== "fullstack" && !blocked && (website.data || (!projectId && conversationHtml)) && (hasPreview
+        ? <div data-testid="website-preview-frame" className={`mx-auto h-full min-h-[420px] w-full overflow-hidden rounded-lg border border-zinc-700 bg-white shadow-xl ${viewport === "mobile" ? "max-w-[390px]" : "max-w-5xl"}`}>
+          <iframe title={`Saved website preview${website.data?.project?.name ? `: ${website.data.project.name}` : ""}`} srcDoc={previewHtml || ""} sandbox="allow-scripts allow-forms" referrerPolicy="no-referrer" className="h-full min-h-[420px] w-full border-0" />
         </div>
         : <PreviewEmpty text="No saved website content yet. Build a page in this conversation and it will appear here." />)}
       {imageSrc && !imageFailed && <div className="flex min-h-full items-start justify-center">
@@ -90,12 +102,12 @@ export function ProjectWorkspacePreview({
         : target.content === undefined
           ? <PreviewEmpty text="This file's text could not be loaded. Reopen it from the project files panel." />
           : <pre className="max-w-full overflow-auto whitespace-pre-wrap break-words rounded-lg border border-zinc-700 bg-zinc-950 p-4 font-mono text-xs leading-relaxed text-zinc-200">{target.content}</pre>)}
-      {!target && <PreviewEmpty text="Open a saved screenshot, design proposal, or website preview from the conversation feed." />}
+      {!target && <PreviewEmpty text="Start a project to see its website here, or open a saved image from the conversation." />}
       {target?.kind === "evidence" && !conversationId && <PreviewEmpty text="This evidence is not available without its saved conversation." />}
       {target?.kind === "proposal" && !conversationId && <PreviewEmpty text="This proposal is not available without its saved conversation." />}
       {target?.kind === "evidence" && !imageSrc && <PreviewEmpty text="No owned screenshot image is available for this activity." />}
     </div>
-    {target?.kind !== "website" && target && <footer className="flex shrink-0 items-center justify-between border-t border-zinc-800 px-3 py-2 text-[10px] text-zinc-500"><span className="truncate">{target.kind === "file" ? target.path : target.label}</span><span className="inline-flex shrink-0 items-center gap-1"><ArrowUpRight className="h-3 w-3" />Conversation-owned</span></footer>}
+    {target?.kind !== "website" && target && <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-zinc-800 px-3 py-2 text-[10px] text-zinc-500"><span className="truncate">{target.kind === "file" ? target.path : target.label}</span>{imageSrc ? <a href={imageSrc} download className="inline-flex shrink-0 items-center gap-1 text-zinc-300 hover:text-white"><Download className="h-3 w-3" />Download</a> : <span className="inline-flex shrink-0 items-center gap-1"><ArrowUpRight className="h-3 w-3" />Conversation-owned</span>}</footer>}
   </aside>;
 }
 

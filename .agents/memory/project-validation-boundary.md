@@ -120,3 +120,15 @@ recent rolling buffer restored after refresh.
 **How to apply:** Distinguish complete stored history from a limited live view.
 Disclose gaps in legacy data that was already discarded, and keep legal retention
 and post-deletion archival separate from ordinary project activity persistence.
+
+Keep the ordinary conversation primary: technical notices and optional visual
+controls must not consume the main chat viewport. Collapsing those controls must
+not hide saved screenshots, proposal cards, conversation replies or failure status.
+
+**Why:** The user repeatedly rejected a technically integrated but cramped live UI
+dominated by consent and capability notices; the requested experience is a clean
+conversation with expandable actions and inspectable images.
+
+**How to apply:** Check default collapsed states and both responsive layouts, not
+just whether components mount. Keep permission controls real and failures honest;
+hiding a capability warning does not make capture operational.

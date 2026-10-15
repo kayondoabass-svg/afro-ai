@@ -34,9 +34,16 @@ function renderAudit(fetcher: (url: string) => unknown, conversationId = 51) {
   </QueryClientProvider>);
 }
 
-function openSavedActivity() {
-  const button = screen.getByRole("button", { name: /Saved activity/ });
+function openVisualTools() {
+  const button = screen.getByRole("button", { name: /Visual tools/ });
   if (button.getAttribute("aria-expanded") !== "true") fireEvent.click(button);
+}
+
+function openSavedActivity() {
+  screen.queryAllByRole("button", { name: /project actions|Project action group/i })
+    .forEach(button => {
+      if (button.getAttribute("aria-expanded") !== "true") fireEvent.click(button);
+    });
 }
 
 beforeEach(() => { eventSourceInstance = undefined; });
@@ -52,14 +59,16 @@ it("keeps conversation replies visible when saved-activity information is collap
     messageItems={[{ id: "reply", timestamp: Date.now(), node: <p>The real assistant reply</p> }]}
   /></QueryClientProvider>);
   await screen.findByText("The real assistant reply");
-  fireEvent.click(screen.getByRole("button", { name: /Saved activity/ }));
   expect(screen.getByText("The real assistant reply")).toBeInTheDocument();
+  expect(screen.queryByText("Conversation", { selector: "span" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Visual tools/ })).toHaveAttribute("aria-expanded", "false");
 });
 
 it("shows blocked capability without starting a capture and closes its passive stream on unmount", async () => {
   const view = renderAudit(url => url.endsWith("/visual-audit")
     ? { capability: { enabled: false, reason: "Remote capture is not configured." }, runs: [] }
     : { items: [], events: [], fingerprint: "source-abc" });
+  openVisualTools();
   await screen.findByText(/Remote capture is not configured/);
   const capture = screen.getByRole("button", { name: /Capture Before/ });
   expect(capture).toBeDisabled();
@@ -72,6 +81,7 @@ it("requires explicit image-sharing consent and sends a unique confirmed capture
   renderAudit(url => url.endsWith("/visual-audit")
     ? { capability: { enabled: true }, runs: [] }
     : { items: [], events: [], fingerprint: "source-abc" });
+  openVisualTools();
   await screen.findByRole("button", { name: /Capture Before/ });
   fireEvent.click(screen.getByRole("button", { name: /Capture Before/ }));
   const confirm = screen.getByRole("button", { name: "Capture paired screenshots" });
@@ -97,6 +107,7 @@ it("links an After capture to the latest prepared repair only when its saved sou
   renderAudit(url => url.endsWith("/visual-audit")
     ? { capability: { enabled: true }, runs: [parent] }
     : { items: [], events: [], fingerprint: "new-source" });
+  openVisualTools();
   await screen.findByRole("button", { name: /Capture After/ });
   expect(screen.getByText(/will continue the latest prepared repair/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Capture After/ }));
@@ -124,18 +135,21 @@ it("renders only safe saved activity received over the read-only stream", async 
   renderAudit(url => url.endsWith("/visual-audit")
     ? { capability: { enabled: false }, runs: [] }
     : { items: [], events: [], fingerprint: "source-abc" });
+  openVisualTools();
   await screen.findByText(/No saved screenshot runs/);
-  openSavedActivity();
   eventSourceInstance?.emit("activity", JSON.stringify({
     id: "event-1", createdAt: new Date().toISOString(), tool: "read_project_file",
     status: "completed", title: "read project file · completed", message: "index.html was inspected",
   }));
+  await screen.findAllByRole("button", { name: /Project action group/ });
+  openSavedActivity();
   await waitFor(() => expect(screen.getByText("read project file · completed")).toBeInTheDocument());
   expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
 });
 
 it("surfaces unavailable history rather than replacing it with fabricated state", async () => {
   renderAudit(url => url.endsWith("/visual-audit") ? new Error("History unavailable.") : { items: [], fingerprint: "source-abc" });
+  openVisualTools();
   await screen.findByText(/Capture capability could not be checked/);
   expect(screen.queryByText(/No saved screenshot runs/)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Retry check" })).toBeInTheDocument();
@@ -158,7 +172,9 @@ it("restores saved history on initial load, merges live duplicates by stable eve
       ? { capability: { enabled: false }, runs: [] }
       : { items: [], fingerprint: "source-abc" };
   });
+  openVisualTools();
   await screen.findByText(/No saved screenshot runs/);
+  await screen.findAllByRole("button", { name: /Project action group/ });
   openSavedActivity();
   expect(await screen.findByText("Saved older")).toBeInTheDocument();
   expect(screen.getByText(/project’s lifetime/)).toBeInTheDocument();
@@ -183,10 +199,14 @@ it("pages older history without losing newer events and deduplicates overlap", a
       ? { capability: { enabled: false }, runs: [] }
       : { items: [], fingerprint: "source-abc" };
   });
+  openVisualTools();
   await screen.findByText(/No saved screenshot runs/);
+  await screen.findByRole("button", { name: /Project action group/ });
   openSavedActivity();
   await screen.findByText("Newest event");
   fireEvent.click(screen.getByRole("button", { name: "Load older activity" }));
+  await screen.findAllByRole("button", { name: /Project action group/ });
+  openSavedActivity();
   await screen.findByText("Old event");
   expect(screen.getAllByText("Newest event")).toHaveLength(1);
   expect(vi.mocked(fetch).mock.calls.map(([request]) => String(request)).find(url => url.includes("before=")))
@@ -205,11 +225,14 @@ it("shows a retry for initial history errors and keeps history fetch independent
       ? { capability: { enabled: false }, runs: [] }
       : { items: [], fingerprint: "source-abc" };
   });
+  openVisualTools();
   await screen.findByText(/No saved screenshot runs/);
   openSavedActivity();
   expect(await screen.findByText(/History is temporarily offline/)).toBeInTheDocument();
   fail = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
+  await screen.findByRole("button", { name: /Project action group/ });
+  openSavedActivity();
   expect(await screen.findByText("Restored after retry")).toBeInTheDocument();
 });
 
@@ -234,18 +257,58 @@ it("discards a late activity page after switching conversations and closes the o
   view.rerender(<QueryClientProvider client={client}>
     <ProjectVisualAuditChat conversationId={52} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
   </QueryClientProvider>);
+  openVisualTools();
   await screen.findByText(/No saved screenshot runs/);
   resolvePage?.(new Response(JSON.stringify(activityPage([savedEvent("stale", "7", "Stale conversation activity")], null, false)),
     { status: 200, headers: { "Content-Type": "application/json" } }));
+  await screen.findByRole("button", { name: /Project action group/ });
   openSavedActivity();
   expect(await screen.findByText("New conversation activity")).toBeInTheDocument();
   expect(screen.queryByText("Stale conversation activity")).not.toBeInTheDocument();
   expect(oldSource?.closed).toBe(true);
 });
 
-it("interleaves conversation replies with expandable saved actions and opens owned proposal art in preview", async () => {
+it("keeps saved screenshot thumbnails visible outside collapsed visual tools and action groups", async () => {
+  const runId = "saved-run";
+  const createdAt = new Date().toISOString();
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    const payload = url.endsWith("/visual-audit")
+      ? { capability: { enabled: false }, runs: [{
+        id: runId, fingerprint: "source-abc", phase: "after", status: "captured",
+        createdAt, updatedAt: createdAt, evidenceIds: ["desktop-image", "mobile-image"],
+      }] }
+      : url.endsWith("/evidence")
+        ? { fingerprint: "source-abc", items: [
+          { id: "desktop-image", name: "Desktop image", phase: "after", profile: "desktop", fingerprint: "source-abc", createdAt },
+          { id: "mobile-image", name: "Mobile image", phase: "after", profile: "mobile", fingerprint: "source-abc", createdAt },
+        ] }
+        : url.includes("/workbench/activity")
+          ? activityPage([
+            { id: "image-event", jobId: "job-image", createdAt, tool: "capture_screenshots", status: "completed", title: "Saved screenshots", evidenceIds: ["desktop-image", "mobile-image"] },
+            { id: "action-event", jobId: "job-other", createdAt, tool: "read_project_file", status: "completed", title: "Reviewed source" },
+          ], null, false)
+          : { fingerprint: "source-abc", items: [] };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
+  </QueryClientProvider>);
+  expect(await screen.findByRole("img", { name: "After desktop saved screenshot" })).toHaveAttribute(
+    "src", "/api/conversations/51/workbench/evidence/desktop-image/image",
+  );
+  expect(screen.getByRole("img", { name: "After mobile saved screenshot" })).toBeInTheDocument();
+  expect(screen.getAllByRole("img", { name: /saved screenshot/ })).toHaveLength(2);
+  expect(screen.getByRole("button", { name: /Visual tools/ })).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getAllByRole("button", { name: /Project action group/ }).every(button => button.getAttribute("aria-expanded") === "false")).toBe(true);
+});
+
+it("places proposal cards at their saved time between conversation messages", async () => {
   const onOpenPreview = vi.fn();
   const now = new Date().toISOString();
+  const at = Date.parse(now);
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -261,14 +324,61 @@ it("interleaves conversation replies with expandable saved actions and opens own
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}>
     <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()}
-      onOpenPreview={onOpenPreview} messageItems={[{ id: "msg-1", timestamp: Date.parse(now) - 1000, node: <p>Customer asked for a narrower header</p> }]} />
+      onOpenPreview={onOpenPreview} messageItems={[
+        { id: "msg-before", timestamp: at - 1000, node: <p>Message before saved proposal</p> },
+        { id: "msg-after", timestamp: at + 1000, node: <p>Message after saved proposal</p> },
+      ]} />
   </QueryClientProvider>);
-  await screen.findByText(/No saved screenshot runs/);
+  await screen.findByRole("button", { name: /Project action group/ });
   openSavedActivity();
-  expect(await screen.findByText("Customer asked for a narrower header")).toBeInTheDocument();
+  expect(await screen.findByText("Message before saved proposal")).toBeInTheDocument();
+  expect(screen.getByText("Message after saved proposal")).toBeInTheDocument();
   expect(await screen.findByText("Inspected project source")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /Open in preview/ }));
+  expect(screen.getByRole("img", { name: "Header direction image" })).toHaveAttribute("src", "/api/conversations/51/workbench/proposals/artifact-uuid/image");
+  expect(screen.getByText("Illustrative proposal · not implemented or verified")).toBeInTheDocument();
+  const feed = screen.getByRole("list", { name: "Chronological conversation and project activity" });
+  const children = Array.from(feed.children);
+  const beforeIndex = children.findIndex(child => child.textContent?.includes("Message before saved proposal"));
+  const proposalIndex = children.findIndex(child => child.textContent?.includes("Illustrative proposal"));
+  const afterIndex = children.findIndex(child => child.textContent?.includes("Message after saved proposal"));
+  expect(beforeIndex).toBeLessThan(proposalIndex);
+  expect(proposalIndex).toBeLessThan(afterIndex);
+  fireEvent.click(screen.getByRole("button", { name: /^Open/ }));
   expect(onOpenPreview).toHaveBeenCalledWith({ kind: "proposal", id: "artifact-uuid", label: "Header direction" });
+});
+
+it("keeps evidence activity details expandable and signals collapsed failed groups", async () => {
+  const createdAt = new Date().toISOString();
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    const payload = url.endsWith("/visual-audit")
+      ? { capability: { enabled: false }, runs: [] }
+      : url.endsWith("/evidence")
+        ? { fingerprint: "source-abc", items: [{ id: "failed-evidence", name: "Before capture", phase: "before", profile: "desktop", fingerprint: "source-abc", createdAt }] }
+        : url.includes("/workbench/activity")
+          ? activityPage([
+            { id: "failure-1", jobId: "job-failed", createdAt, tool: "capture_screenshots", status: "failed", title: "Capture failed with saved evidence", paths: ["src/page.tsx"], evidenceIds: ["failed-evidence"], message: "Remote browser timed out." },
+            { id: "failure-2", jobId: "job-failed", createdAt, tool: "review_screenshots", status: "uncertain", title: "Review outcome uncertain", message: "Check the saved run before retrying." },
+          ], null, false)
+          : { items: [], fingerprint: "source-abc" };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
+  </QueryClientProvider>);
+  expect(await screen.findByRole("img", { name: "Before capture" })).toHaveAttribute(
+    "src", "/api/conversations/51/workbench/evidence/failed-evidence/image",
+  );
+  const group = await screen.findByRole("button", { name: /2 project actions/ });
+  expect(group).toHaveTextContent("Uncertain");
+  expect(group).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(group);
+  expect(await screen.findByText("Capture failed with saved evidence")).toBeInTheDocument();
+  expect(screen.getByText("Remote browser timed out.")).toBeInTheDocument();
+  expect(screen.getByText("src/page.tsx")).toBeInTheDocument();
+  expect(screen.getByText("Review outcome uncertain")).toBeInTheDocument();
 });
 
 it("attaches an already-completed image only after an explicit save action", async () => {
@@ -291,8 +401,7 @@ it("attaches an already-completed image only after an explicit save action", asy
   render(<QueryClientProvider client={client}>
     <ProjectVisualAuditChat conversationId={51} onRepair={vi.fn()} visualAuditConsent={false} onVisualAuditConsentChange={vi.fn()} />
   </QueryClientProvider>);
-  await screen.findByText(/No saved screenshot runs/);
-  openSavedActivity();
+  await screen.findByRole("button", { name: /Save design proposal/ });
   fireEvent.click(screen.getByRole("button", { name: /Save design proposal/ }));
   await screen.findByRole("combobox", { name: "Completed image generation" });
   expect(screen.getByRole("option", { name: /cobalt and cream/ })).toBeInTheDocument();
@@ -300,7 +409,7 @@ it("attaches an already-completed image only after an explicit save action", asy
   expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
   fireEvent.change(screen.getByRole("combobox", { name: "Completed image generation" }), { target: { value: "image-job-1" } });
   fireEvent.click(screen.getByRole("button", { name: "Save proposal" }));
-  await screen.findByRole("button", { name: /Open in preview/ });
+  await screen.findByRole("button", { name: /^Open/ });
   const post = vi.mocked(fetch).mock.calls.find(([, options]) => options?.method === "POST");
   expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ mediaJobId: "image-job-1", title: "A cobalt and cream landing page header" });
   expect(JSON.parse(String(post?.[1]?.body)).requestId).toMatch(/^[a-f0-9-]{36}$/i);

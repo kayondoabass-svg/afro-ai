@@ -75,8 +75,9 @@ describe("full-stack agent workspace", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/conversations/91/messages", expect.objectContaining({
       body: JSON.stringify({ content: "Add a health endpoint", projectAgent: true, maxJobTokens: 50000 }),
     })));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("A compatible service handled this response instead."));
-    expect(screen.getByRole("status")).not.toHaveTextContent("gemini");
+    const fallbackNotice = await screen.findByText("The configured service was unavailable. A compatible service handled this response instead.");
+    expect(fallbackNotice).toHaveAttribute("role", "status");
+    expect(fallbackNotice).not.toHaveTextContent("gemini");
   });
 
   it.each(["setup_failed", "initializing"])("blocks sending and conversation creation while %s", (status) => {
@@ -107,6 +108,14 @@ describe("full-stack agent workspace", () => {
     expect(screen.getByTestId("nav-preview")).not.toBeDisabled();
     expect(screen.getByTestId("button-project-agent")).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByTestId("button-github-export")).not.toBeInTheDocument();
+  });
+
+  it("selects the website preview automatically when opening a website project", () => {
+    state.type = "website";
+    render(<AgentPage />);
+    expect(screen.getByRole("heading", { name: "Website preview" })).toBeInTheDocument();
+    expect(screen.queryByText("Select an item from the conversation")).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Preview viewport" })).toBeInTheDocument();
   });
 
   it("opens GitHub review with the current saved conversation, without pushing", async () => {

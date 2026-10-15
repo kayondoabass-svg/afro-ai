@@ -153,7 +153,7 @@ export function ProjectVisualAuditChat({
   const [olderError, setOlderError] = useState("");
   const [activityPage, setActivityPage] = useState<ActivityPage | null>(null);
   const [streamState, setStreamState] = useState("connecting");
-  const [expanded, setExpanded] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [captureTarget, setCaptureTarget] = useState<"before" | "after" | null>(null);
   const [reviewTarget, setReviewTarget] = useState<CaptureRun | null>(null);
   const [repairTarget, setRepairTarget] = useState<CaptureRun | null>(null);
@@ -412,7 +412,7 @@ export function ProjectVisualAuditChat({
 
   const groupedActivity = useMemo(() => {
     const groups = new Map<string, Activity[]>();
-    activity.forEach(event => {
+    activity.filter(event => event.tool !== "design_proposal").forEach(event => {
       const key = event.jobId || event.id;
       groups.set(key, [...(groups.get(key) ?? []), event]);
     });
@@ -422,30 +422,161 @@ export function ProjectVisualAuditChat({
       timestamp: Math.min(...events.map(event => Date.parse(event.createdAt) || 0)),
     }));
   }, [activity]);
+  const proposalEvents = activity.filter(event => event.tool === "design_proposal" && event.artifactId);
   const timeline = useMemo(() => [
     ...messageItems.map(item => ({ kind: "message" as const, key: item.id, timestamp: item.timestamp, item })),
     ...groupedActivity.map(group => ({ kind: "activity" as const, key: group.key, timestamp: group.timestamp, group })),
-  ].sort((a, b) => a.timestamp - b.timestamp || a.key.localeCompare(b.key)), [messageItems, groupedActivity]);
+    ...proposalEvents.map(event => ({ kind: "proposal" as const, key: event.artifactId!, timestamp: Date.parse(event.createdAt) || 0, event })),
+  ].sort((a, b) => a.timestamp - b.timestamp || a.key.localeCompare(b.key)), [messageItems, groupedActivity, proposalEvents]);
 
-  return <section aria-label="Visual audit and saved activity" className="my-4 overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/70 text-zinc-100 shadow-lg shadow-black/10">
-    <div className="flex flex-col gap-3 border-b border-zinc-800 p-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex gap-3">
-        <span className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-2 text-amber-200"><Camera className="h-4 w-4" /></span>
-        <div>
-          <h2 className="font-semibold tracking-tight">Visual evidence</h2>
-          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-zinc-400">Paired desktop and mobile captures are private to this conversation. A screenshot is evidence, not a test pass.</p>
-        </div>
+  const attachedEvidence = activity.flatMap(event => (event.evidenceIds ?? [])
+    .map(id => evidence.data?.items.find(item => item.id === id))
+    .filter((item): item is Evidence => !!item));
+  const runEvidenceIds = new Set(runs.flatMap(run => run.evidenceIds));
+  const uniqueEvidence = Array.from(new Map(attachedEvidence.filter(item => !runEvidenceIds.has(item.id)).map(item => [item.id, item])).values());
+  const proposalImage = (event: Activity) => `/api/conversations/${conversationId}/workbench/proposals/${encodeURIComponent(event.artifactId!)}/image`;
+  const evidenceImage = (item: Evidence) => `/api/conversations/${conversationId}/workbench/evidence/${encodeURIComponent(item.id)}/image`;
+
+  return <section aria-label="Conversation and visual tools" className="my-2 min-w-0 text-zinc-100">
+    <header className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${streamState === "connected" ? "bg-emerald-400" : streamState === "connecting" ? "bg-amber-300" : "bg-zinc-500"}`} />
+        <span className="truncate text-xs text-zinc-400">Saved project activity · {streamState}</span>
       </div>
-      <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400"><LockKeyhole className="h-3.5 w-3.5" />Private evidence</span>
-    </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button type="button" size="sm" variant="outline" className="h-8 border-zinc-700 bg-zinc-900/50 px-2.5 text-xs text-zinc-200 hover:bg-zinc-800" onClick={() => { setProposalError(""); setProposalDialogOpen(true); }}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />Save design proposal
+        </Button>
+        <Button type="button" size="sm" variant="outline" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(value => !value)} className="h-8 border-zinc-700 bg-zinc-900/50 px-2.5 text-xs text-zinc-200 hover:bg-zinc-800">
+          <Camera className="mr-1.5 h-3.5 w-3.5 text-amber-200" />Visual tools
+          <ChevronDown className={`ml-1.5 h-3.5 w-3.5 transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
+        </Button>
+      </div>
+    </header>
 
-    <div className="grid gap-4 p-4">
+    {(runs.some(run => run.status === "captured" && run.evidenceIds.length > 0) || uniqueEvidence.length > 0) && <section aria-label="Saved visual artifacts" className="mb-4">
+      <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"><ImageIcon className="h-3.5 w-3.5" />Saved visuals</div>
+      <div className="flex gap-2.5 overflow-x-auto pb-2">
+        {runs.filter(run => run.status === "captured" && run.evidenceIds.length > 0).map(run => (["desktop", "mobile"] as const).map(profile => {
+          const src = profileImage(run, profile);
+          if (!src) return null;
+          const item = evidence.data?.items.find(saved => run.evidenceIds.includes(saved.id) && saved.profile === profile);
+          return <a key={`${run.id}-${profile}`} href={src} target="_blank" rel="noreferrer"
+            aria-label={`Open ${phaseLabel(run.phase).toLowerCase()} ${profile} screenshot`}
+            onClick={event => {
+              if (onOpenPreview && item) {
+                event.preventDefault();
+                onOpenPreview({ kind: "evidence", id: item.id, label: `${phaseLabel(run.phase)} ${profile} screenshot` });
+              }
+            }} className="group block w-36 shrink-0 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200">
+            {!failedImages[src] ? <img src={src} alt={`${phaseLabel(run.phase)} ${profile} saved screenshot`} loading="lazy" onError={() => setFailedImages(previous => ({ ...previous, [src]: true }))} className="aspect-[4/3] w-full object-cover" />
+              : <span className="flex aspect-[4/3] items-center justify-center text-[10px] text-amber-100">Image unavailable</span>}
+            <span className="block truncate px-2 py-1.5 text-[10px] text-zinc-300">{phaseLabel(run.phase)} · {profile}</span>
+          </a>;
+        }))}
+        {uniqueEvidence.map(item => {
+          const src = evidenceImage(item);
+          return <a key={`evidence-${item.id}`} href={src} target="_blank" rel="noreferrer"
+            aria-label={`Open saved ${item.profile || "project"} screenshot`}
+            onClick={event => {
+              if (onOpenPreview) {
+                event.preventDefault();
+                onOpenPreview({ kind: "evidence", id: item.id, label: item.name || "Saved screenshot" });
+              }
+            }} className="block w-36 shrink-0 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200">
+            {!failedImages[src] ? <img src={src} alt={item.name || `${item.profile || "Saved"} screenshot`} loading="lazy" onError={() => setFailedImages(previous => ({ ...previous, [src]: true }))} className="aspect-[4/3] w-full object-cover" />
+              : <span className="flex aspect-[4/3] items-center justify-center text-[10px] text-amber-100">Image unavailable</span>}
+            <span className="block truncate px-2 py-1.5 text-[10px] text-zinc-300">{item.name || `${item.profile || "Saved"} screenshot`}</span>
+          </a>;
+        })}
+      </div>
+    </section>}
+
+    <ol className="space-y-3" aria-label="Chronological conversation and project activity">
+      {timeline.map(entry => entry.kind === "message"
+        ? <li key={`message-${entry.key}`} className="min-w-0 py-1">
+          <div className="min-w-0 text-sm text-zinc-200">{entry.item.node}</div>
+        </li>
+        : entry.kind === "proposal" ? <li key={`proposal-${entry.key}`} className="min-w-0 py-1">
+          {(() => {
+            const event = entry.event;
+            const src = proposalImage(event);
+            return <article className="max-w-lg overflow-hidden rounded-xl border border-amber-200/20 bg-zinc-900/75">
+              {!failedImages[src] ? <img src={src} alt={`${event.title || "Saved design proposal"} image`} loading="lazy" onError={() => setFailedImages(previous => ({ ...previous, [src]: true }))} className="aspect-[16/10] w-full object-cover" />
+                : <div role="img" aria-label={`${event.title || "Saved design proposal"} image unavailable`} className="flex aspect-[16/10] items-center justify-center gap-2 bg-zinc-950 text-xs text-zinc-500"><ImageIcon className="h-4 w-4" />Preview unavailable</div>}
+              <div className="flex flex-wrap items-center gap-2 p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-zinc-100">{event.title || "Saved design proposal"}</p>
+                  <p className="mt-1 text-[10px] text-amber-200/80">Illustrative proposal · not implemented or verified</p>
+                </div>
+                <Button type="button" size="sm" variant="outline" className="h-8 border-zinc-700 px-2.5 text-xs" disabled={!onOpenPreview} onClick={() => onOpenPreview?.({ kind: "proposal", id: event.artifactId!, label: event.title || "Saved design proposal" })}>
+                  Open <ExternalLink className="ml-1 h-3 w-3" />
+                </Button>
+              </div>
+            </article>;
+          })()}
+        </li>
+        : <li key={`job-${entry.key}`} className="min-w-0 overflow-hidden rounded-lg border border-zinc-800/80 bg-zinc-950/25">
+          <button type="button" aria-expanded={openGroups[entry.key] ?? false} onClick={() => setOpenGroups(previous => ({ ...previous, [entry.key]: !(previous[entry.key] ?? false) }))} className="flex w-full items-center gap-2 p-2.5 text-left hover:bg-zinc-900/70">
+            <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform ${openGroups[entry.key] ? "rotate-180" : ""}`} />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-400">{entry.group.events.length > 1 ? `${entry.group.events.length} project actions` : "Project action group"}</span>
+            {entry.group.events.some(event => /failed|error|uncertain/i.test(event.status)) && <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-900/60 bg-amber-950/30 px-2 py-0.5 text-[10px] font-medium text-amber-200">
+              <AlertTriangle className="h-3 w-3" />{entry.group.events.some(event => /uncertain/i.test(event.status)) ? "Uncertain" : "Failed"}
+            </span>}
+            <time className="shrink-0 text-[10px] text-zinc-600">{new Date(entry.timestamp).toLocaleString()}</time>
+          </button>
+          {openGroups[entry.key] && <ol className="space-y-2 border-t border-zinc-800/80 px-3 py-2">
+            {entry.group.events.map(event => <li key={event.id} className="border-l border-zinc-700 py-1 pl-2.5">
+              <p className="text-xs font-medium text-zinc-300">{event.title || `${event.tool} · ${event.status}`}</p>
+              <time className="mt-1 block text-[10px] text-zinc-500">{new Date(event.createdAt).toLocaleString()} · {event.status}</time>
+              {event.message && <p className="mt-1 break-words text-[10px] leading-relaxed text-zinc-400">{event.message}</p>}
+              {event.paths?.length ? <p className="mt-1 break-all font-mono text-[10px] text-zinc-500">{event.paths.join(", ")}</p> : null}
+            </li>)}
+          </ol>}
+        </li>)}
+    </ol>
+    {activityLoading && activity.length === 0 && <div role="status" aria-label="Loading saved activity" className="mt-3 space-y-2">
+      <div className="h-9 animate-pulse rounded-md bg-zinc-800/50" /><div className="h-9 animate-pulse rounded-md bg-zinc-800/50" />
+    </div>}
+    {!activityLoading && !activityError && activity.length === 0 && messageItems.length === 0 && <p className="mt-3 rounded-md border border-dashed border-zinc-700 p-4 text-center text-xs text-zinc-500">Your project conversation will appear here.</p>}
+    {activityError && <div role="alert" className="mt-3 rounded-md border border-amber-900/60 bg-amber-950/20 p-3 text-xs text-amber-100">
+      <p>Saved activity could not be loaded. {activityError}</p>
+      <Button size="sm" variant="outline" className="mt-2 h-8 border-amber-900 text-amber-100" onClick={() => {
+        setActivityLoading(true);
+        void fetch(`/api/conversations/${conversationId}/workbench/activity?limit=50`, { credentials: "include" })
+          .then(async response => {
+            if (!response.ok) throw new Error(await errorMessage(response));
+            return response.json() as Promise<ActivityPage>;
+          })
+          .then(page => {
+            if (!mounted.current || conversationId !== conversationIdRef.current) return;
+            setActivity(previous => mergeActivity(previous, page.items));
+            setActivityPage(page);
+            setActivityError("");
+          })
+          .catch(reason => { if (mounted.current && conversationId === conversationIdRef.current) setActivityError(reason instanceof Error ? reason.message : "Saved activity could not be loaded."); })
+          .finally(() => { if (mounted.current && conversationId === conversationIdRef.current) setActivityLoading(false); });
+      }}>Retry activity</Button>
+    </div>}
+    {olderError && <div role="alert" className="mt-3 text-xs text-amber-100">
+      <p>Older activity could not be loaded. {olderError}</p>
+      <Button size="sm" variant="outline" className="mt-2 h-8 border-amber-900 text-amber-100" onClick={() => void loadOlderActivity()}>Retry older activity</Button>
+    </div>}
+    {activityPage?.hasMore && <Button type="button" variant="outline" className="mt-3 w-full border-zinc-700 text-xs text-zinc-200" disabled={olderLoading || activityLoading} onClick={() => void loadOlderActivity()}>
+      {olderLoading ? <><LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />Loading older activity</> : "Load older activity"}
+    </Button>}
+
+    {settingsOpen && <div className="mt-4 space-y-4 border-t border-zinc-800 pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <div><h2 className="text-sm font-semibold">Visual tools</h2><p className="mt-0.5 text-[10px] text-zinc-500">Private to this conversation · screenshots are evidence, not a test pass.</p></div>
+        <span className="inline-flex items-center gap-1.5 text-[10px] text-zinc-500"><LockKeyhole className="h-3 w-3" />Private</span>
+      </div>
+      <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-700 bg-zinc-950/50 p-3 text-xs leading-relaxed text-zinc-300">
+        <Checkbox checked={visualAuditConsent} onCheckedChange={value => onVisualAuditConsentChange(value === true)} className="mt-0.5" />
+        <span>Allow visual-audit consent to accompany my next project-agent message. This is optional, applies only to this conversation, and does not capture or send anything by itself.</span>
+      </label>
+      <div className="grid gap-4">
       <div className="min-w-0 space-y-4">
-        <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-700 bg-zinc-950/50 p-3 text-xs leading-relaxed text-zinc-300">
-          <Checkbox checked={visualAuditConsent} onCheckedChange={value => onVisualAuditConsentChange(value === true)} className="mt-0.5" />
-          <span>Allow visual-audit consent to accompany my next project-agent message. This is optional, applies only to this conversation, and does not capture or send anything by itself.</span>
-        </label>
-
         {audit.isPending || evidence.isPending ? <div className="grid grid-cols-2 gap-3" aria-label="Loading screenshot capability and evidence">
           <div className="aspect-[4/3] animate-pulse rounded-lg bg-zinc-800" /><div className="aspect-[4/3] animate-pulse rounded-lg bg-zinc-800" />
         </div> : null}
@@ -541,102 +672,11 @@ export function ProjectVisualAuditChat({
         {error && <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-red-900/70 bg-red-950/30 p-3 text-xs text-red-200"><span>{error}</span><Button size="sm" variant="outline" className="shrink-0 border-red-900" onClick={() => { setError(""); void refresh(); }}>Check saved history</Button></div>}
       </div>
 
-      <aside className="order-first min-w-0 space-y-3">
-        <section className="rounded-lg border border-zinc-700 bg-zinc-950/45 p-3" aria-label="Saved project activity history">
-          <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="flex w-full items-center justify-between gap-2 text-left">
-            <span><span className="block text-xs font-semibold uppercase tracking-wide text-zinc-300">Saved activity</span><span className="mt-1 block text-[10px] text-zinc-500">Read-only · {streamState}</span></span>
-            <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${expanded ? "rotate-180" : ""}`} />
-          </button>
-          <>
-            {audit.isError && <p role="alert" className="mt-3 text-xs text-amber-100">Saved run history could not be loaded. {audit.error.message}<button type="button" className="ml-2 underline" onClick={() => void audit.refetch()}>Retry</button></p>}
-            {expanded && <p className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/60 p-2.5 text-[10px] leading-relaxed text-zinc-400">
-              Retained for this project’s lifetime. Only surviving legacy activity can be imported; missing older legacy events cannot be recovered.
-            </p>}
-            {activityLoading && activity.length === 0 && <div role="status" aria-label="Loading saved activity" className="mt-3 space-y-2">
-              <div className="h-10 animate-pulse rounded-md bg-zinc-800/70" /><div className="h-10 animate-pulse rounded-md bg-zinc-800/70" />
-            </div>}
-            {activityError && <div role="alert" className="mt-3 rounded-md border border-amber-900/60 bg-amber-950/20 p-3 text-xs text-amber-100">
-              <p>Saved activity could not be loaded. {activityError}</p>
-              <Button size="sm" variant="outline" className="mt-2 h-8 border-amber-900 text-amber-100" onClick={() => {
-                setActivityLoading(true);
-                void fetch(`/api/conversations/${conversationId}/workbench/activity?limit=50`, { credentials: "include" })
-                  .then(async response => {
-                    if (!response.ok) throw new Error(await errorMessage(response));
-                    return response.json() as Promise<ActivityPage>;
-                  })
-                  .then(page => {
-                    if (!mounted.current || conversationId !== conversationIdRef.current) return;
-                    setActivity(previous => mergeActivity(previous, page.items));
-                    setActivityPage(page);
-                    setActivityError("");
-                  })
-                  .catch(reason => { if (mounted.current && conversationId === conversationIdRef.current) setActivityError(reason instanceof Error ? reason.message : "Saved activity could not be loaded."); })
-                  .finally(() => { if (mounted.current && conversationId === conversationIdRef.current) setActivityLoading(false); });
-              }}>Retry activity</Button>
-            </div>}
-            {!activityLoading && !activityError && activity.length === 0 && messageItems.length === 0 && <p className="mt-3 rounded-md border border-dashed border-zinc-700 p-3 text-center text-xs text-zinc-500">No saved workbench events yet.</p>}
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Conversation timeline</p>
-              <Button type="button" size="sm" variant="outline" className="h-7 border-zinc-700 px-2 text-[10px]" onClick={() => { setProposalError(""); setProposalDialogOpen(true); }}>
-                <Plus className="mr-1 h-3 w-3" />Save design proposal
-              </Button>
-            </div>
-            <ol className="mt-2 max-h-[32rem] space-y-2 overflow-y-auto pr-1" aria-label="Chronological conversation and project activity">
-              {timeline.map(entry => entry.kind === "message"
-                ? <li key={`message-${entry.key}`} className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2 text-[10px] text-zinc-500"><span className="font-semibold uppercase tracking-wide text-zinc-400">Conversation</span><time>{new Date(entry.timestamp).toLocaleString()}</time></div>
-                  <div className="min-w-0 text-sm text-zinc-200">{entry.item.node}</div>
-                </li>
-                : <li key={`job-${entry.key}`} className="overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950/50">
-                  <button type="button" aria-expanded={openGroups[entry.key] ?? true} onClick={() => setOpenGroups(previous => ({ ...previous, [entry.key]: !(previous[entry.key] ?? true) }))} className="flex w-full items-center gap-2 p-3 text-left hover:bg-zinc-900/80">
-                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-200 transition-transform ${(openGroups[entry.key] ?? true) ? "rotate-180" : ""}`} />
-                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-zinc-200">{entry.group.events.length > 1 ? `${entry.group.events.length} project actions` : "Project action group"}</span>
-                    <time className="shrink-0 text-[10px] text-zinc-500">{new Date(entry.timestamp).toLocaleString()}</time>
-                  </button>
-                  {(openGroups[entry.key] ?? true) && <ol className="space-y-2 border-t border-zinc-800 px-3 py-2">
-                    {entry.group.events.map(event => {
-                      const ownedEvidence = (event.evidenceIds ?? []).map(id => evidence.data?.items.find(item => item.id === id)).filter((item): item is Evidence => !!item);
-                      return <li key={event.id} className="border-l-2 border-amber-200/25 py-1 pl-2.5">
-                        <p className="text-xs font-medium text-zinc-200">{event.title || `${event.tool} · ${event.status}`}</p>
-                        <time className="mt-1 block text-[10px] text-zinc-500">{new Date(event.createdAt).toLocaleString()} · {event.status}</time>
-                        {event.message && <p className="mt-1 break-words text-[10px] leading-relaxed text-zinc-400">{event.message}</p>}
-                        {event.paths?.length ? <p className="mt-1 break-all font-mono text-[10px] text-zinc-500">{event.paths.join(", ")}</p> : null}
-                        {event.tool === "design_proposal" && event.artifactId && <div className="mt-2 overflow-hidden rounded-md border border-amber-200/20 bg-[#25231f]">
-                          <div className="flex items-center gap-2 px-2.5 py-2"><ImageIcon className="h-3.5 w-3.5 text-amber-200" /><span className="min-w-0 flex-1 truncate text-xs font-semibold text-amber-50">{event.title || "Saved design proposal"}</span><span className="text-[9px] uppercase tracking-wide text-amber-200/70">Saved</span></div>
-                          {event.message && <p className="px-2.5 pb-2 text-[10px] leading-relaxed text-zinc-400">{event.message}</p>}
-                          <Button type="button" size="sm" variant="outline" className="m-2 mt-0 h-7 border-amber-200/25 px-2 text-[10px]" onClick={() => onOpenPreview?.({ kind: "proposal", id: event.artifactId!, label: event.title || "Saved design proposal" })} disabled={!onOpenPreview}>
-                            Open in preview <ExternalLink className="ml-1 h-3 w-3" />
-                          </Button>
-                        </div>}
-                        {event.evidenceIds?.length ? <div className="mt-2 flex flex-wrap gap-1.5">
-                          {event.evidenceIds.map(id => {
-                            const saved = ownedEvidence.find(item => item.id === id);
-                            return saved ? <Button key={id} type="button" size="sm" variant="outline" className="h-7 border-zinc-700 px-2 text-[10px]" onClick={() => onOpenPreview?.({ kind: "evidence", id, label: saved.name || "Saved screenshot" })} disabled={!onOpenPreview}>
-                              <ImageIcon className="mr-1 h-3 w-3" />Open {saved.profile || "saved"} screenshot
-                            </Button> : <span key={id} role={evidence.isPending ? "status" : "alert"} className="rounded border border-amber-900/50 px-2 py-1 text-[10px] text-amber-200">{evidence.isPending ? "Checking saved image…" : evidence.isError ? "Image details unavailable" : "Saved image unavailable"}</span>;
-                          })}
-                        </div> : event.tool.includes("screenshot") && <p className="mt-2 text-[10px] text-amber-200">No owned screenshot image is attached to this historical activity.</p>}
-                      </li>;
-                    })}
-                  </ol>}
-                </li>)}
-            </ol>
-            {olderError && <div role="alert" className="mt-3 text-xs text-amber-100">
-              <p>Older activity could not be loaded. {olderError}</p>
-              <Button size="sm" variant="outline" className="mt-2 h-8 border-amber-900 text-amber-100" onClick={() => void loadOlderActivity()}>Retry older activity</Button>
-            </div>}
-            {activityPage?.hasMore && <Button type="button" variant="outline" className="mt-3 w-full border-zinc-700 text-xs text-zinc-200" disabled={olderLoading || activityLoading} onClick={() => void loadOlderActivity()}>
-              {olderLoading ? <><LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />Loading older activity</> : "Load older activity"}
-            </Button>}
-          </>
-          <p className="mt-3 border-t border-zinc-800 pt-3 text-[10px] leading-relaxed text-zinc-500">History and the live stream read saved events only. The stream resumes from its event cursor and closes when this conversation changes; neither starts nor replays a job.</p>
-        </section>
-        <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 text-[11px] leading-relaxed text-zinc-400">
-          <p className="font-semibold text-zinc-200">Evidence, not a guarantee</p>
-          <p className="mt-1">Capture sends the saved project preview to a remote browser. Review sends both screenshots for AI analysis and may incur a charge. Failed or uncertain outcomes are shown as-is; no automatic paid retry occurs.</p>
-        </div>
-      </aside>
-    </div>
+      {audit.isError && <p role="alert" className="text-xs text-amber-100">Saved run history could not be loaded. {audit.error.message}<button type="button" className="ml-2 underline" onClick={() => void audit.refetch()}>Retry</button></p>}
+      <p className="text-[10px] leading-relaxed text-zinc-500">Capture sends the saved project preview to a remote browser. AI review may incur a charge. Failed or uncertain outcomes remain visible in saved history; no paid operation is replayed automatically.</p>
+      <p className="text-[10px] leading-relaxed text-zinc-500">Activity is retained for this project’s lifetime. Only surviving legacy activity can be imported; missing older events cannot be recovered.</p>
+      </div>
+    </div>}
 
     <Dialog open={!!captureTarget} onOpenChange={open => { if (!open) setCaptureTarget(null); }}>
       <DialogContent className="border-zinc-700 bg-zinc-950 text-zinc-100">

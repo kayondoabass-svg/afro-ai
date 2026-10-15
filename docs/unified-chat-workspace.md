@@ -21,6 +21,19 @@ Chat and Preview views plus direct Files access. Changing views preserves the
 composer draft. Website previews refresh after a chat operation completes and
 also have a manual refresh control.
 
+Opening a project selects its website preview automatically. A conversation
+without a separate project can preview its latest completed HTML reply. Neither
+path bypasses project setup checks or enables a source-only full-stack runtime.
+Desktop/Mobile viewport controls resize the interactive preview; they do not
+create screenshot evidence or certify Safari behavior.
+
+Conversation replies are the primary feed, without a second nested scroll area.
+Background action groups start collapsed. Saved image thumbnails remain visible
+without expanding logs or consenting to new capture. Visual tools expands the
+actual consent, capture, review and repair controls, capability explanations,
+retention details and saved reports. Opening it never starts a paid operation.
+Private images also offer full-size viewing and download.
+
 ## Proposal persistence
 
 `POST /api/conversations/:id/workbench/proposals` accepts a UUID request ID, UUID

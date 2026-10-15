@@ -1,13 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ProjectWorkspacePreview } from "./project-workspace-preview";
 
-function renderPreview(options: { projectType?: string; target?: any; projectId?: number; blocked?: boolean } = {}) {
+function renderPreview(options: { projectType?: string; target?: any; projectId?: number | null; blocked?: boolean; conversationHtml?: string } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onTargetChange = vi.fn();
   const view = render(<QueryClientProvider client={client}>
-    <ProjectWorkspacePreview conversationId={73} projectId={options.projectId ?? 18} projectType={options.projectType ?? "website"} blocked={options.blocked} target={options.target ?? { kind: "website" }} onTargetChange={onTargetChange} />
+    <ProjectWorkspacePreview conversationId={73} projectId={options.projectId === undefined ? 18 : options.projectId} projectType={options.projectType ?? "website"} blocked={options.blocked} conversationHtml={options.conversationHtml} target={options.target ?? { kind: "website" }} onTargetChange={onTargetChange} />
   </QueryClientProvider>);
   return { ...view, onTargetChange };
 }
@@ -35,6 +35,11 @@ it("loads the owner-scoped saved website preview in an isolated iframe", async (
   expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
   expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
   expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/projects/18/preview", { credentials: "include" });
+  fireEvent.click(screen.getByRole("button", { name: "Mobile", exact: true }));
+  expect(screen.getByTestId("website-preview-frame")).toHaveClass("max-w-[390px]");
+  expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
+  fireEvent.click(screen.getByRole("button", { name: "Desktop", exact: true }));
+  expect(screen.getByTestId("website-preview-frame")).toHaveClass("max-w-5xl");
 });
 
 it("shows a selected private evidence image using the conversation-owned image endpoint", async () => {
@@ -43,6 +48,8 @@ it("shows a selected private evidence image using the conversation-owned image e
   await waitFor(() => expect(screen.getByRole("img", { name: "Desktop capture" })).toHaveAttribute(
     "src", "/api/conversations/73/workbench/evidence/evidence-id/image",
   ));
+  expect(screen.getByRole("link", { name: "Open full-size private image" })).toHaveAttribute("href", "/api/conversations/73/workbench/evidence/evidence-id/image");
+  expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("download");
 });
 
 it("keeps source-only full-stack projects blocked from runtime preview", async () => {
@@ -50,4 +57,20 @@ it("keeps source-only full-stack projects blocked from runtime preview", async (
   renderPreview({ projectType: "fullstack" });
   expect(screen.getByText("Preview unavailable")).toBeInTheDocument();
   expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+});
+
+it("previews generated conversation HTML without requiring a separate project", () => {
+  vi.stubGlobal("fetch", vi.fn());
+  renderPreview({ projectId: null, conversationHtml: "<main>Conversation page</main>" });
+  expect(screen.getByTitle("Saved website preview")).toHaveAttribute("srcdoc", "<main>Conversation page</main>");
+  expect(screen.getByRole("button", { name: "Show website preview" })).toBeEnabled();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("does not bypass blocked project metadata using conversation HTML", () => {
+  vi.stubGlobal("fetch", vi.fn());
+  renderPreview({ blocked: true, conversationHtml: "<main>Not authorized yet</main>" });
+  expect(document.querySelector("iframe")).toBeNull();
+  expect(screen.getByText("Preview paused")).toBeInTheDocument();
+  expect(fetch).not.toHaveBeenCalled();
 });

@@ -222,7 +222,10 @@ export default function AgentPage() {
   const [workspaceMobileView, setWorkspaceMobileView] = useState<"chat" | "preview">("chat");
   const [workspaceChatWidth, setWorkspaceChatWidth] = useState(52);
   const [workspacePreviewTarget, setWorkspacePreviewTarget] = useState<WorkspacePreviewTarget>(null);
-  useEffect(() => { setWorkspacePreviewTarget(null); setWorkspaceMobileView("chat"); }, [conversationId, activeProjectId]);
+  useEffect(() => {
+    setWorkspacePreviewTarget(activeProjectId || conversationId ? { kind: "website" } : null);
+    setWorkspaceMobileView("chat");
+  }, [conversationId, activeProjectId]);
   useEffect(() => {
     if (!working && activeProjectId) void qc.invalidateQueries({ queryKey: ["/api/projects", activeProjectId, "preview"] });
   }, [working, activeProjectId, qc]);
@@ -950,7 +953,7 @@ export default function AgentPage() {
 
   const goToProjectPreview = () => {
     if (staticControlsBlocked) return;
-    if (activeProjectId) {
+    if (activeProjectId || latestAssistantHtml()) {
       setWorkspacePreviewTarget({ kind: "website" });
       setWorkspaceMobileView("preview");
     }
@@ -1467,7 +1470,7 @@ export default function AgentPage() {
         )}
       </div>
       <div id="workspace-preview-container" role="region" aria-label="Preview" className={`${workspaceMobileView === "preview" ? "flex" : "hidden"} min-h-0 flex-1 md:flex md:col-start-2 md:row-start-3 md:row-span-4`}>
-        <ProjectWorkspacePreview conversationId={conversationId} projectId={activeProjectId} projectType={isFullstack ? "fullstack" : activeProject?.type} blocked={projectBlocked} target={workspacePreviewTarget} onTargetChange={setWorkspacePreviewTarget} />
+        <ProjectWorkspacePreview conversationId={conversationId} projectId={activeProjectId} projectType={isFullstack ? "fullstack" : activeProject?.type} blocked={projectBlocked} conversationHtml={latestAssistantHtml()} target={workspacePreviewTarget} onTargetChange={setWorkspacePreviewTarget} />
       </div>
       <div role="separator" aria-label="Resize chat and preview panes" aria-orientation="vertical"
         aria-valuemin={30} aria-valuemax={70} aria-valuenow={workspaceChatWidth} tabIndex={0}
