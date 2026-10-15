@@ -9,12 +9,19 @@ const userId = (req:any) => req.user?.claims?.sub || req.user?.claims?.id;
 export const integrationHandler = (fn:(req:any,res:any)=>Promise<unknown>):RequestHandler => (req,res) => {
   Promise.resolve(fn(req,res)).catch((error:any)=>{
     const status=Number.isInteger(error?.status) && error.status>=400 && error.status<500 ? error.status : 503;
-    if(status===503) console.error("[integrations] Operation unavailable",error?.name || "Error");
+    if(status===503) console.error("[integrations] Operation unavailable",{
+      route:req.route?.path,
+      code:/^[A-Z0-9]{5}$/.test(error?.code || "") ? error.code : "UNAVAILABLE",
+    });
     res.status(status).json({error:status===503 ? "This operation is temporarily unavailable. No automatic retry was made." : error.message});
   });
 };
 export function registerIntegrationProjectRoutes(app:Express, auth:RequestHandler, sendTest:(req:any,res:any,key:any)=>Promise<unknown>) {
-  const route=(method:"get"|"post"|"patch"|"delete",path:string,fn:(req:any,res:any)=>Promise<unknown>)=>app[method](path,auth,integrationHandler(fn));
+  const route=(method:"get"|"post"|"patch"|"delete",path:string,fn:(req:any,res:any)=>Promise<unknown>)=>app[method](path,auth,integrationHandler(async(req,res)=>{
+    if(typeof userId(req)!=="string" || !userId(req)) integrationError(401,"Not authenticated");
+    res.setHeader("Cache-Control","private, no-store");
+    return fn(req,res);
+  }));
   route("get","/api/email-api/projects",async(req,res)=>{
     const {rows}=await pool.query(`SELECT p.*,
       (SELECT count(*)::int FROM email_project_domains d WHERE d.project_id=p.id) AS domain_count,
@@ -42,8 +49,11 @@ export function registerIntegrationProjectRoutes(app:Express, auth:RequestHandle
     res.json(camelRow(row));
   });
   route("delete","/api/email-api/projects/:id/domains/:domainId",async(req,res)=>{
-    await ownedEmailProject(userId(req),req.params.id);
-    await pool.query("DELETE FROM email_project_domains WHERE project_id=$1 AND domain_id=$2",[req.params.id,integrationId(req.params.domainId)]);
+    const project=await ownedEmailProject(userId(req),req.params.id);
+    const removed=await pool.query(`DELETE FROM email_project_domains a USING email_api_domains d
+      WHERE a.project_id=$1 AND a.domain_id=$2 AND d.id=a.domain_id AND d.user_id=$3
+      RETURNING a.domain_id`,[project.id,integrationId(req.params.domainId),userId(req)]);
+    if(!removed.rowCount) integrationError(404,"Sending domain not found in this project");
     res.json({success:true,providerIdentityDeleted:false});
   });
   route("post","/api/email-api/keys/:id/rotate",async(req,res)=>{

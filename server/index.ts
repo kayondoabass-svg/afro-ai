@@ -17,6 +17,8 @@ import { cfAuthBridge } from "./replit_integrations/auth/cfBridge";
 import { hasShellAccess, isAllowedShellOrigin } from "./shell-security";
 import { apiVersioning } from "./api-versioning";
 import { hasEndpointPreflight } from "@shared/api-version-policy";
+import { pool } from "./db";
+import { prepareIntegrationSchema } from "./integration-schema-readiness";
 
 const app = express();
 
@@ -190,6 +192,8 @@ httpServer.listen(
 );
 
 (async () => {
+  await prepareIntegrationSchema(pool);
+  log("✓ Integration schema ready");
   await registerRoutes(httpServer, app);
   markRoutesReady();
   log("✓ Routes ready — accepting traffic");
