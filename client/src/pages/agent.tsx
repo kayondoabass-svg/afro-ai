@@ -29,7 +29,7 @@ import { AgentSearchButton, AgentSearchContext } from "@/components/agent-search
 import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 import { ProjectWorkbench } from "@/components/project-workbench";
 import { ProjectEvidencePanel } from "@/components/project-evidence-panel";
-import { ProjectVisualAuditChat } from "@/components/project-visual-audit-chat";
+import { ProjectVisualAuditChat, ProjectActionIcon, ProjectActionStatus, projectActionLabel } from "@/components/project-visual-audit-chat";
 import { ProjectWorkspacePreview, type WorkspacePreviewTarget } from "@/components/project-workspace-preview";
 import { GithubProjectDialog } from "@/components/github-project-dialog";
 import type { Project } from "@shared/schema";
@@ -1457,9 +1457,14 @@ export default function AgentPage() {
               Usage {projectUsage.totalTokens ?? [projectUsage.inputTokens, projectUsage.outputTokens].filter(value => value != null).reduce<number>((sum, value) => sum + (value || 0), 0)} tokens
               {projectUsage.estimatedCost != null || projectUsage.estimatedCostUsd != null || projectUsage.estimatedUsd != null ? ` · estimated ${projectUsage.estimatedCost ?? projectUsage.estimatedCostUsd ?? projectUsage.estimatedUsd}` : ""}
             </p>}
-            {activityExpanded && <ul className="mt-2 space-y-1 text-zinc-300">
-              {toolActivity.map(item => <li key={item.callId} className="flex justify-between gap-2"><span className="truncate">{item.tool.replace(/_/g, " ")}</span><span className="shrink-0">{item.status}</span></li>)}
-            </ul>}
+            <ul aria-label="Live project operations" aria-live="polite" className="mt-2 space-y-2 text-zinc-300">
+              {toolActivity.map(item => <li key={item.callId} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <ProjectActionIcon tool={item.tool} className="h-4 w-4 shrink-0 text-violet-300" />
+                <span className="min-w-0 flex-1 break-words">{projectActionLabel(item.tool)}</span>
+                <ProjectActionStatus status={item.status} />
+                {activityExpanded && <p className="w-full break-all pl-6 text-[10px] text-zinc-500">Operation {item.callId} · {item.tool} · {item.status}</p>}
+              </li>)}
+            </ul>
             <span className="sr-only">{toolActivity.map(item => `${item.tool}: ${item.status}`).join(", ")}</span>
           </section>
         )}

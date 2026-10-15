@@ -132,3 +132,12 @@ conversation with expandable actions and inspectable images.
 **How to apply:** Check default collapsed states and both responsive layouts, not
 just whether components mount. Keep permission controls real and failures honest;
 hiding a capability warning does not make capture operational.
+
+Real action icons, action names and current statuses must stay visible directly
+in chat even when technical details are collapsed.
+
+**Why:** The user explicitly reported that the live icons were still missing
+after the split-screen UI update and asked to finish the UI first.
+
+**How to apply:** Cover both incoming live operations and saved activity, not
+only expanded log details. Never simulate tool activity during ordinary chat.

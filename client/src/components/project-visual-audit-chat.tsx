@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, Check, ChevronDown, CircleHelp, Download, LoaderCircle, LockKeyhole, RefreshCw, Smartphone, Monitor, WandSparkles, Image as ImageIcon, Plus, ExternalLink } from "lucide-react";
+import { AlertTriangle, Camera, Check, ChevronDown, CircleHelp, Download, LoaderCircle, LockKeyhole, RefreshCw, Smartphone, Monitor, WandSparkles, Image as ImageIcon, Plus, ExternalLink, FileText, Files, Search, Pencil, ScanEye, Wrench, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -31,6 +31,7 @@ type Activity = {
   id: string;
   sequence?: string;
   jobId?: string;
+  callId?: string;
   createdAt: string;
   tool: string;
   status: string;
@@ -51,6 +52,76 @@ type ActivityPage = {
 const auditKey = (id: number) => ["/api/conversations", id, "workbench-visual-audit"];
 const evidenceKey = (id: number) => ["project-workbench-evidence", id];
 const phaseLabel = (phase: CaptureRun["phase"]) => phase === "before" ? "Before" : "After";
+
+const activityToolLabels: Record<string, string> = {
+  take_ui_screenshot: "Capture screenshots",
+  list_files: "List project files",
+  read_file: "Read project file",
+  search_context: "Search project context",
+  search_files: "Search project files",
+  propose_edits: "Propose file edits",
+  propose_operations: "Propose source operations",
+  project_review: "Review project",
+  visual_review: "Review screenshots",
+  visual_repair: "Prepare visual repair",
+  capture_screenshots: "Capture screenshots",
+  review_screenshots: "Review screenshots",
+  read_project_file: "Read project file",
+  write_project_file: "Write project file",
+  write_file: "Write file",
+  design_proposal: "Save design proposal",
+};
+
+export function projectActionLabel(tool: string) {
+  return activityToolLabels[tool] ?? tool.replace(/_/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+export function ProjectActionIcon({ tool, className = "h-3.5 w-3.5 shrink-0" }: { tool: string; className?: string }) {
+  switch (tool) {
+    case "take_ui_screenshot":
+    case "capture_screenshots": return <Camera aria-hidden="true" className={className} />;
+    case "list_files": return <Files aria-hidden="true" className={className} />;
+    case "read_file":
+    case "read_project_file": return <FileText aria-hidden="true" className={className} />;
+    case "write_project_file":
+    case "write_file": return <Pencil aria-hidden="true" className={className} />;
+    case "search_context":
+    case "search_files": return <Search aria-hidden="true" className={className} />;
+    case "propose_edits":
+    case "propose_operations": return <Pencil aria-hidden="true" className={className} />;
+    case "project_review":
+    case "visual_review":
+    case "review_screenshots": return <ScanEye aria-hidden="true" className={className} />;
+    case "visual_repair": return <Wrench aria-hidden="true" className={className} />;
+    default: return <CircleHelp aria-hidden="true" className={className} />;
+  }
+}
+
+function activityStatus(status: string, createdAt?: string): { label: string; tone: string; icon: ReactNode; running: boolean } {
+  const normalized = status.toLowerCase();
+  const freshStarted = normalized !== "started" || !createdAt || Date.now() - Date.parse(createdAt) <= 120000;
+  if (["running", "capturing", "reviewing", "in_progress"].includes(normalized) || (normalized === "started" && freshStarted)) {
+    return { label: "In progress", tone: "text-sky-200", icon: <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin motion-reduce:animate-none" />, running: true };
+  }
+  if (normalized === "started") return { label: "Started · update pending", tone: "text-amber-200", icon: <CircleHelp aria-hidden="true" className="h-3 w-3" />, running: false };
+  if (["awaiting-approval", "awaiting-reviewed-save"].includes(normalized)) {
+    return { label: "Awaiting approval", tone: "text-amber-200", icon: <CircleHelp aria-hidden="true" className="h-3 w-3" />, running: false };
+  }
+  if (["completed", "captured", "reviewed", "saved", "succeeded", "success"].includes(normalized)) {
+    return { label: "Completed", tone: "text-emerald-200", icon: <Check aria-hidden="true" className="h-3 w-3" />, running: false };
+  }
+  if (["failed", "error", "stopped"].includes(normalized)) {
+    return { label: normalized === "stopped" ? "Stopped" : "Failed", tone: "text-rose-200", icon: <X aria-hidden="true" className="h-3 w-3" />, running: false };
+  }
+  return { label: normalized === "uncertain" || normalized === "interrupted" ? "Uncertain" : status ? `Outcome: ${status}` : "Outcome not recorded", tone: "text-amber-200", icon: <CircleHelp aria-hidden="true" className="h-3 w-3" />, running: false };
+}
+
+export function ProjectActionStatus({ status, createdAt }: { status: string; createdAt?: string }) {
+  const state = activityStatus(status, createdAt);
+  return <span className={`inline-flex shrink-0 items-center gap-1 ${state.tone}`} aria-label={state.label}>
+    {state.icon}<span>{state.label}</span>
+  </span>;
+}
 
 type InspectionRow = { label: string; detail: string };
 type InspectionViews = { desktop: InspectionRow[]; mobile: InspectionRow[] };
@@ -525,6 +596,18 @@ export function ProjectVisualAuditChat({
             </span>}
             <time className="shrink-0 text-[10px] text-zinc-600">{new Date(entry.timestamp).toLocaleString()}</time>
           </button>
+          <ol aria-label="Project actions" className="space-y-1 px-3 pb-2">
+            {Array.from(new Map(entry.group.events.map(event => [event.callId ? `${event.tool}:${event.callId}` : event.id, event])).values()).map(event => {
+              const state = activityStatus(event.status, event.createdAt);
+              return <li key={`summary-${event.id}`} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-zinc-900/40 px-2 py-1.5 text-[11px]">
+                <ProjectActionIcon tool={event.tool} className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
+                <span className="min-w-0 flex-1 truncate font-medium text-zinc-200">{projectActionLabel(event.tool)}</span>
+                <span className={`inline-flex shrink-0 items-center gap-1 ${state.tone}`}>
+                  {state.icon}<span>{state.label}</span>
+                </span>
+              </li>;
+            })}
+          </ol>
           {openGroups[entry.key] && <ol className="space-y-2 border-t border-zinc-800/80 px-3 py-2">
             {entry.group.events.map(event => <li key={event.id} className="border-l border-zinc-700 py-1 pl-2.5">
               <p className="text-xs font-medium text-zinc-300">{event.title || `${event.tool} · ${event.status}`}</p>

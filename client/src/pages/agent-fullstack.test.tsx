@@ -16,7 +16,7 @@ vi.mock("@/components/file-tree-sidebar", () => ({ FileTreeSidebar: () => <div>S
 vi.mock("@/components/fullstack-infrastructure", () => ({ FullstackInfrastructure: () => <div data-testid="fullstack-infrastructure">Infrastructure controls</div> }));
 vi.mock("@/components/project-workbench", () => ({ ProjectWorkbench: () => <div data-testid="project-workbench">Project workbench</div> }));
 vi.mock("@/components/project-evidence-panel", () => ({ ProjectEvidencePanel: () => <div data-testid="project-evidence">Private visual evidence</div> }));
-vi.mock("@/components/project-visual-audit-chat", () => ({ ProjectVisualAuditChat: ({ messageItems }: { messageItems: { id: string; node: React.ReactNode }[] }) => <div data-testid="chat-visual-evidence">
+vi.mock("@/components/project-visual-audit-chat", async importOriginal => ({ ...await importOriginal<typeof import("@/components/project-visual-audit-chat")>(), ProjectVisualAuditChat: ({ messageItems }: { messageItems: { id: string; node: React.ReactNode }[] }) => <div data-testid="chat-visual-evidence">
   {messageItems.map(item => <div key={item.id}>{item.node}</div>)}
   In-chat visual evidence and saved activity
 </div> }));
@@ -57,6 +57,34 @@ afterEach(() => {
 });
 
 describe("full-stack agent workspace", () => {
+  it("shows live tool icons and status in chat before expanding details", async () => {
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let controller: ReadableStreamDefaultController<Uint8Array>;
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      if (args[0] === "/api/conversations/91/messages") {
+        return new Response(new ReadableStream<Uint8Array>({ start(value) { controller = value; } }));
+      }
+      return original(...args);
+    });
+    render(<AgentPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Message to Afro AI" }), { target: { value: "Read the project files" } });
+    fireEvent.click(screen.getByTestId("button-send"));
+    await waitFor(() => expect(controller!).toBeDefined());
+    controller!.enqueue(new TextEncoder().encode('data: {"type":"project-tool","tool":"read_file","callId":"read-1","status":"started"}\n\n'));
+    const operations = await screen.findByRole("list", { name: "Live project operations" });
+    expect(within(operations).getByText("Read project file")).toBeVisible();
+    expect(within(operations).getByLabelText("In progress")).toBeVisible();
+    expect(operations.querySelector("svg.lucide-file-text")).toBeInTheDocument();
+    expect(within(operations).queryByText(/Operation read-1/)).not.toBeInTheDocument();
+    controller!.enqueue(new TextEncoder().encode('data: {"type":"project-tool","tool":"read_file","callId":"read-1","status":"completed"}\n\ndata: {"done":true}\n\n'));
+    controller!.close();
+    await waitFor(() => expect(within(operations).getByLabelText("Completed")).toBeVisible());
+    expect(within(operations).queryByLabelText("In progress")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Project activity/ }));
+    expect(within(operations).getByText(/Operation read-1/)).toBeVisible();
+  });
+
   it("detects metadata without a mode hint, opens Files and disables static deployment", async () => {
     render(<AgentPage />);
     expect(screen.getByTestId("fullstack-source-notice")).toHaveTextContent("a ready database does not mean the app is running");

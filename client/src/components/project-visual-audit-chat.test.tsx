@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { parseInspectionViews, ProjectVisualAuditChat } from "./project-visual-audit-chat";
 
@@ -142,9 +142,62 @@ it("renders only safe saved activity received over the read-only stream", async 
     status: "completed", title: "read project file · completed", message: "index.html was inspected",
   }));
   await screen.findAllByRole("button", { name: /Project action group/ });
+  expect(screen.getByText("Read project file")).toBeInTheDocument();
+  expect(screen.getByText("Completed")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Project action group/ })).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByText("index.html was inspected")).not.toBeInTheDocument();
   openSavedActivity();
   await waitFor(() => expect(screen.getByText("read project file · completed")).toBeInTheDocument());
   expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
+});
+
+it("shows meaningful icons, labels, and explicit statuses for streamed project tools while details stay collapsed", async () => {
+  renderAudit(url => url.endsWith("/visual-audit")
+    ? { capability: { enabled: false }, runs: [] }
+    : { items: [], events: [], fingerprint: "source-abc" });
+  const createdAt = new Date().toISOString();
+  const stream = eventSourceInstance;
+  act(() => {
+    stream?.emit("activity", JSON.stringify({
+      id: "stream-read", jobId: "stream-job", callId: "read-call", createdAt, tool: "read_file", status: "started",
+      title: "read_file · started", message: "Reading project source.",
+    }));
+    stream?.emit("activity", JSON.stringify({
+      id: "stream-search", jobId: "stream-job", createdAt, tool: "search_context", status: "completed",
+      title: "search_context · completed",
+    }));
+    stream?.emit("activity", JSON.stringify({
+      id: "stream-edit", jobId: "stream-job", createdAt, tool: "propose_edits", status: "failed",
+      title: "propose_edits · failed", message: "Operation rejected.",
+    }));
+  });
+
+  const group = await screen.findByRole("button", { name: /3 project actions/ });
+  expect(group).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByText("Read project file")).toBeInTheDocument();
+  expect(screen.getByText("Search project context")).toBeInTheDocument();
+  expect(screen.getByText("Propose file edits")).toBeInTheDocument();
+  const visibleActions = screen.getByRole("list", { name: "Project actions" });
+  expect(visibleActions.querySelector(".lucide-file-text")).toBeInTheDocument();
+  expect(visibleActions.querySelector(".lucide-search")).toBeInTheDocument();
+  expect(visibleActions.querySelector(".lucide-pencil")).toBeInTheDocument();
+  expect(screen.getByText("In progress")).toBeInTheDocument();
+  expect(screen.getByText("Completed")).toBeInTheDocument();
+  expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
+  expect(screen.getByText("In progress").parentElement?.querySelector(".animate-spin")).toBeInTheDocument();
+  act(() => {
+    stream?.emit("activity", JSON.stringify({
+      id: "stream-read-completed", jobId: "stream-job", callId: "read-call", sequence: "99",
+      createdAt: new Date(Date.parse(createdAt) + 1000).toISOString(), tool: "read_file",
+      status: "completed", title: "read_file · completed",
+    }));
+  });
+  expect(screen.queryByText("In progress")).not.toBeInTheDocument();
+  expect(screen.getAllByText("Read project file")).toHaveLength(1);
+  expect(screen.queryByText("Reading project source.")).not.toBeInTheDocument();
+
+  fireEvent.click(group);
+  expect(await screen.findByText("Reading project source.")).toBeInTheDocument();
 });
 
 it("surfaces unavailable history rather than replacing it with fabricated state", async () => {
