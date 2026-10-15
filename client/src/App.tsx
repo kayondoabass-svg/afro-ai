@@ -13,6 +13,7 @@ import { LanguageProvider } from "@/hooks/use-language";
 import { LanguageSelector } from "@/components/language-selector";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useAuth } from "@/hooks/use-auth";
+import { MY_APPS_ROUTE_ALIASES } from "@/lib/my-apps-routes";
 import { useToast } from "@/hooks/use-toast";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -29,7 +30,7 @@ const MediaPage = lazy(() => import("@/pages/media"));
 const AgentPage = lazy(() => import("@/pages/agent"));
 const PreviewPage = lazy(() => import("@/pages/preview"));
 const PricingPage = lazy(() => import("@/pages/pricing"));
-const DeploymentsPage = lazy(() => import("@/pages/deployments"));
+const DeploymentsPage = lazy(() => import("@/pages/my-apps-library"));
 const FounderDashboardPage = lazy(() => import("@/pages/founder-dashboard"));
 const AdminCommandPage = lazy(() => import("@/pages/admin-command"));
 const KeyoStudioAdminPage = lazy(() => import("@/pages/keyo-studio-admin"));
@@ -133,7 +134,7 @@ function AuthenticatedLayout() {
                 <Route path="/preview/:id" component={PreviewPage} />
                 <Route path="/chat-classic" component={AIChatPage} />
                 <Route path="/media" component={MediaPage} />
-                <Route path="/deployments" component={DeploymentsPage} />
+                {MY_APPS_ROUTE_ALIASES.map((path) => <Route key={path} path={path} component={DeploymentsPage} />)}
                 <Route path="/pricing" component={PricingPage} />
                 <Route path="/founder" component={FounderDashboardPage} />
                 <Route path="/team" component={TeamManagementPage} />
@@ -223,7 +224,9 @@ const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard — Afro AI",
   "/chat": "New Chat — Afro AI",
   "/media": "AI Images & Videos — Afro AI",
-  "/deployments": "Deployments — Afro AI",
+  "/deployments": "My Apps — Afro AI",
+  "/apps": "My Apps — Afro AI",
+  "/my-apps": "My Apps — Afro AI",
   "/settings": "Settings — Afro AI",
   "/billing": "Billing — Afro AI",
   "/forms": "Form Builder — Afro AI",
@@ -276,6 +279,8 @@ const AUTH_REQUIRED_EXACT = new Set<string>([
   "/chat-classic",
   "/media",
   "/deployments",
+  "/apps",
+  "/my-apps",
   "/founder",
   "/team",
   "/admin-command",

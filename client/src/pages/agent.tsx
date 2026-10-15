@@ -1694,6 +1694,7 @@ export default function AgentPage() {
       </nav>
 
       <PublishDialog
+        projectId={activeProjectId ?? undefined}
         conversationId={conversationId ?? undefined}
         code={publishCode}
         open={publishOpen && !staticControlsBlocked}

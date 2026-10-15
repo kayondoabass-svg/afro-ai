@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   apiRequest: vi.fn(),
   authAdminRequest: vi.fn(),
+  library: vi.fn(),
 }));
 
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.authState }));
@@ -47,6 +48,8 @@ beforeEach(() => {
   queryClient.clear();
   queryClient.setQueryDefaults(["/api/projects"], { queryFn: async () => [sourceProject] });
   queryClient.setQueryDefaults(["/api/published-apps"], { queryFn: async () => [ownedApp] });
+  mocks.library.mockReset().mockResolvedValue({ apps: [{ key: "project-41", project: sourceProject, conversationId: 902, publishedApps: [ownedApp] }] });
+  queryClient.setQueryDefaults(["/api/app-library"], { queryFn: mocks.library });
   mocks.authState = { user: null, isLoading: true };
   mocks.navigate.mockReset();
   mocks.toast.mockReset();
@@ -72,15 +75,13 @@ describe("Afro Auth project handoff", () => {
       <QueryClientProvider client={queryClient}><AfroAuthDashboardPage /></QueryClientProvider>,
     )).not.toThrow();
     expect(await screen.findByTestId("input-project-name")).toHaveValue(sourceProject.name);
-    await waitFor(() => expect(mocks.apiRequest).toHaveBeenCalledWith("POST", "/api/published-apps/73/project"));
+    await waitFor(() => expect(mocks.library).toHaveBeenCalled());
+    expect(mocks.apiRequest).not.toHaveBeenCalled();
   });
 
   it("rejects a pair of separately owned but unrelated project and live app records", async () => {
     mocks.authState = { user: { id: "owner-1" }, isLoading: false };
-    mocks.apiRequest.mockResolvedValue(Response.json({
-      project: { ...sourceProject, id: 99 },
-      conversationId: 903,
-    }));
+    mocks.library.mockResolvedValue({ apps: [{ key: "project-99", project: { ...sourceProject, id: 99 }, conversationId: 903, publishedApps: [ownedApp] }] });
     renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be confirmed as a source pair");
     expect(screen.queryByTestId("input-project-name")).not.toBeInTheDocument();

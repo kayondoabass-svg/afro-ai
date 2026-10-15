@@ -100,7 +100,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import type { Conversation, Message } from "@shared/schema";
+import type { Conversation, Message, Project } from "@shared/schema";
 import { extractWebsiteHtml } from "@shared/html-extraction";
 import type { ChatSearchActivity } from "@shared/chat-search";
 import { ChatSearchCard, parseSearchActivity } from "@/components/chat-search";
@@ -611,15 +611,21 @@ function FeedbackPanel({ appId, publishedUrl, feedbackCopied, setFeedbackCopied,
   );
 }
 
-export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, conversationId }: {
+export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, conversationId, projectId }: {
   code: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAutoFixSecurity?: (hint: string) => void;
   conversationId?: number | null;
+  projectId?: number | null;
 }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const { data: ownedProjects, isLoading: projectsLoading } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+    enabled: open && !!projectId,
+  });
+  const sourceProjectDeletionPending = !!ownedProjects?.some((project) => project.id === projectId && project.status === "deletion-pending");
   const [subdomain, setSubdomain] = useState("");
   const [title, setTitle] = useState("");
   const [checking, setChecking] = useState(false);
@@ -713,6 +719,12 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, con
   };
 
   const startPublish = async () => {
+    if (sourceProjectDeletionPending) {
+      const message = "This project is being deleted. Publishing is disabled until cleanup finishes.";
+      setPublishError(message);
+      toast({ title: "Project cleanup pending", description: message, variant: "destructive" });
+      return;
+    }
     setIsPublishing(true);
     setPublishError(null);
     setPublishSteps(PUBLISH_STEPS.map(s => ({ ...s, status: "pending" as const })));
@@ -753,6 +765,7 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, con
               setPublishedProjectId(typeof data.projectId === "number" ? data.projectId : null);
               setPublishedConversationId(typeof data.conversationId === "number" ? data.conversationId : null);
               toast({ title: "Published!", description: `Your app is live at ${data.url}` });
+              queryClient.invalidateQueries({ queryKey: ["/api/app-library"] });
               queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
               if (data.sourceSyncWarning) toast({ title: "Source sync needs attention", description: data.sourceSyncWarning, variant: "destructive" });
               queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -924,7 +937,7 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, con
                     </a>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 items-center">
-                    <div className="bg-white p-2 rounded-md border flex-shrink-0" data-testid="img-published-qr">
+                    <a href={publishedUrl} target="_blank" rel="noopener noreferrer" aria-label="Open published app from QR code" className="bg-white p-2 rounded-md border flex-shrink-0 hover:ring-2 hover:ring-primary/40" data-testid="img-published-qr">
                       <img
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&margin=0&data=${encodeURIComponent(publishedUrl)}`}
                         alt="QR code to open your app"
@@ -933,9 +946,9 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, con
                         className="w-[120px] h-[120px] block"
                         loading="lazy"
                       />
-                    </div>
+                    </a>
                     <div className="flex-1 text-xs text-muted-foreground">
-                      <p className="font-medium text-foreground mb-1">📱 Scan to open on a phone</p>
+                      <p className="font-medium text-foreground mb-1">Scan to open on a phone</p>
                       <p>Show this code to a friend or customer — they just point their phone camera at it and your app opens. No typing.</p>
                       <div className="flex flex-wrap gap-2 mt-3">
                         <a
@@ -965,7 +978,7 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, con
                         variant="outline"
                         onClick={() => {
                           onOpenChange(false);
-                          setLocation(`/chat?conversation=${conversationId || publishedConversationId}`);
+                          setLocation(`/chat?projectId=${existingApp?.projectId || publishedProjectId || projectId || ""}&conversation=${conversationId || publishedConversationId}`);
                         }}
                         data-testid="button-open-edit-published"
                       >
@@ -1001,6 +1014,7 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, con
                 )}
                 <NextStepsCard
                   appId={existingApp?.id}
+                  projectId={existingApp?.projectId || publishedProjectId || projectId || undefined}
                   publishedUrl={publishedUrl}
                   appCode={code}
                   onClose={() => onOpenChange(false)}
@@ -1086,7 +1100,7 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, con
           ) : isRepublish && !showProgress ? (
             <Button
               onClick={handleRepublish}
-              disabled={isPublishing}
+              disabled={isPublishing || sourceProjectDeletionPending || (!!projectId && projectsLoading)}
               data-testid="button-republish-confirm"
             >
               {isPublishing ? (
@@ -1098,7 +1112,7 @@ export function PublishDialog({ code, open, onOpenChange, onAutoFixSecurity, con
           ) : !showProgress ? (
             <Button
               onClick={handlePublish}
-              disabled={!subdomain || !title || subdomain.length < 3 || available === false || isPublishing}
+              disabled={!subdomain || !title || subdomain.length < 3 || available === false || isPublishing || sourceProjectDeletionPending || (!!projectId && projectsLoading)}
               data-testid="button-publish-confirm"
             >
               {isPublishing ? (
@@ -3843,6 +3857,7 @@ export default function AIChatPage() {
           onOpenChange={setShowPublishFromChat}
           onAutoFixSecurity={(hint) => sendDirectMessage(hint)}
           conversationId={activeConversation}
+          projectId={new URLSearchParams(window.location.search).get("projectId") ? Number(new URLSearchParams(window.location.search).get("projectId")) : null}
         />
       )}
 

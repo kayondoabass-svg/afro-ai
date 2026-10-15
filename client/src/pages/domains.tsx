@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -16,6 +16,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { AppHandoffContext } from "@/components/app-handoff-context";
+import { useAppHandoff } from "@/lib/app-handoff";
 
 interface DomainAvailability {
   domainName: string;
@@ -48,6 +50,15 @@ export default function DomainsPage() {
     firstName: "", lastName: "", email: "", phone: "",
     address: "", city: "", state: "", zip: "", country: "",
   });
+  const handoff = useAppHandoff();
+  const handoffPrefilled = useRef(false);
+  useEffect(() => {
+    if (handoff.valid && !handoff.isLoading && handoff.hasContext && !handoffPrefilled.current) {
+      const suggested = handoff.hostname || handoff.project?.name;
+      if (suggested) setSearchQuery(suggested);
+      handoffPrefilled.current = true;
+    }
+  }, [handoff.valid, handoff.isLoading, handoff.hasContext, handoff.hostname, handoff.project?.name]);
   const { toast } = useToast();
   const setSelectedTab = (tab: string) => {
     const params = new URLSearchParams(routeSearch);
@@ -124,6 +135,7 @@ export default function DomainsPage() {
   return (
     <div className="flex-1 overflow-auto min-h-0 bg-background p-4 sm:p-6 lg:p-8">
       <div className="max-w-5xl mx-auto space-y-8">
+        <AppHandoffContext prefilledFields={handoff.hostname || handoff.project ? ["domain search"] : []} />
 
         {/* Post-payment return banner */}
         {paymentReturnOrder && (

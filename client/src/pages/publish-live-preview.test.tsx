@@ -28,7 +28,9 @@ describe("published live preview action", () => {
       throw new Error(`Unexpected request ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<PublishDialog code={html} open onOpenChange={() => {}} />);
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <PublishDialog code={html} open onOpenChange={() => {}} />
+    </QueryClientProvider>);
     const publish = await screen.findByTestId("button-republish-confirm");
     expect(screen.queryByRole("link", { name: "Open live preview" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => url === "/api/publish")).toBe(false);

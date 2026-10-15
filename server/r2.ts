@@ -82,12 +82,13 @@ export async function getBlobText(key: string): Promise<string | null> {
   }
 }
 
-export async function deleteBlob(key: string): Promise<void> {
+export async function deleteBlob(key: string, strict = false): Promise<void> {
   try {
     const client = getClient();
     const bucket = process.env.R2_BUCKET_NAME!;
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   } catch (e: any) {
+    if (strict) throw new Error("Hosted object cleanup could not be confirmed");
     console.error("R2 delete blob error:", e?.message || e);
   }
 }

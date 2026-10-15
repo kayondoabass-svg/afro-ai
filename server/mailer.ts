@@ -130,7 +130,8 @@ export async function sendPaymentNudgeEmail(to: string, opts: {
   return send(to, subject, wrapped.html, wrapped.text);
 }
 
-export async function sendAppPublishedEmail(to: string, opts: { title: string; url: string; isUpdate: boolean }): Promise<boolean> {
+export async function sendAppPublishedEmail(to: string, opts: { title: string; url: string; isUpdate: boolean; appId?: number }): Promise<boolean> {
+  const manageUrl = `https://afroaigroup.com/deployments${Number.isSafeInteger(opts.appId) && opts.appId! > 0 ? `?appId=${opts.appId}` : ""}`;
   const verb = opts.isUpdate ? "Updated" : "Published";
   const subject = `${verb}: ${opts.title} is live`;
   const html = `
@@ -138,10 +139,10 @@ export async function sendAppPublishedEmail(to: string, opts: { title: string; u
     <p style="background:#0b0b0c;border:1px solid #27272a;border-radius:8px;padding:14px;font-family:ui-monospace,monospace;font-size:13px;color:${BRAND_COLOR};word-break:break-all;">${opts.url}</p>
     <p style="margin-top:18px;">
       <a href="${opts.url}" style="background:${BRAND_COLOR};color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;margin-right:8px;">Visit live app →</a>
-      <a href="https://afroaigroup.com/apps" style="color:${BRAND_COLOR};text-decoration:none;font-weight:500;">Manage apps</a>
+      <a href="${manageUrl}" style="display:inline-block;padding:10px 0;color:${BRAND_COLOR};text-decoration:none;font-weight:500;">Manage apps</a>
     </p>
     <p style="font-size:13px;color:#a1a1aa;margin-top:18px;">Tip: connect a custom domain from your dashboard to use your own URL instead.</p>`;
-  const text = `Your app "${opts.title}" is live at ${opts.url}\n\nManage your apps: https://afroaigroup.com/apps`;
+  const text = `Your app "${opts.title}" is live at ${opts.url}\n\nManage your apps: ${manageUrl}`;
   const wrapped = shell(`${verb} ${opts.isUpdate ? "" : "✨"}`, html, text);
   return send(to, subject, wrapped.html, wrapped.text);
 }

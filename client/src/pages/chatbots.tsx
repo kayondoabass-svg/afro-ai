@@ -21,6 +21,8 @@ import { ChatbotKnowledgeBase } from "@/components/chatbot-knowledge-base";
 import { ChatbotPrivateKnowledge } from "@/components/chatbot-private-knowledge";
 import { chatbotReplyAllowance } from "@shared/chatbot-display";
 import { Sparkles as SparklesIcon } from "lucide-react";
+import { AppHandoffContext } from "@/components/app-handoff-context";
+import { useAppHandoff } from "@/lib/app-handoff";
 
 const SENSITIVE_CATEGORIES = [
   { id: "staff_contacts", label: "Staff personal phone numbers & home addresses" },
@@ -48,6 +50,7 @@ const EMBED_SNIPPET = (apiKey: string) =>
 
 export default function ChatbotsPage() {
   const { toast } = useToast();
+  const handoff = useAppHandoff();
   const [, navigate] = useLocation();
   const [showCreate, setShowCreate] = useState(false);
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
@@ -65,6 +68,12 @@ export default function ChatbotsPage() {
   const [omitCategories, setOmitCategories] = useState<string[]>([]);
   const [showOmitList, setShowOmitList] = useState(false);
   const [createdWidget, setCreatedWidget] = useState<ChatbotWidget | null>(null);
+  const startCreate = () => {
+    if (handoff.valid && handoff.project) {
+      setForm((current) => ({ ...current, name: current.name || `${handoff.project!.name} assistant`, websiteUrl: current.websiteUrl || (handoff.hostname ? `https://${handoff.hostname}` : "") }));
+    }
+    setShowCreate(true);
+  };
 
   // Welcome flow: detect ?welcome=true after payment
   useEffect(() => {
@@ -210,11 +219,12 @@ export default function ChatbotsPage() {
               <Zap className="w-3.5 h-3.5" /> Upgrade Plan
             </Button>
           )}
-          <Button onClick={() => setShowCreate(true)} size="sm" className="gap-2" data-testid="button-create-chatbot">
+        <Button onClick={startCreate} size="sm" className="gap-2" data-testid="button-create-chatbot">
             <Plus className="w-4 h-4" /> New Chatbot
           </Button>
         </div>
       </div>
+      <div className="px-6 pt-4"><AppHandoffContext prefilledFields={handoff.project ? ["chatbot name", ...(handoff.hostname ? ["website URL"] : [])] : []} /></div>
 
       <div className="flex-1 overflow-auto min-h-0">
         {isLoading ? (
@@ -244,7 +254,7 @@ export default function ChatbotsPage() {
                 </div>
               ))}
             </div>
-            <Button onClick={() => setShowCreate(true)} className="gap-2" data-testid="button-create-first-chatbot">
+            <Button onClick={startCreate} className="gap-2" data-testid="button-create-first-chatbot">
               <Plus className="w-4 h-4" /> Create Your First Chatbot
             </Button>
           </div>
@@ -282,7 +292,7 @@ export default function ChatbotsPage() {
                   </CardContent>
                 </Card>
               ))}
-              <Button variant="outline" className="w-full gap-2 text-sm" onClick={() => setShowCreate(true)}>
+              <Button variant="outline" className="w-full gap-2 text-sm" onClick={startCreate}>
                 <Plus className="w-4 h-4" /> Add Another
               </Button>
             </div>

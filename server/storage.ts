@@ -307,16 +307,21 @@ class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async deletePublishedApp(id: number): Promise<void> {
+  async deletePublishedApp(id: number, strictCloudCleanup = false): Promise<void> {
     try {
       const { deleteBlob, isR2Configured } = await import("./r2");
-      if (isR2Configured()) {
+      {
         const [appRow] = await db.select({ key: publishedApps.htmlR2Key }).from(publishedApps).where(eq(publishedApps.id, id));
         const versionKeys = await db.select({ key: publishedAppVersions.htmlR2Key }).from(publishedAppVersions).where(eq(publishedAppVersions.publishedAppId, id));
         const allKeys = [appRow?.key, ...versionKeys.map(v => v.key)].filter((k): k is string => !!k);
-        await Promise.all(allKeys.map(k => deleteBlob(k).catch(e => console.warn(`[r2] delete failed ${k}:`, e?.message))));
+        if (allKeys.length && !isR2Configured()) {
+          if (strictCloudCleanup) throw new Error("Hosted object cleanup is unavailable");
+        } else {
+          await Promise.all(allKeys.map(k => deleteBlob(k, strictCloudCleanup)));
+        }
       }
     } catch (e: any) {
+      if (strictCloudCleanup) throw e;
       console.warn("[deletePublishedApp] R2 cleanup skipped:", e?.message);
     }
     await db.delete(publishedApps).where(eq(publishedApps.id, id));

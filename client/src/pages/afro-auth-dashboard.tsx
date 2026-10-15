@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { authAdminRequest } from "@/lib/afro-auth-admin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,9 +33,10 @@ export default function AfroAuthDashboardPage() {
   const [name, setName] = useState("");
   const contextOpenedRef = useRef(false);
   const searchParams = new URLSearchParams(window.location.search);
-  const hasHandoffContext = searchParams.has("projectId") || searchParams.has("appId");
+  const requestedApp = searchParams.get("appId") || searchParams.get("app");
+  const hasHandoffContext = searchParams.has("projectId") || !!requestedApp;
   const requestedProjectId = Number(searchParams.get("projectId"));
-  const requestedAppId = Number(searchParams.get("appId"));
+  const requestedAppId = Number(requestedApp);
 
   const { data: ownedProjects, isLoading: projectsLoading, isError: projectsError } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -59,22 +60,22 @@ export default function AfroAuthDashboardPage() {
   const selectedApp = Number.isInteger(requestedAppId) && requestedAppId > 0
     ? ownedApps?.find((app) => app.id === requestedAppId)
     : undefined;
-  const association = useQuery<{ project: Project; conversationId?: number | null }>({
-    queryKey: ["/api/published-apps", requestedAppId, "project", requestedProjectId],
-    enabled: !!user && !!selectedProject && !!selectedApp,
-    queryFn: async () => {
-      if (!selectedApp) throw new Error("The selected live site is not in this account.");
-      const response = await apiRequest("POST", `/api/published-apps/${selectedApp.id}/project`);
-      return response.json();
-    },
+  const { data: library, isLoading: libraryLoading, isError: libraryError } = useQuery<{
+    apps: { project: Project | null; publishedApps: PublishedApp[] }[];
+  }>({
+    queryKey: ["/api/app-library"],
+    enabled: !!user && hasHandoffContext,
   });
   const contextLoading = hasHandoffContext && (
     authLoading || !user || projectsLoading || appsLoading ||
-    (!!selectedProject && !!selectedApp && association.isLoading)
+    libraryLoading
   );
-  const contextError = projectsError || appsError || association.isError;
-  const validHandoff = !!selectedProject && !!selectedApp &&
-    association.data?.project?.id === requestedProjectId && !contextError;
+  const contextError = projectsError || appsError || libraryError;
+  const ownedPair = library?.apps.some((entry) =>
+    entry.project?.id === requestedProjectId &&
+    entry.publishedApps.some((app) => app.id === requestedAppId)
+  );
+  const validHandoff = !!selectedProject && !!selectedApp && !!ownedPair && !contextError;
   const tenantUrl = (tenantId: string) =>
     `/dashboard/auth/${tenantId}${validHandoff && selectedApp ? `?appId=${selectedApp.id}` : ""}`;
 
@@ -153,6 +154,7 @@ export default function AfroAuthDashboardPage() {
             ) : validHandoff ? (
               <div className="space-y-1">
                 <p className="text-sm font-medium">Adding Afro Auth to {selectedProject.name}</p>
+                <p className="text-xs text-muted-foreground">Prefilled: the new Afro Auth project name field.</p>
                 <p className="text-sm text-muted-foreground">
                   Selected live site: {selectedApp.customDomain || `${selectedApp.subdomain}.afroaigroup.com`}
                 </p>

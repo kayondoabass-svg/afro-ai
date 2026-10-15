@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Zap, Code, TestTube, CheckCircle, XCircle, Clock, Globe, Lock, Copy, Check, Filter } from "lucide-react";
+import { AppHandoffContext } from "@/components/app-handoff-context";
+import { useAppHandoff } from "@/lib/app-handoff";
 
 interface ApiIntegration {
   id: number;
@@ -67,6 +69,7 @@ function parseAuthConfig(raw: string | null): Record<string, string> {
 
 export default function ApiIntegrationsPage() {
   const { toast } = useToast();
+  const handoff = useAppHandoff();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ApiIntegration | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -125,7 +128,12 @@ export default function ApiIntegrationsPage() {
     setForm(f => ({ ...f, authConfig: { ...f.authConfig, [key]: val } }));
   }
 
-  function openNew() { setEditing(null); setForm(emptyForm); setTestResult(null); setOpen(true); }
+  function openNew() {
+    setEditing(null);
+    setForm({ ...emptyForm, name: handoff.project?.name || "", baseUrl: handoff.hostname ? `https://${handoff.hostname}` : "" });
+    setTestResult(null);
+    setOpen(true);
+  }
   function openEdit(item: ApiIntegration) {
     setEditing(item);
     setForm({
@@ -205,6 +213,7 @@ export default function ApiIntegrationsPage() {
   return (
     <div className="flex-1 overflow-auto min-h-0 p-6">
       <div className="max-w-5xl mx-auto space-y-6">
+        <AppHandoffContext prefilledFields={handoff.project ? ["integration name", ...(handoff.hostname ? ["base URL"] : [])] : []} />
 
         {/* Header */}
         <div className="flex items-center justify-between">

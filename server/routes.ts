@@ -33,7 +33,8 @@ import {
   checkAndBumpPublicIpCap,
 } from "./replit_integrations/quota";
 import { storage } from "./storage";
-import { ensurePublishedProject, recoverPublishedProject, reconcilePublishedProjects, validatePublishConversation, ProjectLifecycleError } from "./project-lifecycle";
+import { ensureConversationProject, ensurePublishedProject, recoverPublishedProject, reconcilePublishedProjects, validatePublishConversation, ProjectLifecycleError } from "./project-lifecycle";
+import { getAppLibrary, linkedPublicationIds, removePublishedApp, lockPublishedApp, lockProject, DELETE_PENDING, UNPUBLISHED, UNPUBLISH_PENDING } from "./app-management";
 import { insertProjectSchema, appViews, emailApiKeys, emailApiDomains, emailApiLogs, emailSuppressions } from "@shared/schema";
 import { handleSnsRequest, isSuppressed, addSuppression, removeSuppression, getReputationStats } from "./ses-webhook";
 import { conversations } from "@shared/models/chat";
@@ -281,6 +282,7 @@ export async function registerRoutes(
         try {
           const publishedApp = await storage.getPublishedAppBySubdomain(subdomain);
           if (publishedApp) {
+            if ([DELETE_PENDING, UNPUBLISHED, UNPUBLISH_PENDING].includes(publishedApp.suspendReason || "")) return res.status(410).set("Cache-Control", "no-store").send("This website is offline.");
             if (publishedApp.appStatus === "suspended") return serveSuspendedPage(res);
             publishedAppHeaders(res);
             let body = publishedApp.htmlContent;
@@ -300,6 +302,7 @@ export async function registerRoutes(
       try {
         const publishedApp = await storage.getPublishedAppByCustomDomain(host);
         if (publishedApp) {
+          if ([DELETE_PENDING, UNPUBLISHED, UNPUBLISH_PENDING].includes(publishedApp.suspendReason || "")) return res.status(410).set("Cache-Control", "no-store").send("This website is offline.");
           if (publishedApp.appStatus === "suspended") return serveSuspendedPage(res);
           publishedAppHeaders(res);
           let body = publishedApp.htmlContent;
@@ -912,7 +915,8 @@ export async function registerRoutes(
       let publishedUrl: string | null = null;
       try {
         const apps = await storage.getPublishedAppsByUser(userId);
-        const match = apps.find(a => (a.title || "").toLowerCase() === project.name.toLowerCase());
+        const linkedIds = await linkedPublicationIds(userId, projectId);
+        const match = apps.find(a => linkedIds.includes(a.id) && a.appStatus === "active");
         if (match) {
           publishedUrl = match.customDomain
             ? `https://${match.customDomain}`
@@ -1033,6 +1037,7 @@ export async function registerRoutes(
   });
 
   app.delete("/api/projects/:id", isAuthenticated, async (req: any, res) => {
+    let releaseProjectLock: Awaited<ReturnType<typeof lockProject>> | undefined;
     try {
       const id = parseInt(req.params.id);
       const project = await storage.getProject(id);
@@ -1043,37 +1048,37 @@ export async function registerRoutes(
       if (project.userId !== userId) {
         return res.status(403).json({ message: "Forbidden" });
       }
+      if (req.body?.confirmation !== "DELETE") return res.status(400).json({ message: "Type DELETE to confirm this app deletion." });
+      releaseProjectLock = await lockProject(id);
       if (project.type === "fullstack") {
         if (!isManagementOrigin(req.headers.origin)) return res.status(403).json({ message: "Use the signed-in Afro AI dashboard for this operation." });
         await deleteFullstackProject(userId, id);
         return res.json({ ok: true, removedPublished: [] });
       }
-      // Also tear down any of this user's published live sites whose title matches
-      // the project name. This is what the user expects when deleting from the dashboard:
-      // the live URL should also stop serving.
-      let removedPublished: { id: number; subdomain: string }[] = [];
-      try {
-        const userApps = await storage.getPublishedAppsByUser(userId);
-        const matches = userApps.filter(a => a.title === project.name);
-        for (const app of matches) {
-          if (app.cloudflareDnsRecordId) {
-            try { await deleteSubdomainRecord(app.cloudflareDnsRecordId); }
-            catch (e) { console.error("[delete-project] DNS cleanup failed:", e); }
-          }
-          await storage.deletePublishedApp(app.id);
-          removedPublished.push({ id: app.id, subdomain: app.subdomain });
-        }
-      } catch (e) {
-        console.error("[delete-project] published-app cascade failed:", e);
+      const { pool } = await import("./db");
+      await pool.query("UPDATE projects SET status = $1 WHERE id = $2 AND user_id = $3", [DELETE_PENDING, id, userId]);
+      const removedPublished: { id: number; subdomain: string }[] = [];
+      const linkedIds = await linkedPublicationIds(userId, id);
+      const ownedApps = await storage.getPublishedAppsByUser(userId);
+      for (const app of ownedApps.filter(app => linkedIds.includes(app.id))) {
+        removedPublished.push(await removePublishedApp(userId, app.id, false, releaseProjectLock));
       }
 
       await storage.deleteProject(id);
       res.json({ ok: true, removedPublished });
     } catch (error) {
+      if (error instanceof ProjectLifecycleError) return res.status(error.status).json({ message: error.message, cleanupPending: error.status === 503 });
       if (error instanceof ProjectFileError) return res.status(error.status).json({ message: error.message });
       console.error("Error deleting project:", error);
       res.status(500).json({ message: "Failed to delete project" });
+    } finally {
+      if (releaseProjectLock) await releaseProjectLock();
     }
+  });
+
+  app.get("/api/app-library", isAuthenticated, async (req: any, res) => {
+    try { res.json(await getAppLibrary(req.user.claims.sub)); }
+    catch { res.status(503).json({ message: "Could not load your apps." }); }
   });
 
   app.post("/api/projects/reconcile-published", isAuthenticated, async (req: any, res) => {
@@ -1130,6 +1135,8 @@ export async function registerRoutes(
       res.end();
     };
 
+    let releasePublishLock: (() => Promise<void>) | undefined;
+    let releaseSourceProjectLock: Awaited<ReturnType<typeof lockProject>> | undefined;
     try {
       sendStep("validate", "active");
       const sourceConversationId = await validatePublishConversation(userId, req.body.conversationId);
@@ -1189,6 +1196,20 @@ export async function registerRoutes(
 
       sendStep("check", "active");
       const existing = await storage.getPublishedAppBySubdomain(subdomainLower);
+      if (sourceConversationId) {
+        const source = await ensureConversationProject(userId, sourceConversationId);
+        releaseSourceProjectLock = await lockProject(source.project.id);
+        const currentProject = await storage.getProject(source.project.id);
+        if (!currentProject || currentProject.status === DELETE_PENDING) return sendError("This source project is being deleted.");
+      }
+      let restoreUnpublished = false;
+      if (existing && existing.userId === userId) {
+        releasePublishLock = releaseSourceProjectLock ? await releaseSourceProjectLock.lockApp(existing.id) : await lockPublishedApp(existing.id);
+        const current = await storage.getPublishedAppById(existing.id);
+        if (!current || [DELETE_PENDING, UNPUBLISH_PENDING].includes(current.suspendReason || "")) return sendError("This app has pending cleanup. Finish or retry its pending operation before publishing.");
+        if (current.appStatus === "suspended" && current.suspendReason !== UNPUBLISHED) return sendError("This app is suspended and cannot be republished.");
+        restoreUnpublished = current.suspendReason === UNPUBLISHED;
+      }
       if (existing && existing.userId === userId && sourceConversationId) {
         // Reject a conflicting source before replacing any live HTML or DNS.
         await ensurePublishedProject(userId, existing.id, sourceConversationId);
@@ -1243,6 +1264,7 @@ export async function registerRoutes(
           htmlContent: cleanHtml,
           title,
           cloudflareDnsRecordId: dnsRecordId || undefined,
+          ...(restoreUnpublished ? { appStatus: "active", suspendReason: null, suspendedAt: null } : {}),
         });
       } else {
         result = await storage.createPublishedApp({
@@ -1290,7 +1312,7 @@ export async function registerRoutes(
         try {
           const { sendAppPublishedEmail } = await import("./mailer");
           const u = await storage.getUser(userId);
-          if (u?.email) await sendAppPublishedEmail(u.email, { title, url, isUpdate: !!existing });
+          if (u?.email) await sendAppPublishedEmail(u.email, { title, url, isUpdate: !!existing, appId: result.id });
         } catch (e: any) {
           console.error("[publish-email] failed:", e?.message || e);
         }
@@ -1301,6 +1323,9 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error publishing app:", error);
       sendError(error.message || "Failed to publish app");
+    } finally {
+      if (releasePublishLock) await releasePublishLock();
+      if (releaseSourceProjectLock) await releaseSourceProjectLock();
     }
   });
 
@@ -1350,19 +1375,23 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Published app not found" });
       }
 
-      if (app.cloudflareDnsRecordId) {
-        try {
-          await deleteSubdomainRecord(app.cloudflareDnsRecordId);
-        } catch (err) {
-          console.error("Failed to delete DNS record:", err);
-        }
-      }
-
-      await storage.deletePublishedApp(id);
+      if (req.body?.confirmation !== "DELETE") return res.status(400).json({ message: "Type DELETE to confirm this app deletion." });
+      await removePublishedApp(userId, id);
       res.status(204).send();
     } catch (error) {
+      if (error instanceof ProjectLifecycleError) return res.status(error.status).json({ message: error.message, cleanupPending: error.status === 503 });
       console.error("Error deleting published app:", error);
       res.status(500).json({ message: "Failed to delete published app" });
+    }
+  });
+
+  app.post("/api/published-apps/:id/unpublish", isAuthenticated, async (req: any, res) => {
+    if (req.body?.confirmation !== "UNPUBLISH") return res.status(400).json({ message: "Confirm unpublishing this website." });
+    try { res.json(await removePublishedApp(req.user.claims.sub, Number(req.params.id), true)); }
+    catch (error) {
+      res.status(error instanceof ProjectLifecycleError ? error.status : 503).json({
+        message: error instanceof ProjectLifecycleError ? error.message : "Could not unpublish this website.", cleanupPending: true,
+      });
     }
   });
 
@@ -1712,6 +1741,7 @@ export async function registerRoutes(
           <body><div class="c"><h1>404</h1><p>This site doesn't exist yet.</p><a href="/" style="color:#d4af37;">Build one with Afro AI</a></div></body></html>
         `);
       }
+      if ([DELETE_PENDING, UNPUBLISHED, UNPUBLISH_PENDING].includes(publishedApp.suspendReason || "")) return res.status(410).set("Cache-Control", "no-store").send("This website is offline.");
       if (publishedApp.appStatus === "suspended") {
         const isFreeExpiry = publishedApp.suspendReason?.includes("30-day");
         return res.status(403).send(`<!DOCTYPE html>

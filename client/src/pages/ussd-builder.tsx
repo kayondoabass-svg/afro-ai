@@ -16,6 +16,7 @@ import {
   ShoppingCart, ArrowRight, Star, Users, TrendingUp, Shield, X,
   PhoneCall, Wifi, BarChart3, Cpu
 } from "lucide-react";
+import { AppHandoffContext } from "@/components/app-handoff-context";
 
 const USSD_PLANS = [
   {
@@ -260,6 +261,7 @@ export default function UssdBuilderPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto max-w-6xl px-4 pt-4"><AppHandoffContext prefilledFields={[]} /></div>
       {/* ── NAV ── */}
       <nav className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">

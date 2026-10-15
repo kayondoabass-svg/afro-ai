@@ -1,68 +1,25 @@
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
+import { useForm } from "react-hook-form";
 import { useAuth } from "@/hooks/use-auth";
 import { useLanguage } from "@/hooks/use-language";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { AppLibraryResponse, reconcilePublishedApps } from "@/lib/app-handoff";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useForm } from "react-hook-form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
-import {
-  Plus,
-  Globe,
-  Smartphone,
-  MoreHorizontal,
-  Folder,
-  Clock,
-  Trash2,
-  ArrowRight,
-  Sparkles,
-  Lightbulb,
-  Rocket,
-  MessageSquare,
-  ScanSearch,
-} from "lucide-react";
+import { ArrowRight, Folder, Globe, Plus, Rocket, Sparkles } from "lucide-react";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useToast } from "@/hooks/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { useState, useEffect, useRef } from "react";
-import { useLocation } from "wouter";
-import type { Project, PublishedApp } from "@shared/schema";
 import { FULLSTACK_SOURCE_NOTICE, isSetupBlocked, projectChatUrl, projectRequestError } from "@/lib/fullstack-project";
-import { FullstackInfrastructure } from "@/components/fullstack-infrastructure";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -70,171 +27,85 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [showNewProject, setShowNewProject] = useState(false);
-  const [infrastructureProject, setInfrastructureProject] = useState<Project | null>(null);
-  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [paymentSuccess, setPaymentSuccess] = useState<{ plan: string } | null>(null);
+  const reconciledOwner = useRef<string | null>(null);
+  const [reconcileReady, setReconcileReady] = useState(false);
   const [reconcileError, setReconcileError] = useState<string | null>(null);
-  const [isReconciling, setIsReconciling] = useState(false);
-  const reconciledOwnerRef = useRef<string | null>(null);
+  const form = useForm({ defaultValues: { name: "", description: "", type: "website" } });
+  const ownerId = user?.id ? String(user.id) : null;
+  const { data: library, isLoading, isError, error, refetch } = useQuery<AppLibraryResponse>({ queryKey: ["/api/app-library"], enabled: !!user && reconcileReady });
+  const fullstackAccess = useQuery<{ allowed: boolean; reason: string }>({ queryKey: ["/api/projects/fullstack-access"], staleTime: 0, refetchOnWindowFocus: true });
+  const canCreateFullstack = fullstackAccess.isSuccess && !fullstackAccess.isFetching && fullstackAccess.data.allowed;
+  const accessExplanation = fullstackAccess.isError ? "Could not verify full-stack access. Retry the access check." :
+    fullstackAccess.isPending || fullstackAccess.isFetching ? "Checking paid full-stack access…" :
+    fullstackAccess.data?.reason || "Full-stack starters require a paid plan.";
+  const entries = library?.apps || [];
 
+  useEffect(() => {
+    if (!ownerId || reconciledOwner.current === ownerId) return;
+    reconciledOwner.current = ownerId;
+    let cancelled = false;
+    reconcilePublishedApps(ownerId)
+      .then((result) => {
+        if (!cancelled) {
+          setReconcileError((result.failures || 0) > 0 ? `${result.failures} published app(s) still need recovery.` : null);
+          setReconcileReady(true);
+        }
+      })
+      .catch((error: Error) => { if (!cancelled) { reconciledOwner.current = null; setReconcileError(error.message); setReconcileReady(true); } });
+    return () => { cancelled = true; };
+  }, [ownerId]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const payment = params.get("payment");
     const plan = params.get("plan");
     if (payment === "success" && plan) {
       setPaymentSuccess({ plan });
-      window.history.replaceState({}, "", "/");
+      window.history.replaceState({}, "", "/dashboard");
     } else if (payment === "pending") {
-      toast({ title: t("dashboard.paymentPending"), description: t("dashboard.paymentPendingDesc"), variant: "default" });
-      window.history.replaceState({}, "", "/");
+      toast({ title: t("dashboard.paymentPending"), description: t("dashboard.paymentPendingDesc") });
+      window.history.replaceState({}, "", "/dashboard");
     } else if (payment === "failed") {
-      const reason = params.get("reason") || t("dashboard.paymentDefaultReason");
-      toast({ title: t("dashboard.paymentNotCompleted"), description: reason, variant: "destructive" });
-      window.history.replaceState({}, "", "/");
+      toast({ title: t("dashboard.paymentNotCompleted"), description: params.get("reason") || t("dashboard.paymentDefaultReason"), variant: "destructive" });
+      window.history.replaceState({}, "", "/dashboard");
     }
   }, []);
 
-  const { data: projects, isLoading } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-    refetchInterval: (query) => query.state.data?.some(p => p.status === "initializing") ? 3000 : false,
-  });
-
-  const fullstackAccess = useQuery<{ allowed: boolean; reason: string }>({
-    queryKey: ["/api/projects/fullstack-access"],
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-  });
-  const canCreateFullstack = fullstackAccess.isSuccess && !fullstackAccess.isFetching && fullstackAccess.data.allowed === true;
-  const accessExplanation = fullstackAccess.isError
-    ? "Could not verify full-stack access. Retry the access check."
-    : fullstackAccess.isPending || fullstackAccess.isFetching
-      ? "Checking paid full-stack access…"
-      : fullstackAccess.data?.reason || "Full-stack starters require a paid plan.";
-
-  const { data: publishedApps } = useQuery<PublishedApp[]>({
-    queryKey: ["/api/published-apps"],
-  });
-
-  const reconcilePublishedApps = async (ownerId: string) => {
-    setIsReconciling(true);
-    setReconcileError(null);
-    try {
-      const response = await apiRequest("POST", "/api/projects/reconcile-published");
-      const result = await response.json() as { failures?: number };
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
-      if ((result.failures || 0) > 0) {
-        setReconcileError(`Some live sites could not be connected to projects (${result.failures} failure${result.failures === 1 ? "" : "s"}). Retry to try again.`);
-      }
-      reconciledOwnerRef.current = ownerId;
-    } catch (error) {
-      setReconcileError(error instanceof Error ? error.message : "Could not connect existing live sites to projects.");
-    } finally {
-      setIsReconciling(false);
-    }
-  };
-
-  const ownerId = user?.id ? String(user.id) : null;
-  useEffect(() => {
-    if (!ownerId || reconciledOwnerRef.current === ownerId) return;
-    reconciledOwnerRef.current = ownerId;
-    void reconcilePublishedApps(ownerId);
-  }, [ownerId]);
-
-  const restorePublishedMutation = useMutation({
-    mutationFn: async ({ appId, action }: { appId: number; action: "edit" | "auth" }) => {
-      const response = await apiRequest("POST", `/api/published-apps/${appId}/project`);
-      return { ...(await response.json()), action } as { project: Project; conversationId?: number | null; action: "edit" | "auth" };
-    },
-    onSuccess: ({ project, conversationId, action }, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
-      if (action === "auth") {
-        navigate(`/dashboard/auth?projectId=${project.id}&appId=${variables.appId}`);
-      } else if (conversationId) {
-        navigate(`/chat?conversation=${conversationId}`);
-      } else {
-        navigate(projectChatUrl(project));
-      }
-    },
-    onError: (error: Error) => {
-      toast({ title: "Couldn't open this site’s project", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const userPlan = (user as any)?.plan || "starter";
-
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; description: string; type: string }) => {
-      const res = await apiRequest("POST", "/api/projects", data);
-      return res.json();
+      const response = await apiRequest("POST", "/api/projects", data);
+      return response.json();
     },
-    onSuccess: (project: Project) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    onSuccess: (project: any) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/app-library"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
       setShowNewProject(false);
+      form.reset();
       toast({ title: t("dashboard.projectCreated"), description: t("dashboard.projectCreatedDesc") });
       if (project.type === "fullstack" && !isSetupBlocked(project)) navigate(projectChatUrl(project));
     },
     onError: (error) => {
       const result = projectRequestError(error);
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       if (result.project?.id) {
-        setShowNewProject(false);
-        form.reset();
+        queryClient.setQueryData<AppLibraryResponse>(["/api/app-library"], (old) => ({
+          apps: [
+            { key: `project-${result.project!.id}`, project: result.project!, conversationId: null, publishedApps: [] },
+            ...(old?.apps || []).filter((entry) => entry.project?.id !== result.project!.id),
+          ],
+        }));
       }
-      toast({ title: t("dashboard.error"), description: `${result.message}${result.project?.id ? " Your project was created. Use Retry setup on its card instead of creating a duplicate." : ""}`, variant: "destructive" });
+      void queryClient.invalidateQueries({ queryKey: ["/api/app-library"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      if (result.project?.id) { setShowNewProject(false); form.reset(); }
+      toast({
+        title: t("dashboard.error"),
+        description: `${result.message}${result.project?.id ? " Your project was created. Use Retry setup on its My Apps card instead of creating a duplicate." : ""}`,
+        variant: "destructive",
+      });
     },
   });
-
-  const initializeMutation = useMutation({
-    mutationFn: async (id: number): Promise<Project> => {
-      const res = await apiRequest("POST", `/api/projects/${id}/initialize`);
-      return res.json();
-    },
-    onSuccess: (project) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      if (!isSetupBlocked(project)) handleOpenProject(project);
-    },
-    onError: (error) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Setup failed", description: projectRequestError(error).message, variant: "destructive" });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const r = await apiRequest("DELETE", `/api/projects/${id}`);
-      try { return await r.json(); } catch { return { ok: true, removedPublished: [] }; }
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
-      const live = (data?.removedPublished || []) as { subdomain: string }[];
-      if (live.length > 0) {
-        toast({
-          title: t("dashboard.projectAndSiteDeleted"),
-          description: t("dashboard.tookDownSites", { count: live.length, list: live.map(l => l.subdomain + ".afroaigroup.com").join(", ") }),
-        });
-      } else {
-        toast({ title: t("dashboard.projectDeleted") });
-      }
-      setProjectToDelete(null);
-      setDeleteConfirmText("");
-    },
-    onError: (err: any) => {
-      toast({ title: t("dashboard.deleteFailed"), description: err?.message || t("dashboard.couldNotDelete"), variant: "destructive" });
-    },
-  });
-
-  const matchingLiveSites = (publishedApps || []).filter(
-    a => projectToDelete && a.title === projectToDelete.name
-  );
-
-  const form = useForm({
-    defaultValues: { name: "", description: "", type: "website" },
-  });
-
   const onSubmit = (data: { name: string; description: string; type: string }) => {
     if (data.type === "fullstack" && !canCreateFullstack) {
       toast({ title: "Full-stack access required", description: accessExplanation, variant: "destructive" });
@@ -242,479 +113,51 @@ export default function DashboardPage() {
     }
     createMutation.mutate(data);
   };
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case "mobile_app": return <Smartphone className="w-4 h-4" />;
-      case "website": return <Globe className="w-4 h-4" />;
-      default: return <Folder className="w-4 h-4" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "published": return "bg-green-500/10 text-green-500";
-      case "in_progress": return "bg-primary/10 text-primary";
-      case "initializing": return "bg-primary/10 text-primary";
-      case "setup_failed": return "bg-destructive/10 text-destructive";
-      default: return "bg-muted text-muted-foreground";
-    }
-  };
-
-  const handleOpenProject = (project: Project) => {
-    if (isSetupBlocked(project)) return;
-    navigate(projectChatUrl(project));
-  };
-
   const firstName = user?.firstName || t("overview.defaultUser");
+  const publishedCount = entries.reduce((count, entry) => count + entry.publishedApps.length, 0);
 
   return (
     <div className="flex-1 overflow-auto min-h-0">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-
-        {/* Plan upgrade success banner */}
-        {paymentSuccess && (
-          <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-5 flex items-start gap-4">
-            <Rocket className="w-6 h-6 text-yellow-400 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="font-semibold text-yellow-300 capitalize">
-                {t("dashboard.paymentWelcome", { plan: paymentSuccess.plan })}
-              </p>
-              <p className="text-sm text-yellow-200/70 mt-1">
-                {t("dashboard.paymentUpgradeSuccess", { plan: paymentSuccess.plan })}
-              </p>
-            </div>
-            <button
-              onClick={() => setPaymentSuccess(null)}
-              className="text-yellow-400/60 hover:text-yellow-300 text-xl leading-none"
-              data-testid="button-dismiss-payment-success"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+        {paymentSuccess && <div className="flex items-start justify-between gap-4 rounded-xl border border-primary/35 bg-primary/10 p-4"><div><p className="font-semibold capitalize">{t("dashboard.paymentWelcome", { plan: paymentSuccess.plan })}</p><p className="mt-1 text-sm text-muted-foreground">{t("dashboard.paymentUpgradeSuccess", { plan: paymentSuccess.plan })}</p></div><Button variant="ghost" size="sm" onClick={() => setPaymentSuccess(null)}>Dismiss</Button></div>}
+        <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <Avatar className="w-12 h-12">
-              <AvatarImage src={user?.profileImageUrl || undefined} />
-              <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                {firstName.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold" data-testid="text-welcome">
-                  {t("dashboard.welcome")} {firstName}
-                </h1>
-                <Badge variant={userPlan === "starter" ? "secondary" : "default"} className="capitalize text-xs" data-testid="badge-user-plan">
-                  {userPlan}
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">{t("dashboard.subtitle")}</p>
-            </div>
+            <Avatar className="h-12 w-12"><AvatarImage src={user?.profileImageUrl || undefined} /><AvatarFallback className="bg-primary/10 font-semibold text-primary">{firstName.charAt(0).toUpperCase()}</AvatarFallback></Avatar>
+            <div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold" data-testid="text-welcome">{t("dashboard.welcome")} {firstName}</h1><Badge variant="secondary" className="capitalize text-xs">{(user as any)?.plan || "starter"}</Badge></div><p className="text-sm text-muted-foreground">Your workspace at a glance. Build, publish, then keep everything in My Apps.</p></div>
           </div>
-          <Button onClick={() => setShowNewProject(true)} data-testid="button-new-project">
-            <Plus className="w-4 h-4" />
-            {t("dashboard.newProject")}
-          </Button>
+          <Button onClick={() => setShowNewProject(true)} data-testid="button-new-project"><Plus className="mr-1.5 h-4 w-4" />{t("dashboard.newProject")}</Button>
+        </header>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Card><CardContent className="flex items-center gap-4 p-5"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Folder className="h-5 w-5" /></span><div><p className="text-2xl font-bold">{entries.length}</p><p className="text-xs text-muted-foreground">Apps in My Apps</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-4 p-5"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500"><Globe className="h-5 w-5" /></span><div><p className="text-2xl font-bold">{publishedCount}</p><p className="text-xs text-muted-foreground">Publications</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-4 p-5"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10"><img src={afroLogo} alt="Afro AI" className="h-7 w-7 object-contain" /></span><div><p className="text-lg font-bold">{t("dashboard.unlimited")}</p><p className="text-xs text-muted-foreground">{t("dashboard.aiChats")}</p></div></CardContent></Card>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Folder className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-total-projects">{projects?.length ?? 0}</p>
-                <p className="text-xs text-muted-foreground">{t("dashboard.totalProjects")}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-md bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                <Rocket className="w-5 h-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-published-projects">
-                  {publishedApps?.length ?? 0}
-                </p>
-                <p className="text-xs text-muted-foreground">{t("dashboard.published")}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <img src={afroLogo} alt="AI" className="w-7 h-7 object-contain" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-ai-chats">{t("dashboard.unlimited")}</p>
-                <p className="text-xs text-muted-foreground">{t("dashboard.aiChats")}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {publishedApps && publishedApps.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" data-testid="text-live-sites-heading">
-              <Globe className="w-5 h-5 text-green-500" />
-              {t("dashboard.liveSites")}
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {publishedApps.slice(0, 6).map((app) => (
-                <Card key={app.id} className="hover-elevate" data-testid={`card-published-${app.id}`}>
-                  <CardContent className="p-4 flex flex-wrap items-center gap-3">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${app.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
-                      <Globe className={`w-4 h-4 ${app.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold truncate">{app.title || app.subdomain}</p>
-                      <a
-                        href={`https://${app.subdomain}.afroaigroup.com`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline truncate block"
-                        data-testid={`link-published-url-${app.id}`}
-                      >
-                        {app.subdomain}.afroaigroup.com
-                      </a>
-                    </div>
-                    <div className="flex w-full flex-wrap gap-2 pl-12 sm:w-auto sm:pl-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={restorePublishedMutation.isPending}
-                        onClick={() => restorePublishedMutation.mutate({ appId: app.id, action: "edit" })}
-                        data-testid={`button-open-edit-published-${app.id}`}
-                      >
-                        Open &amp; edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={restorePublishedMutation.isPending}
-                        onClick={() => restorePublishedMutation.mutate({ appId: app.id, action: "auth" })}
-                        data-testid={`button-add-auth-published-${app.id}`}
-                      >
-                        Add authentication
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {reconcileError && (
-          <div role="alert" className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-destructive">Could not fully restore your live-site projects: {reconcileError}</p>
-            <Button size="sm" variant="outline" disabled={isReconciling || !ownerId} onClick={() => ownerId && void reconcilePublishedApps(ownerId)}>
-              {isReconciling ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
-        )}
-
-        <div>
-          <h2 className="text-lg font-semibold mb-4" data-testid="text-projects-heading">{t("dashboard.yourProjects")}</h2>
-
-          {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map((i) => (
-                <Card key={i}>
-                  <CardContent className="p-6 space-y-4">
-                    <Skeleton className="h-5 w-32" />
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-20" />
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : projects && projects.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {projects.map((project) => (
-                <Card
-                  key={project.id}
-                  className="hover-elevate group cursor-pointer"
-                  onClick={() => handleOpenProject(project)}
-                  data-testid={`card-project-${project.id}`}
-                >
-                  <CardContent className="p-6 space-y-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          {getTypeIcon(project.type)}
-                        </div>
-                        <h3 className="font-semibold truncate">{project.name}</h3>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                            style={{ visibility: "visible" }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setProjectToDelete(project);
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            {t("dashboard.delete")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {project.description || t("dashboard.noDescription")}
-                    </p>
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <Badge variant="secondary" className={getStatusColor(project.status)}>
-                        {project.status === "setup_failed" ? "Setup failed" : project.status === "initializing" ? "Initializing starter…" : project.status}
-                      </Badge>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="w-3 h-3" />
-                        {new Date(project.createdAt).toLocaleDateString()}
-                      </div>
-                    </div>
-                    {project.type === "fullstack" && (
-                      <p className="text-xs text-muted-foreground">
-                        {project.status === "setup_failed" ? "Starter files could not be saved. Retry setup on this project; do not create another." : project.status === "initializing" ? "Starter setup is initializing. If progress has stalled, safely Retry setup on this same project. If setup is still running, the server will ask you to wait." : "Source saved separately · check database infrastructure · runtime unavailable."}
-                      </p>
-                    )}
-                    {project.type === "fullstack" && (
-                      <Button size="sm" variant="outline" className="w-full" onClick={e => { e.stopPropagation(); setInfrastructureProject(project); }} data-testid={`button-infrastructure-${project.id}`}>Database infrastructure</Button>
-                    )}
-                    {isSetupBlocked(project) ? (
-                      <div className="space-y-2">
-                        <Button size="sm" className="w-full" disabled={!canCreateFullstack || initializeMutation.isPending} onClick={(e) => { e.stopPropagation(); initializeMutation.mutate(project.id); }} data-testid={`button-retry-setup-${project.id}`}>
-                          {initializeMutation.isPending && initializeMutation.variables === project.id ? "Retrying setup…" : "Retry setup"}
-                        </Button>
-                        {!canCreateFullstack && <p className="text-xs text-muted-foreground">{accessExplanation}</p>}
-                      </div>
-                    ) : <Button
-                      size="sm"
-                      className="w-full gap-2"
-                      disabled={isSetupBlocked(project)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenProject(project);
-                      }}
-                      data-testid={`button-build-project-${project.id}`}
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      {project.status === "initializing" ? "Initializing starter…" : t("dashboard.openAndBuild")}
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-6">
-              <Card className="animate-shimmer">
-                <CardContent className="p-12 text-center space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto animate-pulse-gold">
-                    <img src={afroLogo} alt="Afro AI" className="w-10 h-10 object-contain" />
-                  </div>
-                  <h3 className="text-lg font-semibold">{t("dashboard.noProjects")}</h3>
-                  <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                    {t("dashboard.noProjectsDesc")}
-                  </p>
-                  <Button onClick={() => setShowNewProject(true)} data-testid="button-create-first">
-                    <Plus className="w-4 h-4" />
-                    {t("dashboard.createFirst")}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <div>
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <Lightbulb className="w-4 h-4 text-primary" />
-                  {t("dashboard.quickStartIdeas")}
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {[
-                    { icon: Globe, title: t("dashboard.ideaBusinessWebsite"), desc: t("dashboard.ideaBusinessWebsiteDesc"), type: "website" },
-                    { icon: Smartphone, title: t("dashboard.mobileApp"), desc: t("dashboard.ideaMobileAppDesc"), type: "mobile_app" },
-                    { icon: Rocket, title: t("dashboard.ideaPortfolio"), desc: t("dashboard.ideaPortfolioDesc"), type: "website" },
-                    { icon: MessageSquare, title: t("dashboard.ideaBlog"), desc: t("dashboard.ideaBlogDesc"), type: "website" },
-                    { icon: ScanSearch, title: t("dashboard.ideaEcommerce"), desc: t("dashboard.ideaEcommerceDesc"), type: "website" },
-                    { icon: Sparkles, title: t("dashboard.ideaLanding"), desc: t("dashboard.ideaLandingDesc"), type: "website" },
-                  ].map((idea, i) => (
-                    <Card
-                      key={i}
-                      className="hover-elevate cursor-pointer group"
-                      onClick={() => {
-                        navigate(`/chat?project=${encodeURIComponent(idea.title)}&type=${idea.type}&description=${encodeURIComponent(idea.desc)}`);
-                      }}
-                      data-testid={`card-quickstart-${i}`}
-                    >
-                      <CardContent className="p-4 flex items-start gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <idea.icon className="w-4 h-4 text-primary" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold truncate">{idea.title}</p>
-                          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{idea.desc}</p>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-1" />
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        {reconcileError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4"><p className="text-sm text-destructive">Could not fully restore your live-site projects: {reconcileError}</p><Button size="sm" variant="outline" onClick={async () => { try { const result = await reconcilePublishedApps(ownerId!, true); setReconcileError((result.failures || 0) > 0 ? `${result.failures} published app(s) still need recovery.` : null); } catch (error) { setReconcileError((error as Error).message); } }}>Retry</Button></div>}
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Your workspace</p><h2 className="mt-1 text-xl font-semibold">Recent apps</h2></div><Link href="/deployments" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline" data-testid="link-my-apps">Open My Apps <ArrowRight className="h-4 w-4" /></Link></div>
+          {isLoading ? <div className="grid gap-3 sm:grid-cols-2">{[0, 1].map((i) => <Card key={i}><CardContent className="space-y-3 p-5"><Skeleton className="h-5 w-40" /><Skeleton className="h-4 w-64" /></CardContent></Card>)}</div> :
+            isError ? <Card role="alert"><CardContent className="flex flex-wrap items-center justify-between gap-3 p-5"><p className="text-sm text-destructive">{(error as Error)?.message || "Apps could not load."}</p><Button variant="outline" onClick={() => void refetch()}>Retry</Button></CardContent></Card> :
+            entries.length ? <div className="grid gap-3 sm:grid-cols-2">
+              {entries.slice(0, 4).map((entry) => {
+                const projectName = entry.project?.name || entry.publishedApps[0]?.title || "Recovered app";
+                const live = entry.publishedApps.some((app) => app.appStatus === "active" && !["customer-unpublished", "deletion-pending", "unpublish-pending"].includes(app.suspendReason || ""));
+                return <Link key={entry.key} href="/deployments" className="group block" data-testid={`card-recent-app-${entry.key}`}><Card className="h-full transition-colors group-hover:border-primary/40"><CardContent className="flex items-start gap-4 p-5"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${live ? "bg-emerald-500/10 text-emerald-500" : "bg-primary/10 text-primary"}`}>{live ? <Globe className="h-5 w-5" /> : <Rocket className="h-5 w-5" />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-semibold">{projectName}</h3><Badge variant="secondary" className="text-[10px]">{entry.publishedApps.length ? (live ? "Published" : "Offline") : "Draft"}</Badge></div><p className="mt-1 truncate text-sm text-muted-foreground">{entry.project?.description || entry.publishedApps[0]?.subdomain || "Open in My Apps to manage this project."}</p></div><ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" /></CardContent></Card></Link>;
+              })}
+            </div> : <Card className="border-dashed"><CardContent className="p-8 text-center"><Sparkles className="mx-auto mb-3 h-7 w-7 text-primary" /><h3 className="font-semibold">{t("dashboard.noProjects")}</h3><p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{t("dashboard.noProjectsDesc")}</p><Button className="mt-4" onClick={() => setShowNewProject(true)}>{t("dashboard.createFirst")}</Button></CardContent></Card>}
+        </section>
+        <Card className="border-primary/20 bg-primary/5"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">One library for every app</p><p className="mt-1 text-sm text-muted-foreground">Find drafts, live websites, domain controls and history together.</p></div><Button variant="outline" onClick={() => navigate("/deployments")}>Go to My Apps <ArrowRight className="ml-2 h-4 w-4" /></Button></CardContent></Card>
       </div>
-
-      <Dialog open={!!infrastructureProject} onOpenChange={open => { if (!open) setInfrastructureProject(null); }}>
-        <DialogContent className="max-h-[85dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="break-words">{infrastructureProject?.name} · Infrastructure</DialogTitle>
-            <DialogDescription>Manage the project database separately from source files and hosting.</DialogDescription>
-          </DialogHeader>
-          {infrastructureProject && <FullstackInfrastructure key={infrastructureProject.id} project={projects?.find(p => p.id === infrastructureProject.id) || infrastructureProject} />}
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={showNewProject} onOpenChange={setShowNewProject}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("dashboard.createTitle")}</DialogTitle>
-            <DialogDescription>{t("dashboard.createDesc")}</DialogDescription>
-          </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("dashboard.projectName")}</FormLabel>
-                    <FormControl>
-                      <Input placeholder={t("dashboard.projectNamePlaceholder")} {...field} data-testid="input-project-name" />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("dashboard.description")}</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder={t("dashboard.descPlaceholder")} className="resize-none" {...field} data-testid="input-project-description" />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("dashboard.type")}</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-project-type">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="website">{t("dashboard.website")}</SelectItem>
-                        <SelectItem value="mobile_app">{t("dashboard.mobileApp")}</SelectItem>
-                        <SelectItem value="fullstack">Full-stack starter · paid</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
-              <div className="rounded-md border border-primary/25 bg-primary/5 p-3 space-y-2 text-sm" data-testid="fullstack-access-notice">
-                <p className="font-medium">Full-stack starter · React + Workers/Hono + D1</p>
-                <p className="text-xs text-muted-foreground">{FULLSTACK_SOURCE_NOTICE}</p>
-                {!canCreateFullstack && <p className="text-xs text-muted-foreground" role="status">{accessExplanation}</p>}
-                {fullstackAccess.isError && <Button type="button" size="sm" variant="outline" onClick={() => fullstackAccess.refetch()}>Retry access check</Button>}
-                {!canCreateFullstack && !fullstackAccess.isPending && <Button type="button" size="sm" variant="outline" onClick={() => navigate("/pricing")}>View paid plans</Button>}
-              </div>
-              <Button type="submit" className="w-full" disabled={createMutation.isPending || (form.watch("type") === "fullstack" && !canCreateFullstack)} data-testid="button-submit-project">
-                {createMutation.isPending ? t("dashboard.creating") : t("dashboard.createProject")}
-              </Button>
-            </form>
-          </Form>
+        <DialogContent><DialogHeader><DialogTitle>{t("dashboard.createTitle")}</DialogTitle><DialogDescription>{t("dashboard.createDesc")}</DialogDescription></DialogHeader>
+          <Form {...form}><form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField control={form.control} name="name" render={({ field }) => <FormItem><FormLabel>{t("dashboard.projectName")}</FormLabel><FormControl><Input placeholder={t("dashboard.projectNamePlaceholder")} {...field} data-testid="input-project-name" /></FormControl></FormItem>} />
+            <FormField control={form.control} name="description" render={({ field }) => <FormItem><FormLabel>{t("dashboard.description")}</FormLabel><FormControl><Textarea placeholder={t("dashboard.descPlaceholder")} className="resize-none" {...field} data-testid="input-project-description" /></FormControl></FormItem>} />
+            <FormField control={form.control} name="type" render={({ field }) => <FormItem><FormLabel>{t("dashboard.type")}</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger data-testid="select-project-type"><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="website">{t("dashboard.website")}</SelectItem><SelectItem value="mobile_app">{t("dashboard.mobileApp")}</SelectItem><SelectItem value="fullstack">Full-stack starter · paid</SelectItem></SelectContent></Select></FormItem>} />
+            <div className="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3 text-sm"><p className="font-medium">Full-stack starter · React + Workers/Hono + D1</p><p className="text-xs text-muted-foreground">{FULLSTACK_SOURCE_NOTICE}</p>{!canCreateFullstack && <p className="text-xs text-muted-foreground" role="status">{accessExplanation}</p>}{fullstackAccess.isError && <Button type="button" size="sm" variant="outline" onClick={() => void fullstackAccess.refetch()}>Retry access check</Button>}{!canCreateFullstack && !fullstackAccess.isPending && <Button type="button" size="sm" variant="outline" onClick={() => navigate("/pricing")}>View paid plans</Button>}</div>
+            <Button type="submit" className="w-full" disabled={createMutation.isPending || (form.watch("type") === "fullstack" && !canCreateFullstack)} data-testid="button-submit-project">{createMutation.isPending ? t("dashboard.creating") : t("dashboard.createProject")}</Button>
+          </form></Form>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog
-        open={!!projectToDelete}
-        onOpenChange={(open) => { if (!open) { setProjectToDelete(null); setDeleteConfirmText(""); } }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive">{t("dashboard.deleteConfirmTitle", { name: projectToDelete?.name || "" })}</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3 text-sm">
-                <p>{t("dashboard.deleteConfirmBody")} <strong>{t("dashboard.cannotBeUndone")}</strong></p>
-                {matchingLiveSites.length > 0 && (
-                  <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3 space-y-2">
-                    <p className="font-semibold text-destructive">{t("dashboard.alsoTakeDownSites", { count: matchingLiveSites.length })}</p>
-                    <ul className="list-disc list-inside text-xs">
-                      {matchingLiveSites.map(a => (
-                        <li key={a.id} className="font-mono" data-testid={`text-live-site-${a.id}`}>
-                          {a.subdomain}.afroaigroup.com
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="text-xs text-muted-foreground">{t("dashboard.visitorsSeeNotFound")}</p>
-                  </div>
-                )}
-                <div className="pt-1">
-                  <p className="text-xs font-medium mb-1.5">{t("dashboard.typeToConfirmPrefix")} <strong className="font-mono bg-muted px-1.5 py-0.5 rounded text-destructive">DELETE</strong> {t("dashboard.typeToConfirmSuffix")}</p>
-                  <Input
-                    autoFocus
-                    value={deleteConfirmText}
-                    onChange={(e) => setDeleteConfirmText(e.target.value)}
-                    placeholder="DELETE"
-                    className="font-mono"
-                    data-testid="input-confirm-delete"
-                  />
-                </div>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete-project">{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={deleteConfirmText.trim() !== "DELETE" || deleteMutation.isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                if (projectToDelete && deleteConfirmText.trim() === "DELETE") {
-                  deleteMutation.mutate(projectToDelete.id);
-                }
-              }}
-              data-testid="button-confirm-delete-project"
-            >
-              <Trash2 className="w-4 h-4 mr-1" />
-              {deleteMutation.isPending ? t("dashboard.deleting") : (matchingLiveSites.length > 0 ? t("dashboard.deleteEverything") : t("dashboard.deleteProject"))}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

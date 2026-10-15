@@ -1,4 +1,8 @@
-# Proposed unified My Apps area — review before implementation
+# Unified My Apps area
+
+The user approved implementation, including repair of post-publish email links.
+The source implementation has been tested; a Git push is not verification of the
+signed-in VPS release.
 
 ## What changes
 
@@ -36,4 +40,18 @@ A source project and a live deployment remain different records: one project may
 - No existing live site, custom domain or source file is deleted as part of consolidation.
 - Actions remain visible and usable on phone screens.
 
-This document is a proposal only. The current delivery adds persistence and editing/authentication actions without consolidating navigation or replacing the existing pages.
+The implementation uses one My Apps library for `/deployments`, `/apps` and
+`/my-apps`; Dashboard is an overview of that library. Legacy email URLs therefore
+remain compatible. New publish emails link to the canonical library with an app
+identifier.
+
+Deletion requires typed confirmation. Origin serving is blocked first, followed
+by app-scoped authoritative DNS removal, cache-purge acknowledgements and strict
+hosted-object cleanup. An incomplete operation preserves its resource identifiers
+and pending state for retry. Unpublishing preserves editable source and history.
+Customer-managed external DNS and domain registrations are not cancelled.
+
+Verification includes the full unit/component suite, production build and
+desktop/phone component fixtures. Real deletion of a customer's production site
+is not performed as a test. Verify the signed-in flow and relevant provider
+permissions after the separate VPS release.

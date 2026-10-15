@@ -36,6 +36,7 @@ async function linkConversation(client: PoolClient, userId: string, conversation
   if (conversation.project_id) {
     const existing = await client.query("SELECT * FROM projects WHERE id = $1 AND user_id = $2", [conversation.project_id, userId]);
     if (!existing.rows[0]) throw new ProjectLifecycleError(404, "Project not found.");
+    if (existing.rows[0].status === "deletion-pending") throw new ProjectLifecycleError(409, "This project is being deleted.");
     return { project: project(existing.rows[0]), conversationId };
   }
   const title = (name || conversation.title || "My website").trim().slice(0, 160) || "My website";

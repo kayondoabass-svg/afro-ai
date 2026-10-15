@@ -13,6 +13,8 @@ import { normalizeSendingDomain, readableApiError } from "@shared/customer-api-s
 import { EmailDnsRecords } from "@/components/email-dns-records";
 import { Copy, Plus, Trash2, Eye, EyeOff, Check, Globe, Key, BarChart3, Mail, RefreshCw, Code2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { AppHandoffContext } from "@/components/app-handoff-context";
+import { useAppHandoff } from "@/lib/app-handoff";
 
 interface EmailApiKey {
   founderAccess?: boolean;
@@ -68,6 +70,7 @@ function copyToClipboard(text: string, label: string, toast: any) {
 
 export default function EmailApiPage() {
   const { toast } = useToast();
+  const handoff = useAppHandoff();
   const [showCreateKey, setShowCreateKey] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newSecretKey, setNewSecretKey] = useState<string | null>(null);
@@ -202,11 +205,12 @@ console.log(data.messageId); // → "01000196..."
           <Button size="sm" onClick={() => setShowAddDomain(true)} variant="outline" data-testid="button-add-domain">
             <Globe className="w-4 h-4 mr-1" /> Add Domain
           </Button>
-          <Button size="sm" onClick={() => setShowCreateKey(true)} data-testid="button-create-key">
+          <Button size="sm" onClick={() => { setNewKeyName(handoff.project?.name ? `${handoff.project.name} email` : ""); setShowCreateKey(true); }} data-testid="button-create-key">
             <Plus className="w-4 h-4 mr-1" /> New API Key
           </Button>
         </div>
       </div>
+      <AppHandoffContext prefilledFields={handoff.project ? ["API key name"] : []} />
 
       {/* Stats */}
       {stats?.founderAccess && <Card className="border-primary/40">
