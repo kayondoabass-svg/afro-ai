@@ -521,6 +521,29 @@ export const chatbotWidgets = pgTable("chatbot_widgets", {
   lastScanStats: text("last_scan_stats"), // JSON blob: { pagesScanned, qasInserted, qasSensitive, durationMs }
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
+export const chatbotSiteSettings = pgTable("chatbot_site_settings", {
+  widgetId: integer("widget_id").primaryKey().references(() => chatbotWidgets.id, { onDelete: "cascade" }),
+  enforcement: text("enforcement").notNull().default("required"),
+  installationVerified: boolean("installation_verified"),
+  installationCode: text("installation_code"),
+  installationMessage: text("installation_message"),
+  installationUrl: text("installation_url"),
+  installationCheckedAt: timestamp("installation_checked_at", { withTimezone: true }),
+  testSucceeded: boolean("test_succeeded"),
+  testUrl: text("test_url"),
+  testCheckedAt: timestamp("test_checked_at", { withTimezone: true }),
+}, table => [check("chatbot_site_settings_enforcement_check", sql`${table.enforcement} IN ('legacy','required')`)]);
+
+export const chatbotVerifiedDomains = pgTable("chatbot_verified_domains", {
+  id: uuid("id").primaryKey(),
+  widgetId: integer("widget_id").notNull().references(() => chatbotWidgets.id, { onDelete: "cascade" }),
+  hostname: text("hostname").notNull(),
+  token: text("token").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+}, table => [uniqueIndex("chatbot_verified_domains_widget_id_hostname_key").on(table.widgetId, table.hostname)]);
+
 export const insertChatbotWidgetSchema = createInsertSchema(chatbotWidgets).omit({ id: true, apiKey: true, conversationCount: true, createdAt: true });
 export type ChatbotWidget = typeof chatbotWidgets.$inferSelect;
 export type InsertChatbotWidget = z.infer<typeof insertChatbotWidgetSchema>;

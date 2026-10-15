@@ -4,6 +4,7 @@ import { registerKeyoStudioAdmin } from "./keyo-studio-admin";
 import { keyoAdminStore } from "./keyo-studio-admin-store";
 import { registerApiVersionDocs, versionedApiNotFound } from "./api-versioning";
 import { scanFailure, manualKnowledge, CUSTOMER_CHAT_POLICY, verifyWidgetHtml } from "./chatbot-support";
+import { chatbotBrowserOrigin, registerChatbotVerificationRoutes, saveChatbotInstallation, saveChatbotReplyTest } from "./chatbot-verification";
 import { saveScan } from "./chatbot-scan-persistence";
 import { fetchPublicPage, scrapeUrl } from "./url-scrape";
 import { registerChatbotKnowledgeRoutes, archiveScan, deleteKnowledgeFolder, createWidgetWithPrivateKnowledge, KnowledgeFileError } from "./chatbot-knowledge-files";
@@ -4313,21 +4314,31 @@ Never invent features or pricing not listed above.`;
 
   // ============ CHATBOT WIDGETS ============
   // Public CORS-enabled chat endpoint (used by embedded widgets on external sites)
-  app.options("/api/widget-chat/:apiKey", (req, res) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type");
-    res.sendStatus(200);
+  app.options("/api/widget-chat/:apiKey", async (req, res) => {
+    try {
+      const widget = await storage.getChatbotWidgetByApiKey(req.params.apiKey);
+      if (!widget || !widget.isActive) return res.sendStatus(404);
+      const browser = await chatbotBrowserOrigin(widget.id, req.get("Origin"));
+      res.vary("Origin");
+      if (!browser.allowed) return res.status(403).json({ message: "This website has not been approved for this chatbot.", code: "WEBSITE_NOT_APPROVED" });
+      res.header("Access-Control-Allow-Origin", browser.origin!);
+      res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.header("Access-Control-Allow-Headers", "Content-Type");
+      res.sendStatus(204);
+    } catch { res.status(503).json({ message: "Chatbot website checks are temporarily unavailable." }); }
   });
 
-  app.post("/api/widget-chat/:apiKey", publicAiBurstLimiter, async (req, res) => {
-    res.header("Access-Control-Allow-Origin", "*");
+  const widgetChatHandler = async (req: any, res: any, onTestSuccess?: () => Promise<boolean>) => {
     try {
       const { apiKey } = req.params;
       const { message, sessionId, history = [] } = req.body;
       if (!message || !sessionId) return res.status(400).json({ message: "message and sessionId required" });
       const widget = await storage.getChatbotWidgetByApiKey(apiKey);
       if (!widget || !widget.isActive) return res.status(404).json({ message: "Widget not found or inactive" });
+      const browser = await chatbotBrowserOrigin(widget.id, req.get("Origin"));
+      res.vary("Origin");
+      if (!browser.allowed) return res.status(403).json({ message: "This website has not been approved for this chatbot.", code: "WEBSITE_NOT_APPROVED" });
+      res.header("Access-Control-Allow-Origin", browser.origin!);
 
       // Enforce monthly reply quota for the bot owner's plan (auto-resets per 30-day period)
       const { enforceChatbotReplyLimit } = await import("./chatbot-limits");
@@ -4475,12 +4486,28 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
         await storage.incrementChatbotRepliesUsed(widget.userId).catch(() => {});
       }
 
-      res.json({ reply, confidence, tier, citations, clarifyingQuestion: clarifying || undefined, needsHuman });
+      if (onTestSuccess && (!reply?.trim() || (useStructured && confidence === 0))) {
+        return res.status(502).json({ message: "The service did not return a usable test reply. The test was not marked successful; no automatic retry was made." });
+      }
+      const testHistorySaved = onTestSuccess ? await onTestSuccess() : undefined;
+      res.json({ reply, confidence, tier, citations, clarifyingQuestion: clarifying || undefined, needsHuman, ...(onTestSuccess ? { testHistorySaved } : {}) });
     } catch (e: any) {
       console.error("[widget-chat] error:", e.message);
       res.status(500).json({ message: "AI service temporarily unavailable" });
     }
-  });
+  };
+  app.post("/api/widget-chat/:apiKey", publicAiBurstLimiter, (req, res) => widgetChatHandler(req, res));
+  registerChatbotVerificationRoutes(app, isAuthenticated, async (widget, message, req, res) => {
+    const website = widget.websiteUrl.includes("://") ? widget.websiteUrl : `https://${widget.websiteUrl}`;
+    await widgetChatHandler({
+      params: { apiKey: widget.apiKey },
+      body: { message, sessionId: `owner-test-${crypto.randomUUID()}`, history: [] },
+      get: (header: string) => header.toLowerCase() === "origin" ? new URL(website).origin : req.get(header),
+    }, res, async () => {
+      try { await saveChatbotReplyTest(widget.id, widget.websiteUrl, true); return true; }
+      catch { return false; }
+    });
+  }, publicAiBurstLimiter);
 
   // ─── Agency-only programmatic API: server-to-server / mobile / custom UI ──
   // Header: Authorization: Bearer <apiKey>   Body: { message, sessionId?, history? }
@@ -4937,10 +4964,13 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       try {
         html = (await fetchPublicPage(target)).html;
       } catch (fetchErr: any) {
-        return res.json({ verified: false, message: `Could not reach ${target}. The website may be offline or blocking bots. Try opening it in your browser first.` });
+        return res.json(await saveChatbotInstallation(id, widget.websiteUrl, {
+          verified: false, code: "UNREACHABLE",
+          message: "The website could not be reached. It may be offline or blocking the installation check.",
+        }));
       }
 
-      return res.json(verifyWidgetHtml(html, target, widget.apiKey));
+      return res.json(await saveChatbotInstallation(id, widget.websiteUrl, verifyWidgetHtml(html, target, widget.apiKey)));
     } catch (e: any) {
       console.error("[chatbot-verify] verification failed");
       res.status(500).json({ verified: false, message: "Installation check unavailable. Please retry." });

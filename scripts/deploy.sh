@@ -299,6 +299,10 @@ main() {
   if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/chatbot-knowledge-migrate.ts"; then
     die "Private knowledge-folder schema not ready. Apply migration 004 explicitly before retrying; existing service remains running."
   fi
+  log "Preparing additive chatbot ownership schema (existing widgets keep compatibility)..."
+  if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/chatbot-verification-migrate.ts"; then
+    die "Chatbot ownership schema not ready; existing service remains running."
+  fi
 
   if ! run_build; then
     log "Build FAILED — entering recovery"

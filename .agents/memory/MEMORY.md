@@ -49,5 +49,6 @@
 - [KEYO founder dashboard](keyo-founder-dashboard.md) — private Command Center runner oversight, founder-managed email access, and separate authorized/active viewer counts.
 - [Customer agent labels](customer-agent-labels.md) — use Agent 1/2/3 in customer-facing chat notices; retain real provider identities privately.
 - [Upload-processing permission](upload-processing-permission.md) — signup disclosures should support routine requested processing without repeated prompts, not blanket reuse rights.
+- [Email API project flow](email-project-flow.md) — project-contained verification, keys and logs; explicit rotation/revocation without breaking existing integrations.
 - [App management policy](app-management-policy.md) — one app library, actionable publish recommendations and typed confirmation with verified live-site removal.
 - [Parallel visual fixtures](parallel-visual-fixtures.md) — isolate dependency caches; ignored fixture wrappers may fall outside Tailwind’s source scan.
