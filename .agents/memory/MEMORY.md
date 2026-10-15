@@ -48,3 +48,4 @@
 - [Native loader environment](native-loader-environment.md) — sanitized desktop checks must preserve Replit’s public loader/audit configuration, not provider credentials.
 - [KEYO founder dashboard](keyo-founder-dashboard.md) — private Command Center runner oversight, founder-managed email access, and separate authorized/active viewer counts.
 - [Customer agent labels](customer-agent-labels.md) — use Agent 1/2/3 in customer-facing chat notices; retain real provider identities privately.
+- [App management policy](app-management-policy.md) — one app library, actionable publish recommendations and typed confirmation with verified live-site removal.
