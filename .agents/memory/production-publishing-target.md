@@ -17,6 +17,16 @@ check the live domain after the VPS deployment before claiming it is updated.
 Check the actual CI jobs, not just the overall success status: a passing run may
 contain verification only, with no deployment job.
 
+Report a running release from identity embedded in the built executable, not
+from the checkout or a mutable deployment marker.
+
+**Why:** A deployment marker can remain stale after a direct build/restart, or
+change independently of the process that is currently serving requests.
+
+**How to apply:** Embed the source revision at build time. If a build has no
+verified revision, show it as unavailable rather than substituting the current
+Git checkout or the last deployment marker.
+
 Verify the homepage and its frontend assets as well as API health and
 server-rendered product pages.
 

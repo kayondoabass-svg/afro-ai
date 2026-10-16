@@ -1,4 +1,5 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
+import { registerFounderOversight } from "./founder-oversight";
 import { registerKeyoStudio, release as keyoRelease } from "./keyo-studio";
 import { registerKeyoStudioAdmin } from "./keyo-studio-admin";
 import { keyoAdminStore } from "./keyo-studio-admin-store";
@@ -329,6 +330,7 @@ export async function registerRoutes(
   registerKeyoStudioAdmin(app, { authenticate: isAuthenticated, founderEmail: FOUNDER_EMAIL, store: keyoAdminStore, getRelease: keyoRelease,
     allowedOrigins: ["https://afroaigroup.com", "https://www.afroaigroup.com"] });
   registerAppInstallRoutes(app, isFounder);
+  registerFounderOversight(app, isFounder);
   registerDomainManagementRoutes(app, isAuthenticated);
   registerAuthRoutes(app);
 

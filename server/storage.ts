@@ -407,6 +407,7 @@ class DatabaseStorage implements IStorage {
   }
 
   async getPlatformStats() {
+    const unavailableSections: string[] = [];
     // Each query is run independently and protected so that a single
     // missing/renamed column on a particular table cannot zero out the
     // entire dashboard. Failures are logged with the section name so
@@ -415,7 +416,8 @@ class DatabaseStorage implements IStorage {
       try {
         return await fn();
       } catch (err: any) {
-        console.error(`[stats] ${name} failed:`, err?.message || err);
+        unavailableSections.push(name);
+        console.error(`[stats] ${name} unavailable`);
         return fallback;
       }
     };
@@ -517,6 +519,7 @@ class DatabaseStorage implements IStorage {
     const estimatedMRR = (planBreakdown.pro * 1500 + planBreakdown.business * 2990) / 100 + ussdMRR;
 
     return {
+      unavailableSections,
       totalUsers,
       totalProjects,
       totalPublishedApps,

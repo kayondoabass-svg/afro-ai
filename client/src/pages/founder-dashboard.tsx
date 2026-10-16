@@ -14,6 +14,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { FounderOperations, safeFounderAppHref, type SectionId } from "@/components/founder/FounderOperations";
+import { FounderAlertCenter } from "@/components/founder/FounderAlertCenter";
 import {
   Users,
   Folder,
@@ -109,13 +111,13 @@ interface PlatformStats {
   recentChatbots: any[];
 }
 
-function StatCard({ icon: Icon, label, value, sub, color }: {
-  icon: any; label: string; value: string | number; sub?: string; color: string;
+function StatCard({ icon: Icon, label, value, sub, color, onClick }: {
+  icon: any; label: string; value: string | number; sub?: string; color: string; onClick?: () => void;
 }) {
   return (
-    <Card data-testid={`stat-card-${label.toLowerCase().replace(/\s/g, "-")}`} className="hover:shadow-md transition-shadow">
+    <Card data-testid={`stat-card-${label.toLowerCase().replace(/\s/g, "-")}`} className={`transition-shadow ${onClick ? "hover:shadow-md focus-within:ring-2 focus-within:ring-ring" : ""}`}>
       <CardContent className="p-4">
-        <div className="flex items-start gap-3">
+        <button type="button" onClick={onClick} disabled={!onClick} aria-label={onClick ? `View ${label} records` : undefined} className={`flex w-full items-start gap-3 text-left ${onClick ? "rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" : "cursor-default"}`}>
           <div className={`w-9 h-9 rounded-lg ${color} flex items-center justify-center flex-shrink-0 mt-0.5`}>
             <Icon className="w-4 h-4" />
           </div>
@@ -124,7 +126,7 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
             <p className="text-xs text-muted-foreground leading-snug mt-0.5">{label}</p>
             {sub && <p className="text-xs text-primary mt-1 font-medium">{sub}</p>}
           </div>
-        </div>
+        </button>
       </CardContent>
     </Card>
   );
@@ -133,7 +135,7 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
 function AfricasTalkingPanel() {
   const { toast } = useToast();
   const [testTo, setTestTo] = useState("");
-  const [testMsg, setTestMsg] = useState("Hello from Afro AI 🚀");
+  const [testMsg, setTestMsg] = useState("Hello from Afro AI");
 
   const { data: status, isLoading, refetch } = useQuery<{
     configured: boolean;
@@ -369,8 +371,19 @@ export default function FounderDashboardPage() {
 
   const [selectedPlan, setSelectedPlan] = useState<Record<string, string>>({});
   const [creditAmount, setCreditAmount] = useState<Record<string, string>>({});
+  const [founderSection, setFounderSection] = useState<SectionId | null>(null);
+  const [founderStatus, setFounderStatus] = useState("");
+  const [founderOwner, setFounderOwner] = useState("");
+  const [founderId, setFounderId] = useState("");
+  const openFounderRecords = (section: SectionId, status = "", id = "", owner = "") => {
+    setFounderStatus(status);
+    setFounderId(id);
+    setFounderOwner(owner);
+    setFounderSection(section);
+    window.setTimeout(() => document.getElementById("founder-records")?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 50);
+  };
 
-  const { data: stats, isLoading } = useQuery<PlatformStats>({
+  const { data: stats, isLoading, isError: statsError } = useQuery<PlatformStats & { unavailableSections?: string[] }>({
     queryKey: ["/api/admin/stats"],
     enabled: isFounder,
   });
@@ -579,10 +592,12 @@ export default function FounderDashboardPage() {
     );
   }
 
-  const pb = stats?.planBreakdown ?? { starter: 0, pro: 0, business: 0, payg: 0, other: 0 };
-  const mrrDisplay = `$${(stats?.estimatedMRR ?? 0).toFixed(2)}`;
-  const paygSpent = `$${((stats?.totalPaygSpentCents ?? 0) / 100).toFixed(2)}`;
-  const paygBalance = `$${((stats?.totalPaygBalanceCents ?? 0) / 100).toFixed(2)}`;
+  const unavailable = (key: string) => statsError || Boolean(stats?.unavailableSections?.some(section => section.toLowerCase().includes(key.toLowerCase())));
+  const metric = (key: string, value: number | undefined | null) => unavailable(key) || value == null ? "—" : value;
+  const pb = unavailable("users") ? null : stats?.planBreakdown;
+  const mrrDisplay = unavailable("payments") || stats?.estimatedMRR == null ? "—" : `$${stats.estimatedMRR.toFixed(2)}`;
+  const paygSpent = unavailable("payments") || stats?.totalPaygSpentCents == null ? "—" : `$${(stats.totalPaygSpentCents / 100).toFixed(2)}`;
+  const paygBalance = unavailable("payments") || stats?.totalPaygBalanceCents == null ? "—" : `$${(stats.totalPaygBalanceCents / 100).toFixed(2)}`;
 
   return (
     <div className="flex-1 overflow-auto min-h-0">
@@ -599,17 +614,20 @@ export default function FounderDashboardPage() {
           </div>
         </div>
 
+        <FounderOperations isFounder={isFounder} initialSection={founderSection} initialStatus={founderStatus} initialId={founderId} initialOwner={founderOwner} onClearSection={() => { setFounderSection(null); setFounderStatus(""); setFounderId(""); setFounderOwner(""); }} />
+        <FounderAlertCenter isFounder={isFounder} />
+
         {/* Core Platform Stats */}
         <div className="space-y-3">
           <SectionLabel>Core Platform</SectionLabel>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard icon={Users} label="Total Users" value={stats?.totalUsers ?? 0} color="bg-blue-500/10 text-blue-500" />
-            <StatCard icon={Folder} label="Projects" value={stats?.totalProjects ?? 0} color="bg-primary/10 text-primary" />
-            <StatCard icon={Globe} label="Published Apps" value={stats?.totalPublishedApps ?? 0} color="bg-green-500/10 text-green-500" />
-            <StatCard icon={AlertTriangle} label="Suspended Apps" value={stats?.suspendedApps ?? 0} color="bg-red-500/10 text-red-500" />
-            <StatCard icon={Download} label="App Downloads" value={installStats.data?.total ?? "—"} color="bg-primary/10 text-primary" />
+            <StatCard icon={Users} label="Total Users" value={metric("users", stats?.totalUsers)} color="bg-blue-500/10 text-blue-500" onClick={() => openFounderRecords("users")} />
+            <StatCard icon={Folder} label="Projects" value={metric("projects", stats?.totalProjects)} color="bg-primary/10 text-primary" onClick={() => openFounderRecords("projects")} />
+            <StatCard icon={Globe} label="Published Apps" value={metric("apps", stats?.totalPublishedApps)} color="bg-green-500/10 text-green-500" onClick={() => openFounderRecords("apps")} />
+            <StatCard icon={AlertTriangle} label="Suspended Apps" value={metric("apps", stats?.suspendedApps)} color="bg-red-500/10 text-red-500" onClick={() => openFounderRecords("apps", "suspended")} />
+            <StatCard icon={Download} label="App Downloads" value={installStats.data?.total ?? "—"} color="bg-primary/10 text-primary" onClick={() => document.getElementById("installation-explanation")?.scrollIntoView?.({ behavior: "smooth", block: "center" })} />
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p id="installation-explanation" tabIndex={-1} className="scroll-mt-24 text-xs text-muted-foreground">
             {installStats.isError ? "Download count is temporarily unavailable. " : ""}
             Downloads counts browser-reported installations and first detected installed-app launches since tracking began, not button clicks or unique people.
           </p>
@@ -619,10 +637,10 @@ export default function FounderDashboardPage() {
         <div className="space-y-3">
           <SectionLabel>AI Activity & Revenue</SectionLabel>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard icon={MessagesSquare} label="Conversations" value={stats?.totalConversations ?? 0} color="bg-purple-500/10 text-purple-500" />
-            <StatCard icon={MessageSquare} label="AI Messages" value={stats?.totalMessages ?? 0} color="bg-orange-500/10 text-orange-500" />
-            <StatCard icon={DollarSign} label="Est. Monthly Revenue" value={mrrDisplay} color="bg-green-500/10 text-green-500" />
-            <StatCard icon={ShoppingBag} label="Domain Orders" value={stats?.totalDomainOrders ?? 0} color="bg-indigo-500/10 text-indigo-500" />
+            <StatCard icon={MessagesSquare} label="Conversations" value={metric("ai-usage", stats?.totalConversations)} color="bg-purple-500/10 text-purple-500" onClick={() => openFounderRecords("ai-usage")} />
+            <StatCard icon={MessageSquare} label="AI Messages" value={metric("ai-usage", stats?.totalMessages)} color="bg-orange-500/10 text-orange-500" onClick={() => openFounderRecords("ai-usage")} />
+            <StatCard icon={DollarSign} label="Est. Monthly Revenue" value={mrrDisplay} color="bg-green-500/10 text-green-500" onClick={() => openFounderRecords("payments")} />
+            <StatCard icon={ShoppingBag} label="Domain Orders" value={metric("domains", stats?.totalDomainOrders)} color="bg-indigo-500/10 text-indigo-500" onClick={() => openFounderRecords("domains")} />
           </div>
         </div>
 
@@ -630,10 +648,10 @@ export default function FounderDashboardPage() {
         <div className="space-y-3">
           <SectionLabel>Platform Features</SectionLabel>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard icon={PhoneCall} label="USSD Subscriptions" value={stats?.activeUssdSubscriptions ?? 0} sub={`${stats?.totalUssdSubscriptions ?? 0} total`} color="bg-amber-500/10 text-amber-500" />
-            <StatCard icon={Bot} label="AI Chatbots" value={stats?.activeChatbots ?? 0} sub={`${stats?.totalChatbotConversations ?? 0} conversations`} color="bg-cyan-500/10 text-cyan-500" />
-            <StatCard icon={Store} label="Marketplace Listings" value={stats?.totalMarketplaceListings ?? 0} sub={`${stats?.totalMarketplaceDownloads ?? 0} clones`} color="bg-violet-500/10 text-violet-500" />
-            <StatCard icon={FileText} label="Blog Posts" value={stats?.publishedBlogPosts ?? 0} sub={`${stats?.totalBlogPosts ?? 0} total`} color="bg-rose-500/10 text-rose-500" />
+            <StatCard icon={PhoneCall} label="USSD Subscriptions" value={metric("ussd", stats?.activeUssdSubscriptions)} sub={unavailable("ussd") ? "Unavailable" : `${stats?.totalUssdSubscriptions ?? "—"} total`} color="bg-amber-500/10 text-amber-500" onClick={() => openFounderRecords("ussd")} />
+            <StatCard icon={Bot} label="AI Chatbots" value={metric("chatbots", stats?.activeChatbots)} sub={unavailable("chatbots") ? "Unavailable" : `${stats?.totalChatbotConversations ?? "—"} conversations`} color="bg-cyan-500/10 text-cyan-500" onClick={() => openFounderRecords("chatbots")} />
+            <StatCard icon={Store} label="Marketplace Listings" value={metric("marketplace", stats?.totalMarketplaceListings)} sub={unavailable("marketplace") ? "Unavailable" : `${stats?.totalMarketplaceDownloads ?? "—"} clones`} color="bg-violet-500/10 text-violet-500" onClick={() => openFounderRecords("marketplace")} />
+            <StatCard icon={FileText} label="Blog Posts" value={metric("blog", stats?.publishedBlogPosts)} sub={unavailable("blog") ? "Unavailable" : `${stats?.totalBlogPosts ?? "—"} total`} color="bg-rose-500/10 text-rose-500" onClick={() => openFounderRecords("blog")} />
           </div>
         </div>
 
@@ -641,10 +659,10 @@ export default function FounderDashboardPage() {
         <div className="space-y-3">
           <SectionLabel>Communication & Data</SectionLabel>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard icon={Mail} label="Email Subscribers" value={stats?.activeEmailSubscribers ?? 0} sub={`${stats?.totalEmailCampaigns ?? 0} campaigns`} color="bg-sky-500/10 text-sky-500" />
-            <StatCard icon={HardDrive} label="Uploaded Files" value={stats?.totalUserFiles ?? 0} sub={`${stats?.totalZipExports ?? 0} ZIP exports`} color="bg-teal-500/10 text-teal-500" />
-            <StatCard icon={ClipboardList} label="Forms" value={stats?.totalForms ?? 0} sub={`${stats?.totalFormSubmissions ?? 0} submissions`} color="bg-lime-500/10 text-lime-500" />
-            <StatCard icon={Zap} label="Webhooks" value={stats?.activeWebhooks ?? 0} sub={`${stats?.totalWebhooks ?? 0} total`} color="bg-yellow-500/10 text-yellow-500" />
+            <StatCard icon={Mail} label="Email Subscribers" value={metric("subscribers", stats?.activeEmailSubscribers)} sub={unavailable("subscribers") ? "Unavailable" : `${stats?.totalEmailCampaigns ?? "—"} campaigns`} color="bg-sky-500/10 text-sky-500" onClick={() => openFounderRecords("subscribers")} />
+            <StatCard icon={HardDrive} label="Uploaded Files" value={metric("files", stats?.totalUserFiles)} sub={unavailable("files") ? "Unavailable" : `${stats?.totalZipExports ?? "—"} ZIP exports`} color="bg-teal-500/10 text-teal-500" onClick={() => openFounderRecords("files")} />
+            <StatCard icon={ClipboardList} label="Forms" value={metric("forms", stats?.totalForms)} sub={unavailable("forms") ? "Unavailable" : `${stats?.totalFormSubmissions ?? "—"} submissions`} color="bg-lime-500/10 text-lime-500" onClick={() => openFounderRecords("forms")} />
+            <StatCard icon={Zap} label="Webhooks" value={metric("webhooks", stats?.activeWebhooks)} sub={unavailable("webhooks") ? "Unavailable" : `${stats?.totalWebhooks ?? "—"} total`} color="bg-yellow-500/10 text-yellow-500" onClick={() => openFounderRecords("webhooks")} />
           </div>
         </div>
 
@@ -658,10 +676,10 @@ export default function FounderDashboardPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: "Starter (Free)", value: pb.starter, color: "text-muted-foreground", bg: "bg-muted/50" },
-                  { label: "Pro ($15/mo)", value: pb.pro, color: "text-blue-400", bg: "bg-blue-500/10" },
-                  { label: "Business ($29.90/mo)", value: pb.business, color: "text-primary", bg: "bg-primary/10" },
-                  { label: "Pay As You Go", value: pb.payg, color: "text-yellow-400", bg: "bg-yellow-500/10" },
+                  { label: "Starter (Free)", value: pb?.starter ?? "—", color: "text-muted-foreground", bg: "bg-muted/50" },
+                  { label: "Pro ($15/mo)", value: pb?.pro ?? "—", color: "text-blue-400", bg: "bg-blue-500/10" },
+                  { label: "Business ($29.90/mo)", value: pb?.business ?? "—", color: "text-primary", bg: "bg-primary/10" },
+                  { label: "Pay As You Go", value: pb?.payg ?? "—", color: "text-yellow-400", bg: "bg-yellow-500/10" },
                 ].map(p => (
                   <div key={p.label} className={`${p.bg} rounded-lg p-3`} data-testid={`plan-count-${p.label.split(" ")[0].toLowerCase()}`}>
                     <p className={`text-2xl font-bold ${p.color}`}>{p.value}</p>
@@ -679,22 +697,22 @@ export default function FounderDashboardPage() {
                 <h3 className="font-semibold text-sm">PAYG & Revenue</h3>
               </div>
               <div className="space-y-3">
-                <div className="flex justify-between items-center py-2 border-b border-border/50">
+                <button type="button" onClick={() => openFounderRecords("payments")} className="flex w-full justify-between items-center py-2 border-b border-border/50 text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <span className="text-sm text-muted-foreground">Est. Monthly Revenue (MRR)</span>
                   <span className="font-bold text-green-400" data-testid="text-mrr">{mrrDisplay}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-border/50">
+                </button>
+                <button type="button" onClick={() => openFounderRecords("payments")} className="flex w-full justify-between items-center py-2 border-b border-border/50 text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <span className="text-sm text-muted-foreground">Total PAYG Spent (all users)</span>
                   <span className="font-bold text-primary" data-testid="text-payg-spent">{paygSpent}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-border/50">
+                </button>
+                <button type="button" onClick={() => openFounderRecords("payments")} className="flex w-full justify-between items-center py-2 border-b border-border/50 text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <span className="text-sm text-muted-foreground">Total PAYG Balance (remaining)</span>
                   <span className="font-bold" data-testid="text-payg-balance">{paygBalance}</span>
-                </div>
+                </button>
                 <div className="flex justify-between items-center py-2">
-                  <span className="text-sm text-muted-foreground">Platform Health</span>
+                  <span className="text-sm text-muted-foreground">Platform Ratios</span>
                   <span className="font-bold text-green-400">
-                    {stats && stats.totalProjects > 0
+                    {!unavailable("projects") && !unavailable("apps") && stats && stats.totalProjects > 0
                       ? ((stats.totalPublishedApps / stats.totalProjects) * 100).toFixed(0) + "% publish rate"
                       : "—"}
                   </span>
@@ -713,13 +731,14 @@ export default function FounderDashboardPage() {
               <div className="flex items-center gap-2 p-4 border-b">
                 <PhoneCall className="w-4 h-4 text-amber-500" />
                 <h3 className="font-semibold text-sm">USSD Subscriptions</h3>
-                <Badge variant="secondary" className="ml-auto text-xs">{stats?.activeUssdSubscriptions ?? 0} active</Badge>
+                <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => openFounderRecords("ussd")}>View all records</Button>
+                <Badge variant="secondary" className="text-xs">{metric("ussd", stats?.activeUssdSubscriptions)} active</Badge>
               </div>
               <div className="grid grid-cols-3 divide-x divide-border/50 border-b">
                 {[
-                  { label: "Starter", value: stats?.ussdPlanBreakdown?.starter ?? 0, color: "text-muted-foreground", price: "$29" },
-                  { label: "Growth", value: stats?.ussdPlanBreakdown?.growth ?? 0, color: "text-blue-400", price: "$79" },
-                  { label: "Enterprise", value: stats?.ussdPlanBreakdown?.enterprise ?? 0, color: "text-amber-400", price: "$199" },
+                  { label: "Starter", value: metric("ussd", stats?.ussdPlanBreakdown?.starter), color: "text-muted-foreground", price: "$29" },
+                  { label: "Growth", value: metric("ussd", stats?.ussdPlanBreakdown?.growth), color: "text-blue-400", price: "$79" },
+                  { label: "Enterprise", value: metric("ussd", stats?.ussdPlanBreakdown?.enterprise), color: "text-amber-400", price: "$199" },
                 ].map(p => (
                   <div key={p.label} className="p-3 text-center">
                     <p className={`text-xl font-bold ${p.color}`}>{p.value}</p>
@@ -759,13 +778,14 @@ export default function FounderDashboardPage() {
               <div className="flex items-center gap-2 p-4 border-b">
                 <Bot className="w-4 h-4 text-cyan-500" />
                 <h3 className="font-semibold text-sm">Chatbot API</h3>
-                <Badge variant="secondary" className="ml-auto text-xs">{stats?.activeChatbots ?? 0} active</Badge>
+                <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => openFounderRecords("chatbots")}>View all records</Button>
+                <Badge variant="secondary" className="text-xs">{metric("chatbots", stats?.activeChatbots)} active</Badge>
               </div>
               <div className="grid grid-cols-3 divide-x divide-border/50 border-b">
                 {[
-                  { label: "Total Bots", value: stats?.totalChatbots ?? 0, color: "text-cyan-400" },
-                  { label: "Active Bots", value: stats?.activeChatbots ?? 0, color: "text-green-400" },
-                  { label: "Conversations", value: stats?.totalChatbotConversations ?? 0, color: "text-purple-400" },
+                  { label: "Total Bots", value: metric("chatbots", stats?.totalChatbots), color: "text-cyan-400" },
+                  { label: "Active Bots", value: metric("chatbots", stats?.activeChatbots), color: "text-green-400" },
+                  { label: "Conversations", value: metric("chatbots", stats?.totalChatbotConversations), color: "text-purple-400" },
                 ].map(p => (
                   <div key={p.label} className="p-3 text-center">
                     <p className={`text-xl font-bold ${p.color}`}>{p.value}</p>
@@ -807,13 +827,13 @@ export default function FounderDashboardPage() {
               </div>
               <div className="p-4 grid grid-cols-2 gap-3">
                 {[
-                  { icon: Store, label: "Marketplace", value: stats?.totalMarketplaceListings ?? 0, sub: `${stats?.totalMarketplaceDownloads ?? 0} clones`, color: "text-violet-400 bg-violet-500/10" },
-                  { icon: FileText, label: "Blog Posts", value: stats?.publishedBlogPosts ?? 0, sub: `${stats?.totalBlogPosts ?? 0} total`, color: "text-rose-400 bg-rose-500/10" },
-                  { icon: Mail, label: "Email Subs", value: stats?.activeEmailSubscribers ?? 0, sub: `${stats?.totalEmailCampaigns ?? 0} campaigns`, color: "text-sky-400 bg-sky-500/10" },
-                  { icon: HardDrive, label: "Files", value: stats?.totalUserFiles ?? 0, sub: `${stats?.totalZipExports ?? 0} ZIP exports`, color: "text-teal-400 bg-teal-500/10" },
-                  { icon: ClipboardList, label: "Forms", value: stats?.totalForms ?? 0, sub: `${stats?.totalFormSubmissions ?? 0} submissions`, color: "text-lime-400 bg-lime-500/10" },
-                  { icon: Zap, label: "Webhooks", value: stats?.activeWebhooks ?? 0, sub: `${stats?.totalWebhooks ?? 0} registered`, color: "text-yellow-400 bg-yellow-500/10" },
-                  { icon: ShoppingBag, label: "Domains", value: stats?.totalDomainOrders ?? 0, sub: "registered", color: "text-indigo-400 bg-indigo-500/10" },
+                  { icon: Store, label: "Marketplace", value: metric("marketplace", stats?.totalMarketplaceListings), sub: unavailable("marketplace") ? "Unavailable" : `${stats?.totalMarketplaceDownloads ?? "—"} clones`, color: "text-violet-400 bg-violet-500/10" },
+                  { icon: FileText, label: "Blog Posts", value: metric("blog", stats?.publishedBlogPosts), sub: unavailable("blog") ? "Unavailable" : `${stats?.totalBlogPosts ?? "—"} total`, color: "text-rose-400 bg-rose-500/10" },
+                  { icon: Mail, label: "Email Subs", value: metric("subscribers", stats?.activeEmailSubscribers), sub: unavailable("email") || unavailable("subscribers") ? "Unavailable" : `${stats?.totalEmailCampaigns ?? "—"} campaigns`, color: "text-sky-400 bg-sky-500/10" },
+                  { icon: HardDrive, label: "Files", value: metric("files", stats?.totalUserFiles), sub: unavailable("files") ? "Unavailable" : `${stats?.totalZipExports ?? "—"} ZIP exports`, color: "text-teal-400 bg-teal-500/10" },
+                  { icon: ClipboardList, label: "Forms", value: metric("forms", stats?.totalForms), sub: unavailable("forms") ? "Unavailable" : `${stats?.totalFormSubmissions ?? "—"} submissions`, color: "text-lime-400 bg-lime-500/10" },
+                  { icon: Zap, label: "Webhooks", value: metric("webhooks", stats?.activeWebhooks), sub: unavailable("webhooks") ? "Unavailable" : `${stats?.totalWebhooks ?? "—"} registered`, color: "text-yellow-400 bg-yellow-500/10" },
+                  { icon: ShoppingBag, label: "Domains", value: metric("domains", stats?.totalDomainOrders), sub: "registered", color: "text-indigo-400 bg-indigo-500/10" },
                   { icon: UserCheck, label: "Affiliates", value: affiliateApps?.filter((a: any) => a.status === "approved").length ?? 0, sub: `${affiliateApps?.length ?? 0} applied`, color: "text-primary bg-primary/10" },
                 ].map(item => (
                   <div key={item.label} className={`rounded-lg p-3 ${item.color.split(" ")[1]}`}>
@@ -839,7 +859,8 @@ export default function FounderDashboardPage() {
               <div className="flex items-center gap-2 p-4 border-b">
                 <Users className="w-4 h-4 text-blue-500" />
                 <h3 className="font-semibold text-sm">Users</h3>
-                <Badge variant="secondary" className="ml-auto text-xs">{stats?.totalUsers ?? 0}</Badge>
+                <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => openFounderRecords("users")}>View all records</Button>
+                <Badge variant="secondary" className="text-xs">{metric("users", stats?.totalUsers)}</Badge>
               </div>
               <ScrollArea className="h-[400px]">
                 <div className="p-2 space-y-1">
@@ -860,6 +881,7 @@ export default function FounderDashboardPage() {
                           <Badge variant="outline" className={`text-[10px] px-1.5 flex-shrink-0 ${PLAN_COLORS[u.plan || "starter"]}`}>
                             {u.plan || "starter"}
                           </Badge>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => openFounderRecords("users", "", String(u.id))} aria-label={`View user record ${u.id}`}>Details</Button>
                         </div>
                         {/* Admin actions */}
                         <div className="flex items-center gap-1 pl-9">
@@ -922,15 +944,18 @@ export default function FounderDashboardPage() {
               <div className="flex items-center gap-2 p-4 border-b">
                 <Globe className="w-4 h-4 text-green-500" />
                 <h3 className="font-semibold text-sm">Published Apps</h3>
-                <Badge variant="secondary" className="ml-auto text-xs">{stats?.totalPublishedApps ?? 0}</Badge>
-                {(stats?.suspendedApps ?? 0) > 0 && (
-                  <Badge variant="destructive" className="text-[10px] px-1.5">{stats?.suspendedApps} suspended</Badge>
+                <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => openFounderRecords("apps")}>View all records</Button>
+                <Badge variant="secondary" className="text-xs">{metric("apps", stats?.totalPublishedApps)}</Badge>
+                {!unavailable("apps") && (stats?.suspendedApps ?? 0) > 0 && (
+                  <Badge variant="destructive" className="text-[10px] px-1.5">{metric("apps", stats?.suspendedApps)} suspended</Badge>
                 )}
               </div>
               <ScrollArea className="h-[400px]">
                 <div className="p-2 space-y-1">
                   {stats?.recentPublishedApps && stats.recentPublishedApps.length > 0 ? (
-                    stats.recentPublishedApps.map((a: any) => (
+                    stats.recentPublishedApps.map((a: any) => {
+                      const liveHref = safeFounderAppHref(a);
+                      return (
                       <div key={a.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`admin-app-${a.id}`}>
                         <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${a.appStatus === "suspended" ? "bg-red-500/10" : "bg-green-500/10"}`}>
                           <Globe className={`w-3.5 h-3.5 ${a.appStatus === "suspended" ? "text-red-500" : "text-green-500"}`} />
@@ -939,12 +964,13 @@ export default function FounderDashboardPage() {
                           <div className="flex items-center gap-1">
                             <p className="text-xs font-medium truncate">{a.title}</p>
                             {a.appStatus === "suspended" && (
-                              <Badge variant="destructive" className="text-[10px] px-1 py-0">⏸</Badge>
+                              <Badge variant="destructive" className="text-[10px] px-1 py-0">Suspended</Badge>
                             )}
                           </div>
                           <p className="text-[10px] text-muted-foreground truncate">{a.subdomain}.afroaigroup.com</p>
                         </div>
                         <div className="flex items-center gap-0.5 flex-shrink-0">
+                          <Button type="button" size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => openFounderRecords("apps", "", String(a.id))} aria-label={`View app record ${a.id}`}>Details</Button>
                           {a.appStatus === "suspended" ? (
                             <Button size="icon" variant="ghost" className="h-6 w-6 text-green-500 hover:bg-green-500/10"
                               onClick={() => reactivateMutation.mutate(a.id)} disabled={reactivateMutation.isPending}
@@ -958,12 +984,12 @@ export default function FounderDashboardPage() {
                               <Ban className="w-3.5 h-3.5" />
                             </Button>
                           )}
-                          <a href={`/site/${a.subdomain}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
+                          {liveHref && <a href={liveHref} target="_blank" rel="noopener noreferrer" aria-label={`Open live site for ${a.title || a.subdomain}`} className="text-primary hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                             <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
+                          </a>}
                         </div>
                       </div>
-                    ))
+                    );})
                   ) : (
                     <p className="text-sm text-muted-foreground text-center py-8">No published apps yet</p>
                   )}
@@ -978,7 +1004,8 @@ export default function FounderDashboardPage() {
               <div className="flex items-center gap-2 p-4 border-b">
                 <ShoppingBag className="w-4 h-4 text-indigo-500" />
                 <h3 className="font-semibold text-sm">Domain Orders</h3>
-                <Badge variant="secondary" className="ml-auto text-xs">{stats?.totalDomainOrders ?? 0}</Badge>
+                <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => openFounderRecords("domains")}>View all records</Button>
+                <Badge variant="secondary" className="text-xs">{metric("domains", stats?.totalDomainOrders)}</Badge>
               </div>
               <ScrollArea className="h-[400px]">
                 <div className="p-2 space-y-1">
@@ -998,6 +1025,7 @@ export default function FounderDashboardPage() {
                         }`}>
                           {d.status === "pending_payment" ? "Pending payment" : d.status}
                         </Badge>
+                        <Button type="button" size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => openFounderRecords("domains", "", String(d.id))} aria-label={`View domain order ${d.id}`}>Details</Button>
                       </div>
                     ))
                   ) : (
@@ -1384,7 +1412,7 @@ export default function FounderDashboardPage() {
                       data-testid="button-send-congrats"
                     >
                       <PartyPopper className="w-4 h-4" />
-                      {congratsSent ? "Congratulations sent ✓" : sendingType === "congrats" ? "Sending…" : "Send Congratulations"}
+                      {congratsSent ? "Congratulations sent" : sendingType === "congrats" ? "Sending…" : "Send Congratulations"}
                       {recommend === "congrats" && !congratsSent && (
                         <Badge variant="outline" className="ml-auto text-[10px] bg-white/15 text-white border-white/25">Recommended</Badge>
                       )}
@@ -1396,7 +1424,7 @@ export default function FounderDashboardPage() {
                       data-testid="button-send-nudge"
                     >
                       <Hourglass className="w-4 h-4" />
-                      {nudgeSent ? "Nudge sent ✓" : sendingType === "nudge" ? "Sending…" : "Send Try Again Nudge"}
+                      {nudgeSent ? "Nudge sent" : sendingType === "nudge" ? "Sending…" : "Send Try Again Nudge"}
                       {recommend === "nudge" && !nudgeSent && (
                         <Badge variant="outline" className="ml-auto text-[10px] bg-black/15 text-black border-black/25">Recommended</Badge>
                       )}
@@ -1408,12 +1436,12 @@ export default function FounderDashboardPage() {
           </SheetContent>
         </Sheet>
 
-        {/* Platform Health */}
+        {/* Platform ratios */}
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <Activity className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold">Platform Health</h3>
+              <h3 className="font-semibold">Platform Ratios</h3>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
               <div className="space-y-1">
@@ -1422,7 +1450,7 @@ export default function FounderDashboardPage() {
                   <span className="text-xs font-medium">Avg Msg/Conv</span>
                 </div>
                 <p className="text-2xl font-bold" data-testid="text-avg-messages">
-                  {stats && stats.totalConversations > 0 ? (stats.totalMessages / stats.totalConversations).toFixed(1) : "0"}
+                  {!unavailable("ai-usage") && stats && stats.totalConversations > 0 ? (stats.totalMessages / stats.totalConversations).toFixed(1) : "—"}
                 </p>
               </div>
               <div className="space-y-1">
@@ -1431,7 +1459,7 @@ export default function FounderDashboardPage() {
                   <span className="text-xs font-medium">Avg Projects/User</span>
                 </div>
                 <p className="text-2xl font-bold" data-testid="text-avg-projects">
-                  {stats && stats.totalUsers > 0 ? (stats.totalProjects / stats.totalUsers).toFixed(1) : "0"}
+                  {!unavailable("users") && !unavailable("projects") && stats && stats.totalUsers > 0 ? (stats.totalProjects / stats.totalUsers).toFixed(1) : "—"}
                 </p>
               </div>
               <div className="space-y-1">
@@ -1440,7 +1468,7 @@ export default function FounderDashboardPage() {
                   <span className="text-xs font-medium">Publish Rate</span>
                 </div>
                 <p className="text-2xl font-bold" data-testid="text-publish-rate">
-                  {stats && stats.totalProjects > 0 ? ((stats.totalPublishedApps / stats.totalProjects) * 100).toFixed(0) + "%" : "0%"}
+                  {!unavailable("projects") && !unavailable("apps") && stats && stats.totalProjects > 0 ? ((stats.totalPublishedApps / stats.totalProjects) * 100).toFixed(0) + "%" : "—"}
                 </p>
               </div>
               <div className="space-y-1">
@@ -1449,10 +1477,10 @@ export default function FounderDashboardPage() {
                   <span className="text-xs font-medium">Paying Users</span>
                 </div>
                 <p className="text-2xl font-bold" data-testid="text-paying-users">
-                  {pb.pro + pb.business + pb.payg}
+                  {pb ? pb.pro + pb.business + pb.payg : "—"}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {stats && stats.totalUsers > 0
+                  {pb && !unavailable("users") && stats && stats.totalUsers > 0
                     ? (((pb.pro + pb.business + pb.payg) / stats.totalUsers) * 100).toFixed(0) + "% conversion"
                     : "—"}
                 </p>
@@ -1532,6 +1560,12 @@ export default function FounderDashboardPage() {
               Open AI Admin Command Centre
             </Button>
           </a>
+          <Button asChild variant="outline" className="gap-2" data-testid="button-keyo-studio">
+            <a href="/admin-command/keyo-studio">
+              <HardDrive className="w-4 h-4 text-primary" />
+              KEYO Studio
+            </a>
+          </Button>
         </div>
 
       </div>
