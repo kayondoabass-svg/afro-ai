@@ -1,3 +1,4 @@
+- [Partner programme audience](partner-program-audience.md) — individuals use affiliate marketing; registered businesses use the partner programme and may have teams.
 - [Native CPU rollout](native-cpu-rollout.md) — opt-in owned kernels; strict numerical checks and source-only distribution until platform builds are certified.
 - [Model library releases](model-library-release-policy.md) — verified downloads, checkpoint execution and desktop platform certification are separate claims.
 - [KEYO distribution](keyo-distribution.md) — mirrors must preserve release bytes; distinguish app ZIPs from source bundles and disclose separate model downloads.
