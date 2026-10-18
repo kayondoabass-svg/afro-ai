@@ -1,8 +1,11 @@
 import { pool } from "../db";
+import type { Db } from "./core";
+import { legacyProgrammeSchema } from "./legacy-schema";
 
 /** Additive setup: legacy applications, referrals and commissions remain intact. */
-export async function prepareProgrammes() {
-  await pool.query(`
+export async function prepareProgrammes(db: Db = pool) {
+  // One SQL batch is atomic, including the legacy payment cutover below.
+  await db.query(`${legacyProgrammeSchema}
     CREATE TABLE IF NOT EXISTS programme_applications (
       programme text NOT NULL CHECK(programme IN ('affiliate','business')),
       application_id integer NOT NULL,
