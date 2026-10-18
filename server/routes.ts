@@ -1,5 +1,8 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
 import { registerFounderOversight } from "./founder-oversight";
+import { registerProgrammeRoutes, programmeError } from "./programmes/routes";
+import { submitApplication, review as reviewProgramme, manualPayout } from "./programmes/actions";
+import { creditProgrammePayment, trackProgrammeClick } from "./programmes/billing";
 import { registerKeyoStudio, release as keyoRelease } from "./keyo-studio";
 import { registerKeyoStudioAdmin } from "./keyo-studio-admin";
 import { keyoAdminStore } from "./keyo-studio-admin-store";
@@ -65,7 +68,6 @@ import { SESClient, VerifyDomainDkimCommand, VerifyDomainIdentityCommand, GetIde
 import { normalizeSendingDomain } from "../shared/customer-api-setup";
 import { emailDomainError } from "./email-domain-errors";
 import bcrypt from "bcryptjs";
-import { affiliateApplicationInput } from "./affiliate-application";
 import { productSelfKnowledge } from "./product-self-knowledge";
 import { fullstackAccess } from "./fullstack-access";
 import { registerProjectInfrastructureRoutes, isManagementOrigin } from "./project-infrastructure/routes";
@@ -331,6 +333,7 @@ export async function registerRoutes(
     allowedOrigins: ["https://afroaigroup.com", "https://www.afroaigroup.com"] });
   registerAppInstallRoutes(app, isFounder);
   registerFounderOversight(app, isFounder);
+  registerProgrammeRoutes(app, { isAuthenticated, isFounder });
   registerDomainManagementRoutes(app, isAuthenticated);
   registerAuthRoutes(app);
 
@@ -2417,32 +2420,11 @@ export async function registerRoutes(
       console.error("[receipt-email] failed:", emailErr?.message || emailErr);
     }
 
-    // Affiliate commission — if this paying user was referred by an affiliate,
-    // credit 10% of the payment. Best-effort, never blocks plan activation.
+    // Durable, idempotent programme accounting; never initiates a payout.
     try {
-      const referral = await storage.getAffiliateReferralByUserId(userId);
-      if (referral) {
-        const baseAmountCents = Math.round(Number(existingPayment.amount) * 100);
-        if (baseAmountCents > 0) {
-          const commissionPercent = 10;
-          const amountCents = Math.round(baseAmountCents * (commissionPercent / 100));
-          await storage.createAffiliateCommission({
-            affiliateId: referral.affiliateId,
-            referralId: referral.id,
-            userId,
-            baseAmountCents,
-            amountCents,
-            commissionPercent,
-            currency: existingPayment.currency || "USD",
-            description: `${plan} plan payment`,
-            periodMonth: new Date().toISOString().slice(0, 7),
-            status: "pending",
-          });
-          await storage.markAffiliateReferralConverted(referral.id);
-        }
-      }
-    } catch (affErr: any) {
-      console.error("[affiliate-commission] failed:", affErr?.message || affErr);
+      await creditProgrammePayment(existingPayment.id);
+    } catch {
+      console.error("[programmes] Payment saved; commission reconciliation is pending.");
     }
 
     // Chatbot subscription — activate or upgrade chatbot plan
@@ -3131,26 +3113,15 @@ export async function registerRoutes(
 
   app.post("/api/affiliate/apply", affiliateApplyLimiter, async (req, res) => {
     try {
-      const parsed = affiliateApplicationInput.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ message: "Please provide a valid name and email, and keep optional fields within their length limits." });
-      const { fullName, email, phone, country, promotionMethod, socialMedia } = parsed.data;
-      const existing = await storage.getAffiliateApplicationByEmail(email);
-      if (existing) return res.status(409).json({ message: "An application already exists for this email." });
-      const code = "AFF" + Math.random().toString(36).slice(2, 8).toUpperCase();
-      const portalToken = crypto.randomBytes(24).toString("hex");
-      await storage.createAffiliateApplication({ fullName, email, phone, country, promotionMethod, socialMedia, referralCode: code, status: "pending", portalToken });
-      res.json({ success: true, status: "pending" });
-    } catch (e: any) {
-      console.error("[affiliate-apply] failed:", e);
-      res.status(500).json({ message: "Could not submit application. Please try again later." });
-    }
+      res.json(await submitApplication("affiliate", req.body, FOUNDER_EMAIL));
+    } catch (e) { programmeError(res,e); }
   });
 
   // Public: record a click when a visitor lands on a ?ref= affiliate link.
   app.post("/api/affiliate/track", async (req, res) => {
     try {
       const code = String(req.body?.code || req.query?.code || "").trim();
-      if (code) await storage.incrementAffiliateClicks(code);
+      if (code) await trackProgrammeClick(code);
       res.json({ success: true });
     } catch { res.json({ success: true }); } // never surface errors to a public pixel
   });
@@ -3208,38 +3179,9 @@ export async function registerRoutes(
 
   app.patch("/api/affiliate/applications/:id/status", isFounder, async (req: any, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const status = req.body.status;
-      await storage.updateAffiliateStatus(id, status);
-
-      // On approval, ensure a portal token exists and email the affiliate their
-      // link + private dashboard URL. Best-effort — never block the status update.
-      if (status === "approved") {
-        try {
-          let affiliate = await storage.getAffiliateApplicationById(id);
-          if (affiliate && !affiliate.portalToken) {
-            const token = crypto.randomBytes(24).toString("hex");
-            await storage.setAffiliatePortalToken(id, token);
-            affiliate = { ...affiliate, portalToken: token };
-          }
-          if (affiliate?.email && affiliate.portalToken) {
-            const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || "https";
-            const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.headers.host;
-            const origin = host ? `${proto}://${host}` : "https://afroaigroup.com";
-            const { sendAffiliateApprovedEmail } = await import("./mailer");
-            await sendAffiliateApprovedEmail(affiliate.email, {
-              name: affiliate.fullName,
-              referralCode: affiliate.referralCode,
-              referralLink: `https://afroaigroup.com?ref=${affiliate.referralCode}`,
-              portalUrl: `${origin}/affiliate/portal/${affiliate.portalToken}`,
-            });
-          }
-        } catch (mailErr: any) {
-          console.error("[affiliate-approval-email] failed:", mailErr?.message || mailErr);
-        }
-      }
-      res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+      res.json(await reviewProgramme("affiliate",Number(req.params.id),req.user.claims.sub,
+        {decision:req.body.status,notes:req.body.notes??""}));
+    } catch (e) { programmeError(res,e); }
   });
 
   // Founder: record a manually completed payment; this does not transfer funds.
@@ -3247,48 +3189,16 @@ export async function registerRoutes(
     try {
       const id = Number(req.params.id);
       if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid affiliate ID." });
-      const affiliate = await storage.getAffiliateApplicationById(id);
-      if (!affiliate) return res.status(404).json({ message: "Affiliate not found." });
-      const paidCents = await storage.markAffiliateCommissionsPaid(id);
-      if (paidCents <= 0) return res.status(409).json({ message: "No pending commissions to mark paid." });
-      res.json({ success: true, paidCents, message: "Payment recorded. No money was sent by this action." });
-    } catch (e: any) {
-      console.error("[affiliate-pay] failed:", e);
-      res.status(500).json({ message: "Could not mark commissions paid. Please try again." });
-    }
+      res.json(await manualPayout("affiliate",id,req.user.claims.sub,req.body));
+    } catch (e) { programmeError(res,e); }
   });
 
   // ============ COUNTRY/RESELLER PARTNER PROGRAM ============
   // Public: submit application
-  app.post("/api/reseller/apply", async (req, res) => {
+  app.post("/api/reseller/apply", affiliateApplyLimiter, async (req, res) => {
     try {
-      const { companyName, contactName, email, country, countryName } = req.body;
-      if (!companyName || !contactName || !email || !country) {
-        return res.status(400).json({ message: "Company name, contact name, email, and country are required" });
-      }
-      const existing = await storage.getPartnerApplicationByEmail(email);
-      if (existing && existing.status === "pending") {
-        return res.status(409).json({ message: "An application for this email is already under review", applicationId: existing.id });
-      }
-      const application = await storage.createPartnerApplication({
-        companyName, contactName, email,
-        country, countryName: countryName || country,
-        phone: req.body.phone || null,
-        city: req.body.city || null,
-        website: req.body.website || null,
-        currentCustomers: req.body.currentCustomers || 0,
-        teamSize: req.body.teamSize || 1,
-        yearsInBusiness: req.body.yearsInBusiness || 0,
-        servicesOffered: req.body.servicesOffered || null,
-        whyPartner: req.body.whyPartner || null,
-        desiredTier: req.body.desiredTier || "authorized",
-        status: "pending",
-      });
-      res.json({ success: true, applicationId: application.id });
-    } catch (e: any) {
-      console.error("[reseller/apply]", e);
-      res.status(500).json({ message: e.message });
-    }
+      res.json(await submitApplication("business",req.body,FOUNDER_EMAIL));
+    } catch (e) { programmeError(res,e); }
   });
 
   // Public: directory of approved partners
@@ -3400,84 +3310,28 @@ export async function registerRoutes(
   // Founder: approve application -> creates partner
   app.post("/api/founder/partners/applications/:id/approve", isFounder, async (req: any, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const app = await storage.getPartnerApplication(id);
-      if (!app) return res.status(404).json({ message: "Application not found" });
-      if (app.status === "approved") return res.status(400).json({ message: "Already approved" });
-      const tier = req.body.tier || app.desiredTier || "authorized";
-      const commissionPercent = req.body.commissionPercent ?? (tier === "premier" ? 40 : tier === "premium" ? 30 : 20);
-      // Country exclusivity: block a second active partner if existing one is exclusive (premier).
-      const existingInCountry = await storage.getPartnerByCountry(app.country);
-      if (existingInCountry && existingInCountry.exclusiveCountry) {
-        return res.status(409).json({ message: `${app.country} already has an exclusive premier partner: ${existingInCountry.companyName}` });
-      }
-      const baseSlug = (app.companyName || "partner").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
-      const countrySlug = (app.country || "xx").toLowerCase();
-      // Generate unique slug with retry-on-collision (handles concurrent approvals).
-      const tryCreate = async (): Promise<any> => {
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const slug = attempt === 0 ? `${baseSlug}-${countrySlug}` : `${baseSlug}-${countrySlug}-${attempt}`;
-          const existing = await storage.getPartnerBySlug(slug);
-          if (existing) continue;
-          try {
-            return await storage.createPartner({ slug, ...partnerPayload });
-          } catch (e: any) {
-            if (!String(e.message || "").includes("unique") && !String(e.code || "") .includes("23505")) throw e;
-          }
-        }
-        // Final fallback with timestamp
-        return await storage.createPartner({ slug: `${baseSlug}-${countrySlug}-${Date.now()}`, ...partnerPayload });
-      };
-      const partnerPayload: any = {
-        applicationId: app.id,
-        companyName: app.companyName,
-        country: app.country,
-        countryName: app.countryName,
-        city: app.city,
-        contactName: app.contactName,
-        contactEmail: app.email,
-        contactPhone: app.phone,
-        website: app.website,
-        description: app.servicesOffered,
-        services: req.body.services || [],
-        tier,
-        commissionPercent,
-        exclusiveCountry: tier === "premier",
-        status: "active",
-        publicListed: true,
-      };
-      const partner = await tryCreate();
-      await storage.updatePartnerApplication(id, {
-        status: "approved",
-        reviewedAt: new Date(),
-        reviewedBy: req.user.claims.sub,
-        reviewNotes: req.body.notes || null,
-      });
-      res.json({ success: true, partner });
-    } catch (e: any) {
-      console.error("[founder/partners/approve]", e);
-      res.status(500).json({ message: e.message });
-    }
+      res.json(await reviewProgramme("business",Number(req.params.id),req.user.claims.sub,
+        {...req.body,decision:"approved"}));
+    } catch (e) { programmeError(res,e); }
   });
 
   app.post("/api/founder/partners/applications/:id/reject", isFounder, async (req: any, res) => {
     try {
-      const id = parseInt(req.params.id);
-      await storage.updatePartnerApplication(id, {
-        status: "rejected",
-        reviewedAt: new Date(),
-        reviewedBy: req.user.claims.sub,
-        reviewNotes: req.body.notes || null,
-      });
-      res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+      res.json(await reviewProgramme("business",Number(req.params.id),req.user.claims.sub,
+        {decision:"rejected",notes:req.body.notes??""}));
+    } catch (e) { programmeError(res,e); }
   });
 
   // Founder: link a partner to a user account so they can access the portal
   app.patch("/api/founder/partners/:id", isFounder, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const updated = await storage.updatePartner(id, req.body);
+      const partner=await storage.getPartnerById(id);
+      if(!partner)return res.status(404).json({message:"Partner not found"});
+      if(req.body.userId!==undefined||req.body.tier!==undefined||req.body.commissionPercent!==undefined||req.body.status!==undefined)
+        return res.status(409).json({message:"Use the programme review controls. Ownership is established through verified applicant access."});
+      if(typeof req.body.publicListed!=="boolean")return res.status(400).json({message:"Choose the directory listing preference."});
+      const updated = await storage.updatePartner(id, {publicListed:req.body.publicListed});
       res.json(updated);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -3506,27 +3360,17 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  // Founder: create a payout
-  app.post("/api/founder/partners/:id/payouts", isFounder, async (req, res) => {
+  // Legacy entry point uses the same confirmed, offline-only accounting path.
+  app.post("/api/founder/partners/:id/payouts", isFounder, async (req:any, res) => {
     try {
       const partnerId = parseInt(req.params.id);
-      const payout = await storage.createPartnerPayout({
-        partnerId,
-        amountCents: parseInt(req.body.amountCents) || 0,
-        currency: req.body.currency || "USD",
-        method: req.body.method || "bank",
-        reference: req.body.reference || null,
-        status: req.body.status || "pending",
-        notes: req.body.notes || null,
-      });
-      res.json(payout);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+      const partner=await storage.getPartnerById(partnerId);
+      if(!partner?.applicationId)return res.status(404).json({message:"Partner not found"});
+      res.json(await manualPayout("business",partner.applicationId,req.user.claims.sub,req.body));
+    } catch (e) { programmeError(res,e); }
   });
   app.patch("/api/founder/partners/payouts/:id/status", isFounder, async (req, res) => {
-    try {
-      await storage.updatePartnerPayoutStatus(parseInt(req.params.id), req.body.status, req.body.reference);
-      res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    res.status(409).json({message:"Historical payout records are retained. Use Partner Programmes to record a completed manual payment against unpaid commissions."});
   });
 
   // ============ WEBHOOK DELIVERY HELPER ============

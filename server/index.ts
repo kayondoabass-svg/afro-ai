@@ -20,6 +20,9 @@ import { hasEndpointPreflight } from "@shared/api-version-policy";
 import { pool } from "./db";
 import { prepareIntegrationSchema } from "./integration-schema-readiness";
 import { prepareFounderAlerts, startFounderAlertMonitor } from "./founder-alerts";
+import { prepareProgrammes } from "./programmes/schema";
+import { startProgrammeMailWorker } from "./programmes/mail";
+import { startProgrammeReconciliation } from "./programmes/billing";
 import { founderOverview } from "./founder-oversight";
 
 const app = express();
@@ -196,10 +199,13 @@ httpServer.listen(
 (async () => {
   await prepareIntegrationSchema(pool);
   await prepareFounderAlerts();
+  await prepareProgrammes();
   log("✓ Integration schema ready");
   await registerRoutes(httpServer, app);
   markRoutesReady();
   startFounderAlertMonitor(founderOverview);
+  startProgrammeMailWorker();
+  startProgrammeReconciliation();
   log("✓ Routes ready — accepting traffic");
 
   // Start daily cleanup job that trims old chatbot conversations per plan retention

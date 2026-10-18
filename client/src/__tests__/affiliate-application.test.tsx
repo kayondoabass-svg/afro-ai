@@ -17,14 +17,15 @@ describe("affiliate application", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, status: "pending" }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     render(<QueryClientProvider client={new QueryClient()}><AffiliatePage /></QueryClientProvider>);
-    expect(screen.getByText(/Approval required before referral tracking/)).toBeTruthy();
     fireEvent.change(screen.getByTestId("input-affiliate-name"), { target: { value: "Ada Lovelace" } });
     fireEvent.change(screen.getByTestId("input-affiliate-email"), { target: { value: "ada@example.com" } });
+    fireEvent.change(screen.getByTestId("select-affiliate-payout-method"), { target: { value: "mobile_money" } });
     fireEvent.click(screen.getByTestId("button-affiliate-submit"));
-    await waitFor(() => expect(screen.getByText("Application received")).toBeTruthy());
-    expect(screen.getByText(/pending review/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Your application is under review.")).toBeTruthy());
     expect(screen.queryByTestId("text-affiliate-link")).toBeNull();
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).email).toBe("ada@example.com");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).payoutMethod).toBe("mobile_money");
+    expect(screen.getByRole("link", { name: /Go to applicant workspace/ })).toHaveAttribute("href", "/programme-portal");
   });
 
   it("surfaces rate limit errors instead of treating the submission as approved", async () => {
@@ -35,6 +36,7 @@ describe("affiliate application", () => {
     render(<QueryClientProvider client={new QueryClient()}><AffiliatePage /></QueryClientProvider>);
     fireEvent.change(screen.getByTestId("input-affiliate-name"), { target: { value: "Ada Lovelace" } });
     fireEvent.change(screen.getByTestId("input-affiliate-email"), { target: { value: "ada@example.com" } });
+    fireEvent.change(screen.getByTestId("select-affiliate-payout-method"), { target: { value: "bank" } });
     fireEvent.click(screen.getByTestId("button-affiliate-submit"));
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({
       title: "Application not submitted",

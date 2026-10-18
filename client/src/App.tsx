@@ -85,6 +85,7 @@ const PartnersPage = lazy(() => import("@/pages/partners"));
 const BecomePartnerPage = lazy(() => import("@/pages/become-partner"));
 const PartnerDirectoryPage = lazy(() => import("@/pages/partner-directory"));
 const PartnerPortalPage = lazy(() => import("@/pages/partner-portal"));
+const ProgrammePortalPage = lazy(() => import("@/pages/programme-portal"));
 const BusinessServicesPage = lazy(() => import("@/pages/business-services"));
 const DomainsLandingPage = lazy(() => import("@/pages/domains-landing"));
 const DomainsCheckoutPage = lazy(() => import("@/pages/domains-checkout"));
@@ -155,6 +156,7 @@ function AuthenticatedLayout() {
                 <Route path="/collaborate" component={CollaborationPage} />
                 <Route path="/domains" component={DomainsPage} />
                 <Route path="/affiliate" component={AffiliatePage} />
+                <Route path="/programme-portal" component={ProgrammePortalPage} />
                 <Route path="/integrations" component={ApiIntegrationsPage} />
                 <Route path="/seo" component={SeoToolsPage} />
                 <Route path="/webhooks" component={WebhooksPage} />
@@ -215,7 +217,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/blog": "Blog — Afro AI | African Tech News & Tutorials",
   "/about": "About — Afro AI | Built by KEYO TECHNOLOGIES",
   "/contact": "Contact — Afro AI",
-  "/affiliate": "Affiliate Program — Afro AI | Earn 20% Recurring Commission",
+  "/affiliate": "Affiliate Program — Afro AI | Earn 10% Commission",
+  "/programme-portal": "Programme Workspace — Afro AI",
   "/domains": "Domain Store — Afro AI | .africa, .co.ug, .co.ke Domains",
   "/privacy": "Privacy Policy — Afro AI",
   "/terms": "Terms of Service — Afro AI",
@@ -282,6 +285,7 @@ const AUTH_REQUIRED_EXACT = new Set<string>([
   "/apps",
   "/my-apps",
   "/founder",
+  "/programme-portal",
   "/team",
   "/admin-command",
   "/admin-command/keyo-studio",
@@ -334,10 +338,7 @@ function isAuthRequiredPath(p: string): boolean {
 function LoginRedirectGuard({ from }: { from: string }) {
   useEffect(() => {
     try {
-      sessionStorage.setItem(
-        "after_login_redirect",
-        from + (typeof window !== "undefined" ? window.location.search : ""),
-      );
+      sessionStorage.setItem("after_login_redirect", from);
     } catch {
       /* sessionStorage unavailable (private mode etc.) — proceed anyway */
     }
@@ -521,7 +522,12 @@ function AppRouter() {
     // Send them to /login and remember where they were trying to go so they
     // bounce back into the right page after signing in.
     if (isAuthRequiredPath(location)) {
-      return <LoginRedirectGuard from={location} />;
+      // Capture the full browser URL before <Redirect> changes pathname/search.
+      // Its layout effect can run before this guard's useEffect.
+      const returnTo = typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search}`
+        : location;
+      return <LoginRedirectGuard from={returnTo} />;
     }
     return (
       <ErrorBoundary>

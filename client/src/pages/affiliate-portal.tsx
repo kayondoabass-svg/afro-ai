@@ -1,4 +1,5 @@
 import { useRoute } from "wouter";
+import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -126,6 +127,9 @@ export default function AffiliatePortalPage() {
               This affiliate dashboard link is invalid or your application hasn't
               been approved yet. Please use the link from your approval email.
             </p>
+            <Link href="/programme-portal" className="inline-block text-sm text-primary underline underline-offset-4">
+              Sign in to your programme workspace
+            </Link>
           </CardContent>
         </Card>
       </div>
@@ -303,6 +307,12 @@ export default function AffiliatePortalPage() {
             )}
           </CardContent>
         </Card>
+
+        <div className="text-center">
+          <Link href="/programme-portal" className="text-sm text-primary underline underline-offset-4">
+            Use your signed-in programme workspace
+          </Link>
+        </div>
 
         <p className="text-center text-xs text-muted-foreground pt-2">
           Afro AI · KEYO TECHNOLOGIES · This is your private dashboard — keep the link to yourself.

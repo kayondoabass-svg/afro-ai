@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { FounderOperations, safeFounderAppHref, type SectionId } from "@/components/founder/FounderOperations";
 import { FounderAlertCenter } from "@/components/founder/FounderAlertCenter";
+import FounderProgrammes from "@/components/programmes/FounderProgrammes";
 import {
   Users,
   Folder,
@@ -34,7 +35,6 @@ import {
   AlertTriangle,
   BarChart3,
   CreditCard,
-  Gift,
   Receipt,
   CircleCheck,
   CircleX,
@@ -47,19 +47,13 @@ import {
   HardDrive,
   Zap,
   ClipboardList,
-  UserCheck,
   Trash2,
   RefreshCw,
   Network,
   Smartphone,
-  Handshake,
   Copy,
   PartyPopper,
   Hourglass,
-  ChevronDown,
-  ChevronRight,
-  Wallet,
-  MousePointerClick,
   Download,
 } from "lucide-react";
 
@@ -251,106 +245,6 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
-function affMoney(cents: number, currency = "USD") {
-  return `${currency} ${((cents ?? 0) / 100).toFixed(2)}`;
-}
-
-function AffiliateDrilldown({
-  id,
-  onPay,
-  paying,
-}: {
-  id: number;
-  onPay: () => void;
-  paying: boolean;
-}) {
-  const { data, isLoading } = useQuery<any>({
-    queryKey: ["/api/affiliate/applications", id],
-    retry: false,
-  });
-
-  if (isLoading) {
-    return <div className="px-2 pb-2"><Skeleton className="h-20 rounded-md" /></div>;
-  }
-  if (!data) return null;
-
-  const pendingCents = (data.commissions || [])
-    .filter((c: any) => c.status === "pending")
-    .reduce((s: number, c: any) => s + c.amountCents, 0);
-  const portalToken = data.affiliate?.portalToken;
-  const portalUrl = portalToken ? `${window.location.origin}/affiliate/portal/${portalToken}` : null;
-
-  return (
-    <div className="ml-9 mr-2 mb-2 p-3 rounded-md bg-muted/40 border space-y-3" data-testid={`affiliate-drilldown-${id}`}>
-      {portalUrl && (
-        <div className="flex items-center gap-2">
-          <code className="flex-1 text-[10px] font-mono bg-background rounded px-2 py-1 truncate text-primary">{portalUrl}</code>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-1.5"
-            onClick={() => { navigator.clipboard.writeText(portalUrl); }}
-            data-testid={`button-copy-portal-${id}`}
-          >
-            <Copy className="w-3 h-3" />
-          </Button>
-        </div>
-      )}
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] text-muted-foreground">
-          Pending payout: <span className="font-semibold text-foreground">{affMoney(pendingCents)}</span>
-        </p>
-        <Button
-          size="sm"
-          className="h-6 text-[11px] px-2"
-          disabled={paying || pendingCents <= 0}
-          onClick={onPay}
-          data-testid={`button-pay-affiliate-${id}`}
-        >
-          <Wallet className="w-3 h-3 mr-1" /> Mark paid
-        </Button>
-      </div>
-      <p className="text-[10px] text-muted-foreground">Only click after you have sent payment manually. Mark paid updates records only; it does not send money.</p>
-
-      <div>
-        <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-1">Referrals ({data.referrals?.length ?? 0})</p>
-        {data.referrals && data.referrals.length > 0 ? (
-          <div className="space-y-0.5">
-            {data.referrals.map((r: any) => (
-              <div key={r.id} className="flex items-center justify-between text-[10px]" data-testid={`drilldown-referral-${r.id}`}>
-                <span className="truncate">{r.referredEmail || "New user"}</span>
-                <Badge variant={r.status === "converted" ? "default" : "secondary"} className="text-[9px] px-1">
-                  {r.status === "converted" ? "Paying" : "Signed up"}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-[10px] text-muted-foreground">No referrals yet</p>
-        )}
-      </div>
-
-      <div>
-        <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-1">Commissions ({data.commissions?.length ?? 0})</p>
-        {data.commissions && data.commissions.length > 0 ? (
-          <div className="space-y-0.5">
-            {data.commissions.map((c: any) => (
-              <div key={c.id} className="flex items-center justify-between text-[10px]" data-testid={`drilldown-commission-${c.id}`}>
-                <span>{affMoney(c.amountCents, c.currency)} <span className="text-muted-foreground">({c.periodMonth})</span></span>
-                <Badge variant={c.status === "paid" ? "default" : "secondary"} className="text-[9px] px-1">
-                  {c.status === "paid" ? "Paid" : "Pending"}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-[10px] text-muted-foreground">No commissions yet</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 const PLAN_COLORS: Record<string, string> = {
   starter: "bg-muted text-muted-foreground",
   pro: "bg-blue-500/10 text-blue-400 border-blue-500/30",
@@ -386,50 +280,6 @@ export default function FounderDashboardPage() {
   const { data: stats, isLoading, isError: statsError } = useQuery<PlatformStats & { unavailableSections?: string[] }>({
     queryKey: ["/api/admin/stats"],
     enabled: isFounder,
-  });
-
-  const { data: affiliateApps } = useQuery<any[]>({
-    queryKey: ["/api/affiliate/applications"],
-    enabled: isFounder,
-  });
-
-  const { data: partnerStats } = useQuery<any>({
-    queryKey: ["/api/founder/partners/stats"],
-    enabled: isFounder,
-  });
-  const { data: partnerApps } = useQuery<any[]>({
-    queryKey: ["/api/founder/partners/applications"],
-    enabled: isFounder,
-  });
-  const { data: partnersList } = useQuery<any[]>({
-    queryKey: ["/api/founder/partners"],
-    enabled: isFounder,
-  });
-
-  const approvePartnerMutation = useMutation({
-    mutationFn: async ({ id, tier }: { id: number; tier: string }) => {
-      const res = await apiRequest("POST", `/api/founder/partners/applications/${id}/approve`, { tier });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners/applications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners/stats"] });
-      toast({ title: "Partner approved", description: "Country partner is now active." });
-    },
-    onError: (err: any) => toast({ title: "Approval failed", description: err.message, variant: "destructive" }),
-  });
-
-  const rejectPartnerMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiRequest("POST", `/api/founder/partners/applications/${id}/reject`);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners/applications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/founder/partners/stats"] });
-      toast({ title: "Application rejected" });
-    },
   });
 
   const { data: allPayments = [] } = useQuery<any[]>({
@@ -483,38 +333,6 @@ export default function FounderDashboardPage() {
     },
     onError: (err: any) => {
       toast({ title: "Could not send email", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const updateAffiliateMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      await apiRequest("PATCH", `/api/affiliate/applications/${id}/status`, { status });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications"] });
-      toast({ title: "Status updated" });
-    },
-  });
-
-  const [expandedAffiliate, setExpandedAffiliate] = useState<number | null>(null);
-
-  const payAffiliateMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiRequest("PATCH", `/api/affiliate/applications/${id}/pay`, {});
-      return (await res.json()) as { paidCents: number };
-    },
-    onSuccess: (data, id) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/affiliate/applications", id] });
-      toast({ title: "Payment recorded", description: `${affMoney(data.paidCents)} marked paid. No money was sent by this action.` });
-    },
-    onError: (err: Error) => {
-      let message = err.message || "Could not mark commissions paid.";
-      const json = message.match(/^\d+:\s*(\{[\s\S]*\})$/);
-      if (json) {
-        try { message = JSON.parse(json[1]).message || message; } catch { /* keep original error */ }
-      }
-      toast({ title: "Payment not recorded", description: message, variant: "destructive" });
     },
   });
 
@@ -834,7 +652,6 @@ export default function FounderDashboardPage() {
                   { icon: ClipboardList, label: "Forms", value: metric("forms", stats?.totalForms), sub: unavailable("forms") ? "Unavailable" : `${stats?.totalFormSubmissions ?? "—"} submissions`, color: "text-lime-400 bg-lime-500/10" },
                   { icon: Zap, label: "Webhooks", value: metric("webhooks", stats?.activeWebhooks), sub: unavailable("webhooks") ? "Unavailable" : `${stats?.totalWebhooks ?? "—"} registered`, color: "text-yellow-400 bg-yellow-500/10" },
                   { icon: ShoppingBag, label: "Domains", value: metric("domains", stats?.totalDomainOrders), sub: "registered", color: "text-indigo-400 bg-indigo-500/10" },
-                  { icon: UserCheck, label: "Affiliates", value: affiliateApps?.filter((a: any) => a.status === "approved").length ?? 0, sub: `${affiliateApps?.length ?? 0} applied`, color: "text-primary bg-primary/10" },
                 ].map(item => (
                   <div key={item.label} className={`rounded-lg p-3 ${item.color.split(" ")[1]}`}>
                     <div className="flex items-center gap-1.5 mb-1">
@@ -1037,172 +854,7 @@ export default function FounderDashboardPage() {
           </Card>
         </div>
 
-        {/* Affiliate Applications */}
-        <Card>
-          <CardContent className="p-0">
-            <div className="flex items-center gap-2 p-4 border-b">
-              <Gift className="w-4 h-4 text-primary" />
-              <h3 className="font-semibold text-sm">Affiliate Applications</h3>
-              <Badge variant="secondary" className="ml-auto text-xs">{affiliateApps?.length ?? 0}</Badge>
-            </div>
-            <ScrollArea className="h-[300px]">
-              <div className="p-2 space-y-1">
-                {affiliateApps && affiliateApps.length > 0 ? (
-                  affiliateApps.map((a: any) => {
-                    const isApproved = a.status === "approved";
-                    const isExpanded = expandedAffiliate === a.id;
-                    return (
-                    <div key={a.id}>
-                      <div
-                        className={`flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors ${isApproved ? "cursor-pointer" : ""}`}
-                        onClick={isApproved ? () => setExpandedAffiliate(isExpanded ? null : a.id) : undefined}
-                        data-testid={`affiliate-app-${a.id}`}
-                      >
-                        {isApproved ? (
-                          isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                        ) : (
-                          <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-                            <Gift className="w-3.5 h-3.5 text-primary" />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate">{a.fullName}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">{a.email} · <span className="text-primary font-mono">{a.referralCode}</span></p>
-                          {isApproved && (
-                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
-                              <span className="flex items-center gap-0.5" title="Clicks"><MousePointerClick className="w-2.5 h-2.5" />{a.clicks ?? 0}</span>
-                              <span className="flex items-center gap-0.5" title="Sign-ups"><Users className="w-2.5 h-2.5" />{a.referralCount ?? 0}</span>
-                              <span className="flex items-center gap-0.5" title="Paying"><CheckCircle className="w-2.5 h-2.5" />{a.convertedCount ?? 0}</span>
-                              <span className="flex items-center gap-0.5 text-primary font-medium" title="Earned"><Wallet className="w-2.5 h-2.5" />{affMoney(a.totalEarnedCents ?? 0)}</span>
-                            </div>
-                          )}
-                          {!isApproved && a.country && <p className="text-[10px] text-muted-foreground">{a.country}</p>}
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                          <Badge variant="outline" className={`text-[10px] px-1.5 ${
-                            a.status === "approved" ? "text-green-400 border-green-500/30" :
-                            a.status === "rejected" ? "text-red-400 border-red-500/30" :
-                            "text-yellow-400 border-yellow-500/30"
-                          }`}>
-                            {a.status}
-                          </Badge>
-                          {a.status === "pending" && (
-                            <>
-                              <Button size="sm" variant="ghost" className="h-6 px-1.5 text-green-400 hover:text-green-300" onClick={() => updateAffiliateMutation.mutate({ id: a.id, status: "approved" })} data-testid={`button-approve-affiliate-${a.id}`}>
-                                <CheckCircle className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-400 hover:text-red-300" onClick={() => updateAffiliateMutation.mutate({ id: a.id, status: "rejected" })} data-testid={`button-reject-affiliate-${a.id}`}>
-                                <Ban className="w-3.5 h-3.5" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      {isApproved && isExpanded && (
-                        <AffiliateDrilldown
-                          id={a.id}
-                          paying={payAffiliateMutation.isPending}
-                          onPay={() => payAffiliateMutation.mutate(a.id)}
-                        />
-                      )}
-                    </div>
-                    );
-                  })
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center py-8">No affiliate applications yet</p>
-                )}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        {/* Country/Reseller Partner Program */}
-        <Card>
-          <CardContent className="p-0">
-            <div className="flex items-center gap-2 p-4 border-b">
-              <Globe className="w-4 h-4 text-primary" />
-              <h3 className="font-semibold text-sm">Country Partner Program</h3>
-              <Badge variant="secondary" className="ml-auto text-xs">
-                {partnerStats?.totalPartners ?? 0} active · {partnerStats?.countriesCovered ?? 0} countries
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-4 border-b">
-              {[
-                { label: "Active Partners", value: partnerStats?.totalPartners ?? 0, color: "text-primary" },
-                { label: "Pending Apps", value: partnerStats?.pendingApplications ?? 0, color: "text-yellow-400" },
-                { label: "Owed Commissions", value: `$${((partnerStats?.pendingCommissionCents ?? 0) / 100).toFixed(0)}`, color: "text-amber-400" },
-                { label: "Paid Out", value: `$${((partnerStats?.paidCommissionCents ?? 0) / 100).toFixed(0)}`, color: "text-green-400" },
-              ].map((s) => (
-                <div key={s.label} className="rounded-md border p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</p>
-                  <p className={`text-lg font-semibold ${s.color}`} data-testid={`partner-stat-${s.label.toLowerCase().replace(/\s/g, "-")}`}>{s.value}</p>
-                </div>
-              ))}
-            </div>
-            <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x">
-              <div>
-                <div className="px-4 py-2 border-b bg-muted/30 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Pending Applications
-                </div>
-                <ScrollArea className="h-[260px]">
-                  <div className="p-2 space-y-1">
-                    {partnerApps && partnerApps.filter((a: any) => a.status === "pending").length > 0 ? (
-                      partnerApps.filter((a: any) => a.status === "pending").map((a: any) => (
-                        <div key={a.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`partner-app-${a.id}`}>
-                          <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-                            <Globe className="w-3.5 h-3.5 text-primary" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate">{a.companyName}</p>
-                            <p className="text-[10px] text-muted-foreground truncate">{a.countryName} · {a.contactName} · {a.email}</p>
-                          </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <Badge variant="outline" className="text-[10px] px-1.5">{a.desiredTier}</Badge>
-                            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-green-400 hover:text-green-300" onClick={() => approvePartnerMutation.mutate({ id: a.id, tier: a.desiredTier || "authorized" })} data-testid={`button-approve-partner-${a.id}`}>
-                              <CheckCircle className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-400 hover:text-red-300" onClick={() => rejectPartnerMutation.mutate(a.id)} data-testid={`button-reject-partner-${a.id}`}>
-                              <Ban className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-muted-foreground text-center py-8">No pending applications</p>
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
-              <div>
-                <div className="px-4 py-2 border-b bg-muted/30 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Active Country Partners
-                </div>
-                <ScrollArea className="h-[260px]">
-                  <div className="p-2 space-y-1">
-                    {partnersList && partnersList.length > 0 ? (
-                      partnersList.map((p: any) => (
-                        <div key={p.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`partner-row-${p.id}`}>
-                          <div className="w-7 h-7 rounded-md bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                            <Handshake className="w-3.5 h-3.5 text-green-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate">{p.companyName}</p>
-                            <p className="text-[10px] text-muted-foreground truncate">{p.countryName} · {p.commissionPercent}% · {p.tier}</p>
-                          </div>
-                          <Badge variant="outline" className={`text-[10px] px-1.5 ${p.status === "active" ? "text-green-400 border-green-500/30" : "text-yellow-400 border-yellow-500/30"}`}>
-                            {p.status}
-                          </Badge>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-muted-foreground text-center py-8">No active partners yet</p>
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <FounderProgrammes />
 
         {/* Payment Activity Log (IPN Events) */}
         <Card>

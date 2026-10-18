@@ -1,353 +1,154 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Globe,
-  Award,
-  Crown,
-  Handshake,
-  CheckCircle2,
-  TrendingUp,
-  Users,
-  DollarSign,
-  Shield,
-  Sparkles,
-  ArrowRight,
-  Building2,
-} from "lucide-react";
+import { ArrowRight, Award, Building2, Check, Crown, DollarSign, Globe, Handshake, ShieldCheck, Sparkles, TrendingUp, Users, Wallet } from "lucide-react";
 
+const COUNTRIES = [
+  ["UG", "Uganda"], ["KE", "Kenya"], ["TZ", "Tanzania"], ["RW", "Rwanda"], ["NG", "Nigeria"], ["GH", "Ghana"],
+  ["ZA", "South Africa"], ["ET", "Ethiopia"], ["EG", "Egypt"], ["MA", "Morocco"], ["SN", "Senegal"],
+  ["CI", "Côte d'Ivoire"], ["CM", "Cameroon"], ["ZM", "Zambia"], ["ZW", "Zimbabwe"], ["BW", "Botswana"],
+  ["MZ", "Mozambique"], ["CD", "DR Congo"], ["OTHER", "Other"],
+];
 const TIERS = [
   {
-    name: "Authorized Partner",
-    icon: Handshake,
-    commission: "20%",
-    color: "from-slate-500/20 to-slate-700/20 border-slate-500/30",
-    badgeColor: "bg-slate-500/10 text-slate-400 border-slate-500/30",
+    name: "Authorized Partner", commission: "20%", icon: Handshake,
     requirements: ["Sign partner agreement", "5+ paid customers in 6 months", "Verified business registration"],
     perks: ["Listed in partner directory", "Official Afro AI Partner badge", "Marketing asset library access", "Quarterly training webinars"],
   },
   {
-    name: "Premium Partner",
-    icon: Award,
-    commission: "30%",
-    color: "from-blue-500/20 to-cyan-500/20 border-blue-500/40",
-    badgeColor: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+    name: "Premium Partner", commission: "30%", icon: Award, highlighted: true,
     requirements: ["25+ active customers", "1+ certified staff member", "Annual performance review"],
     perks: ["All Authorized perks", "Lead routing from your country", "Co-marketing opportunities", "Priority support channel", "Higher commission tier"],
-    highlight: true,
   },
   {
-    name: "Premier Partner",
-    icon: Crown,
-    commission: "40%",
-    color: "from-amber-500/20 to-orange-500/20 border-amber-500/40",
-    badgeColor: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    name: "Premier Partner", commission: "40%", icon: Crown,
     requirements: ["100+ active customers", "3+ certified staff", "Demonstrated market leadership"],
     perks: ["All Premium perks", "Country exclusivity option", "White-label rights", "Dedicated account manager", "Co-branded landing pages", "Featured at events"],
   },
 ];
-
-const COUNTRIES = [
-  { code: "UG", name: "Uganda" }, { code: "KE", name: "Kenya" }, { code: "TZ", name: "Tanzania" },
-  { code: "RW", name: "Rwanda" }, { code: "NG", name: "Nigeria" }, { code: "GH", name: "Ghana" },
-  { code: "ZA", name: "South Africa" }, { code: "ET", name: "Ethiopia" }, { code: "EG", name: "Egypt" },
-  { code: "MA", name: "Morocco" }, { code: "SN", name: "Senegal" }, { code: "CI", name: "Côte d'Ivoire" },
-  { code: "CM", name: "Cameroon" }, { code: "ZM", name: "Zambia" }, { code: "ZW", name: "Zimbabwe" },
-  { code: "BW", name: "Botswana" }, { code: "MZ", name: "Mozambique" }, { code: "CD", name: "DR Congo" },
-  { code: "OTHER", name: "Other" },
-];
-
 const BENEFITS = [
-  { icon: DollarSign, title: "Recurring Revenue", desc: "Earn 20-40% commission on every customer's monthly subscription, for as long as they stay." },
-  { icon: Globe, title: "Country Exclusivity", desc: "Premier partners get exclusive rights to their country — protected territory, no competition." },
-  { icon: TrendingUp, title: "Lead Pipeline", desc: "We auto-route inbound prospects from your country directly to your inbox. Free leads." },
-  { icon: Shield, title: "Trusted Brand", desc: "Co-branded as 'Official Afro AI Partner in [Your Country]' with verified badge and listing." },
-  { icon: Users, title: "Sales Enablement", desc: "Pitch decks, demo videos, case studies, comparison sheets — everything you need to close." },
-  { icon: Sparkles, title: "First-mover Advantage", desc: "Africa-first AI infrastructure. Be the established player in your market before competitors arrive." },
+  { icon: DollarSign, title: "Recurring Revenue", description: "Earn 20–40% commission on every customer's monthly subscription, for as long as they stay." },
+  { icon: Globe, title: "Country Exclusivity", description: "Premier partners may qualify for exclusive country rights, subject to agreement and approval." },
+  { icon: TrendingUp, title: "Lead Pipeline", description: "Inbound prospects from your country can be routed to your team where the programme supports it." },
+  { icon: ShieldCheck, title: "Trusted Brand", description: "Eligible partners can be presented as an official Afro AI partner with a verified listing." },
+  { icon: Users, title: "Sales Enablement", description: "Access sales materials such as pitch decks, demo videos, case studies and comparison sheets." },
+  { icon: Sparkles, title: "First-mover Advantage", description: "Build a local presence for Afro AI's Africa-first AI infrastructure as the programme grows." },
 ];
+const INITIAL = {
+  companyName: "", contactName: "", email: "", phone: "", country: "", countryName: "", city: "", website: "",
+  currentCustomers: 0, teamSize: 1, yearsInBusiness: 0, servicesOffered: "", whyPartner: "",
+  desiredTier: "authorized", registrationNumber: "", registrationCountry: "", payoutMethod: "",
+};
+function errorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "Please try again.";
+  const match = message.match(/^\d+:\s*(\{[\s\S]*\})$/);
+  if (match) {
+    try { return JSON.parse(match[1]).message || message; } catch { return message; }
+  }
+  return message;
+}
 
 export default function BecomePartnerPage() {
   const { toast } = useToast();
   const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState({
-    companyName: "",
-    contactName: "",
-    email: "",
-    phone: "",
-    country: "",
-    countryName: "",
-    city: "",
-    website: "",
-    currentCustomers: 0,
-    teamSize: 1,
-    yearsInBusiness: 0,
-    servicesOffered: "",
-    whyPartner: "",
-    desiredTier: "authorized",
-  });
-
+  const [form, setForm] = useState(INITIAL);
   const apply = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/reseller/apply", form).then(r => r.json()),
-    onSuccess: (data: any) => {
-      if (data.success) {
-        setSubmitted(true);
-        toast({ title: "Application received!", description: "We'll review and respond within 3 business days." });
-      } else {
-        toast({ title: "Error", description: data.message || "Something went wrong", variant: "destructive" });
-      }
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/reseller/apply", form);
+      return response.json();
     },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message || "Could not submit", variant: "destructive" });
+    onSuccess: (data: { success?: boolean; message?: string }) => {
+      if (data?.success) setSubmitted(true);
+      else toast({ title: "Application not submitted", description: data?.message || "Please try again.", variant: "destructive" });
     },
+    onError: (error) => toast({ title: "Application not submitted", description: errorMessage(error), variant: "destructive" }),
   });
+  const update = <K extends keyof typeof INITIAL>(key: K, value: (typeof INITIAL)[K]) => setForm((current) => ({ ...current, [key]: value }));
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.companyName || !form.contactName || !form.email || !form.country) {
-      toast({ title: "Missing fields", description: "Please fill required fields", variant: "destructive" });
-      return;
-    }
-    apply.mutate();
-  };
-
-  if (submitted) {
-    return (
-      <div className="flex-1 overflow-auto min-h-0">
-        <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
-          <div className="w-20 h-20 mx-auto rounded-full bg-green-500/10 flex items-center justify-center">
-            <CheckCircle2 className="w-10 h-10 text-green-500" />
-          </div>
-          <h1 className="text-3xl font-bold font-serif" data-testid="text-application-success">Application received</h1>
-          <p className="text-muted-foreground">
-            Thanks {form.contactName}! Our partnerships team will review your application for {form.country} and respond within 3 business days at <strong>{form.email}</strong>.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            In the meantime, learn more about Afro AI's products on our <Link href="/" className="text-primary underline">homepage</Link>.
-          </p>
+  return <main className="flex-1 min-h-0 overflow-auto">
+    <section className="border-b bg-gradient-to-br from-primary/[0.09] via-background to-background">
+      <div className="mx-auto max-w-6xl px-4 sm:px-8 py-14 sm:py-20">
+        <Badge variant="outline" className="gap-2 border-primary/30 bg-background/50 text-primary"><Globe className="h-4 w-4" /> Business partner programme</Badge>
+        <div className="mt-7 grid lg:grid-cols-[1fr_0.55fr] gap-10 items-end">
+          <div><h1 className="max-w-3xl text-4xl sm:text-6xl font-semibold leading-[1.05] tracking-tight">Bring Afro AI to the businesses you know.</h1><p className="mt-5 max-w-2xl text-base sm:text-lg text-muted-foreground">A local partnership for teams ready to introduce practical AI products, guide customers and grow a trusted market.</p><div className="mt-7 flex flex-wrap gap-3"><a href="#apply" className="inline-flex items-center rounded-md bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Apply to partner <ArrowRight className="ml-2 h-4 w-4" /></a><Link href="/partners/directory" className="inline-flex items-center rounded-md border bg-background px-5 py-3 text-sm font-medium">View partner directory</Link></div></div>
+          <aside className="border-l-2 border-primary pl-5 py-1"><p className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">Partner tiers</p><p className="mt-3 text-2xl font-semibold">20% · 30% · 40%</p><p className="mt-1 text-sm text-muted-foreground">Founder-assigned fixed rates</p><p className="mt-4 text-xs text-muted-foreground">Applicants may express a preference. The founder verifies registration and deliberately assigns the final tier.</p></aside>
         </div>
       </div>
-    );
-  }
-
-  return (
-    <div className="flex-1 overflow-auto min-h-0">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-16">
-        {/* Hero */}
-        <section className="text-center space-y-5">
-          <Badge variant="outline" className="mx-auto">
-            <Globe className="w-3 h-3 mr-1" /> Country Partner Program
-          </Badge>
-          <h1 className="text-4xl md:text-5xl font-bold font-serif" data-testid="text-hero-title">
-            Become an authorized Afro AI partner in your country
-          </h1>
-          <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-            Join a select network of licensed companies reselling Africa's AI infrastructure.
-            Earn up to <strong className="text-foreground">40% recurring commission</strong>, get exclusive country rights,
-            and become the trusted local face of Afro AI.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <a href="#apply">
-              <Button size="lg" data-testid="button-scroll-apply">
-                Apply now <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </a>
-            <Link href="/partners/directory">
-              <Button size="lg" variant="outline" data-testid="button-view-directory">View partner directory</Button>
-            </Link>
-          </div>
-        </section>
-
-        {/* Benefits */}
-        <section className="space-y-6">
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl md:text-3xl font-bold">Why partner with Afro AI?</h2>
-            <p className="text-muted-foreground">Real economics, real territory, real support.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {BENEFITS.map(b => {
-              const Icon = b.icon;
-              return (
-                <Card key={b.title} className="hover-elevate" data-testid={`card-benefit-${b.title.toLowerCase().replace(/\s+/g, '-')}`}>
-                  <CardContent className="p-5 space-y-2">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Icon className="w-5 h-5 text-primary" />
-                    </div>
-                    <h3 className="font-semibold">{b.title}</h3>
-                    <p className="text-sm text-muted-foreground">{b.desc}</p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Tiers */}
-        <section className="space-y-6">
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl md:text-3xl font-bold">Three partnership tiers</h2>
-            <p className="text-muted-foreground">Start where you are. Grow at your pace.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {TIERS.map(tier => {
-              const Icon = tier.icon;
-              return (
-                <Card
-                  key={tier.name}
-                  className={`bg-gradient-to-br ${tier.color} ${tier.highlight ? "ring-2 ring-blue-500/40 md:scale-105" : ""}`}
-                  data-testid={`card-tier-${tier.name.toLowerCase().replace(/\s+/g, '-')}`}
-                >
-                  <CardContent className="p-6 space-y-4">
-                    {tier.highlight && (
-                      <Badge className="bg-blue-500 text-white mb-2">Most popular</Badge>
-                    )}
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-background/40 flex items-center justify-center">
-                        <Icon className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-lg">{tier.name}</h3>
-                        <p className="text-3xl font-extrabold mt-1">
-                          {tier.commission}
-                          <span className="text-sm font-normal text-muted-foreground"> recurring</span>
-                        </p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">Requirements</p>
-                      <ul className="space-y-1.5 text-sm">
-                        {tier.requirements.map(r => (
-                          <li key={r} className="flex gap-2">
-                            <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0 text-muted-foreground" /> {r}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">Perks</p>
-                      <ul className="space-y-1.5 text-sm">
-                        {tier.perks.map(p => (
-                          <li key={p} className="flex gap-2">
-                            <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0 text-green-500" /> {p}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Application Form */}
-        <section id="apply" className="scroll-mt-20">
-          <Card className="bg-card/60 backdrop-blur">
-            <CardContent className="p-6 md:p-10">
-              <div className="text-center space-y-2 mb-8">
-                <Building2 className="w-10 h-10 mx-auto text-primary" />
-                <h2 className="text-2xl md:text-3xl font-bold">Apply to become a partner</h2>
-                <p className="text-muted-foreground text-sm">We review every application carefully. Response within 3 business days.</p>
-              </div>
-              <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl mx-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="companyName">Company name *</Label>
-                    <Input id="companyName" data-testid="input-company-name" value={form.companyName} onChange={e => setForm({ ...form, companyName: e.target.value })} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="contactName">Your full name *</Label>
-                    <Input id="contactName" data-testid="input-contact-name" value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="email">Business email *</Label>
-                    <Input id="email" type="email" data-testid="input-email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="phone">Phone (with country code)</Label>
-                    <Input id="phone" data-testid="input-phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+256..." />
-                  </div>
-                  <div>
-                    <Label htmlFor="country">Country *</Label>
-                    <Select
-                      value={form.country}
-                      onValueChange={(v) => {
-                        const c = COUNTRIES.find(x => x.code === v);
-                        setForm({ ...form, country: v, countryName: c?.name || v });
-                      }}
-                    >
-                      <SelectTrigger id="country" data-testid="select-country">
-                        <SelectValue placeholder="Select country" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {COUNTRIES.map(c => (
-                          <SelectItem key={c.code} value={c.code} data-testid={`option-country-${c.code}`}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="city">City</Label>
-                    <Input id="city" data-testid="input-city" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
-                  </div>
-                  <div>
-                    <Label htmlFor="website">Website</Label>
-                    <Input id="website" data-testid="input-website" value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} placeholder="https://" />
-                  </div>
-                  <div>
-                    <Label htmlFor="teamSize">Team size</Label>
-                    <Input id="teamSize" type="number" min="1" data-testid="input-team-size" value={form.teamSize} onChange={e => setForm({ ...form, teamSize: parseInt(e.target.value) || 1 })} />
-                  </div>
-                  <div>
-                    <Label htmlFor="currentCustomers">Current customers (any service)</Label>
-                    <Input id="currentCustomers" type="number" min="0" data-testid="input-current-customers" value={form.currentCustomers} onChange={e => setForm({ ...form, currentCustomers: parseInt(e.target.value) || 0 })} />
-                  </div>
-                  <div>
-                    <Label htmlFor="yearsInBusiness">Years in business</Label>
-                    <Input id="yearsInBusiness" type="number" min="0" data-testid="input-years-business" value={form.yearsInBusiness} onChange={e => setForm({ ...form, yearsInBusiness: parseInt(e.target.value) || 0 })} />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="desiredTier">Desired tier</Label>
-                  <Select value={form.desiredTier} onValueChange={(v) => setForm({ ...form, desiredTier: v })}>
-                    <SelectTrigger id="desiredTier" data-testid="select-tier">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="authorized" data-testid="option-tier-authorized">Authorized (20% commission — start here)</SelectItem>
-                      <SelectItem value="premium" data-testid="option-tier-premium">Premium (30% — established business)</SelectItem>
-                      <SelectItem value="premier" data-testid="option-tier-premier">Premier (40% — country exclusivity)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="servicesOffered">What services does your company currently offer?</Label>
-                  <Textarea id="servicesOffered" rows={3} data-testid="input-services" value={form.servicesOffered} onChange={e => setForm({ ...form, servicesOffered: e.target.value })} placeholder="e.g. CRM implementation, web development, training..." />
-                </div>
-
-                <div>
-                  <Label htmlFor="whyPartner">Why do you want to partner with Afro AI?</Label>
-                  <Textarea id="whyPartner" rows={4} data-testid="input-why-partner" value={form.whyPartner} onChange={e => setForm({ ...form, whyPartner: e.target.value })} placeholder="Tell us about your market, customers, and vision..." />
-                </div>
-
-                <Button type="submit" size="lg" className="w-full" disabled={apply.isPending} data-testid="button-submit-application">
-                  {apply.isPending ? "Submitting…" : "Submit application"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </section>
+    </section>
+    <section className="mx-auto max-w-6xl px-4 sm:px-8 py-8 grid md:grid-cols-3 gap-3">
+      <Feature icon={<Handshake />} title="Local expertise" text="Represent the product with knowledge of your market and customers." />
+      <Feature icon={<ShieldCheck />} title="Verified programme" text="Business registration details are reviewed before approval." />
+      <Feature icon={<Wallet />} title="Manual payouts" text="Choose bank or mobile money. All payments are made manually by the founder." />
+    </section>
+    <section className="mx-auto max-w-6xl px-4 sm:px-8 py-10 border-t">
+      <div className="mb-6"><p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Partner support</p><h2 className="mt-2 text-2xl font-semibold">Why partner with Afro AI?</h2><p className="mt-2 text-sm text-muted-foreground">The programme combines recurring economics with local market support.</p></div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {BENEFITS.map(({ icon: Icon, title, description }) => <Card key={title}><CardContent className="p-4"><div className="flex items-center gap-2 text-primary"><Icon className="h-4 w-4" /><h3 className="text-sm font-semibold text-foreground">{title}</h3></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">{description}</p></CardContent></Card>)}
       </div>
-    </div>
-  );
+    </section>
+    <section className="mx-auto max-w-6xl px-4 sm:px-8 py-10 border-t">
+      <div className="mb-6"><p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Tier guide</p><h2 className="mt-2 text-2xl font-semibold">Three partnership tiers</h2><p className="mt-2 text-sm text-muted-foreground">Applicants may request a tier preference; the founder verifies eligibility and assigns the final tier.</p></div>
+      <div className="grid lg:grid-cols-3 gap-4">
+        {TIERS.map(({ name, commission, icon: Icon, requirements, perks, highlighted }) => <Card key={name} className={highlighted ? "border-primary/40 bg-primary/[0.035]" : ""}>
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary"><Icon className="h-5 w-5" /></span><div><h3 className="font-semibold">{name}</h3><p className="text-2xl font-semibold">{commission}<span className="ml-1 text-xs font-normal text-muted-foreground">commission</span></p></div></div>
+            <div><p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Requirements</p><ul className="mt-2 space-y-1.5 text-xs">{requirements.map((requirement) => <li key={requirement} className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />{requirement}</li>)}</ul></div>
+            <div><p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Programme perks</p><ul className="mt-2 space-y-1.5 text-xs">{perks.map((perk) => <li key={perk} className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />{perk}</li>)}</ul></div>
+          </CardContent>
+        </Card>)}
+      </div>
+      <p className="mt-4 text-xs text-muted-foreground">Tier eligibility, rates and benefits are subject to review, the partner agreement and programme terms. A requested tier does not guarantee approval or assignment.</p>
+    </section>
+    <section className="mx-auto max-w-6xl px-4 sm:px-8 py-9 border-t">
+      <div className="grid md:grid-cols-[0.7fr_1.3fr] gap-8">
+        <div><p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Programme flow</p><h2 className="mt-3 text-3xl font-semibold">A partnership with clear checks.</h2></div>
+        <div className="divide-y">{[
+          ["01", "Apply with your company details", "Registration information helps the team confirm a legitimate business."],
+          ["02", "Afro AI reviews and verifies", "The founder reviews the application and assigns the appropriate fixed commission tier."],
+          ["03", "Build your market", "Approved business partners get a workspace for customer, lead, team and commission operations."],
+        ].map(([number, title, description]) => <div key={number} className="grid grid-cols-[3rem_1fr] gap-3 py-4"><span className="font-mono text-sm text-primary">{number}</span><div><h3 className="font-semibold">{title}</h3><p className="mt-1 text-sm text-muted-foreground">{description}</p></div></div>)}</div>
+      </div>
+    </section>
+    <section id="apply" className="mx-auto max-w-6xl px-4 sm:px-8 py-10 scroll-mt-16">
+      {!submitted ? <Card className="overflow-hidden"><CardContent className="p-0"><div className="grid lg:grid-cols-[0.65fr_1.35fr]">
+        <div className="bg-primary/[0.07] p-6 sm:p-9"><Building2 className="h-7 w-7 text-primary" /><p className="mt-5 font-mono text-xs uppercase tracking-[0.18em] text-primary">Partner application</p><h2 className="mt-2 text-2xl font-semibold">Tell us about your business.</h2><p className="mt-3 text-sm text-muted-foreground">A complete profile helps the team review your local capabilities and registration.</p><div className="mt-7 rounded-lg border border-primary/20 bg-background/60 p-4 text-xs leading-relaxed text-muted-foreground">Do not submit account numbers, bank passwords, mobile money PINs or one-time codes. Payment details are confirmed privately before the founder pays manually.</div></div>
+        <form className="p-5 sm:p-8 space-y-5" onSubmit={(event) => { event.preventDefault(); apply.mutate(); }}>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field label="Company name *"><Input required value={form.companyName} onChange={(event) => update("companyName", event.target.value)} /></Field>
+            <Field label="Contact name *"><Input required autoComplete="name" value={form.contactName} onChange={(event) => update("contactName", event.target.value)} /></Field>
+            <Field label="Business email *"><Input required type="email" autoComplete="email" value={form.email} onChange={(event) => update("email", event.target.value)} /></Field>
+            <Field label="Phone"><Input autoComplete="tel" value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+256…" /></Field>
+            <Field label="Country *"><select required className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.country} onChange={(event) => { const chosen = COUNTRIES.find(([code]) => code === event.target.value); update("country", event.target.value); update("countryName", chosen?.[1] || event.target.value); if (!form.registrationCountry) update("registrationCountry", chosen?.[1] || ""); }}><option value="">Choose country</option>{COUNTRIES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></Field>
+            <Field label="City"><Input value={form.city} onChange={(event) => update("city", event.target.value)} /></Field>
+            <Field label="Business registration number *"><Input required value={form.registrationNumber} onChange={(event) => update("registrationNumber", event.target.value)} autoComplete="off" /></Field>
+            <Field label="Registration country *"><Input required value={form.registrationCountry} onChange={(event) => update("registrationCountry", event.target.value)} placeholder="Country where the business is registered" /></Field>
+            <Field label="Website"><Input type="url" value={form.website} onChange={(event) => update("website", event.target.value)} placeholder="https://" /></Field>
+            <Field label="Team size"><Input type="number" min="1" value={form.teamSize} onChange={(event) => update("teamSize", Number(event.target.value) || 1)} /></Field>
+            <Field label="Current customers"><Input type="number" min="0" value={form.currentCustomers} onChange={(event) => update("currentCustomers", Number(event.target.value) || 0)} /></Field>
+            <Field label="Years in business"><Input type="number" min="0" value={form.yearsInBusiness} onChange={(event) => update("yearsInBusiness", Number(event.target.value) || 0)} /></Field>
+            <Field label="Preferred payout method *"><select required className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.payoutMethod} onChange={(event) => update("payoutMethod", event.target.value)}><option value="">Choose method</option><option value="bank">Bank</option><option value="mobile_money">Mobile money</option></select></Field>
+            <Field label="Requested tier (preference only)"><select className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.desiredTier} onChange={(event) => update("desiredTier", event.target.value)}><option value="authorized">Authorized — 20%</option><option value="premium">Premium — 30%</option><option value="premier">Premier — 40%</option></select></Field>
+          </div>
+          <Field label="Services offered"><Textarea rows={3} value={form.servicesOffered} onChange={(event) => update("servicesOffered", event.target.value)} placeholder="Implementation, training, consulting…" /></Field>
+          <Field label="Why do you want to partner with Afro AI?"><Textarea rows={3} value={form.whyPartner} onChange={(event) => update("whyPartner", event.target.value)} placeholder="Tell us about your market, customers and approach." /></Field>
+          <Button className="w-full" type="submit" disabled={!form.companyName.trim() || !form.contactName.trim() || !form.email.trim() || !form.country || !form.registrationNumber.trim() || !form.registrationCountry.trim() || !form.payoutMethod || apply.isPending}>{apply.isPending ? "Submitting application…" : "Submit for review"} <ArrowRight className="ml-2 h-4 w-4" /></Button>
+          <p className="text-center text-xs text-muted-foreground">Successful applications are under review and trigger a founder email workflow. Tier assignment and business verification happen during review; no referral link is active before approval.</p>
+        </form>
+      </div></CardContent></Card> : <Card className="mx-auto max-w-2xl border-primary/30 bg-primary/[0.04]"><CardContent className="p-8 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-primary/10 text-primary"><Check className="h-7 w-7" /></span><h2 className="mt-5 text-2xl font-semibold">Application received</h2><p className="mt-3 text-sm text-muted-foreground">Your business application is under review. The founder is notified through the application email workflow. Verification and tier assignment happen before approval.</p><Button asChild variant="outline" className="mt-6"><Link href="/programme-portal">Open your applicant workspace <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardContent></Card>}
+    </section>
+    <footer className="border-t px-4 sm:px-8 py-6 text-center text-xs text-muted-foreground">Already applied? <Link href="/programme-portal" className="text-primary underline underline-offset-4">Open your programme workspace</Link></footer>
+  </main>;
+}
+function Feature({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
+  return <div className="rounded-xl border bg-card p-4"><div className="flex items-center gap-2 text-primary [&>svg]:h-4 [&>svg]:w-4"><span>{icon}</span><h3 className="text-sm font-semibold text-foreground">{title}</h3></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">{text}</p></div>;
+}
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return <label className="block space-y-1.5 text-sm font-medium">{label}{children}</label>;
 }

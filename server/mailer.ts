@@ -44,6 +44,17 @@ async function send(to: string, subject: string, html: string, text: string): Pr
 
 // ─────────── Templates ───────────
 
+/** Programme mail accepts plain text and a trusted internal action path only. */
+export async function sendProgrammeEmail(to: string, opts: { subject: string; text: string; actionPath: string }): Promise<boolean> {
+  if (!/^\/(?:programme-portal|founder)(?:[/?#]|$)/.test(opts.actionPath)) return false;
+  const escape = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  const url = `https://afroaigroup.com${opts.actionPath}`;
+  const wrapped = shell(escape(opts.subject),
+    `<p>${escape(opts.text).replace(/\n/g, "<br>")}</p><p><a href="${escape(url)}" style="color:${BRAND_COLOR}">Open your programme dashboard</a></p>`,
+    `${opts.text}\n\nOpen dashboard: ${url}`);
+  return send(to, opts.subject, wrapped.html, wrapped.text);
+}
+
 export async function sendReceiptEmail(to: string, opts: {
   customerName: string; plan: string; amount: string; currency: string; method: string; confirmationCode: string; merchantRef: string; date: string;
 }): Promise<boolean> {
