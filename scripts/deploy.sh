@@ -213,6 +213,13 @@ emergency_recovery() {
   return 1
 }
 
+prepare_media_storage() {
+  log "Checking media job storage (additive setup only when required)..."
+  if ! node "$APP_DIR/scripts/media-storage-migrate.cjs"; then
+    die "Media storage not ready; existing service remains running. No media generation was requested."
+  fi
+}
+
 main() {
   mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$LOCK_FILE")"
   touch "$LOG_FILE"
@@ -267,6 +274,7 @@ main() {
   local deployed_sha=""
   [ -f "$APP_DIR/dist/.deployed_sha" ] && deployed_sha=$(cat "$APP_DIR/dist/.deployed_sha" 2>/dev/null || echo "")
   if [ "$previous_sha" = "$new_sha" ] && [ "$deployed_sha" = "$new_sha" ]; then
+    prepare_media_storage
     log "Already at latest commit AND dist/ matches. Verifying health and retrying cache purge."
     if ! health_check || ! post_start_stability_check; then
       die "Existing release is unhealthy; cache purge not attempted."
@@ -292,6 +300,7 @@ main() {
   # Read-only D1 identity/schema/duplicate preflight. Missing migration is
   # allowed: the app gates command writes (503) while legacy reads/deletes work.
   # Identity mismatch, duplicate paths, or connectivity failure halt deployment.
+  prepare_media_storage
   log "Checking project-files D1 prerequisite (read-only)..."
   if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/project-files-d1-preflight.ts" --require-ready; then
     die "Project-files D1 preflight failed; no D1 changes made. Existing service remains running."

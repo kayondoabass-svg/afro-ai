@@ -28,8 +28,13 @@ export function publicMediaJob(row: any) {
 }
 export async function mediaReady() {
   try {
-    await pool.query("SELECT id,lease_until,lease_token,asset_bytes,usage_log_id FROM media_jobs LIMIT 0");
-  } catch {
+    await pool.query(`SELECT id,user_id,kind,prompt,duration,idempotency_key,status,created_at,
+      lease_until,lease_token,error,plan,cost_cents,usage_log_id,asset_key,asset_bytes,mime_type
+      FROM media_jobs LIMIT 0`);
+  } catch(error) {
+    const code=(error as {code?:string}).code;
+    if(code && !["42P01","42703"].includes(code))
+      throw new MediaError(503,"MEDIA_STORAGE_UNAVAILABLE","Saved media is temporarily unavailable. Please try again later.");
     throw new MediaError(503, "MEDIA_MIGRATION_REQUIRED", "Media storage is unavailable. Apply the media jobs migration and verify database connectivity.");
   }
 }

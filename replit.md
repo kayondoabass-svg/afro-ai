@@ -64,6 +64,18 @@ bash /opt/afro-ai/scripts/deploy.sh
 
 **Important:** do NOT run `git pull` manually before calling the script — the script does its own pull, and a manual pull beforehand will make it think nothing changed (it will still detect a stale `dist/` via `dist/.deployed_sha` and rebuild, but the log line will be confusing). Just call the script.
 
+**Exception when updating the deployment script itself:** pull the update before
+invoking it, so Bash loads the new prerequisite checks rather than the old
+function definitions. Run `git -C /opt/afro-ai pull --ff-only origin main`, then
+the standard command above. The build marker still forces a rebuild when needed.
+
+Media storage setup runs explicitly during deployment, before restarting the
+service, and on same-build redeploys. It creates missing storage or adds missing
+nullable delivery fields without deleting jobs, assets, or billing records.
+Prepared databases need only read privileges. For a read-only diagnostic, run
+`node scripts/media-storage-migrate.cjs --check` with the service environment
+loaded; never print that environment or its database connection string.
+
 `scripts/deploy.sh` pulls from origin, builds client + server, restarts the service, runs a `/api/health` check, and purges the Cloudflare cache. Safety guarantees:
 
 - **Concurrency lock** (`flock` on `/var/lock/afro-ai-deploy.lock`) — refuses to start if another deploy is already running.

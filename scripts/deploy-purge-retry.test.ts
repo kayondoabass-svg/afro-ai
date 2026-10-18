@@ -18,6 +18,7 @@ SHARED_ENV="$TEST_DIR/shared.env"
 LOG_FILE="$TEST_DIR/deploy.log"
 LOCK_FILE="$TEST_DIR/deploy.lock"
 check_prereqs() { :; }
+prepare_media_storage() { :; }
 require_clean_tree() { :; }
 git() { if [[ "$*" == *"rev-parse HEAD"* ]]; then echo same-sha; fi; }
 snapshot_dist() { :; }

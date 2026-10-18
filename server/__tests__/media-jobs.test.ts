@@ -49,6 +49,19 @@ describe("durable media jobs", () => {
     mocks.query.mockRejectedValue(new Error("relation missing"));
     await expect(mediaReady()).rejects.toMatchObject({ status: 503, code: "MEDIA_MIGRATION_REQUIRED" });
   });
+  it("checks every storage field needed by history, billing, delivery and the worker",async()=>{
+    await mediaReady();
+    const probe=mocks.query.mock.calls[0][0];
+    for(const name of ["user_id","prompt","duration","idempotency_key","status","created_at","lease_until","lease_token","plan","cost_cents","usage_log_id","asset_key","asset_bytes","mime_type"])
+      expect(probe).toContain(name);
+    expect(probe).toContain("LIMIT 0");
+  });
+  it("does not present connectivity or permission failures as a missing migration",async()=>{
+    for(const code of ["08006","42501","ECONNREFUSED"]){
+      mocks.query.mockRejectedValueOnce({code});
+      await expect(mediaReady()).rejects.toMatchObject({status:503,code:"MEDIA_STORAGE_UNAVAILABLE"});
+    }
+  });
   it("scopes lookup to the authenticated owner and hides unknown IDs", async () => {
     await expect(findMedia("owner", "foreign-job")).rejects.toMatchObject({ status: 404 });
     expect(mocks.query).toHaveBeenCalledWith(expect.stringContaining("user_id=$1 AND id=$2"), ["owner", "foreign-job"]);
