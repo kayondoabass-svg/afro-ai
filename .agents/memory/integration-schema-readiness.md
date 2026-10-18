@@ -20,3 +20,15 @@ installations use read-only checks without requiring runtime DDL privileges.
 Verify production feature reads and preservation of existing resources, not
 just an unauthenticated 401 or generic health response. Do not bypass sign-in
 to claim a rendered signed-in UI check.
+
+Upgrade checks must also cover installations where an older feature was never
+initialized, rather than assuming all legacy feature tables already exist.
+
+**Why:** The programme upgrade attempted to alter an absent legacy affiliate
+table. Startup stayed unready, and deployment recovered the previous build.
+Tests that pre-created all legacy tables had not represented that installation.
+
+**How to apply:** Test the complete prerequisite chain from partial legacy
+schemas before treating an additive upgrade as production-ready. Preserve
+existing applications and financial history; do not replace missing setup with
+fabricated commissions or replay old payments.

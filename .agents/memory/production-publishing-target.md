@@ -60,3 +60,13 @@ deployment credentials are unusable.
 DNS, confirm the remote checkout and service with read-only checks, then use the
 existing deployment script. Never store the key or a fixed origin address in
 source or memory.
+
+VPS application output may be appended directly to files rather than collected
+in the systemd journal.
+
+**Why:** The journal contained no startup errors, and systemctl reported only
+the output mode, while the application error file held the deployment failure.
+
+**How to apply:** When the journal is empty, inspect the running process's
+standard-output/error file targets and read bounded, redacted log excerpts.
+Do not interpret an empty journal as evidence that startup succeeded.
