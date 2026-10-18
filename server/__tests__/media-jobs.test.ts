@@ -45,6 +45,19 @@ describe("durable media jobs", () => {
     expect(JSON.stringify(job)).not.toContain("secret");
     expect(JSON.stringify(job)).not.toContain("bytes");
   });
+  it("does not expose expired prompts or download links",()=>{
+    const job=publicMediaJob({id:"old",kind:"image",status:"succeeded",prompt:"private prompt",
+      created_at:new Date(),expires_at:new Date(Date.now()-1)});
+    expect(job.status).toBe("expired");
+    expect(job.prompt).toBe("");
+    expect(job.assetUrl).toBeUndefined();
+  });
+  it("does not replay, recharge or regenerate an expired idempotency key",async()=>{
+    client(sql=>sql.includes("FROM users")?{rows:[{id:"u",plan:"starter"}]}:
+      sql.includes("FROM media_jobs")?{rows:[{...input,expires_at:new Date(Date.now()-1)}]}:undefined);
+    await expect(submitMedia("u",input)).rejects.toMatchObject({status:410,code:"MEDIA_EXPIRED"});
+    expect(mocks.provider).not.toHaveBeenCalled();
+  });
   it("fails closed when migration is missing", async () => {
     mocks.query.mockRejectedValue(new Error("relation missing"));
     await expect(mediaReady()).rejects.toMatchObject({ status: 503, code: "MEDIA_MIGRATION_REQUIRED" });

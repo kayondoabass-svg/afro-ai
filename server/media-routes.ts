@@ -11,6 +11,7 @@ const endpoint = (fn: (req: Request, res: Response) => Promise<unknown>) =>
   (req: Request, res: Response, _next: NextFunction) => {
     void (async () => {
       try {
+        res.setHeader("Cache-Control","private, no-store");
         if (!owner(req)) throw new MediaError(401, "UNAUTHENTICATED", "Please sign in.");
         await mediaReady();
         await fn(req, res);
@@ -18,7 +19,9 @@ const endpoint = (fn: (req: Request, res: Response) => Promise<unknown>) =>
         if (res.headersSent) return;
         if (e instanceof ZodError) res.status(400).json({ code: "INVALID_MEDIA_REQUEST", error: e.issues.map(i => i.message).join("; ") });
         else if (e instanceof MediaError) res.status(e.status).json({ code: e.code, error: e.message });
-        else if (e instanceof MediaAssetError) res.status(503).json({ code: e.code, error: "The generated asset is unavailable or invalid." });
+        else if (e instanceof MediaAssetError) res.status(e.code==="MEDIA_EXPIRED" ? 410 : 503).json({
+          code:e.code,error:e.code==="MEDIA_EXPIRED" ? "This media expired after 72 hours. Generate a new image or video." : "The generated asset is unavailable or invalid.",
+        });
         else res.status(503).json({ code: "MEDIA_UNAVAILABLE", error: "Media service is temporarily unavailable." });
       }
     })();
@@ -27,7 +30,9 @@ const endpoint = (fn: (req: Request, res: Response) => Promise<unknown>) =>
 export function registerMediaRoutes(app: Express) {
   app.get("/api/media/jobs", isAuthenticated, endpoint(async (req, res) => {
     const { rows } = await pool.query(
-      "SELECT id,kind,status,prompt,created_at,error FROM media_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100", [owner(req)]);
+      `SELECT id,kind,status,prompt,created_at,error,expires_at,expired_at FROM media_jobs
+       WHERE user_id=$1 AND expired_at IS NULL AND (expires_at IS NULL OR expires_at>now())
+       ORDER BY created_at DESC LIMIT 100`, [owner(req)]);
     res.json({ jobs: rows.map(publicMediaJob) });
   }));
   app.post("/api/media/jobs", isAuthenticated,

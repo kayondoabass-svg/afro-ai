@@ -76,6 +76,25 @@ Prepared databases need only read privileges. For a read-only diagnostic, run
 `node scripts/media-storage-migrate.cjs --check` with the service environment
 loaded; never print that environment or its database connection string.
 
+Generated images/videos expire **72 hours after completion**, not after the
+request starts. Database completion tracking also supports older app releases.
+The app denies expired downloads and cleans up once per minute. A standalone
+`scripts/media-retention-run.cjs` entry point supports scheduled cleanup without
+starting any paid-generation or mail workers. The VPS compatibility timer
+`afro-ai-media-retention.timer` runs an independently bundled copy under
+`/opt/afro-ai-maintenance/`, using the app's systemd EnvironmentFile and user.
+It safely cooperates with app cleanup through row locks. It remains independent
+of the checkout so installing it cannot dirty or block normal deployments.
+To install/update that maintenance copy after code changes, build with
+`npx esbuild scripts/media-retention-run.cjs --bundle --platform=node --format=cjs --external:pg --outfile=/tmp/media-retention.cjs`
+and run `sudo bash scripts/install-media-retention.sh /tmp/media-retention.cjs`.
+Apply the storage migration first using the service environment. The installer
+refuses to overwrite unrelated units and does not restart the main application.
+Cleanup deletes media bytes, prompts and private objects, but preserves minimal
+job identities and financial/idempotency records. Failed object deletions retain
+their private pointer for retry. Historical completions lacking a timestamp get
+72 hours from rollout; do not pretend their historical completion time is known.
+
 `scripts/deploy.sh` pulls from origin, builds client + server, restarts the service, runs a `/api/health` check, and purges the Cloudflare cache. Safety guarantees:
 
 - **Concurrency lock** (`flock` on `/var/lock/afro-ai-deploy.lock`) — refuses to start if another deploy is already running.

@@ -6,6 +6,7 @@ import {join,resolve} from "node:path";
 import {spawnSync} from "node:child_process";
 import {describe,expect,it,vi} from "vitest";
 import {Pool} from "pg";
+import {purgeExpiredMedia} from "../server/media-retention.js";
 const {prepareMediaStorage,PROBE}=createRequire(import.meta.url)("./media-storage-migrate.cjs");
 
 describe("explicit media storage preparation",()=>{
@@ -27,7 +28,8 @@ describe("explicit media storage preparation",()=>{
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS media_jobs");
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS lease_token");
     expect(sql).toContain("pg_advisory_xact_lock");
-    expect(sql).not.toMatch(/\b(?:DROP|DELETE|TRUNCATE|UPDATE)\b/i);
+    expect(sql).not.toMatch(/\b(?:DROP TABLE|DELETE FROM|TRUNCATE)\b/i);
+    expect(sql).not.toMatch(/SET\s+(?:asset_bytes|asset_key|status|prompt)\s*=/i);
     expect(client.query).toHaveBeenLastCalledWith(PROBE);
     expect(client.release).toHaveBeenCalledOnce();
   });
@@ -101,6 +103,7 @@ it.skipIf(!process.env.DATABASE_URL||!!process.env.CI)("preserves real SQL histo
     await client.query(`INSERT INTO media_jobs(id,user_id,kind,prompt,idempotency_key,status,plan,cost_cents,asset_bytes,mime_type)
       VALUES('media-test-job','media-test-owner','image','test prompt','test-key','succeeded','pro',10,$1,'image/png')`,[Buffer.from("preserve-asset")]);
     const before=(await client.query("SELECT * FROM media_jobs")).rows[0];
+    expect(new Date(before.expires_at).getTime()-new Date(before.completed_at).getTime()).toBe(72*60*60*1000);
     expect(await prepareMediaStorage(db)).toEqual({changed:false});
     await client.query("ALTER TABLE media_jobs DROP COLUMN lease_token");
     expect(await prepareMediaStorage(db)).toEqual({changed:true});
@@ -108,8 +111,22 @@ it.skipIf(!process.env.DATABASE_URL||!!process.env.CI)("preserves real SQL histo
     expect(after).toEqual(before);
     expect(after.asset_bytes.toString()).toBe("preserve-asset");
     expect(after.status).toBe("succeeded");
+    await client.query("UPDATE media_jobs SET lease_until=now()");
+    expect((await client.query("SELECT expires_at FROM media_jobs")).rows[0].expires_at).toEqual(before.expires_at);
     expect(await prepareMediaStorage(db)).toEqual({changed:false});
     await expect(client.query(`INSERT INTO media_jobs(id,user_id,kind,prompt,idempotency_key,plan,cost_cents)
       VALUES('duplicate','media-test-owner','image','other','test-key','pro',10)`)).rejects.toMatchObject({code:"23505"});
+    // Age only this session's temporary fixture; never alter a public trigger.
+    await client.query("ALTER TABLE pg_temp.media_jobs DISABLE TRIGGER media_jobs_completion_time_trigger");
+    await client.query("UPDATE pg_temp.media_jobs SET expires_at=now()-interval '1 second'");
+    await client.query("ALTER TABLE pg_temp.media_jobs ENABLE TRIGGER media_jobs_completion_time_trigger");
+    expect(await purgeExpiredMedia(db as any)).toEqual({purged:1,retry:0});
+    const expired=(await client.query("SELECT * FROM media_jobs")).rows[0];
+    expect(expired.asset_bytes).toBeNull();
+    expect(expired.prompt).toBe("");
+    expect(expired.status).toBe("succeeded");
+    expect(expired.cost_cents).toBe(10);
+    expect(expired.expired_at).not.toBeNull();
+    expect(await purgeExpiredMedia(db as any)).toEqual({purged:0,retry:0});
   }finally{client.release();await pool.end();}
 },20000);

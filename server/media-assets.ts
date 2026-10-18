@@ -1,4 +1,5 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import {isMediaExpired, removePrivateMedia} from "./media-retention.js";
 
 export const MAX_MEDIA_BYTES = 16 * 1024 * 1024;
 export class MediaAssetError extends Error {
@@ -52,15 +53,11 @@ export async function storeMedia(id: string, bytes: Buffer, mime: string) {
 }
 
 export async function deleteStoredMedia(key: string): Promise<void> {
-  const store = privateStore();
-  if (!store || !key.startsWith(`${store.bucket}/private-media/`))
-    throw new MediaAssetError("MEDIA_STORAGE_UNAVAILABLE");
-  await store.client.send(new DeleteObjectCommand({
-    Bucket: store.bucket, Key: key.slice(store.bucket.length + 1),
-  }), { abortSignal: AbortSignal.timeout(30_000) });
+  await removePrivateMedia(key);
 }
 
 export async function readMedia(row: any): Promise<Buffer> {
+  if(isMediaExpired(row))throw new MediaAssetError("MEDIA_EXPIRED");
   mediaExtension(row.kind, row.mime_type);
   if (row.asset_bytes) {
     if (!Buffer.isBuffer(row.asset_bytes) || !row.asset_bytes.length || row.asset_bytes.length > MAX_MEDIA_BYTES)
@@ -76,6 +73,7 @@ export async function readMedia(row: any): Promise<Buffer> {
     if (!result.Body || (result.ContentLength ?? 0) > MAX_MEDIA_BYTES) throw new MediaAssetError("MEDIA_ASSET_UNAVAILABLE");
     const bytes = Buffer.from(await result.Body.transformToByteArray());
     if (!bytes.length || bytes.length > MAX_MEDIA_BYTES) throw new MediaAssetError("MEDIA_ASSET_SIZE_LIMIT");
+    if(isMediaExpired(row))throw new MediaAssetError("MEDIA_EXPIRED");
     return bytes;
   } catch (e) {
     if (e instanceof MediaAssetError) throw e;

@@ -5,6 +5,7 @@ import { COST_CENTS, DAILY_REQUEST_LIMITS, type UserPlan } from "./replit_integr
 import { generateImageWithImagen, generateImageWithOpenAIFallback, isImagenAvailable } from "./imagen";
 import { generateVideoWithVeo, isVeoAvailable } from "./veo";
 import { storeMedia, deleteStoredMedia, mediaExtension, MAX_MEDIA_BYTES, MediaAssetError } from "./media-assets";
+import {isMediaExpired,purgeExpiredMedia} from "./media-retention.js";
 
 export const mediaInput = z.object({
   kind: z.enum(["image", "video"]),
@@ -19,17 +20,20 @@ export class MediaError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
 }
 export function publicMediaJob(row: any) {
+  const expired=isMediaExpired(row);
   return {
-    id: row.id, kind: row.kind, status: row.status, prompt: row.prompt,
+    id: row.id, kind: row.kind, status: expired ? "expired" : row.status, prompt: expired ? "" : row.prompt,
     createdAt: new Date(row.created_at).toISOString(),
+    ...(row.expires_at ? {expiresAt:new Date(row.expires_at).toISOString()} : {}),
     ...(row.error ? { error: row.error } : {}),
-    ...(row.status === "succeeded" ? { assetUrl: `/api/media/jobs/${row.id}/asset` } : {}),
+    ...(row.status === "succeeded" && !expired ? { assetUrl: `/api/media/jobs/${row.id}/asset` } : {}),
   };
 }
 export async function mediaReady() {
   try {
     await pool.query(`SELECT id,user_id,kind,prompt,duration,idempotency_key,status,created_at,
-      lease_until,lease_token,error,plan,cost_cents,usage_log_id,asset_key,asset_bytes,mime_type
+      lease_until,lease_token,error,plan,cost_cents,usage_log_id,asset_key,asset_bytes,mime_type,
+      completed_at,expires_at,expired_at
       FROM media_jobs LIMIT 0`);
   } catch(error) {
     const code=(error as {code?:string}).code;
@@ -56,6 +60,7 @@ export async function submitMedia(userId: string, raw: unknown) {
     const { rows: [old] } = await c.query("SELECT * FROM media_jobs WHERE user_id=$1 AND idempotency_key=$2", [userId, input.idempotencyKey]);
     const duration = input.kind === "video" ? input.duration ?? 5 : null;
     if (old) {
+      if(isMediaExpired(old))throw new MediaError(410,"MEDIA_EXPIRED","This generation has expired. Start a new request to generate again.");
       if (old.kind !== input.kind || old.prompt !== input.prompt || old.duration !== duration)
         throw new MediaError(409, "IDEMPOTENCY_CONFLICT", "This idempotency key was already used for another request.");
       await c.query("COMMIT");
@@ -204,6 +209,16 @@ export function startMediaWorker() {
   if (workerStarted) return;
   workerStarted = true;
   let ticking = false;
+  let cleaning = false;
+  const cleanup=setInterval(()=>{
+    if(cleaning)return;
+    cleaning=true;
+    void purgeExpiredMedia(pool).then(result=>{
+      if(result.retry)console.warn("[media-retention] Object deletion pending; will retry.");
+    }).catch(()=>{/* Storage readiness is reported by the API; retry next minute. */})
+      .finally(()=>{cleaning=false;});
+  },60_000);
+  cleanup.unref();
   const timer = setInterval(() => {
     if (ticking) return;
     ticking = true;

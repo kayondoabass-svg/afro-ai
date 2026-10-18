@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 
 type MediaKind = "image" | "video";
-type MediaStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+type MediaStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "expired";
 interface MediaJob {
   id: string;
   kind: MediaKind;
@@ -22,6 +22,7 @@ interface MediaJob {
   createdAt: string;
   error?: string | null;
   assetUrl?: string | null;
+  expiresAt?: string;
 }
 
 const JOBS_URL = "/api/media/jobs";
@@ -35,7 +36,7 @@ function isMediaJob(value: unknown): value is MediaJob {
   if (!value || typeof value !== "object") return false;
   const job = value as Partial<MediaJob>;
   return typeof job.id === "string" && (job.kind === "image" || job.kind === "video") &&
-    ["queued", "running", "succeeded", "failed", "cancelled"].includes(job.status || "") &&
+    ["queued", "running", "succeeded", "failed", "cancelled", "expired"].includes(job.status || "") &&
     typeof job.prompt === "string" && typeof job.createdAt === "string";
 }
 
@@ -164,6 +165,7 @@ function JobCard({ listedJob }: { listedJob: MediaJob }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm whitespace-pre-wrap break-words">{job.prompt}</p>
+        {job.expiresAt && <p className="text-xs text-muted-foreground">{t("media.expiresAt", {date:new Date(job.expiresAt).toLocaleString()})}</p>}
         {job.status === "succeeded" && <JobAsset job={job} />}
         {isActive(job.status) && (
           <div className="space-y-2">
@@ -193,7 +195,10 @@ export default function MediaPage() {
   const jobsQuery = useQuery({
     queryKey: [JOBS_URL],
     queryFn: getJobs,
-    refetchInterval: (query) => (query.state.data as MediaJob[] | undefined)?.some((job) => isActive(job.status)) ? 5000 : false,
+    refetchInterval: (query) => {
+      const jobs=query.state.data as MediaJob[] | undefined;
+      return jobs?.some(job=>isActive(job.status)) ? 5000 : jobs?.some(job=>job.status==="succeeded") ? 60_000 : false;
+    },
     retry: false,
   });
   const createMutation = useMutation({
@@ -225,6 +230,7 @@ export default function MediaPage() {
       <header>
         <h1 className="flex items-center gap-2 text-2xl font-bold"><Sparkles className="h-6 w-6 text-primary" />{t("media.title")}</h1>
         <p className="mt-1 text-muted-foreground">{t("media.subtitle")}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{t("media.retentionNotice")}</p>
       </header>
       <Card>
         <CardHeader><CardTitle>{t("media.create")}</CardTitle></CardHeader>

@@ -3,7 +3,8 @@ const {readFileSync}=require("node:fs");
 const {join}=require("node:path");
 
 const PROBE = `SELECT id,user_id,kind,prompt,duration,idempotency_key,status,created_at,
-  lease_until,lease_token,error,plan,cost_cents,usage_log_id,asset_key,asset_bytes,mime_type
+  lease_until,lease_token,error,plan,cost_cents,usage_log_id,asset_key,asset_bytes,mime_type,
+  completed_at,expires_at,expired_at
   FROM media_jobs LIMIT 0`;
 
 async function prepareMediaStorage(db,{checkOnly=false}={}) {
