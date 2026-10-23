@@ -5,6 +5,13 @@ const PESAPAL_API_BASE = process.env.PESAPAL_ENV === "production"
 const CONSUMER_KEY = process.env.PESAPAL_CONSUMER_KEY;
 const CONSUMER_SECRET = process.env.PESAPAL_CONSUMER_SECRET;
 
+/** API 3 may return an error object whose fields are all null on success. */
+export function hasPesapalError(error: unknown): boolean {
+  if (!error) return false;
+  if (typeof error === "object") return Object.values(error).some(value => value != null && value !== "");
+  return true;
+}
+
 interface PesapalAuthResponse {
   token: string;
   expiryDate: string;
@@ -88,7 +95,7 @@ export async function getAuthToken(): Promise<string> {
 
   const data = (await res.json()) as PesapalAuthResponse;
 
-  if (data.error || typeof data.token !== "string" || !data.token) {
+  if (hasPesapalError(data.error) || typeof data.token !== "string" || !data.token) {
     throw new Error("Pesapal authentication failed; check merchant configuration.");
   }
 
@@ -128,7 +135,7 @@ export async function registerIpnUrl(ipnUrl: string): Promise<string> {
     throw new Error("Pesapal IPN returned an invalid response");
   }
 
-  if (data.error) {
+  if (hasPesapalError(data.error)) {
     throw new Error("Pesapal IPN registration was rejected; check merchant configuration.");
   }
 
@@ -162,7 +169,7 @@ export async function submitOrder(order: PesapalOrderRequest): Promise<PesapalOr
     throw new Error("Pesapal returned an invalid response");
   }
 
-  if (data.error) {
+  if (hasPesapalError(data.error)) {
     throw new Error("Pesapal rejected the order; check merchant configuration and payment details.");
   }
 
@@ -194,10 +201,11 @@ export async function getTransactionStatus(orderTrackingId: string): Promise<Pes
 
   const data = (await res.json()) as PesapalTransactionStatus;
 
-  if (data.error) {
+  if (hasPesapalError(data.error)) {
     throw new Error("Pesapal could not retrieve the transaction status");
   }
 
+  data.error = null;
   return data;
 }
 

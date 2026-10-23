@@ -5,8 +5,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { CREDIT_PACKS, creditCheckoutUrl } from "@shared/credit-checkout";
 import { africanCountries, getCountryByIsoCode, getCurrencyForCountry, formatLocalPrice } from "@shared/currencies";
 import { Loader2, CreditCard } from "lucide-react";
+import { openPaymentCheckout } from "@/components/payment-checkout";
 
-export function CreditPurchaseDialog({ onClose, onBack, onCheckout = url => window.location.assign(url) }: {
+export function CreditPurchaseDialog({ onClose, onBack, onCheckout }: {
   onClose: () => void;
   onBack: () => void;
   onCheckout?: (url: string) => void;
@@ -35,9 +36,22 @@ export function CreditPurchaseDialog({ onClose, onBack, onCheckout = url => wind
     setSelected(pack);
     setError("");
     try {
-      const response = await apiRequest("POST", "/api/payg/topup", { pack, mode: "one-time", countryCode: country || undefined });
+      const response = await apiRequest("POST", "/api/payg/topup", { pack, mode: "one-time", countryCode: country || undefined, embedded: true });
       const data = await response.json();
-      if (active.current) onCheckout(creditCheckoutUrl(data.redirectUrl));
+      const secureUrl = creditCheckoutUrl(data.redirectUrl);
+      if (active.current) {
+        if (onCheckout) onCheckout(secureUrl);
+        else {
+          openPaymentCheckout({
+          paymentId: data.paymentId,
+          redirectUrl: secureUrl,
+          amount: data.amount,
+          currency: data.currency,
+          plan: data.plan,
+          });
+          onClose();
+        }
+      }
     } catch {
       if (active.current) setError("We couldn't open secure checkout. No payment has been confirmed here. Please try again or close this screen.");
     } finally {

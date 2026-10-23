@@ -9,6 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { openPaymentCheckout } from "@/components/payment-checkout";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 import {
   Smartphone, Zap, Globe, Code2, Check, ChevronDown, ChevronUp,
@@ -136,12 +137,13 @@ function PricingModal({
         firstName,
         lastName,
         phoneNumber: phone,
+        embedded: true,
       });
       return res.json();
     },
     onSuccess: (data) => {
       if (data.redirectUrl) {
-        window.location.href = data.redirectUrl;
+        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan });
       }
     },
     onError: (error: any) => {

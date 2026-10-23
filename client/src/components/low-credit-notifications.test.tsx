@@ -33,7 +33,8 @@ describe("low credit reminders", () => {
     expect(notice.description).toContain("mobile money or card through Pesapal");
     const action = render(notice.action);
     fireEvent.click(action.getByTestId("button-low-credit-topup"));
-    expect(mocks.navigate).toHaveBeenCalledWith("/pricing#payg");
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      `/pricing?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}#payg`);
   });
   it("uses the account currency when no country preference exists and deduplicates the same episode", async () => {
     const first = mount();

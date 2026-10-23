@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { openPaymentCheckout } from "@/components/payment-checkout";
 import {
   Check, Bot, ArrowRight, Lock, Shield, Loader2, Star,
   CreditCard, Phone, Globe, ChevronLeft,
@@ -96,10 +97,11 @@ export default function ChatbotCheckoutPage() {
         firstName: firstName.trim(),
         lastName: lastName.trim() || undefined,
         phoneNumber: phone.trim() || undefined,
+        embedded: true,
       });
       const data = await res.json();
       if (data.redirectUrl) {
-        window.location.href = data.redirectUrl;
+        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan });
       } else {
         throw new Error("No payment URL received");
       }

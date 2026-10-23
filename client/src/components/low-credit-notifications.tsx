@@ -35,7 +35,7 @@ export function LowCreditNotifications() {
       title: "Your credits are running low",
       description: `${notice.balance.approximate ? "Approximately " : ""}${notice.balance.label} remaining. This reminder triggers at US$5 or less, in any currency. Buy credits directly with mobile money or card through Pesapal, where available.`,
       duration: 12000,
-      action: <Button size="sm" onClick={() => navigate("/pricing#payg")} data-testid="button-low-credit-topup">Buy credits</Button>,
+      action: <Button size="sm" onClick={() => navigate(`/pricing?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}#payg`)} data-testid="button-low-credit-topup">Buy credits</Button>,
     });
   }, [user?.id, data?.lowCredit?.id, toast, navigate]);
   return null;

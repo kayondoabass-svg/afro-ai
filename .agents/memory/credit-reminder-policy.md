@@ -37,3 +37,9 @@ Keep customer checkout within the Afro AI interface, with Afro AI calling Pesapa
 **Why:** The user requested an interface where customers interact with afroaigroup, while afroaigroup calls Pesapal or future providers.
 
 **How to apply:** Reuse existing payment records, verification, wallet accounting and receipts. Prefer provider-approved embedded checkout; explain any unavoidable bank/wallet authentication steps and never collect raw card details, CVVs or mobile-money PINs in Afro AI's own forms.
+
+Future payment providers must use one settlement boundary for purchased access and final payment completion. Do not automatically send an uncertain payment to another provider.
+
+**Why:** Payment notifications, browser returns and status checks can arrive concurrently; independent fulfillment paths can double-credit purchases or mark customers paid before their access is activated.
+
+**How to apply:** Verify the saved order against the provider's server-side result, commit fulfillment and completion together, and send customer receipts only after that commit.

@@ -12,6 +12,7 @@ import { Check, Rocket, Globe, Loader2, Shield, CreditCard, Smartphone, Zap, Coi
 import { Link } from "wouter";
 import { africanCountries, formatLocalPrice, formatUsdPrice, type AfricanCountry } from "@shared/currencies";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
+import { openPaymentCheckout } from "@/components/payment-checkout";
 
 const USD_PRICES = {
   pro: 15,
@@ -91,10 +92,10 @@ export default function PricingPage() {
     if (!user) { window.location.href = "/login"; return; }
     setSubscribingPlan(plan);
     try {
-      const res = await apiRequest("POST", "/api/subscribe", { plan, countryCode: country || undefined });
+      const res = await apiRequest("POST", "/api/subscribe", { plan, countryCode: country || undefined, embedded: true });
       const data = await res.json();
       if (data.redirectUrl) {
-        window.location.href = data.redirectUrl;
+        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan });
       } else {
         toast({ title: t("dashboard.error"), description: "Payment redirect not available. Please try again later.", variant: "destructive" });
       }
@@ -111,10 +112,10 @@ export default function PricingPage() {
     try {
       const limitDollars = parseFloat(paygLimit) || 10;
       await apiRequest("POST", "/api/payg/limit", { limitDollars });
-      const res = await apiRequest("POST", "/api/payg/topup", { pack, countryCode: country || undefined });
+      const res = await apiRequest("POST", "/api/payg/topup", { pack, countryCode: country || undefined, embedded: true });
       const data = await res.json();
       if (data.redirectUrl) {
-        window.location.href = data.redirectUrl;
+        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan });
       } else {
         toast({ title: "Error", description: "Could not start payment. Try again.", variant: "destructive" });
       }

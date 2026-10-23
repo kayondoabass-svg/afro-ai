@@ -14,6 +14,8 @@ import { registerIntegrationProjectRoutes, integrationHandler } from "./integrat
 import { ownedEmailProject, legacyEmailProject, linkEmailProjectDomain, storeProjectEmailDomain, createProjectEmailKey, revokeProjectEmailKey, emailKeyAccess, emailProjectAllowsDomain } from "./email-projects";
 import { resolvePrivateChatbotApiKey, chatbotLegacyApiAllowed } from "./chatbot-api-credentials";
 import { pool } from "./db";
+import { settlePayment, verifyPaymentIdentity } from "./payment-settlement";
+import { paymentBrowserGuard, checkoutResponse, paymentReturnPage, registerPaymentCheckoutStatus } from "./payment-checkout";
 import { sql } from "drizzle-orm";
 import { fetchPublicPage, scrapeUrl } from "./url-scrape";
 import { registerChatbotKnowledgeRoutes, archiveScan, deleteKnowledgeFolder, createWidgetWithPrivateKnowledge, KnowledgeFileError } from "./chatbot-knowledge-files";
@@ -51,7 +53,7 @@ import { conversations } from "@shared/models/chat";
 import { db } from "./db";
 import { eq as dbEq, sql as dbSql, and as dbAnd, desc as dbDesc } from "drizzle-orm";
 import { createSubdomainRecord, deleteSubdomainRecord, isValidSubdomain, getPublishedUrl } from "./cloudflare";
-import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./pesapal";
+import { registerIpnUrl, submitOrder, getTransactionStatus, isPaymentComplete, isPaymentFailed } from "./payment-provider";
 import { analyzeImage } from "./gemini";
 import { checkDomainAvailability, checkSingleDomain, registerDomain, listDomains, getDomainInfo, renewDomain, setNameservers, getCostPrice } from "./namedotcom";
 import { sendSms as atSendSms, getAccountBalance as atGetBalance, isAtConfigured, atMode } from "./africastalking";
@@ -1931,11 +1933,12 @@ export async function registerRoutes(
         try {
           const status = await getTransactionStatus(payment.pesapalTrackingId);
           if (isPaymentComplete(status)) {
-            await processCompletedPayment(payment.merchantReference, status);
+            await processCompletedPayment(payment.merchantReference, status, payment.pesapalTrackingId!);
             activated++;
             results.push({ ref: payment.merchantReference, result: "activated", plan: payment.plan });
           } else if (isPaymentFailed(status)) {
-            await storage.updatePaymentByMerchantRef(payment.merchantReference, { status: "failed" });
+            verifyPaymentIdentity(payment, payment.pesapalTrackingId!, status);
+            await pool.query("UPDATE payments SET status='failed' WHERE id=$1 AND status='pending'", [payment.id]);
             failed++;
             results.push({ ref: payment.merchantReference, result: "failed" });
           } else {
@@ -2189,7 +2192,7 @@ export async function registerRoutes(
   // Currencies confirmed supported by Pesapal production API
   const PESAPAL_SUPPORTED_CURRENCIES = new Set(["USD", "KES", "UGX", "TZS", "RWF", "ZMW", "GHS", "ZAR", "NGN", "EGP", "XAF", "XOF", "GBP", "EUR"]);
 
-  app.post("/api/subscribe", apiLimiter, isAuthenticated, async (req: any, res) => {
+  app.post("/api/subscribe", apiLimiter, isAuthenticated, paymentBrowserGuard, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { plan, countryCode, firstName, lastName, phoneNumber } = req.body;
@@ -2234,6 +2237,9 @@ export async function registerRoutes(
       }
 
       const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
+      const payment = await storage.createPayment({
+        userId, plan, amount: amount.toString(), currency, merchantReference, status: "pending",
+      });
 
       console.log(`[Subscribe] Plan=${plan} countryCode=${countryCode || "none"} amount=${amount} currency=${currency} usdAmount=${usdAmount}`);
 
@@ -2244,7 +2250,7 @@ export async function registerRoutes(
           currency,
           amount,
           description: `Afro AI ${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan Subscription`,
-          callback_url: `${baseUrl}/api/pesapal/callback`,
+          callback_url: `${baseUrl}/api/pesapal/callback${req.body.embedded === true ? "?embedded=1" : ""}`,
           notification_id: cachedIpnId,
           billing_address: {
             email_address: userEmail,
@@ -2260,18 +2266,10 @@ export async function registerRoutes(
         throw orderErr;
       }
 
-      await storage.createPayment({
-        userId,
-        plan,
-        amount: amount.toString(),
-        currency,
-        pesapalTrackingId: order.order_tracking_id,
-        merchantReference,
-        status: "pending",
-      });
+      await storage.updatePaymentByMerchantRef(merchantReference, { pesapalTrackingId: order.order_tracking_id });
 
       res.json({
-        redirectUrl: order.redirect_url,
+        ...checkoutResponse(payment, order),
         orderTrackingId: order.order_tracking_id,
         merchantReference: order.merchant_reference,
       });
@@ -2314,7 +2312,7 @@ export async function registerRoutes(
   });
 
   // PAYG: Buy credit pack via Pesapal
-  app.post("/api/payg/topup", apiLimiter, isAuthenticated, async (req: any, res) => {
+  app.post("/api/payg/topup", apiLimiter, isAuthenticated, paymentBrowserGuard, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const modeError = creditCheckoutModeError(req.body);
@@ -2328,6 +2326,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid pack. Choose: pack5, pack10, pack20, pack50" });
       }
       const userEmail = req.user.claims.email || req.user.claims.preferred_username;
+      if (!userEmail) return res.status(400).json({ message: "Your account needs an email address before checkout." });
       const usdAmount = PAYG_PACK_PRICES_USD[pack];
       const credits = PAYG_PACK_CREDITS[pack];
       let currency = "USD";
@@ -2351,6 +2350,9 @@ export async function registerRoutes(
         }
       }
       const merchantReference = `payg-${pack}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
+      const payment = await storage.createPayment({
+        userId, plan: `payg-${pack}`, amount: amount.toString(), currency, merchantReference, status: "pending",
+      });
       let order;
       try {
         order = await submitOrder({
@@ -2358,7 +2360,7 @@ export async function registerRoutes(
           currency,
           amount,
           description: `Afro AI Credits — $${usdAmount} pack (${credits.toLocaleString()} credits)`,
-          callback_url: `${baseUrl}/api/pesapal/callback`,
+          callback_url: `${baseUrl}/api/pesapal/callback${req.body.embedded === true ? "?embedded=1" : ""}`,
           notification_id: cachedIpnId,
           billing_address: { email_address: userEmail, country_code: countryCode },
         });
@@ -2367,16 +2369,8 @@ export async function registerRoutes(
         cachedIpnId = null;
         throw orderErr;
       }
-      await storage.createPayment({
-        userId,
-        plan: `payg-${pack}`,
-        amount: amount.toString(),
-        currency,
-        pesapalTrackingId: order.order_tracking_id,
-        merchantReference,
-        status: "pending",
-      });
-      res.json({ redirectUrl: order.redirect_url, credits, usdAmount });
+      await storage.updatePaymentByMerchantRef(merchantReference, { pesapalTrackingId: order.order_tracking_id });
+      res.json({ ...checkoutResponse(payment, order), credits, usdAmount });
     } catch (e: any) {
       console.error("PAYG top-up error:", e);
       const msg2 = e.message || "";
@@ -2387,28 +2381,14 @@ export async function registerRoutes(
     }
   });
 
-  async function processCompletedPayment(merchantRef: string, status: any) {
+  async function processCompletedPayment(merchantRef: string, status: any, trackingId: string) {
+    const settled = await settlePayment(pool, merchantRef, trackingId, status, isFounderEmail);
+    if (!settled.newlyCompleted) return true;
     const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
     if (!existingPayment) {
       console.error(`No payment record found for merchantRef: ${merchantRef}`);
       return false;
     }
-
-    if (existingPayment.status === "completed") {
-      console.log(`Payment ${merchantRef} already processed, skipping`);
-      return true;
-    }
-
-    if (status.merchant_reference && status.merchant_reference !== merchantRef) {
-      console.error(`Merchant reference mismatch: expected ${merchantRef}, got ${status.merchant_reference}`);
-      return false;
-    }
-
-    await storage.updatePaymentByMerchantRef(merchantRef, {
-      status: "completed",
-      paymentMethod: status.payment_method || undefined,
-      confirmationCode: status.confirmation_code || undefined,
-    });
 
     const userId = existingPayment.userId;
     const plan = existingPayment.plan;
@@ -2440,55 +2420,8 @@ export async function registerRoutes(
       console.error("[programmes] Payment saved; commission reconciliation is pending.");
     }
 
-    // Chatbot subscription — activate or upgrade chatbot plan
-    if (plan.startsWith("chatbot-")) {
-      const cfg = CHATBOT_PLAN_CONFIG[plan];
-      if (cfg) {
-        const existing = await storage.getChatbotSubscription(userId);
-        if (existing) {
-          await storage.updateChatbotSubscription(userId, { plan, repliesLimit: cfg.repliesLimit, botsLimit: cfg.botsLimit, repliesUsed: 0 });
-        } else {
-          await storage.createChatbotSubscription({ userId, plan, repliesLimit: cfg.repliesLimit, botsLimit: cfg.botsLimit, status: "active", repliesUsed: 0 });
-        }
-        console.log(`User ${userId} activated chatbot plan ${plan}`);
-      }
-      return true;
-    }
-
-    // PAYG credit pack — add credits, don't change plan
-    if (plan.startsWith("payg-")) {
-      const packKey = plan.replace("payg-", "");
-      const creditMap: Record<string, number> = { pack5: 500, pack10: 1000, pack20: 2000, pack50: 5000 };
-      const credits = creditMap[packKey] || 0;
-      if (credits > 0) {
-        await storage.addPaygBalance(userId, credits);
-        // Set user to payg plan if they were on starter
-        const userRecord = await storage.getUser(userId);
-        if (userRecord?.plan === "starter") {
-          await storage.updateUserPlan(userId, "payg");
-        }
-        console.log(`User ${userId} topped up ${credits} PAYG credits ($${credits / 100})`);
-      }
-      return true;
-    }
-
-    // USSD subscription — activate USSD builder access
-    if (plan.startsWith("ussd-")) {
-      const ussdPlan = plan.replace("ussd-", "");
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      const existing = await storage.getUssdSubscription(userId);
-      if (existing) {
-        await storage.updateUssdSubscription(userId, { plan: ussdPlan, status: "active", expiresAt });
-      } else {
-        await storage.createUssdSubscription({ userId, plan: ussdPlan, status: "active", expiresAt });
-      }
-      console.log(`User ${userId} activated USSD plan ${ussdPlan}`);
-      return true;
-    }
-
-    await storage.updateUserPlan(userId, plan);
-    await storage.reactivateAppsByUser(userId);
-    console.log(`User ${userId} upgraded to ${plan} plan — apps reactivated`);
+    // Access and credit activation have already committed atomically above.
+    if (!["pro", "business"].includes(plan)) return true;
 
     try {
       const user = await storage.getUser(userId);
@@ -2507,6 +2440,18 @@ export async function registerRoutes(
     return true;
   }
 
+  registerPaymentCheckoutStatus(app, isAuthenticated, {
+    getPayment: id => storage.getPaymentById(id),
+    reconcile: async payment => {
+      const status = await getTransactionStatus(payment.pesapalTrackingId);
+      if (isPaymentComplete(status)) await processCompletedPayment(payment.merchantReference, status, payment.pesapalTrackingId);
+      else if (isPaymentFailed(status)) {
+        verifyPaymentIdentity(payment, payment.pesapalTrackingId, status);
+        await pool.query("UPDATE payments SET status='failed' WHERE id=$1 AND status='pending'", [payment.id]);
+      }
+    },
+  });
+
   app.get("/api/pesapal/ipn", async (req, res) => {
     try {
       const { OrderTrackingId, OrderMerchantReference, OrderNotificationType } = req.query;
@@ -2523,11 +2468,12 @@ export async function registerRoutes(
       const status = await getTransactionStatus(trackingId);
 
       if (isPaymentComplete(status)) {
-        await processCompletedPayment(merchantRef, status);
+        await processCompletedPayment(merchantRef, status, trackingId);
       } else if (isPaymentFailed(status)) {
         const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
+        if (existingPayment) verifyPaymentIdentity(existingPayment, trackingId, status);
         if (existingPayment && existingPayment.status === "pending") {
-          await storage.updatePaymentByMerchantRef(merchantRef, { status: "failed" });
+          await pool.query("UPDATE payments SET status='failed' WHERE id=$1 AND status='pending'", [existingPayment.id]);
         }
         console.log(`Payment failed for ${merchantRef}: ${status.payment_status_description}`);
       }
@@ -2553,7 +2499,8 @@ export async function registerRoutes(
       const status = await getTransactionStatus(trackingId);
 
       if (isPaymentComplete(status)) {
-        await processCompletedPayment(merchantRef, status);
+        await processCompletedPayment(merchantRef, status, trackingId);
+        if (req.query.embedded === "1") return paymentReturnPage(res);
         const payment = await storage.getPaymentByMerchantRef(merchantRef);
         const paidPlan = payment?.plan || "pro";
         if (paidPlan.startsWith("chatbot-")) {
@@ -2565,15 +2512,19 @@ export async function registerRoutes(
         return res.redirect(`/?payment=success&plan=${encodeURIComponent(paidPlan)}`);
       } else if (isPaymentFailed(status)) {
         const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
+        if (existingPayment) verifyPaymentIdentity(existingPayment, trackingId, status);
         if (existingPayment && existingPayment.status === "pending") {
-          await storage.updatePaymentByMerchantRef(merchantRef, { status: "failed" });
+          await pool.query("UPDATE payments SET status='failed' WHERE id=$1 AND status='pending'", [existingPayment.id]);
         }
+        if (req.query.embedded === "1") return paymentReturnPage(res);
         return res.redirect(`/?payment=failed&reason=${encodeURIComponent(status.payment_status_description || "Payment failed")}`);
       } else {
+        if (req.query.embedded === "1") return paymentReturnPage(res);
         return res.redirect(`/?payment=pending&trackingId=${encodeURIComponent(trackingId)}`);
       }
     } catch (error: any) {
       console.error("Error handling payment callback:", error);
+      if (req.query.embedded === "1") return paymentReturnPage(res);
       return res.redirect(`/?payment=error&reason=${encodeURIComponent(error.message || "Unknown error")}`);
     }
   });
@@ -3653,7 +3604,7 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
   });
 
   // ============ USSD BUILDER ============
-  app.post("/api/ussd/subscribe", apiLimiter, isAuthenticated, async (req: any, res) => {
+  app.post("/api/ussd/subscribe", apiLimiter, isAuthenticated, paymentBrowserGuard, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub || req.user?.claims?.id;
       const { plan, countryCode, firstName, lastName, phoneNumber } = req.body;
@@ -3694,15 +3645,16 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
         catch (err) { return res.status(500).json({ message: "Payment service configuration error" }); }
       }
       const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
+      const payment = await storage.createPayment({ userId, plan, amount: amount.toString(), currency, merchantReference, status: "pending" });
       const order = await submitOrder({
         id: merchantReference, currency, amount,
         description: `Afro AI USSD Builder — ${plan.replace("ussd-", "").charAt(0).toUpperCase() + plan.replace("ussd-", "").slice(1)} Plan`,
-        callback_url: `${baseUrl}/api/pesapal/callback`,
+        callback_url: `${baseUrl}/api/pesapal/callback${req.body.embedded === true ? "?embedded=1" : ""}`,
         notification_id: cachedIpnId,
         billing_address: { email_address: userEmail, phone_number: phoneNumber || undefined, country_code: countryCode || undefined, first_name: firstName || undefined, last_name: lastName || undefined },
       });
-      await storage.createPayment({ userId, plan, amount: amount.toString(), currency, pesapalTrackingId: order.order_tracking_id, merchantReference, status: "pending" });
-      res.json({ redirectUrl: order.redirect_url });
+      await storage.updatePaymentByMerchantRef(merchantReference, { pesapalTrackingId: order.order_tracking_id });
+      res.json(checkoutResponse(payment, order));
     } catch (error: any) {
       console.error("USSD subscribe error:", error);
       res.status(500).json({ message: error.message || "Failed to create USSD subscription" });

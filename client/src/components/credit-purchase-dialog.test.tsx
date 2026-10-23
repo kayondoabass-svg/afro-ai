@@ -14,7 +14,7 @@ describe("temporary credit checkout", () => {
     render(<CreditPurchaseDialog onClose={vi.fn()} onBack={vi.fn()} onCheckout={redirect} />);
     fireEvent.click(screen.getByTestId("button-quota-pack10"));
     await waitFor(() => expect(redirect).toHaveBeenCalledWith(url));
-    expect(request).toHaveBeenCalledExactlyOnceWith("POST", "/api/payg/topup", { pack: "pack10", mode: "one-time", countryCode: "UG" });
+    expect(request).toHaveBeenCalledExactlyOnceWith("POST", "/api/payg/topup", { pack: "pack10", mode: "one-time", countryCode: "UG", embedded: true });
     expect(screen.getByText(/Auto-renewal is off/)).toBeVisible();
     expect(screen.getByText(/For mobile money, select your country/)).toBeVisible();
   });
@@ -27,7 +27,7 @@ describe("temporary credit checkout", () => {
     expect(screen.getByTestId("button-quota-pack5")).toHaveTextContent("UGX");
     fireEvent.click(screen.getByTestId("button-quota-pack5"));
     await waitFor(() => expect(redirect).toHaveBeenCalledWith(url));
-    expect(request).toHaveBeenCalledExactlyOnceWith("POST", "/api/payg/topup", { pack: "pack5", mode: "one-time", countryCode: "UG" });
+    expect(request).toHaveBeenCalledExactlyOnceWith("POST", "/api/payg/topup", { pack: "pack5", mode: "one-time", countryCode: "UG", embedded: true });
   });
   it("prevents duplicate checkout submissions and ignores redirects after closing", async () => {
     let resolve!: (response: Response) => void;
