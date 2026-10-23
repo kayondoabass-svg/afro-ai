@@ -57,3 +57,4 @@
 - [Integration schema readiness](integration-schema-readiness.md) — build/restart can skip deploy prerequisites; check the running service’s database and gate readiness on complete setup.
 - [App management policy](app-management-policy.md) — one app library, actionable publish recommendations and typed confirmation with verified live-site removal.
 - [Parallel visual fixtures](parallel-visual-fixtures.md) — isolate dependency caches; ignored fixture wrappers may fall outside Tailwind’s source scan.
+- [Terminal dependency updates](terminal-dependency-updates.md) — updating Socket.IO alone can retain vulnerable nested dependencies; verify the complete transport tree.
