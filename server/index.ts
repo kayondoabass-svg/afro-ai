@@ -213,6 +213,8 @@ httpServer.listen(
   startChatbotRetentionJob();
   const { startChatbotAutoScanScheduler } = await import("./chatbot-autoscan-scheduler");
   startChatbotAutoScanScheduler();
+  const { startCreditBalanceAlerts } = await import("./credit-balance-alerts");
+  startCreditBalanceAlerts();
 
   // ─── Sandboxed Interactive Shell via Socket.io + node-pty ───────────────────
   // Docker isolation is mandatory. Never run commands on the host.

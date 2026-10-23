@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { pool } from "./db";
+import { queueCreditBalanceCheck } from "./credit-balance-alerts";
 import { COST_CENTS, DAILY_REQUEST_LIMITS, type UserPlan } from "./replit_integrations/quota";
 
 export class AudioReservationError extends Error {
@@ -47,6 +48,7 @@ export async function reserveAudioUsage(userId: string, key: string, provider: s
     }
     await c.query("INSERT INTO usage_logs(user_id,kind,model,tokens_used,cost_cents,conversation_id) VALUES($1,'audio',$2,0,$3,$4)", [userId, model, cost, conversationId ?? null]);
     await c.query("COMMIT");
+    if (plan === "payg") queueCreditBalanceCheck(userId);
   } catch (error) {
     await c.query("ROLLBACK");
     throw error;

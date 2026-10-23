@@ -1,5 +1,7 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
 import { db } from "./db";
+import { LOW_CREDIT_THRESHOLD_CENTS } from "../shared/credit-alerts";
+import { queueCreditBalanceCheck } from "./credit-balance-alerts";
 import { projects, publishedApps, publishedAppVersions, appFeedback, referrals, payments, usageLogs, forms, formSubmissions, blogPosts, emailSubscribers, emailCampaigns, appViews, marketplaceListings, projectCollaborators, domainOrders, affiliateApplications, affiliateReferrals, affiliateCommissions, apiIntegrations, webhooks, appSeo, chatbotWidgets, widgetConversations, chatbotSubscriptions, chatbotQas, chatbotScannedPages, ussdSubscriptions, ussdApps, userFiles, zipExports, appSecrets, activityLogs, teamMembers, partnerApplications, partners, partnerCustomers, partnerCommissions, partnerLeads, partnerPayouts, partnerCertifications, type Project, type InsertProject, type PublishedApp, type InsertPublishedApp, type PublishedAppVersion, type AppFeedback, type InsertAppFeedback, type Referral, type InsertReferral, type Payment, type InsertPayment, type UsageLog, type InsertUsageLog, type Form, type InsertForm, type FormSubmission, type InsertFormSubmission, type BlogPost, type InsertBlogPost, type EmailSubscriber, type InsertEmailSubscriber, type EmailCampaign, type InsertEmailCampaign, type AppView, type MarketplaceListing, type InsertMarketplaceListing, type ProjectCollaborator, type InsertProjectCollaborator, type DomainOrder, type InsertDomainOrder, type AffiliateApplication, type InsertAffiliateApplication, type AffiliateReferral, type InsertAffiliateReferral, type AffiliateCommission, type InsertAffiliateCommission, type ApiIntegration, type InsertApiIntegration, type Webhook, type InsertWebhook, type AppSeo, type InsertAppSeo, type ChatbotWidget, type InsertChatbotWidget, type WidgetConversation, type ChatbotSubscription, type InsertChatbotSubscription, type ChatbotQa, type InsertChatbotQa, type ChatbotScannedPage, type UssdSubscription, type InsertUssdSubscription, type UssdApp, type InsertUssdApp, type UserFile, type InsertUserFile, type ZipExport, type InsertZipExport, type AppSecret, type InsertAppSecret, type ActivityLog, type InsertActivityLog, type TeamMember, type InsertTeamMember, knowledgeDocuments, knowledgeChunks, type KnowledgeDocument, type InsertKnowledgeDocument, type KnowledgeChunk, type InsertKnowledgeChunk } from "@shared/schema";
 import { users } from "@shared/models/auth";
 import { conversations, messages, appVersions, type AppVersion, type InsertAppVersion } from "@shared/models/chat";
@@ -575,7 +577,7 @@ class DatabaseStorage implements IStorage {
   }
 
   async adminAddPaygCredits(userId: string, cents: number): Promise<void> {
-    await db.update(users).set({ paygBalance: sql`payg_balance + ${cents}` }).where(eq(users.id, userId));
+    await this.addPaygBalance(userId, cents);
   }
   async getUserReferralCode(userId: string): Promise<string> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
@@ -764,10 +766,21 @@ class DatabaseStorage implements IStorage {
   }
 
   async addPaygBalance(userId: string, cents: number): Promise<void> {
-    await db.update(users).set({
-      paygBalance: sql`payg_balance + ${cents}`,
-      updatedAt: new Date(),
-    }).where(eq(users.id, userId));
+    await db.transaction(async tx => {
+      const [account] = await tx.update(users).set({
+        paygBalance: sql`payg_balance + ${cents}`,
+        updatedAt: new Date(),
+      }).where(eq(users.id, userId)).returning({ balance: users.paygBalance });
+      if (account && account.balance > LOW_CREDIT_THRESHOLD_CENTS) {
+        try {
+          // A reminder failure must never undo a customer's purchased credits.
+          await tx.transaction(async reminderTx => {
+            await reminderTx.execute(sql`UPDATE activity_logs SET metadata=metadata || '{"active":false}'::jsonb
+              WHERE user_id=${userId} AND event_type='credits.low' AND metadata->>'active'='true'`);
+          });
+        } catch { console.warn("[credit-alert] Top-up succeeded; reminder reset could not be recorded."); }
+      }
+    });
   }
 
   async deductPaygBalance(userId: string, cents: number): Promise<void> {
@@ -779,17 +792,12 @@ class DatabaseStorage implements IStorage {
       updatedAt: new Date(),
     }).where(eq(users.id, userId));
 
+    queueCreditBalanceCheck(userId);
     if (!before?.email) return;
     const beforeCents = before.balance ?? 0;
     const afterCents = Math.max(beforeCents - cents, 0);
-    const LOW_THRESHOLD_CENTS = 100; // $1 left
-
-    // Crossed into low-balance band: send "low" once when crossing threshold
-    if (beforeCents > LOW_THRESHOLD_CENTS && afterCents <= LOW_THRESHOLD_CENTS && afterCents > 0) {
-      const { sendLowBalanceEmail } = await import("./mailer");
-      const remainingGen = Math.floor(afterCents / 2);
-      sendLowBalanceEmail(before.email, { balanceCents: afterCents, remainingGenerations: remainingGen }).catch(() => {});
-    }
+    // Low-credit reminders now use the shared durable outbox, including the
+    // reservation-based debit paths that do not call this legacy method.
     // Crossed to zero: send "depleted"
     if (beforeCents > 0 && afterCents === 0) {
       const { sendDepletedEmail } = await import("./mailer");

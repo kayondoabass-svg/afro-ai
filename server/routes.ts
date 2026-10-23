@@ -2289,7 +2289,13 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const status = await storage.getPaygStatus(userId);
-      res.json(status);
+      const { observeCreditBalance, queueCreditBalanceCheck } = await import("./credit-balance-alerts");
+      let lowCredit = null;
+      try { lowCredit = await observeCreditBalance(userId, typeof req.query.currency === "string" ? req.query.currency : undefined); }
+      catch { console.warn("[credit-alert] In-app balance reminder unavailable."); }
+      if (lowCredit) queueCreditBalanceCheck(userId);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json({ ...status, lowCredit });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

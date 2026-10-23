@@ -1,6 +1,7 @@
 import { isSuppressed } from "./ses-webhook";
 import { sendEmail } from "./email-provider";
 import { platformEmailHeader } from "../shared/email-branding";
+import { creditAmount } from "../shared/credit-alerts";
 
 const FROM = process.env.EMAIL_API_DEMO_FROM || "noreply@afroaigroup.com";
 const PLATFORM = "Afro AI";
@@ -158,17 +159,18 @@ export async function sendAppPublishedEmail(to: string, opts: { title: string; u
   return send(to, subject, wrapped.html, wrapped.text);
 }
 
-export async function sendLowBalanceEmail(to: string, opts: { balanceCents: number; remainingGenerations: number }): Promise<boolean> {
-  const subject = `Heads up: only ${opts.remainingGenerations} generations left`;
+export async function sendLowBalanceEmail(to: string, opts: { balanceCents: number; remainingGenerations?: number; currency?: string }): Promise<boolean> {
+  const balance = creditAmount(opts.balanceCents, opts.currency);
+  const subject = "Your Afro AI credits are running low";
   const html = `
     <p>Your Pay-As-You-Go credit is running low.</p>
     <p style="background:#0b0b0c;border:1px solid #27272a;border-radius:8px;padding:14px;text-align:center;">
-      <span style="font-size:28px;font-weight:700;color:${BRAND_COLOR};">$${(opts.balanceCents/100).toFixed(2)}</span><br>
-      <span style="color:#a1a1aa;font-size:13px;">≈ ${opts.remainingGenerations} more AI generations</span>
+      <span style="font-size:28px;font-weight:700;color:${BRAND_COLOR};">${balance.label}</span><br>
+      <span style="color:#a1a1aa;font-size:13px;">${balance.approximate ? "Approximate local value. " : ""}US$${(opts.balanceCents / 100).toFixed(2)} in available prepaid credits</span>
     </p>
-    <p>Top up now to avoid interruptions. Packs start at $5.</p>
+    <p>This reminder is triggered at US$5 or less, regardless of your payment currency. Top up to avoid interruptions. Different generation types use different amounts of credit. If you have already topped up, you can ignore this reminder.</p>
     <p style="margin-top:18px;"><a href="https://afroaigroup.com/pricing" style="background:${BRAND_COLOR};color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">Buy more credits →</a></p>`;
-  const text = `Low balance alert: $${(opts.balanceCents/100).toFixed(2)} (~${opts.remainingGenerations} generations left). Top up at https://afroaigroup.com/pricing`;
+  const text = `Your available prepaid credit is ${balance.label}${balance.approximate ? " (approximate local value)" : ""}, equivalent to US$${(opts.balanceCents / 100).toFixed(2)}. This reminder triggers at US$5 or less, regardless of payment currency. Generation costs vary. Top up at https://afroaigroup.com/pricing`;
   const wrapped = shell("Credits running low ⚠️", html, text);
   return send(to, subject, wrapped.html, wrapped.text);
 }

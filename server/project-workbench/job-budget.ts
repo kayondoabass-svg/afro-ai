@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "../db";
+import { queueCreditBalanceCheck } from "../credit-balance-alerts";
 import { ProjectFileError } from "../project-file-policy";
 import { isFounderEmail } from "../founder-access";
 
@@ -66,6 +67,7 @@ export async function reserveJob(owner: string, conversation: string, maxTokens 
       ...(quotaExempt ? { quotaExempt: true } : {}) };
     await conn.query("INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'workbench-budget', $2)", [conversation, JSON.stringify(b)]);
     await conn.query("COMMIT");
+    if (chargeCents) queueCreditBalanceCheck(owner);
     return { owner, conversation, id: b.id };
   } catch (error) { await conn.query("ROLLBACK"); throw error; }
   finally { conn.release(); }

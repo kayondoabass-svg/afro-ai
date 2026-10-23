@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { pool } from "./db";
+import { queueCreditBalanceCheck } from "./credit-balance-alerts";
 import { COST_CENTS, DAILY_REQUEST_LIMITS, type UserPlan } from "./replit_integrations/quota";
 import { generateImageWithImagen, generateImageWithOpenAIFallback, isImagenAvailable } from "./imagen";
 import { generateVideoWithVeo, isVeoAvailable } from "./veo";
@@ -89,6 +90,7 @@ export async function submitMedia(userId: string, raw: unknown) {
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [randomUUID(), userId, input.kind, input.prompt, duration, input.idempotencyKey, plan, cost, log.id]);
     await c.query("COMMIT");
+    if (plan === "payg") queueCreditBalanceCheck(userId);
     return job;
   } catch (e) { await c.query("ROLLBACK"); throw e; }
   finally { c.release(); }

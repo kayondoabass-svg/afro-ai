@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { InstallPwaBanner } from "@/components/install-pwa-button";
 import { AppInstallTracker } from "@/components/app-install-tracker";
 import { QuotaNotifications } from "@/components/quota-notifications";
+import { LowCreditNotifications } from "@/components/low-credit-notifications";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -585,6 +586,7 @@ function App() {
             <PageTitleUpdater />
             <AppRouter />
             <QuotaNotifications />
+            <LowCreditNotifications />
             <InstallPwaBanner />
             <AppInstallTracker />
           </TooltipProvider>
