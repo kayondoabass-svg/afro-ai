@@ -1712,9 +1712,11 @@ export function registerChatRoutes(app: Express): void {
       }
 
       const { model, maxTokens } = getModelForPlan(userPlan);
+      const authenticatedEmail = (req as any).user?.claims?.email;
+      const founderAccess = isFounderEmail(authenticatedEmail) && isFounderEmail(userProfile.email);
       try {
-        requestBudget = await reserveJob(userId, String(conversationId), tokenBudget(req.body.maxJobTokens),
-          paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0);
+        requestBudget = await reserveJob(userId, String(conversationId), founderAccess ? undefined : tokenBudget(req.body.maxJobTokens),
+          paygUserId === userId ? PAYG_COST_PER_GENERATION_CENTS : 0, authenticatedEmail);
       } catch (error) {
         return res.status(error instanceof ProjectFileError ? error.status : 503).json({
           error: error instanceof ProjectFileError ? error.message : "Could not reserve this job. No AI request was started.",

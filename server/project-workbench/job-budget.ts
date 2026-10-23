@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "../db";
 import { ProjectFileError } from "../project-file-policy";
+import { isFounderEmail } from "../founder-access";
 
 export const JOB_BUDGET = { maxTokens: 50000, maxRounds: 5, paygChargeCents: 2 };
 type Budget = {
   id: string; maxTokens: number; reservedCents: number; usedTokens: number;
   estimated: boolean; calls: number; completed: number; rejected: number; createdAt: string;
   status: "reserved" | "dispatched" | "settled" | "released" | "uncertain";
+  quotaExempt?: boolean;
 };
 export function tokenBudget(value: unknown) {
   if (value === undefined) return JOB_BUDGET.maxTokens;
@@ -15,11 +17,19 @@ export function tokenBudget(value: unknown) {
   return Number(value);
 }
 export function assertNextCall(b: Budget, inputUpperBound: number, outputLimit: number) {
-  if (b.calls >= JOB_BUDGET.maxRounds || b.usedTokens + inputUpperBound + outputLimit > b.maxTokens)
+  if (!Number.isSafeInteger(inputUpperBound) || inputUpperBound < 0 || !Number.isSafeInteger(outputLimit) || outputLimit <= 0)
+    throw new ProjectFileError(400, "Invalid model-call token estimate.");
+  // Finite workflows remain a safety boundary, not a customer entitlement.
+  if (b.quotaExempt && b.calls >= JOB_BUDGET.maxRounds)
+    throw new ProjectFileError(429, "Request safety limit reached. Review progress before starting another request.");
+  if (!b.quotaExempt && (b.calls >= JOB_BUDGET.maxRounds || b.usedTokens + inputUpperBound + outputLimit > b.maxTokens))
     throw new ProjectFileError(402, "Job budget reached. Progress is preserved; review it before starting another request.");
 }
 
-export function fitJobOutput(b: Pick<Budget, "maxTokens" | "usedTokens">, input: number, requested: number) {
+export function fitJobOutput(b: Pick<Budget, "maxTokens" | "usedTokens" | "quotaExempt">, input: number, requested: number) {
+  if (!Number.isSafeInteger(input) || input < 0 || !Number.isSafeInteger(requested) || requested <= 0)
+    throw new ProjectFileError(400, "Invalid model-call token estimate.");
+  if (b.quotaExempt) return requested;
   const available = b.maxTokens - b.usedTokens - input;
   const granted = Math.min(requested, available);
   if (!Number.isSafeInteger(input) || input < 0 || !Number.isSafeInteger(requested) || requested <= 0 ||
@@ -31,24 +41,29 @@ export function fitJobOutput(b: Pick<Budget, "maxTokens" | "usedTokens">, input:
 // Durable reservations use the existing application database, not in-memory
 // counters. Debit BOTH balance and spending allowance before provider dispatch.
 // Retain ambiguous dispatched charges; never promise a provider refund.
-export async function reserveJob(owner: string, conversation: string, maxTokens = JOB_BUDGET.maxTokens, chargeCents = 0) {
-  tokenBudget(maxTokens);
+export async function reserveJob(owner: string, conversation: string, maxTokens = JOB_BUDGET.maxTokens, chargeCents = 0, authenticatedEmail?: unknown) {
   if (![0, JOB_BUDGET.paygChargeCents].includes(chargeCents)) throw new ProjectFileError(400, "Invalid job charge.");
   const conn = await pool.connect();
   try {
     await conn.query("BEGIN");
     const { rows: accounts } = await conn.query(
-      "SELECT payg_balance, payg_limit, payg_spent FROM users WHERE id = $1 FOR UPDATE", [owner]);
+      "SELECT email, payg_balance, payg_limit, payg_spent FROM users WHERE id = $1 FOR UPDATE", [owner]);
     if (!accounts.length) throw new ProjectFileError(404, "Account not found.");
     const { rows: owned } = await conn.query("SELECT id FROM conversations WHERE id = $1 AND user_id = $2", [conversation, owner]);
     if (!owned.length) throw new ProjectFileError(404, "Conversation not found.");
     const account = accounts[0];
+    // Both the authenticated session and locked account must match. Never
+    // accept an exemption/role/email from the request body or a project file.
+    const quotaExempt = isFounderEmail(authenticatedEmail) && isFounderEmail(account.email);
+    if (quotaExempt) { maxTokens = JOB_BUDGET.maxTokens; chargeCents = 0; }
+    else tokenBudget(maxTokens);
     if (chargeCents && (account.payg_balance < chargeCents || account.payg_spent + chargeCents > account.payg_limit))
       throw new ProjectFileError(402, "Insufficient PAYG balance or spending allowance for this job.");
     if (chargeCents) await conn.query(
       "UPDATE users SET payg_balance = payg_balance - $2, payg_spent = payg_spent + $2 WHERE id = $1", [owner, chargeCents]);
     const b: Budget = { id: randomUUID(), maxTokens, reservedCents: chargeCents, usedTokens: 0,
-      estimated: false, calls: 0, completed: 0, rejected: 0, status: "reserved", createdAt: new Date().toISOString() };
+      estimated: false, calls: 0, completed: 0, rejected: 0, status: "reserved", createdAt: new Date().toISOString(),
+      ...(quotaExempt ? { quotaExempt: true } : {}) };
     await conn.query("INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'workbench-budget', $2)", [conversation, JSON.stringify(b)]);
     await conn.query("COMMIT");
     return { owner, conversation, id: b.id };

@@ -242,7 +242,7 @@ export function registerVisualAuditRoutes(app: Express, auth: RequestHandler) {
 Reply in ${productLanguageName(req.body.language) || "English"}. Inspect text clipping, grids, hidden checkout controls, alignment and readability in BOTH views.
 Do not claim functional tests passed, changes saved, real Safari tested or deployment occurred. Clearly state uncertainty. Suggest specific responsive fixes.
 ${inspectorInstructions()}` }, { role: "user", content }];
-      job = await reserveJob(user, found.workspace, JOB_BUDGET.maxTokens, fee);
+      job = await reserveJob(user, found.workspace, JOB_BUDGET.maxTokens, fee, (req as any).user?.claims?.email);
       run.reviewAttempt = { jobId: job.id, status: "reviewing" };
       await persistCapture(conn, found.workspace, run, latest.rowId);
       const input = modelInputBound({ messages });

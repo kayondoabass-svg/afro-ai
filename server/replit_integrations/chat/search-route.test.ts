@@ -27,12 +27,16 @@ vi.mock("../../db", () => ({ db: { select: () => ({ from: () => ({ where: async 
 } }) }) } }));
 vi.mock("../../project-workbench/job-budget", async importOriginal => {
   const real = await importOriginal<typeof import("../../project-workbench/job-budget")>();
+  const { isFounderEmail } = await import("../../founder-access");
   return {
   JOB_BUDGET: { maxTokens: 50000, maxRounds: 5, paygChargeCents: 2 },
   tokenBudget: () => 50000,
-  reserveJob: vi.fn(async () => ({ id: "job", owner: "owner", conversation: "12" })),
-  dispatchJobCall: vi.fn(async (_job, input, output, fit) => {
-    const budget = { maxTokens: 50000, usedTokens: 0, calls: 0 } as any;
+  reserveJob: vi.fn(async (owner, conversation, _max, _charge, email) => ({
+    id: "job", owner, conversation,
+    quotaExempt: isFounderEmail(email) && isFounderEmail((await mocks.getUser())?.email),
+  })),
+  dispatchJobCall: vi.fn(async (job, input, output, fit) => {
+    const budget = { maxTokens: 50000, usedTokens: 0, calls: 0, quotaExempt: job.quotaExempt } as any;
     const granted = fit ? real.fitJobOutput(budget, input, output) : output;
     real.assertNextCall(budget, input, granted);
     return { ...budget, outputLimit: granted };
@@ -67,6 +71,7 @@ vi.mock("../../project-workbench/activity-history", async importOriginal => ({
 vi.mock("../../knowledge", () => ({ retrieveKnowledge: async () => [], formatKnowledgeContext: () => "" }));
 import { registerChatRoutes } from "./routes";
 import { dispatchJobCall, recordJobUsage, finishJob } from "../../project-workbench/job-budget";
+import { FOUNDER_EMAILS } from "../../founder-access";
 
 function handler() {
   let route: any;
@@ -108,6 +113,31 @@ beforeEach(() => {
   vi.stubEnv("JINA_API_KEY", "test-only");
 });
 describe("main chat search route wiring", () => {
+  it("allows a verified founder's long builder conversation without the customer token cap or PAYG balance", async () => {
+    mocks.getUser.mockResolvedValue({ id: "owner", email: FOUNDER_EMAILS[0], plan: "payg", paygBalance: 0, paygLimit: 0, paygSpent: 0 });
+    mocks.rows = [{ role: "user", content: "Earlier website discussion. ".repeat(20000) }];
+    mocks.inference.mockResolvedValue({ text: "Here are three logo ideas.", model: "test", promptTokens: 110000, completionTokens: 20 });
+    const request = req("Suggest a logo for this website", false);
+    request.user.claims = { sub: "owner", email: FOUNDER_EMAILS[0] } as any;
+    const reply = response();
+    await handler()(request, reply);
+    expect(vi.mocked(dispatchJobCall).mock.calls[0][1]).toBeGreaterThan(50000);
+    expect(mocks.inference).toHaveBeenCalledTimes(1);
+    expect(reply.write).toHaveBeenCalledWith(expect.stringContaining("three logo ideas"));
+    expect(recordJobUsage).toHaveBeenCalledWith(expect.anything(), 110020, false);
+  });
+  it("ignores founder flags in a customer's request body and preserves the customer token cap", async () => {
+    mocks.getUser.mockResolvedValue({ id: "owner", email: "customer@example.org", plan: "business" });
+    mocks.rows = [{ role: "user", content: "Earlier website discussion. ".repeat(20000) }];
+    const request = req("Suggest a logo", false);
+    request.user.claims = { sub: "owner", email: "customer@example.org" } as any;
+    request.body = { ...request.body, mode: "founder", quotaExempt: true, founder: true } as any;
+    const reply = response();
+    await handler()(request, reply);
+    expect(mocks.inference).not.toHaveBeenCalled();
+    expect(reply.status).toHaveBeenCalledWith(402);
+    expect(reply.json).toHaveBeenCalledWith({ error: expect.stringContaining("too small") });
+  });
   it.each(["starter", "pro", "business", "payg"])("allows an actual %s builder greeting within the real budget", async plan => {
     mocks.getUser.mockResolvedValue({ id: "owner", plan, firstName: "Test", paygBalance: 1000, paygLimit: 1000, paygSpent: 0 });
     mocks.inference.mockResolvedValue({ text: "Hello! I can help with your project.", model: "test", promptTokens: 18000, completionTokens: 10 });

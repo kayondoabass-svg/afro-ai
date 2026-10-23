@@ -59,6 +59,19 @@ afterEach(() => {
 });
 
 describe("ProjectEvidencePanel", () => {
+  it("shows server-confirmed founder access instead of the customer token selector", async () => {
+    evidence.budget.quotaExempt = true;
+    mount();
+    expect(await screen.findByTestId("founder-token-exemption")).toHaveTextContent("no customer token cap");
+    expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
+    expect(screen.getByText(/Provider context and output limits/)).toBeInTheDocument();
+  });
+  it("keeps the token selector for customers", async () => {
+    mount();
+    await screen.findByAltText("Before capture — Checkout");
+    expect(screen.getByRole("spinbutton")).toHaveValue(50000);
+    expect(screen.queryByTestId("founder-token-exemption")).not.toBeInTheDocument();
+  });
   it("renders a private Before gallery image with an explicit phase label", async () => {
     mount();
     const image = await screen.findByAltText("Before capture — Checkout");

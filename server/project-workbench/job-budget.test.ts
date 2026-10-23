@@ -3,12 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), query: vi.fn() }));
 vi.mock("../db", () => ({ pool: mocks }));
 import { reserveJob, dispatchJobCall, recordJobUsage, recordJobRejection, finishJob, tokenBudget, deleteConversationWithBudgetGuard } from "./job-budget";
+import { FOUNDER_EMAILS } from "../founder-access";
 
-let balance = 2, spent = 0;
+let balance = 2, spent = 0, accountEmail = "customer@example.org";
 let records: { id: number; content: string }[] = [];
 let lock: Promise<void> = Promise.resolve();
 beforeEach(() => {
-  vi.clearAllMocks(); balance = 2; spent = 0; records = []; lock = Promise.resolve();
+  vi.clearAllMocks(); balance = 2; spent = 0; accountEmail = "customer@example.org"; records = []; lock = Promise.resolve();
   mocks.connect.mockImplementation(async () => {
     let unlock: (() => void) | undefined;
     let before: { balance: number; spent: number; records: typeof records } | undefined;
@@ -18,7 +19,7 @@ beforeEach(() => {
         if (sql.includes("FROM users") && sql.includes("FOR UPDATE")) {
           const prior = lock; lock = new Promise(resolve => { unlock = resolve; }); await prior;
           before = { balance, spent, records: records.map(r => ({ ...r })) };
-          return { rows: args[0] === "owner" ? [{ id: "owner", payg_balance: balance, payg_limit: 10, payg_spent: spent }] : [] };
+          return { rows: args[0] === "owner" ? [{ id: "owner", email: accountEmail, payg_balance: balance, payg_limit: 10, payg_spent: spent }] : [] };
         }
         if (sql.includes("SELECT id FROM conversations")) return { rows: args[0] === "11" && args[1] === "owner" ? [{ id: 11 }] : [] };
         if (sql.includes("JOIN conversations")) return { rows: args[0] === "owner" && args[1] === "11" ? records.filter(r => JSON.parse(r.content).id === args[2]) : [] };
@@ -38,6 +39,34 @@ beforeEach(() => {
   });
 });
 describe("durable generation reservations", () => {
+  it("exempts a matching founder session and account without losing metering or charging PAYG", async () => {
+    accountEmail = FOUNDER_EMAILS[0];
+    balance = 0;
+    const job = await reserveJob("owner", "11", 50000, 2, FOUNDER_EMAILS[0]);
+    expect(await dispatchJobCall(job, 90000, 32000, true)).toMatchObject({ quotaExempt: true, outputLimit: 32000, reservedCents: 0 });
+    await recordJobUsage(job, 110000, false);
+    expect((await dispatchJobCall(job, 90000, 32000, true)).outputLimit).toBe(32000);
+    await recordJobUsage(job, 110000, false);
+    expect(await finishJob(job)).toMatchObject({ status: "settled", usedTokens: 220000, quotaExempt: true });
+    expect(balance).toBe(0); expect(spent).toBe(0);
+  });
+  it.each(["session-only", "account-only", "neither"])("does not grant founder exemption for %s identity", async mode => {
+    accountEmail = mode === "account-only" ? FOUNDER_EMAILS[0] : "customer@example.org";
+    const job = await reserveJob("owner", "11", 50000, 0, mode === "session-only" ? FOUNDER_EMAILS[0] : undefined);
+    await expect(dispatchJobCall(job, 90000, 32000, true)).rejects.toThrow("too small");
+    expect(JSON.parse(records[0].content).quotaExempt).not.toBe(true);
+  });
+  it("keeps founder jobs owner-scoped, validates estimates and prevents unbounded loops", async () => {
+    accountEmail = FOUNDER_EMAILS[0];
+    await expect(reserveJob("owner", "99", 50000, 0, FOUNDER_EMAILS[0])).rejects.toThrow("Conversation");
+    const job = await reserveJob("owner", "11", 50000, 0, FOUNDER_EMAILS[0]);
+    await expect(dispatchJobCall(job, -1, 32000, true)).rejects.toThrow("Invalid");
+    for (let i = 0; i < 5; i++) {
+      await dispatchJobCall(job, 90000, 32000, true);
+      await recordJobUsage(job, 110000, false);
+    }
+    await expect(dispatchJobCall(job, 90000, 32000, true)).rejects.toThrow("safety limit");
+  });
   it("serializes competing reservations and never spends one balance twice", async () => {
     const results = await Promise.allSettled(Array.from({ length: 8 }, () => reserveJob("owner", "11", 50000, 2)));
     expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);

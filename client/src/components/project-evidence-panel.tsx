@@ -23,7 +23,7 @@ type EvidenceResponse = {
   items: Evidence[]; events: EvidenceEvent[];
   jobs?: PersistedJob[];
   job?: { id: string; status: string; updatedAt: string; usage?: unknown; detail?: string } | null;
-  budget: { maxTokens: number; maxRounds: number; paygChargeCents: number };
+  budget: { maxTokens: number; maxRounds: number; paygChargeCents: number; quotaExempt?: boolean };
   limits: { fileBytes: number; maxItems: number };
 };
 type CurrentWorkbench = { fingerprint: string; repairs: number };
@@ -394,9 +394,14 @@ export function ProjectEvidencePanel({ conversationId, onRepair, maxJobTokens, o
             </section>}
             {!toolHistory.length && !billingHistory.length && !data?.job && <p className="mt-3 rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">Persisted run events and billing history will appear here as work progresses.</p>}
             <div className="mt-3 border-t border-border pt-3">
+              {data?.budget.quotaExempt ? <div className="text-xs" data-testid="founder-token-exemption">
+                <p className="font-medium">Founder access — no customer token cap</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Provider context and output limits, security checks and finite workflow safety controls still apply. Provider usage is recorded.</p>
+              </div> : <>
               <label htmlFor={`max-job-tokens-${conversationId}`} className="flex items-center justify-between gap-2 text-xs font-medium"><span>Token limit</span><span className="font-mono text-muted-foreground">10k–{(data?.budget.maxTokens ?? 50000).toLocaleString()}</span></label>
               <Input id={`max-job-tokens-${conversationId}`} type="number" min={10000} max={Math.min(50000, data?.budget.maxTokens ?? 50000)} step={1000} value={maxJobTokens} onChange={event => onMaxJobTokensChange(Math.min(50000, Math.max(10000, Number(event.target.value) || 10000)))} className="mt-1 h-8 font-mono text-xs" />
               <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Maximum 5 rounds per job. No operation starts automatically.</p>
+              </>}
             </div>
           </section>
           <section className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-[11px] leading-relaxed text-muted-foreground">
