@@ -14,6 +14,17 @@ as well as nested-resource swaps. Keep explicit administrator functions
 separate from customer ownership checks; a quota exemption is not permission
 to read another customer's private content.
 
+Private payment data and caches must match the particular signed-in customer;
+one client's information must not appear for another client.
+
+**Why:** The user explicitly requested account-matched payment information and
+said, "let cache not expose things of one client to another."
+
+**How to apply:** Treat browser query caches, persisted checkout state, account
+switches, shared devices and intermediary caches as part of the ownership
+boundary, not just database queries. Preserve explicit founder oversight through
+separate authorized administration views, never through customer-cache fallbacks.
+
 `req.user` shape (set by the Cloudflare auth bridge, `server/replit_integrations/auth/cfBridge.ts`) is `{ claims: { sub, email, ... } }` only — there is **NO** top-level `req.user.id` (it is always `undefined`; Passport's deserializeUser passes the same shape through). Always read the caller id as `req.user.claims.sub` and the email as `req.user.claims.email`.
 
 **`req.user.id` is a silent footgun.** Reading it yields `undefined`, so `storage.getUser(req.user.id)` returns undefined and any inline `if (!user?.isFounder) return 403` fails closed → the route 403s / returns empty for everyone. A guardrail test (`server/__tests__/no-req-user-id.test.ts`) now fails CI if `req.user.id` / `req.user?.id` reappears in `server/routes.ts`. Compare the id against the row's `userId` before returning/mutating any per-user resource (logs, analytics by appId, conversations, zip-exports, secrets).
