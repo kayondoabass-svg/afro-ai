@@ -38,6 +38,7 @@ import { FULLSTACK_SOURCE_NOTICE, FULLSTACK_EXPORT_NOTICE, isSetupBlocked } from
 import "./agent.css";
 import { NewChatEntry } from "@/components/new-chat-entry";
 import { NEW_CHAT_EVENT } from "@/lib/chat-entry";
+import { DailyQuotaError, inspectQuota } from "@/lib/quota-response";
 
 // ---------- Types ----------
 
@@ -662,6 +663,7 @@ export default function AgentPage() {
       });
       if (!res.ok || !res.body) {
         const errorText = await res.text().catch(() => "");
+        if (inspectQuota(res, errorText)) throw new DailyQuotaError("Your daily allowance is used up.");
         let detail = errorText;
         try { detail = JSON.parse(errorText).message || JSON.parse(errorText).error || errorText; } catch {}
         throw new Error(detail.slice(0, 200) || `Request failed (${res.status})`);
@@ -718,8 +720,12 @@ export default function AgentPage() {
       setQueueDrainTrigger(t => t + 1);
     } catch (e: any) {
       if (e.name !== "AbortError" && !ctrl.signal.aborted && requestId === activeRequestRef.current) {
-        setRequestActivity({ status: "failed", mode });
-        toast({ title: t("chat.toastAgentError"), description: e.message, variant: "destructive" });
+        if (e instanceof DailyQuotaError) {
+          setRequestActivity({ status: "daily-cap", mode });
+        } else {
+          setRequestActivity({ status: "failed", mode });
+          toast({ title: t("chat.toastAgentError"), description: e.message, variant: "destructive" });
+        }
       }
     } finally {
       if (requestId === activeRequestRef.current) {

@@ -8,6 +8,7 @@ const states: Array<[ChatRequestStatus, string]> = [
   ["responding", "Receiving response"],
   ["received", "Reply received"],
   ["failed", "Request failed"],
+  ["daily-cap", "Daily cap reached"],
   ["stopped", "Request stopped"],
   ["empty", "No reply returned"],
 ];

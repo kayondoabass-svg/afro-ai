@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { AlertTriangle, Sparkles, CreditCard, Clock } from "lucide-react";
+import { CreditPurchaseDialog } from "@/components/credit-purchase-dialog";
 
 type QuotaKind = "chat" | "image" | "audio" | "video";
 
@@ -26,6 +27,7 @@ export function QuotaNotifications() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [blocked, setBlocked] = useState<BlockedDetail | null>(null);
+  const [purchase, setPurchase] = useState(false);
 
   useEffect(() => {
     // Dedup toast per kind so we don't spam the user during a long session.
@@ -53,6 +55,7 @@ export function QuotaNotifications() {
     }
 
     function onBlocked(e: Event) {
+      setPurchase(false);
       setBlocked((e as CustomEvent<BlockedDetail>).detail);
     }
 
@@ -65,8 +68,14 @@ export function QuotaNotifications() {
   }, [toast, navigate]);
 
   if (!blocked) return null;
+  if (purchase) return <CreditPurchaseDialog
+    onClose={() => { setPurchase(false); setBlocked(null); }}
+    onBack={() => setPurchase(false)}
+  />;
   const label = KIND_LABEL[blocked.kind] || blocked.kind;
   const hours = hoursUntil(blocked.resetsAt);
+  const free = blocked.plan === "starter";
+  const notIncluded = blocked.kind === "video" && blocked.limit === 0;
 
   return (
     <Dialog open={!!blocked} onOpenChange={(open) => { if (!open) setBlocked(null); }}>
@@ -76,43 +85,44 @@ export function QuotaNotifications() {
             <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
           </div>
           <DialogTitle className="text-center" data-testid="text-quota-title">
-            Daily limit reached
+            {notIncluded ? "Video isn't included in your plan" : free ? "You've used up your free daily cap" : "Daily limit reached"}
           </DialogTitle>
           <DialogDescription className="text-center" data-testid="text-quota-description">
-            You've used all <strong>{blocked.limit}</strong> daily {label} on your <strong>{blocked.plan}</strong> plan.
-            Your project is safe — keep building right now by upgrading, or wait{" "}
-            <span className="inline-flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              <strong>~{hours} hour{hours === 1 ? "" : "s"}</strong>
-            </span>{" "}
-            for it to reset.
+            {notIncluded ? "Video generation requires an eligible paid plan. Your saved project is safe." : <>
+              {free ? "Purchase credits to continue using Afro AI." : <>You've used all <strong>{blocked.limit}</strong> daily {label} on your <strong>{blocked.plan}</strong> plan.</>}
+              {" "}Your project is safe. {free ? "Your free allowance resets" : "Your daily allowance resets"} at midnight UTC
+              {hours > 0 && <span className="inline-flex items-center gap-1">{" "}(<Clock className="h-3 w-3" />~{hours} hour{hours === 1 ? "" : "s"})</span>}.
+            </>}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col gap-2 sm:flex-col">
-          <Button
+          {(!free || notIncluded) && <Button
             className="w-full"
             onClick={() => { setBlocked(null); navigate(blocked.upgradeUrl || "/pricing"); }}
             data-testid="button-quota-upgrade"
           >
             <Sparkles className="mr-2 h-4 w-4" />
-            Upgrade plan
-          </Button>
-          <Button
-            variant="outline"
+            View plans
+          </Button>}
+          {!notIncluded && <Button
+            variant={free ? "default" : "outline"}
             className="w-full"
-            onClick={() => { setBlocked(null); navigate(blocked.creditsUrl || "/pricing#payg"); }}
+            onClick={() => {
+              if (free) setPurchase(true);
+              else { setBlocked(null); navigate(blocked.creditsUrl || "/pricing#payg"); }
+            }}
             data-testid="button-quota-buy-credits"
           >
             <CreditCard className="mr-2 h-4 w-4" />
-            Buy credits (one-time)
-          </Button>
+            {free ? "Purchase credits to continue" : "Buy credits (one-time)"}
+          </Button>}
           <Button
             variant="ghost"
             className="w-full text-muted-foreground"
             onClick={() => setBlocked(null)}
             data-testid="button-quota-dismiss"
           >
-            Wait until reset
+            {notIncluded ? "Close" : "Wait until reset"}
           </Button>
         </DialogFooter>
       </DialogContent>

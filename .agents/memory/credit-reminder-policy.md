@@ -13,3 +13,9 @@ Paid-wallet low-credit reminders use US$5-equivalent, regardless of payment curr
 **Why:** The user requested a client reminder “especially if it is left with $5. Regardless of the currency.”
 
 **How to apply:** Compare against the USD base wallet and present a genuine conversion where supported. Label approximate conversions and disclose USD fallback rather than relabeling dollars as local money.
+
+When offering purchases after the free cap, preserve a one-time purchase option. For automatic renewal, the user chose low-balance auto-top-up, not scheduled monthly purchases.
+
+**Why:** The user explicitly selected “Low-balance auto-top-up.”
+
+**How to apply:** Require verified provider support and explicit customer authorization for balance-triggered repeat charges. Do not substitute a scheduled subscription or silently turn an automatic request into a one-time purchase.

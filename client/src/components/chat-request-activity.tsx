@@ -16,6 +16,7 @@ export type ChatRequestStatus =
   | "responding"
   | "received"
   | "failed"
+  | "daily-cap"
   | "stopped"
   | "empty";
 
@@ -56,6 +57,11 @@ const activityStates: Record<ChatRequestStatus, ActivityState> = {
     label: "Request failed",
     Icon: CircleAlert,
     tone: "text-rose-200",
+  },
+  "daily-cap": {
+    label: "Daily cap reached",
+    Icon: CircleAlert,
+    tone: "text-amber-200",
   },
   stopped: {
     label: "Request stopped",

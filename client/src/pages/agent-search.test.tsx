@@ -10,7 +10,8 @@ vi.mock("@/pages/ai-chat", () => ({
   PublishDialog: ({ open, code, onOpenChange }: { open: boolean; code: string; onOpenChange: (open: boolean) => void }) => open
     ? <div data-testid="publish-dialog">{code}<button onClick={() => onOpenChange(false)}>Close publish</button></div> : null,
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+const showToast = vi.hoisted(() => vi.fn());
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: showToast }) }));
 vi.mock("@/hooks/use-language", () => ({ useLanguage: () => ({
   t: (key: string) => key,
 }) }));
@@ -29,6 +30,7 @@ vi.mock("@tanstack/react-query", () => ({
 import AgentPage from "./agent";
 
 beforeEach(() => {
+  showToast.mockClear();
   Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
 });
 
@@ -81,6 +83,29 @@ describe("active /chat Agent search", () => {
     expect(screen.queryByText("Reply received")).not.toBeInTheDocument();
     expect(screen.queryByTestId("request-activity-spinner")).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/conversations/74/messages")).toHaveLength(1);
+  });
+
+  it("treats a free daily cap as purchase guidance, not an agent failure", async () => {
+    const blocked = vi.fn();
+    window.addEventListener("afroai:quota-blocked", blocked);
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (url === "/api/conversations") return Response.json({ id: 74 });
+      if (url === "/api/conversations/74/messages") return Response.json({
+        code: "DAILY_QUOTA_REACHED", kind: "chat", plan: "starter", used: 100, limit: 100,
+        error: "You've used up your free daily cap. Purchase credits to continue using Afro AI.",
+      }, { status: 429 });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      render(<AgentPage />);
+      fireEvent.change(screen.getByTestId("input-prompt"), { target: { value: "Continue my project" } });
+      fireEvent.click(screen.getByTestId("button-send"));
+      expect(await screen.findByRole("status", { name: "Chat request activity: Daily cap reached" })).toBeVisible();
+      expect(screen.queryByText("Request failed")).not.toBeInTheDocument();
+      expect(blocked).toHaveBeenCalledTimes(1);
+      expect(showToast.mock.calls.some(([notice]) => notice.title === "chat.toastAgentError")).toBe(false);
+    } finally { window.removeEventListener("afroai:quota-blocked", blocked); }
   });
 
   it("starts empty without creating history and resets the same-route draft only after confirmation", () => {

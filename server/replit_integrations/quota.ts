@@ -6,6 +6,7 @@ import { users, usageLogs } from "@shared/schema";
 import { storage } from "../storage";
 import { sendQuotaReachedEmail } from "../mailer";
 import { isFounderEmail } from "../founder-access";
+import { FREE_DAILY_CAP_MESSAGE } from "@shared/credit-checkout";
 
 export type AiKind = "chat" | "image" | "audio" | "video";
 export type UserPlan = "starter" | "pro" | "business" | "payg";
@@ -309,7 +310,7 @@ export function aiQuotaGuard(kind: AiKind): RequestHandler {
         // Fire-and-forget — don't await, don't block the response.
         void maybeSendQuotaEmail({ userId, kind, used, limit: dailyMax, plan });
         return res.status(429).json({
-          error: `You've hit today's ${kind} limit (${dailyMax}). It resets in about ${minutes} minute${minutes === 1 ? "" : "s"}. Upgrade your plan for more.`,
+          error: plan === "starter" && dailyMax > 0 ? FREE_DAILY_CAP_MESSAGE : `You've hit today's ${kind} limit (${dailyMax}). It resets in about ${minutes} minute${minutes === 1 ? "" : "s"}. Upgrade your plan for more.`,
           code: "DAILY_QUOTA_REACHED",
           kind,
           used,

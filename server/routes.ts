@@ -2183,8 +2183,9 @@ export async function registerRoutes(
     "chatbot-business": { repliesLimit: 5000,  botsLimit: 5 },
     "chatbot-agency":   { repliesLimit: 20000, botsLimit: -1 },
   };
-  const PAYG_PACK_PRICES_USD: Record<string, number> = { pack5: 5, pack10: 10, pack20: 20, pack50: 50 };
-  const PAYG_PACK_CREDITS: Record<string, number> = { pack5: 500, pack10: 1000, pack20: 2000, pack50: 5000 };
+  const { CREDIT_PACKS, creditCheckoutModeError } = await import("@shared/credit-checkout");
+  const PAYG_PACK_PRICES_USD: Record<string, number> = Object.fromEntries(CREDIT_PACKS.map(p => [p.key, p.usd]));
+  const PAYG_PACK_CREDITS: Record<string, number> = Object.fromEntries(CREDIT_PACKS.map(p => [p.key, p.credits]));
   // Currencies confirmed supported by Pesapal production API
   const PESAPAL_SUPPORTED_CURRENCIES = new Set(["USD", "KES", "UGX", "TZS", "RWF", "ZMW", "GHS", "ZAR", "NGN", "EGP", "XAF", "XOF", "GBP", "EUR"]);
 
@@ -2316,8 +2317,10 @@ export async function registerRoutes(
   app.post("/api/payg/topup", apiLimiter, isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
+      const modeError = creditCheckoutModeError(req.body);
+      if (modeError) return res.status(modeError.status).json({ code: modeError.code, message: modeError.message });
       const { pack, countryCode } = req.body;
-      if (!PAYG_PACK_PRICES_USD[pack]) {
+      if (!CREDIT_PACKS.some(p => p.key === pack)) {
         return res.status(400).json({ message: "Invalid pack. Choose: pack5, pack10, pack20, pack50" });
       }
       const userEmail = req.user.claims.email || req.user.claims.preferred_username;
