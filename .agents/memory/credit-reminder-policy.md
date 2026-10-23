@@ -31,3 +31,9 @@ Prioritize direct one-time credit purchases, including mobile money where Pesapa
 **Why:** The user said we focused on auto-renewal and skipped the option of buying credits directly, and asked for mobile-money purchase reminders.
 
 **How to apply:** Make the direct purchase action clear in cap and low-balance reminders. Let provider checkout determine available payment networks rather than equating its operating countries with mobile-money coverage.
+
+Keep customer checkout within the Afro AI interface, with Afro AI calling Pesapal behind the scenes and supporting other founder-approved providers later. Build on the existing payment flow rather than replacing working parts.
+
+**Why:** The user requested an interface where customers interact with afroaigroup, while afroaigroup calls Pesapal or future providers.
+
+**How to apply:** Reuse existing payment records, verification, wallet accounting and receipts. Prefer provider-approved embedded checkout; explain any unavoidable bank/wallet authentication steps and never collect raw card details, CVVs or mobile-money PINs in Afro AI's own forms.
