@@ -19,3 +19,9 @@ When offering purchases after the free cap, preserve a one-time purchase option.
 **Why:** The user explicitly selected “Low-balance auto-top-up.”
 
 **How to apply:** Require verified provider support and explicit customer authorization for balance-triggered repeat charges. Do not substitute a scheduled subscription or silently turn an automatic request into a one-time purchase.
+
+Keep Pesapal for this project. Do not suggest Stripe or Whop again unless the user asks.
+
+**Why:** The user said these providers are unsuitable for the project's Ugandan payment needs and asked us to stop pushing them.
+
+**How to apply:** Preserve existing payment integrations. Leave unsupported automatic charging disabled rather than repeatedly proposing these alternatives.

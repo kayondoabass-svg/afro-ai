@@ -43,7 +43,7 @@
 - [MCP product scope](mcp-product-scope.md) — user requires AI discoverability through MCP across domains, chatbots, email, web/app design, and USSD.
 - [Domain purchase experience](domain-purchase-experience.md) — after purchase, prioritize management and app connection, not repeated purchase prompts.
 - [Local currency pricing](local-currency-pricing.md) — USD is the base; each customer uses their country's currency, with conversion rather than relabeling.
-- [Credit reminder policy](credit-reminder-policy.md) — preserve free midnight resets; paid-wallet warnings use US$5-equivalent, not five local currency units.
+- [Credit & payment policy](credit-reminder-policy.md) — preserve free midnight resets; US$5-equivalent paid warnings; keep Pesapal and do not propose Stripe/Whop unless asked.
 - [Navigation grouping](navigation-grouping.md) — keep related products under expandable sidebar sections instead of extending the long flat menu.
 - [Platform admin identity](platform-admin-identity.md) — avoid requiring two login systems for Afro Auth management; preserve legacy ownership and distinguish outages from expired sessions.
 - [Founder entitlements](founder-entitlements.md) — founder has full platform access without customer subscriptions; provider capacity and security safeguards remain separate.
