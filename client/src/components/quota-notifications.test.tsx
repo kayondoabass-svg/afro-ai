@@ -19,6 +19,7 @@ describe("free daily cap purchase guidance", () => {
     block();
     expect(screen.getByText("You've used up your free daily cap")).toBeVisible();
     expect(screen.getByText(/Purchase credits to continue using Afro AI/)).toBeVisible();
+    expect(screen.getByTestId("button-quota-buy-credits")).toHaveTextContent("mobile money or card");
     expect(screen.getByText(/at midnight UTC/)).toBeVisible();
     fireEvent.click(screen.getByTestId("button-quota-buy-credits"));
     expect(screen.getByTestId("dialog-credit-purchase")).toBeVisible();

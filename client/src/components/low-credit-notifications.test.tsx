@@ -30,9 +30,10 @@ describe("low credit reminders", () => {
     const notice = mocks.toast.mock.calls[0][0];
     expect(notice.description).toContain("Approximately UGX 18,500");
     expect(notice.description).toContain("US$5");
+    expect(notice.description).toContain("mobile money or card through Pesapal");
     const action = render(notice.action);
     fireEvent.click(action.getByTestId("button-low-credit-topup"));
-    expect(mocks.navigate).toHaveBeenCalledWith("/pricing");
+    expect(mocks.navigate).toHaveBeenCalledWith("/pricing#payg");
   });
   it("uses the account currency when no country preference exists and deduplicates the same episode", async () => {
     const first = mount();

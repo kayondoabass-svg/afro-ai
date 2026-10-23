@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { CREDIT_PACKS, creditCheckoutModeError, creditCheckoutUrl } from "../../shared/credit-checkout";
+import { CREDIT_PACKS, creditCheckoutModeError, creditCheckoutUrl, normalizeCreditCountryCode } from "../../shared/credit-checkout";
 describe("credit purchase contract", () => {
+  it.each([["ug", "UG"], [" UG ", "UG"], ["KE", "KE"], ["US", "US"], ["", undefined], [null, undefined], [{}, undefined], ["Uganda", undefined]])(
+    "normalizes checkout country without claiming specific payment-network availability: %s", (input, expected) => {
+      expect(normalizeCreditCountryCode(input)).toBe(expected);
+    });
   it("preserves all existing one-time pack prices and wallet amounts", () => {
     expect(CREDIT_PACKS).toEqual([
       { key: "pack5", usd: 5, credits: 500 }, { key: "pack10", usd: 10, credits: 1000 },

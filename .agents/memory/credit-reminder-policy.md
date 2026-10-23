@@ -25,3 +25,9 @@ Keep Pesapal for this project. Do not suggest Stripe or Whop again unless the us
 **Why:** The user said these providers are unsuitable for the project's Ugandan payment needs and asked us to stop pushing them.
 
 **How to apply:** Preserve existing payment integrations. Leave unsupported automatic charging disabled rather than repeatedly proposing these alternatives.
+
+Prioritize direct one-time credit purchases, including mobile money where Pesapal offers it and supported cards otherwise. Automatic renewal must not replace the direct purchase option.
+
+**Why:** The user said we focused on auto-renewal and skipped the option of buying credits directly, and asked for mobile-money purchase reminders.
+
+**How to apply:** Make the direct purchase action clear in cap and low-balance reminders. Let provider checkout determine available payment networks rather than equating its operating countries with mobile-money coverage.

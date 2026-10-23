@@ -1,4 +1,9 @@
-export const FREE_DAILY_CAP_MESSAGE = "You've used up your free daily cap. Purchase credits to continue using Afro AI.";
+export const FREE_DAILY_CAP_MESSAGE = "You've used up your free daily cap. Purchase credits to continue using Afro AI. Pay directly with mobile money or card through Pesapal, where available.";
+
+export function normalizeCreditCountryCode(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^[a-z]{2}$/i.test(value.trim())) return undefined;
+  return value.trim().toUpperCase();
+}
 
 export const CREDIT_PACKS = [
   { key: "pack5", usd: 5, credits: 500 },

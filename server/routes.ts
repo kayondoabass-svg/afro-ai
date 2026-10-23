@@ -2183,7 +2183,7 @@ export async function registerRoutes(
     "chatbot-business": { repliesLimit: 5000,  botsLimit: 5 },
     "chatbot-agency":   { repliesLimit: 20000, botsLimit: -1 },
   };
-  const { CREDIT_PACKS, creditCheckoutModeError } = await import("@shared/credit-checkout");
+  const { CREDIT_PACKS, creditCheckoutModeError, normalizeCreditCountryCode } = await import("@shared/credit-checkout");
   const PAYG_PACK_PRICES_USD: Record<string, number> = Object.fromEntries(CREDIT_PACKS.map(p => [p.key, p.usd]));
   const PAYG_PACK_CREDITS: Record<string, number> = Object.fromEntries(CREDIT_PACKS.map(p => [p.key, p.credits]));
   // Currencies confirmed supported by Pesapal production API
@@ -2319,7 +2319,11 @@ export async function registerRoutes(
       const userId = req.user.claims.sub;
       const modeError = creditCheckoutModeError(req.body);
       if (modeError) return res.status(modeError.status).json({ code: modeError.code, message: modeError.message });
-      const { pack, countryCode } = req.body;
+      const { pack } = req.body;
+      const countryCode = normalizeCreditCountryCode(req.body.countryCode);
+      if (req.body.countryCode != null && req.body.countryCode !== "" && !countryCode) {
+        return res.status(400).json({ code: "INVALID_COUNTRY", message: "countryCode must be a two-letter country code." });
+      }
       if (!CREDIT_PACKS.some(p => p.key === pack)) {
         return res.status(400).json({ message: "Invalid pack. Choose: pack5, pack10, pack20, pack50" });
       }
@@ -2356,7 +2360,7 @@ export async function registerRoutes(
           description: `Afro AI Credits — $${usdAmount} pack (${credits.toLocaleString()} credits)`,
           callback_url: `${baseUrl}/api/pesapal/callback`,
           notification_id: cachedIpnId,
-          billing_address: { email_address: userEmail },
+          billing_address: { email_address: userEmail, country_code: countryCode },
         });
       } catch (orderErr: any) {
         console.error("[PAYG] Pesapal order failed, clearing cached IPN:", orderErr.message);

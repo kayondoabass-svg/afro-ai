@@ -15,7 +15,19 @@ describe("temporary credit checkout", () => {
     fireEvent.click(screen.getByTestId("button-quota-pack10"));
     await waitFor(() => expect(redirect).toHaveBeenCalledWith(url));
     expect(request).toHaveBeenCalledExactlyOnceWith("POST", "/api/payg/topup", { pack: "pack10", mode: "one-time", countryCode: "UG" });
-    expect(screen.getByText(/Low-balance auto-top-up — not enabled/)).toBeVisible();
+    expect(screen.getByText(/Auto-renewal is off/)).toBeVisible();
+    expect(screen.getByText(/For mobile money, select your country/)).toBeVisible();
+  });
+  it("allows a direct mobile-money purchase with an explicitly chosen country", async () => {
+    request.mockResolvedValue(Response.json({ redirectUrl: url }));
+    const redirect = vi.fn();
+    render(<CreditPurchaseDialog onClose={vi.fn()} onBack={vi.fn()} onCheckout={redirect} />);
+    fireEvent.change(screen.getByLabelText("Country for payment"), { target: { value: "UG" } });
+    expect(localStorage.getItem("afro-ai-country")).toBe("UG");
+    expect(screen.getByTestId("button-quota-pack5")).toHaveTextContent("UGX");
+    fireEvent.click(screen.getByTestId("button-quota-pack5"));
+    await waitFor(() => expect(redirect).toHaveBeenCalledWith(url));
+    expect(request).toHaveBeenCalledExactlyOnceWith("POST", "/api/payg/topup", { pack: "pack5", mode: "one-time", countryCode: "UG" });
   });
   it("prevents duplicate checkout submissions and ignores redirects after closing", async () => {
     let resolve!: (response: Response) => void;

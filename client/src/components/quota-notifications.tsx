@@ -90,6 +90,7 @@ export function QuotaNotifications() {
           <DialogDescription className="text-center" data-testid="text-quota-description">
             {notIncluded ? "Video generation requires an eligible paid plan. Your saved project is safe." : <>
               {free ? "Purchase credits to continue using Afro AI." : <>You've used all <strong>{blocked.limit}</strong> daily {label} on your <strong>{blocked.plan}</strong> plan.</>}
+              {" "}Buy credits directly with mobile money or card through Pesapal, where available.
               {" "}Your project is safe. {free ? "Your free allowance resets" : "Your daily allowance resets"} at midnight UTC
               {hours > 0 && <span className="inline-flex items-center gap-1">{" "}(<Clock className="h-3 w-3" />~{hours} hour{hours === 1 ? "" : "s"})</span>}.
             </>}
@@ -114,7 +115,7 @@ export function QuotaNotifications() {
             data-testid="button-quota-buy-credits"
           >
             <CreditCard className="mr-2 h-4 w-4" />
-            {free ? "Purchase credits to continue" : "Buy credits (one-time)"}
+            {free ? "Buy credits — mobile money or card" : "Buy credits (one-time)"}
           </Button>}
           <Button
             variant="ghost"
