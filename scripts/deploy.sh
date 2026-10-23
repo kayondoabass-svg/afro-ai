@@ -317,6 +317,11 @@ main() {
     die "Integration project schema not ready; existing service remains running."
   fi
 
+  log "Preparing additive payment purchase snapshots..."
+  if ! "$APP_DIR/node_modules/.bin/tsx" "$APP_DIR/scripts/payment-details-migrate.ts"; then
+    die "Payment schema not ready; existing service remains running."
+  fi
+
   if ! run_build; then
     log "Build FAILED — entering recovery"
     emergency_recovery "$previous_sha"

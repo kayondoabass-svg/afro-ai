@@ -143,7 +143,7 @@ function PricingModal({
     },
     onSuccess: (data) => {
       if (data.redirectUrl) {
-        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan });
+        openPaymentCheckout({ ...data });
       }
     },
     onError: (error: any) => {

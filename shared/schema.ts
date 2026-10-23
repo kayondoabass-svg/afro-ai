@@ -6,6 +6,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { users } from "./models/auth";
+import type { PurchaseDetails } from "./purchase-details";
 
 const mediaBytes = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 // Private platform management only; never exported with the public runner.
@@ -177,6 +178,8 @@ export const payments = pgTable("payments", {
   merchantReference: varchar("merchant_reference").notNull(),
   paymentMethod: varchar("payment_method"),
   confirmationCode: varchar("confirmation_code"),
+  purchaseDetails: jsonb("purchase_details").$type<PurchaseDetails>(),
+  completedAt: timestamp("completed_at"),
   status: varchar("status").notNull().default("pending"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

@@ -95,7 +95,7 @@ export default function PricingPage() {
       const res = await apiRequest("POST", "/api/subscribe", { plan, countryCode: country || undefined, embedded: true });
       const data = await res.json();
       if (data.redirectUrl) {
-        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan });
+        openPaymentCheckout({ ...data });
       } else {
         toast({ title: t("dashboard.error"), description: "Payment redirect not available. Please try again later.", variant: "destructive" });
       }
@@ -115,7 +115,7 @@ export default function PricingPage() {
       const res = await apiRequest("POST", "/api/payg/topup", { pack, countryCode: country || undefined, embedded: true });
       const data = await res.json();
       if (data.redirectUrl) {
-        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan });
+        openPaymentCheckout({ ...data });
       } else {
         toast({ title: "Error", description: "Could not start payment. Try again.", variant: "destructive" });
       }

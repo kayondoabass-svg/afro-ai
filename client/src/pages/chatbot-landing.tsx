@@ -233,10 +233,6 @@ function RoiCalculator() {
 export default function ChatbotLandingPage() {
   const [, navigate] = useLocation();
   const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [billingAnnual, setBillingAnnual] = useState(false);
-
-  const price = (base: number) =>
-    billingAnnual ? Math.round(base * 0.8) : base;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -592,30 +588,7 @@ export default function ChatbotLandingPage() {
             <Badge className="mb-3 bg-primary/10 text-primary border-primary/20">Pricing</Badge>
             <h2 className="text-3xl md:text-4xl font-bold mb-3">Simple, flat monthly pricing</h2>
             <p className="text-muted-foreground">No per-conversation charges. No surprise bills. Pay once, use all month.</p>
-            {/* Billing toggle */}
-            <div className="flex items-center justify-center gap-3 mt-6">
-              <button
-                onClick={() => setBillingAnnual(false)}
-                className={`text-sm font-medium transition-colors ${!billingAnnual ? "text-foreground" : "text-muted-foreground"}`}
-                data-testid="toggle-monthly"
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setBillingAnnual(!billingAnnual)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${billingAnnual ? "bg-primary" : "bg-muted"}`}
-                data-testid="toggle-billing"
-              >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${billingAnnual ? "translate-x-5" : ""}`} />
-              </button>
-              <button
-                onClick={() => setBillingAnnual(true)}
-                className={`text-sm font-medium transition-colors ${billingAnnual ? "text-foreground" : "text-muted-foreground"}`}
-                data-testid="toggle-annual"
-              >
-                Annual <span className="text-green-500 text-xs font-bold ml-1">Save 20%</span>
-              </button>
-            </div>
+            <p className="mt-6 text-sm text-muted-foreground">Monthly billing is currently available. Annual plans are not offered yet.</p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 items-start">
@@ -635,16 +608,13 @@ export default function ChatbotLandingPage() {
                   <p className="font-bold text-lg mb-1">{plan.name}</p>
                   <p className="text-xs text-muted-foreground mb-4">{plan.desc}</p>
                   <div className="mb-6">
-                    <span className="text-4xl font-extrabold">${price(plan.price)}</span>
+                    <span className="text-4xl font-extrabold">${plan.price}</span>
                     <span className="text-muted-foreground text-sm">/month</span>
-                    {billingAnnual && (
-                      <p className="text-xs text-green-500 mt-0.5">Billed annually · save ${(plan.price - price(plan.price)) * 12}/yr</p>
-                    )}
                   </div>
                   <Button
                     className={`w-full mb-6 ${plan.ctaVariant === "default" ? "bg-primary text-primary-foreground" : ""}`}
                     variant={plan.ctaVariant}
-                    onClick={() => navigate(`/chatbot-checkout?plan=${plan.name.toLowerCase()}&billing=${billingAnnual ? "annual" : "monthly"}`)}
+                    onClick={() => navigate(`/chatbot-checkout?plan=${plan.name.toLowerCase()}&billing=monthly`)}
                     data-testid={`button-plan-${plan.name.toLowerCase()}`}
                   >
                     {plan.cta} <ArrowRight className="w-3.5 h-3.5 ml-1.5" />

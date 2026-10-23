@@ -15,6 +15,9 @@ import { ownedEmailProject, legacyEmailProject, linkEmailProjectDomain, storePro
 import { resolvePrivateChatbotApiKey, chatbotLegacyApiAllowed } from "./chatbot-api-credentials";
 import { pool } from "./db";
 import { settlePayment, verifyPaymentIdentity } from "./payment-settlement";
+import { purchaseDetails } from "@shared/purchase-details";
+import { presentPayment } from "./payment-presentation";
+import { domainCheckoutHandler, lockDomainCheckout } from "./domain-checkout";
 import { paymentBrowserGuard, checkoutResponse, paymentReturnPage, registerPaymentCheckoutStatus } from "./payment-checkout";
 import { sql } from "drizzle-orm";
 import { fetchPublicPage, scrapeUrl } from "./url-scrape";
@@ -1884,7 +1887,7 @@ export async function registerRoutes(
   app.get("/api/admin/payments", isFounder, async (_req, res) => {
     try {
       const allPayments = await storage.getAllPaymentsWithUser(200);
-      res.json(allPayments);
+      res.json(await Promise.all(allPayments.map(payment => presentPayment(payment, id => storage.getDomainOrder(id)))));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -1900,6 +1903,13 @@ export async function registerRoutes(
       }
       const payment = await storage.getPaymentById(id);
       if (!payment) return res.status(404).json({ message: "Payment not found" });
+      if (payment.purchaseDetails?.category === "domain") {
+        const view = await presentPayment(payment, domainId => storage.getDomainOrder(domainId));
+        if ((type === "congrats" && view.fulfilmentStatus !== "active") ||
+            (type === "nudge" && payment.status === "completed")) {
+          return res.status(409).json({ message: "This domain payment must not receive an activation or repeat-payment email. Review its registration status first." });
+        }
+      }
       const user = await storage.getUser(payment.userId);
       const to = user?.email;
       if (!to) return res.status(400).json({ message: "This customer has no email address on file." });
@@ -2132,7 +2142,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const userPayments = await storage.getPaymentsByUser(userId);
-      res.json(userPayments);
+      res.json(await Promise.all(userPayments.map(payment => presentPayment(payment, id => storage.getDomainOrder(id)))));
     } catch (error) {
       console.error("Error fetching payments:", error);
       res.status(500).json({ message: "Failed to fetch payments" });
@@ -2142,21 +2152,25 @@ export async function registerRoutes(
   app.get("/api/payments/:id/receipt", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const paymentId = parseInt(req.params.id);
+      const paymentId = Number(req.params.id);
+      if (!Number.isSafeInteger(paymentId) || paymentId < 1) return res.status(400).json({ message: "Invalid payment." });
       const payment = await storage.getPaymentById(paymentId);
 
-      if (!payment) {
+      if (!payment || payment.userId !== userId) {
         return res.status(404).json({ message: "Payment not found" });
-      }
-      if (payment.userId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
       }
 
       const user = await storage.getUser(userId);
+      const presentation = await presentPayment(payment, id => storage.getDomainOrder(id));
 
       res.json({
         receipt: {
           id: payment.id,
+          userId,
+          purchaseDetails: payment.purchaseDetails ?? purchaseDetails(payment.plan),
+          completedAt: payment.completedAt,
+          fulfilmentStatus: presentation.fulfilmentStatus,
+          purchaseDetailsSource: presentation.purchaseDetailsSource,
           date: payment.createdAt,
           plan: payment.plan,
           amount: payment.amount,
@@ -2196,6 +2210,10 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const { plan, countryCode, firstName, lastName, phoneNumber } = req.body;
+      if ((req.body.billingPeriod && req.body.billingPeriod !== "monthly") ||
+          (req.body.billing && req.body.billing !== "monthly") || req.body.annual === true) {
+        return res.status(400).json({ message: "Only monthly plan purchases are currently supported. Review the monthly price before paying." });
+      }
 
       if (!plan) {
         return res.status(400).json({ message: "Plan is required" });
@@ -2238,7 +2256,7 @@ export async function registerRoutes(
 
       const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
       const payment = await storage.createPayment({
-        userId, plan, amount: amount.toString(), currency, merchantReference, status: "pending",
+        userId, plan, amount: amount.toString(), currency, merchantReference, status: "pending", purchaseDetails: purchaseDetails(plan),
       });
 
       console.log(`[Subscribe] Plan=${plan} countryCode=${countryCode || "none"} amount=${amount} currency=${currency} usdAmount=${usdAmount}`);
@@ -2351,7 +2369,7 @@ export async function registerRoutes(
       }
       const merchantReference = `payg-${pack}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
       const payment = await storage.createPayment({
-        userId, plan: `payg-${pack}`, amount: amount.toString(), currency, merchantReference, status: "pending",
+        userId, plan: `payg-${pack}`, amount: amount.toString(), currency, merchantReference, status: "pending", purchaseDetails: purchaseDetails(`payg-${pack}`),
       });
       let order;
       try {
@@ -2383,6 +2401,14 @@ export async function registerRoutes(
 
   async function processCompletedPayment(merchantRef: string, status: any, trackingId: string) {
     const settled = await settlePayment(pool, merchantRef, trackingId, status, isFounderEmail);
+    if (settled.payment.plan === "domain-registration") {
+      try { await completeDomainRegistration(settled.payment.purchase_details.domainOrderId, settled.payment.user_id); }
+      catch (error) {
+        // Payment is verified. Preserve review/in-progress states; never create another charge.
+        if (!(error instanceof RegistrationError)) throw error;
+        if (![409, 503].includes(error.status)) throw error;
+      }
+    }
     if (!settled.newlyCompleted) return true;
     const existingPayment = await storage.getPaymentByMerchantRef(merchantRef);
     if (!existingPayment) {
@@ -2398,9 +2424,12 @@ export async function registerRoutes(
       const { sendReceiptEmail } = await import("./mailer");
       const buyer = await storage.getUser(userId);
       if (buyer?.email) {
+        const presentation = await presentPayment(existingPayment, id => storage.getDomainOrder(id));
         await sendReceiptEmail(buyer.email, {
           customerName: [buyer.firstName, buyer.lastName].filter(Boolean).join(" ") || buyer.email.split("@")[0],
           plan,
+          userId, paymentId: existingPayment.id, purchaseDetails: existingPayment.purchaseDetails,
+          fulfilmentStatus: presentation.fulfilmentStatus,
           amount: String(existingPayment.amount),
           currency: existingPayment.currency || "USD",
           method: status.payment_method || "—",
@@ -2442,6 +2471,16 @@ export async function registerRoutes(
 
   registerPaymentCheckoutStatus(app, isAuthenticated, {
     getPayment: id => storage.getPaymentById(id),
+    resumeCompleted: async payment => {
+      if (payment.purchaseDetails?.category !== "domain") return false;
+      const domain = await storage.getDomainOrder(payment.purchaseDetails.domainOrderId);
+      return !!domain && domain.userId === payment.userId && domain.status === "pending_payment";
+    },
+    fulfilmentStatus: async payment => {
+      if (payment.purchaseDetails?.category !== "domain") return payment.status === "completed" ? "active" : "pending";
+      const domain = await storage.getDomainOrder(payment.purchaseDetails.domainOrderId);
+      return domain && domain.userId === payment.userId ? domain.status : "review";
+    },
     reconcile: async payment => {
       const status = await getTransactionStatus(payment.pesapalTrackingId);
       if (isPaymentComplete(status)) await processCompletedPayment(payment.merchantReference, status, payment.pesapalTrackingId);
@@ -2904,85 +2943,9 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/domains/order", isAuthenticated, async (req: any, res) => {
-    try {
-      const { domainName, years, contact } = req.body;
-      if (!domainName || !contact) return res.status(400).json({ message: "Domain name and contact info required" });
-      const existingOrders = await storage.getDomainOrdersByUser(req.user.claims.sub);
-      if (existingOrders.some(order => order.domainName.toLowerCase() === String(domainName).trim().toLowerCase() &&
-        ["active", "registering", "registration_review", "pending_payment"].includes(order.status))) {
-        return res.status(409).json({ message: "This domain already has an order in My Domains. Manage or complete that order instead of paying again." });
-      }
-      if (["firstName", "lastName", "email", "phone", "address", "city"].some(key =>
-        typeof contact[key] !== "string" || !contact[key].trim())) {
-        return res.status(400).json({ message: "Complete your name, email, phone, address, and city before payment" });
-      }
-      const country = typeof contact.country === "string" ? contact.country.trim().toUpperCase() : "";
-      if (!/^[A-Z]{2}$/.test(country)) return res.status(400).json({ message: "Enter your two-letter country code" });
-
-      const yearsNum = Math.max(1, Math.min(10, parseInt(years) || 1));
-
-      // Get cost price (per-year)
-      const costPricePerYear = await getCostPrice(domainName);
-      if (!costPricePerYear) return res.status(400).json({ message: "Domain not available or could not get price" });
-
-      const MARKUP = 0.35;
-      const retailPerYear = costPricePerYear * (1 + MARKUP);
-      const totalRetail = parseFloat((retailPerYear * yearsNum).toFixed(2));
-      const totalCost = parseFloat((costPricePerYear * yearsNum).toFixed(2));
-      const priceCents = Math.round(totalRetail * 100);
-      const costCents = Math.round(totalCost * 100);
-
-      // Create pending order
-      const order = await storage.createDomainOrder({
-        userId: req.user.claims.sub,
-        domainName,
-        status: "pending_payment",
-        pricePaid: priceCents,
-        costPrice: costCents,
-        years: yearsNum,
-        contactFirstName: contact.firstName,
-        contactLastName: contact.lastName,
-        contactEmail: contact.email,
-        contactPhone: contact.phone,
-        contactAddress: contact.address,
-        contactCity: contact.city,
-        contactState: contact.state,
-        contactZip: contact.zip,
-        contactCountry: country,
-      });
-
-      // Create Pesapal payment — fail hard if it doesn't return a redirect URL
-      const baseUrl = `https://${req.headers.host}`;
-      const ipnId = await registerIpnUrl(`${baseUrl}/api/pesapal/ipn`);
-      const pesapalResp = await submitOrder({
-        id: `domain-${order.id}-${Date.now().toString(36)}`,
-        amount: totalRetail,
-        currency: "USD",
-        description: `Domain: ${domainName} (${yearsNum} year${yearsNum > 1 ? "s" : ""})`,
-        callback_url: `${baseUrl}/domains?order=${order.id}&status=success`,
-        notification_id: ipnId,
-        billing_address: {
-          email_address: contact.email || req.user.email,
-          phone_number: contact.phone || undefined,
-          country_code: country,
-          first_name: contact.firstName || undefined,
-          last_name: contact.lastName || undefined,
-        },
-      });
-
-      if (!pesapalResp.redirect_url) {
-        await storage.updateDomainOrder(order.id, { status: "failed" }).catch(() => {});
-        return res.status(502).json({ message: pesapalResp.error || "Payment provider did not return a checkout URL" });
-      }
-
-      await storage.updateDomainOrder(order.id, { pesapalOrderId: pesapalResp.order_tracking_id });
-      return res.json({ orderId: order.id, paymentUrl: pesapalResp.redirect_url, amount: totalRetail });
-    } catch (e: any) {
-      console.error("[domain-order]", e);
-      res.status(500).json({ message: e.message });
-    }
-  });
+  app.post("/api/domains/order", apiLimiter, isAuthenticated, paymentBrowserGuard,
+    domainCheckoutHandler({ storage, provider: { registerIpnUrl, submitOrder }, getCostPrice,
+      acquireLock: key => lockDomainCheckout(pool, key) }));
 
   app.post("/api/domains/activate/:orderId", isAuthenticated, async (req: any, res) => {
     try {
@@ -3645,7 +3608,7 @@ Rules: score 0-100, 5 issues max, title under 60 chars, description under 160 ch
         catch (err) { return res.status(500).json({ message: "Payment service configuration error" }); }
       }
       const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
-      const payment = await storage.createPayment({ userId, plan, amount: amount.toString(), currency, merchantReference, status: "pending" });
+      const payment = await storage.createPayment({ userId, plan, amount: amount.toString(), currency, merchantReference, status: "pending", purchaseDetails: purchaseDetails(plan) });
       const order = await submitOrder({
         id: merchantReference, currency, amount,
         description: `Afro AI USSD Builder — ${plan.replace("ussd-", "").charAt(0).toUpperCase() + plan.replace("ussd-", "").slice(1)} Plan`,

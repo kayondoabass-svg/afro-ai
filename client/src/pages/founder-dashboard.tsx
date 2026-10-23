@@ -950,6 +950,15 @@ export default function FounderDashboardPage() {
                                 : ""}
                             </span>
                           </div>
+                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+                            <span>Payment #{p.id}</span>
+                            {p.userId !== undefined && <span>User {p.userId}</span>}
+                            {p.merchantReference && <span className="max-w-40 truncate" title={p.merchantReference}>Ref {p.merchantReference}</span>}
+                            {p.purchaseDetails?.packageName && <span>{p.purchaseDetails.packageName}</span>}
+                            {p.purchaseDetails?.domainName && <span>{p.purchaseDetails.domainName}</span>}
+                            {p.purchaseDetails?.quantity !== undefined && <span>{p.purchaseDetails.quantity} units{p.purchaseDetails.billingPeriod ? ` · ${p.purchaseDetails.billingPeriod}` : ""}</span>}
+                            {p.fulfilmentStatus && <span>Fulfilment: {p.fulfilmentStatus}</span>}
+                          </div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-sm font-bold text-green-400">{formatPaymentAmount(p.amount, p.currency)}</p>
@@ -1044,11 +1053,23 @@ export default function FounderDashboardPage() {
                   <div className="mt-4">
                     {detail("Status", <Badge variant="outline" className={`text-xs ${statusColor}`}>{p.status}</Badge>, "detail-status")}
                     {detail("Plan", p.plan, "detail-plan")}
+                    {detail("Package", p.purchaseDetails?.packageName || "—", "detail-package")}
                     {detail("Amount", formatPaymentAmount(p.amount, p.currency), "detail-amount")}
                     {detail("Payment method", p.paymentMethod || "—", "detail-method")}
+                    {detail("Payment ID", <span className="font-mono">{p.id}</span>, "detail-payment-id")}
+                    {detail("User ID", <span className="font-mono">{p.userId ?? "—"}</span>, "detail-user-id")}
                     {detail("Date", p.createdAt ? new Date(p.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—", "detail-date")}
-                    {detail("Order ID", <span className="font-mono">{p.merchantReference || "—"}</span>, "detail-order-id")}
+                    {p.completedAt && detail("Completed", new Date(p.completedAt).toLocaleString("en-GB"), "detail-completed-date")}
+                    {detail("Reference", <span className="font-mono">{p.merchantReference || "—"}</span>, "detail-order-id")}
                     {detail("Pesapal ref", <span className="font-mono">{p.pesapalTrackingId || "—"}</span>, "detail-pesapal-ref")}
+                    {p.purchaseDetails?.category && detail("Category", p.purchaseDetails.category, "detail-category")}
+                    {p.purchaseDetails?.quantity !== undefined && detail("Quantity / period", `${p.purchaseDetails.quantity}${p.purchaseDetails.billingPeriod ? ` · ${p.purchaseDetails.billingPeriod}` : ""}`, "detail-quantity")}
+                    {p.purchaseDetails?.credits !== undefined && detail("Credits", p.purchaseDetails.credits.toLocaleString(), "detail-credits")}
+                    {p.purchaseDetails?.domainName && detail("Domain", p.purchaseDetails.domainName, "detail-domain")}
+                    {p.purchaseDetails?.registrationYears !== undefined && detail("Registration years", p.purchaseDetails.registrationYears, "detail-registration-years")}
+                    {p.purchaseDetails?.domainOrderId !== undefined && detail("Domain order ID", p.purchaseDetails.domainOrderId, "detail-domain-order")}
+                    {p.purchaseDetails?.projectId !== undefined && detail("Project ID", p.purchaseDetails.projectId, "detail-project-id")}
+                    {p.fulfilmentStatus && detail("Fulfilment", <span className="capitalize">{p.fulfilmentStatus}</span>, "detail-fulfilment")}
                     {p.confirmationCode && detail("Confirmation", <span className="font-mono">{p.confirmationCode}</span>, "detail-confirmation")}
                   </div>
 

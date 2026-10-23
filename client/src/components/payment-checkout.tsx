@@ -13,9 +13,22 @@ export type PaymentCheckoutOrder = {
   amount?: string;
   currency?: string;
   plan?: string;
+  userId?: string | number;
+  purchaseDetails?: PurchaseDetails | null;
 };
 
 type PaymentState = "preparing" | "pending" | "completed" | "failed" | "delayed" | "error" | "review";
+type PurchaseDetails = {
+  packageName?: string;
+  category?: string;
+  billingPeriod?: string;
+  quantity?: number;
+  credits?: number;
+  domainName?: string;
+  domainOrderId?: number | string;
+  registrationYears?: number;
+  projectId?: number | string;
+};
 type PaymentStatus = {
   id: number;
   status: "pending" | "completed" | "failed";
@@ -23,6 +36,12 @@ type PaymentStatus = {
   currency: string;
   plan: string;
   credits: number | null;
+  userId?: string | number;
+  merchantReference?: string | null;
+  createdAt?: string | null;
+  completedAt?: string | null;
+  purchaseDetails?: PurchaseDetails | null;
+  fulfilmentStatus?: string | null;
 };
 type CheckoutRecord = {
   paymentId: number;
@@ -255,6 +274,18 @@ export function PaymentCheckoutHost() {
       ownerAccount.current = "";
       return;
     }
+    if (order.userId !== undefined && String(order.userId) !== owner) {
+      setState("error");
+      setMessage("This checkout belongs to a different signed-in account. No payment page was opened.");
+      setPaymentId(null);
+      activePaymentId.current = null;
+      setPaymentUrl("");
+      setOwnerAccountId("");
+      ownerAccount.current = "";
+      restoredProviderUrl.current = null;
+      setLegacyStatusOnly(false);
+      return;
+    }
     const existing = readCheckout();
     if (existing && existing.accountId !== owner) clearCheckout();
     if (existing && existing.accountId === owner && existing.paymentId !== id) {
@@ -345,15 +376,19 @@ export function PaymentCheckoutHost() {
       if (!response.ok) throw new Error("We could not check payment status right now.");
       const data = await response.json() as PaymentStatus;
       if (!isCurrent()) return;
-      if (data.id !== id || !["pending", "completed", "failed"].includes(data.status)) {
+      if (data.id !== id ||
+          (data.userId !== undefined && String(data.userId) !== owner) ||
+          !["pending", "completed", "failed"].includes(data.status)) {
         throw new Error("The payment status response was invalid.");
       }
       setPayment(data);
       if (data.status === "completed") {
         setState("completed");
-        clearCheckout();
         setPaymentUrl("");
         restoredProviderUrl.current = null;
+        const isDomainOrder = data.purchaseDetails?.category?.toLowerCase() === "domain" || !!data.purchaseDetails?.domainName;
+        if (isDomainOrder && data.fulfilmentStatus !== "active") return;
+        clearCheckout();
         refreshAfterCompletion();
         return;
       }
@@ -420,6 +455,12 @@ export function PaymentCheckoutHost() {
     setState("pending");
     setRetryToken(token => token + 1);
   };
+  const checkFulfilmentAgain = () => {
+    cancelActive();
+    startedAt.current = Date.now();
+    delayRef.current = 4_000;
+    setRetryToken(token => token + 1);
+  };
   const resumeSavedOrder = () => resetAndOpen();
   const confirmNewOrder = () => {
     if (reviewOrder) startPreparedOrder(reviewOrder);
@@ -440,6 +481,18 @@ export function PaymentCheckoutHost() {
     viewState === "error" ? "Checkout needs attention" :
     viewState === "pending" ? "Approve your payment" : "Preparing secure checkout";
   const paymentOrigin = visiblePaymentUrl ? new URL(visiblePaymentUrl).origin : "";
+  const purchase = visiblePayment?.purchaseDetails;
+  const domainPurchase = purchase?.category?.toLowerCase() === "domain" || !!purchase?.domainName;
+  const domainActive = visiblePayment?.fulfilmentStatus === "active";
+  const completedDescription = domainPurchase && !domainActive
+    ? "Payment received. Your domain order is being processed; registration is not confirmed yet."
+    : domainPurchase
+    ? "Payment confirmed and domain fulfilment is active."
+    : "Payment confirmed. A receipt email may be sent, but email delivery is not guaranteed.";
+  const fulfillmentLabel = visiblePayment?.fulfilmentStatus
+    ? visiblePayment.fulfilmentStatus === "active" ? "Active" :
+      ["registering", "review"].includes(visiblePayment.fulfilmentStatus) ? visiblePayment.fulfilmentStatus : visiblePayment.fulfilmentStatus
+    : null;
 
   return (<>
     {!open && paymentId && ownerAccountId === currentAccountId &&
@@ -468,7 +521,9 @@ export function PaymentCheckoutHost() {
           <DialogHeader className="mt-5 text-left">
             <DialogTitle className="font-serif text-2xl">{title}</DialogTitle>
             <DialogDescription>
-              {viewState === "completed" ? "The server has verified and fulfilled this purchase." :
+              {viewState === "completed" ? domainPurchase
+                ? domainActive ? "The server verified payment and reports active domain fulfilment." : "The server verified payment. Domain fulfilment is still in progress."
+                : "The server verified this payment." :
                 viewState === "review" ? "A previous payment is still awaiting confirmation. Review before switching to this newer checkout." :
                 "Choose a payment method in Pesapal. Your payment is not confirmed until Afro AI verifies it."}
             </DialogDescription>
@@ -477,7 +532,7 @@ export function PaymentCheckoutHost() {
             <div className="mt-4 flex flex-wrap items-end justify-between gap-3 rounded-xl border border-primary/20 bg-background/70 px-4 py-3">
               <div>
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">Order</p>
-                <p className="font-medium">{visiblePayment.plan}</p>
+                <p className="font-medium">{purchase?.packageName || visiblePayment.plan}</p>
               </div>
               <p className="font-mono text-lg font-semibold text-primary">{visiblePayment.currency} {visiblePayment.amount}</p>
             </div>
@@ -525,11 +580,34 @@ export function PaymentCheckoutHost() {
                     <CircleAlert className="mb-3 h-10 w-10 text-destructive" />}
                 <h3 className="text-lg font-semibold">{title}</h3>
                 <p className="mt-2 max-w-md text-sm text-muted-foreground">
-                  {viewState === "completed" ? "Your purchase is now available in your account. A receipt email may be sent, but email delivery is not guaranteed." :
+                  {viewState === "completed" ? completedDescription :
                     viewState === "failed" ? "The payment was not completed. Nothing was added to your account." :
                       viewState === "delayed" ? "Mobile money or bank approval can take longer. You can check again; no new order will be created." :
                         message || "Please try checking again. No new payment request has been submitted."}
                 </p>
+              </div>
+            )}
+            {visiblePayment && (
+              <div className="mt-3 rounded-xl border border-border bg-card/70 px-4 py-3" data-testid="payment-confirmation-details">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Payment record</p>
+                <dl className="mt-2 grid grid-cols-1 gap-x-5 gap-y-2 text-xs sm:grid-cols-2">
+                  <div><dt className="text-muted-foreground">User ID</dt><dd className="break-all font-mono" data-testid="payment-user-id">{visiblePayment.userId ?? "Unavailable"}</dd></div>
+                  <div><dt className="text-muted-foreground">Payment ID</dt><dd className="font-mono" data-testid="payment-id">{visiblePayment.id}</dd></div>
+                  {visiblePayment.merchantReference && <div><dt className="text-muted-foreground">Reference</dt><dd className="break-all font-mono">{visiblePayment.merchantReference}</dd></div>}
+                  {visiblePayment.createdAt && <div><dt className="text-muted-foreground">Created</dt><dd>{new Date(visiblePayment.createdAt).toLocaleString()}</dd></div>}
+                  {visiblePayment.completedAt && <div><dt className="text-muted-foreground">Completed</dt><dd>{new Date(visiblePayment.completedAt).toLocaleString()}</dd></div>}
+                  {(purchase?.quantity !== undefined || purchase?.credits !== undefined) && (
+                    <div><dt className="text-muted-foreground">Units</dt><dd>{purchase.quantity ?? purchase.credits}{purchase.billingPeriod ? ` · ${purchase.billingPeriod}` : ""}</dd></div>
+                  )}
+                  {purchase?.registrationYears !== undefined && <div><dt className="text-muted-foreground">Registration period</dt><dd>{purchase.registrationYears} year{purchase.registrationYears === 1 ? "" : "s"}</dd></div>}
+                  {purchase?.domainName && <div><dt className="text-muted-foreground">Domain</dt><dd className="break-all">{purchase.domainName}</dd></div>}
+                  {fulfillmentLabel && <div className="sm:col-span-2"><dt className="text-muted-foreground">Fulfilment</dt><dd className="font-medium capitalize">{fulfillmentLabel}</dd></div>}
+                </dl>
+                {domainPurchase && !domainActive && viewState === "completed" && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Your payment is verified, but the domain is not confirmed active yet. <button type="button" className="underline underline-offset-2 text-primary" onClick={() => { close(); navigate("/domains"); }}>View domain orders</button>
+                  </p>
+                )}
               </div>
             )}
             {viewState === "pending" && (
@@ -567,10 +645,15 @@ export function PaymentCheckoutHost() {
             {(viewState === "delayed" || (viewState === "error" && paymentId !== null)) && (
               <Button variant="outline" onClick={manualRetry}>Check status again</Button>
             )}
+            {viewState === "completed" && domainPurchase && !domainActive && (
+              <Button variant="outline" onClick={checkFulfilmentAgain} data-testid="button-check-domain-fulfilment">Check fulfilment again</Button>
+            )}
             {viewState === "review" ? (
               <Button variant="outline" onClick={close}>Close checkout</Button>
             ) : viewState === "completed" ? (
-              <Button onClick={continueProject} data-testid="button-continue-project">Continue to project</Button>
+              domainPurchase
+                ? <Button onClick={() => { close(); navigate("/domains"); }}>View domain orders</Button>
+                : <Button onClick={continueProject} data-testid="button-continue-project">Continue to project</Button>
             ) : (
               <Button variant="outline" onClick={close}>Close checkout</Button>
             )}

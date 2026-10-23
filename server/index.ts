@@ -19,6 +19,8 @@ import { apiVersioning } from "./api-versioning";
 import { hasEndpointPreflight } from "@shared/api-version-policy";
 import { pool } from "./db";
 import { prepareIntegrationSchema } from "./integration-schema-readiness";
+import { preparePaymentSchema } from "./payment-schema";
+import { privateResponseCache } from "./private-response-cache";
 import { prepareFounderAlerts, startFounderAlertMonitor } from "./founder-alerts";
 import { prepareProgrammes } from "./programmes/schema";
 import { startProgrammeMailWorker } from "./programmes/mail";
@@ -26,6 +28,7 @@ import { startProgrammeReconciliation } from "./programmes/billing";
 import { founderOverview } from "./founder-oversight";
 
 const app = express();
+app.use(privateResponseCache);
 
 // Required so `req.hostname` reflects the original Host header / X-Forwarded-Host
 // when Express is behind Cloudflare (or any other reverse proxy). Without this,
@@ -201,6 +204,7 @@ httpServer.listen(
   await prepareFounderAlerts();
   await prepareProgrammes();
   log("✓ Integration schema ready");
+  await preparePaymentSchema(pool);
   await registerRoutes(httpServer, app);
   markRoutesReady();
   startFounderAlertMonitor(founderOverview);

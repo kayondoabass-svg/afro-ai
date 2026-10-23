@@ -58,6 +58,63 @@ describe("embedded payment checkout", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/payments/143/status", expect.objectContaining({ credentials: "include" }));
   });
 
+  it("shows domain payment and fulfilment separately without claiming registration prematurely", async () => {
+    const domainPayment = {
+      ...payment,
+      id: 158,
+      plan: "domain-registration",
+      userId: 27,
+      merchantReference: "AFRO-ORD-158",
+      createdAt: "2025-01-03T10:00:00.000Z",
+      completedAt: "2025-01-03T10:02:00.000Z",
+      purchaseDetails: {
+        packageName: "Domain registration",
+        category: "domain",
+        domainName: "example.africa",
+        registrationYears: 2,
+        domainOrderId: 64,
+      },
+      fulfilmentStatus: "registering",
+    };
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(Response.json(domainPayment))
+      .mockResolvedValueOnce(Response.json({ ...domainPayment, status: "completed" }))
+      .mockResolvedValueOnce(Response.json({ ...domainPayment, status: "completed", fulfilmentStatus: "active" }));
+    renderHost();
+    act(() => openPaymentCheckout({
+      paymentId: 158,
+      redirectUrl: "https://pay.pesapal.com/checkout",
+      amount: "15.00",
+      currency: "USD",
+      plan: "domain-registration",
+    }));
+    expect(await screen.findByRole("heading", { name: "Payment verified", level: 2 }, { timeout: 8_000 })).toBeInTheDocument();
+    expect(screen.getByText(/Payment received\. Your domain order is being processed/i)).toBeInTheDocument();
+    expect(screen.getByText("example.africa")).toBeInTheDocument();
+    expect(screen.getByText("AFRO-ORD-158")).toBeInTheDocument();
+    expect(screen.getByTestId("payment-user-id")).toHaveTextContent("27");
+    expect(screen.getByTestId("payment-id")).toHaveTextContent("158");
+    expect(screen.getByText("registering")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "View domain orders" })).toHaveLength(2);
+    expect(screen.getByTestId("button-check-domain-fulfilment")).toBeInTheDocument();
+    expect(screen.queryByText(/domain is registered/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("button-check-domain-fulfilment"));
+    expect(await screen.findByText("Active")).toBeInTheDocument();
+  });
+
+  it("rejects a checkout creation response owned by a different current account", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    renderHost();
+    act(() => openPaymentCheckout({
+      paymentId: 159,
+      redirectUrl: "https://pay.pesapal.com/checkout",
+      userId: 28,
+    }));
+    expect(await screen.findByText(/belongs to a different signed-in account/i)).toBeInTheDocument();
+    expect(screen.queryByTitle("Pesapal secure payment form for Afro AI")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects foreign checkout hosts explicitly and does not embed them", async () => {
     renderHost();
     act(() => openPaymentCheckout({

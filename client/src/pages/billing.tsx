@@ -40,6 +40,21 @@ interface Payment {
   status: string;
   merchantReference: string;
   createdAt: string;
+  completedAt?: string | null;
+  userId?: string | number;
+  paymentId?: number;
+  purchaseDetails?: {
+    packageName?: string;
+    category?: string;
+    billingPeriod?: string;
+    quantity?: number;
+    credits?: number;
+    domainName?: string;
+    registrationYears?: number;
+    domainOrderId?: number | string;
+    projectId?: number | string;
+  } | null;
+  fulfilmentStatus?: string | null;
 }
 
 interface ReceiptData {
@@ -58,6 +73,12 @@ interface ReceiptData {
     business: string;
     registrationNo: string;
     platform: string;
+    paymentId?: number;
+    userId?: string | number;
+    createdAt?: string;
+    completedAt?: string | null;
+    purchaseDetails?: Payment["purchaseDetails"];
+    fulfilmentStatus?: string | null;
   };
 }
 
@@ -148,14 +169,17 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function ReceiptModal({ paymentId, open, onClose }: { paymentId: number | null; open: boolean; onClose: () => void }) {
+  const { user, isLoading: authLoading } = useAuth();
+  const accountId = (user as { id?: string | number } | null)?.id;
   const { data, isLoading } = useQuery<ReceiptData>({
-    queryKey: ["/api/payments", paymentId, "receipt"],
+    queryKey: ["/api/payments", String(accountId ?? ""), paymentId, "receipt"],
     queryFn: async () => {
       const res = await fetch(`/api/payments/${paymentId}/receipt`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load receipt");
       return res.json();
     },
-    enabled: !!paymentId && open,
+    enabled: !!accountId && !!paymentId && open && !authLoading,
+    placeholderData: () => undefined,
   });
 
   const handlePrint = () => {
@@ -200,6 +224,7 @@ function ReceiptModal({ paymentId, open, onClose }: { paymentId: number | null; 
                   {new Date(r.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
                 </p>
               </div>
+              {r.completedAt && <div><p className="text-muted-foreground text-xs">Completed</p><p className="font-medium">{new Date(r.completedAt).toLocaleString()}</p></div>}
               <div>
                 <p className="text-muted-foreground text-xs">Customer</p>
                 <p className="font-medium" data-testid="text-receipt-name">{r.customerName}</p>
@@ -212,8 +237,8 @@ function ReceiptModal({ paymentId, open, onClose }: { paymentId: number | null; 
 
             <div className="bg-muted/50 rounded-lg p-4 space-y-3">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Plan</span>
-                <span className="font-medium capitalize" data-testid="text-receipt-plan">{r.plan} Plan</span>
+                <span className="text-muted-foreground">Package</span>
+                <span className="font-medium" data-testid="text-receipt-plan">{r.purchaseDetails?.packageName || r.plan}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Amount</span>
@@ -233,6 +258,15 @@ function ReceiptModal({ paymentId, open, onClose }: { paymentId: number | null; 
                   <span className="font-mono text-xs" data-testid="text-receipt-confirmation">{r.confirmationCode}</span>
                 </div>
               )}
+              {r.paymentId !== undefined && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Payment ID</span><span className="font-mono">{r.paymentId}</span></div>}
+              {r.userId !== undefined && <div className="flex justify-between text-sm"><span className="text-muted-foreground">User ID</span><span className="font-mono break-all">{r.userId}</span></div>}
+              {r.merchantReference && <div className="flex justify-between text-sm gap-4"><span className="text-muted-foreground">Reference</span><span className="font-mono text-right break-all">{r.merchantReference}</span></div>}
+              {r.purchaseDetails?.category && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Category</span><span className="capitalize">{r.purchaseDetails.category}</span></div>}
+              {r.purchaseDetails?.quantity !== undefined && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Units</span><span>{r.purchaseDetails.quantity}{r.purchaseDetails.billingPeriod ? ` · ${r.purchaseDetails.billingPeriod}` : ""}</span></div>}
+              {r.purchaseDetails?.credits !== undefined && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Credits</span><span>{r.purchaseDetails.credits.toLocaleString()}</span></div>}
+              {r.purchaseDetails?.domainName && <div className="flex justify-between text-sm gap-4"><span className="text-muted-foreground">Domain</span><span className="break-all text-right">{r.purchaseDetails.domainName}</span></div>}
+              {r.purchaseDetails?.registrationYears !== undefined && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Registration</span><span>{r.purchaseDetails.registrationYears} year{r.purchaseDetails.registrationYears === 1 ? "" : "s"}</span></div>}
+              {r.fulfilmentStatus && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Fulfilment</span><span className="capitalize">{r.fulfilmentStatus}</span></div>}
               <div className="flex justify-between text-sm pt-2 border-t">
                 <span className="text-muted-foreground">Status</span>
                 <StatusBadge status={r.status} />
@@ -259,6 +293,7 @@ function ReceiptModal({ paymentId, open, onClose }: { paymentId: number | null; 
 
 export default function BillingPage() {
   const { user } = useAuth();
+  const accountId = (user as { id?: string | number } | null)?.id;
   const [receiptPaymentId, setReceiptPaymentId] = useState<number | null>(null);
   const currentPlan = (user as any)?.plan || "starter";
   const planInfo = PLAN_DETAILS[currentPlan] || PLAN_DETAILS.starter;
@@ -268,7 +303,14 @@ export default function BillingPage() {
   });
 
   const { data: paymentsData, isLoading: paymentsLoading } = useQuery<Payment[]>({
-    queryKey: ["/api/payments"],
+    queryKey: ["/api/payments", String(accountId ?? "")],
+    queryFn: async () => {
+      const response = await fetch("/api/payments", { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to load payment history");
+      return response.json();
+    },
+    enabled: !!accountId,
+    placeholderData: () => undefined,
   });
 
   return (
@@ -379,7 +421,9 @@ export default function BillingPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {paymentsLoading ? (
+            {!accountId ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Sign in to view payment history for your account.</p>
+            ) : paymentsLoading ? (
               <div className="space-y-3">
                 <Skeleton className="h-12 w-full" />
                 <Skeleton className="h-12 w-full" />
@@ -397,7 +441,7 @@ export default function BillingPage() {
                   <thead>
                     <tr className="border-b text-muted-foreground text-left">
                       <th className="pb-3 font-medium">Date</th>
-                      <th className="pb-3 font-medium">Plan</th>
+                      <th className="pb-3 font-medium">Purchase</th>
                       <th className="pb-3 font-medium">Amount</th>
                       <th className="pb-3 font-medium">Method</th>
                       <th className="pb-3 font-medium">Status</th>
@@ -415,7 +459,19 @@ export default function BillingPage() {
                           })}
                         </td>
                         <td className="py-3">
-                          <Badge variant="outline" className="capitalize">{payment.plan}</Badge>
+                          <div className="space-y-1">
+                            <Badge variant="outline">{payment.purchaseDetails?.packageName || payment.plan}</Badge>
+                            <p className="text-[11px] text-muted-foreground">
+                              {payment.purchaseDetails?.domainName || payment.purchaseDetails?.category || ""}
+                              {payment.purchaseDetails?.quantity !== undefined ? ` · ${payment.purchaseDetails.quantity} units` : ""}
+                              {payment.purchaseDetails?.billingPeriod ? ` · ${payment.purchaseDetails.billingPeriod}` : ""}
+                              {payment.purchaseDetails?.registrationYears ? ` · ${payment.purchaseDetails.registrationYears} year${payment.purchaseDetails.registrationYears === 1 ? "" : "s"}` : ""}
+                            </p>
+                            <p className="font-mono text-[10px] text-muted-foreground">Payment #{payment.paymentId ?? payment.id}</p>
+                            {payment.userId !== undefined && <p className="font-mono text-[10px] text-muted-foreground">User {payment.userId}</p>}
+                            {payment.merchantReference && <p className="max-w-48 truncate font-mono text-[10px] text-muted-foreground" title={payment.merchantReference}>Ref {payment.merchantReference}</p>}
+                            {payment.fulfilmentStatus && <p className="text-[10px] capitalize text-muted-foreground">Fulfilment: {payment.fulfilmentStatus}</p>}
+                          </div>
                         </td>
                         <td className="py-3 font-medium">
                           {payment.currency} {parseFloat(payment.amount).toLocaleString()}

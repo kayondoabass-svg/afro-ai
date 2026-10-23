@@ -1,13 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
+import { replaceAccountCache, accountCacheGeneration } from "@/lib/queryClient";
 
-async function fetchUser(): Promise<User | null> {
+async function fetchUser({ signal }: { signal?: AbortSignal } = {}): Promise<User | null> {
+  const generation = accountCacheGeneration();
   const response = await fetch("/api/auth/user", {
     credentials: "include",
     cache: "no-store",
+    signal,
   });
+  if (signal?.aborted || generation !== accountCacheGeneration()) throw new DOMException("Session changed.", "AbortError");
 
   if (response.status === 401) {
+    replaceAccountCache(null);
     return null;
   }
 
@@ -16,6 +21,8 @@ async function fetchUser(): Promise<User | null> {
   }
 
   const data = await response.json();
+  if (signal?.aborted || generation !== accountCacheGeneration()) throw new DOMException("Session changed.", "AbortError");
+  replaceAccountCache(data ?? null);
   return data ?? null;
 }
 
@@ -32,6 +39,7 @@ async function logout(): Promise<void> {
   // Also destroy a Passport/TikTok session and revoke its device record.
   const response = await fetch("/api/logout", { credentials: "include" });
   if (!response.ok) throw new Error("Could not log out securely. Please try again.");
+  replaceAccountCache(null);
 
   // 2. Wipe every cache the PWA service worker may have stored.
   // Without this the installed app silently re-renders the previous logged-in

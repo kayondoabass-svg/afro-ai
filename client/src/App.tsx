@@ -7,6 +7,7 @@ import { InstallPwaBanner } from "@/components/install-pwa-button";
 import { AppInstallTracker } from "@/components/app-install-tracker";
 import { QuotaNotifications } from "@/components/quota-notifications";
 import { PaymentCheckoutHost } from "@/components/payment-checkout";
+import { AccountCacheBoundary } from "@/components/account-cache-boundary";
 import { LowCreditNotifications } from "@/components/low-credit-notifications";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -585,12 +586,14 @@ function App() {
           <TooltipProvider>
             <Toaster />
             <PageTitleUpdater />
+            <AccountCacheBoundary>
             <AppRouter />
             <PaymentCheckoutHost />
             <QuotaNotifications />
             <LowCreditNotifications />
             <InstallPwaBanner />
             <AppInstallTracker />
+            </AccountCacheBoundary>
           </TooltipProvider>
         </LanguageProvider>
       </ThemeProvider>

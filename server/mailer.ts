@@ -2,6 +2,7 @@ import { isSuppressed } from "./ses-webhook";
 import { sendEmail } from "./email-provider";
 import { platformEmailHeader } from "../shared/email-branding";
 import { creditAmount } from "../shared/credit-alerts";
+import type { PurchaseDetails } from "../shared/purchase-details";
 
 const FROM = process.env.EMAIL_API_DEMO_FROM || "noreply@afroaigroup.com";
 const PLATFORM = "Afro AI";
@@ -58,14 +59,26 @@ export async function sendProgrammeEmail(to: string, opts: { subject: string; te
 
 export async function sendReceiptEmail(to: string, opts: {
   customerName: string; plan: string; amount: string; currency: string; method: string; confirmationCode: string; merchantRef: string; date: string;
+  userId?: string; paymentId?: number; purchaseDetails?: PurchaseDetails | null; fulfilmentStatus?: string;
 }): Promise<boolean> {
-  const subject = `Receipt — ${opts.plan} · ${opts.currency} ${opts.amount}`;
-  const row = (k: string, v: string) => `<tr><td style="padding:8px 0;color:#a1a1aa;font-size:13px;">${k}</td><td style="padding:8px 0;color:#fff;font-size:13px;text-align:right;font-family:ui-monospace,monospace;">${v}</td></tr>`;
+  const label = opts.purchaseDetails?.packageName || opts.plan;
+  const subject = `Receipt — ${label} · ${opts.currency} ${opts.amount}`;
+  const escape = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
+  const row = (k: string, v: string) => `<tr><td style="padding:8px 0;color:#a1a1aa;font-size:13px;">${escape(k)}</td><td style="padding:8px 0;color:#fff;font-size:13px;text-align:right;font-family:ui-monospace,monospace;">${escape(v)}</td></tr>`;
+  const outcome = opts.purchaseDetails?.category === "domain"
+    ? opts.fulfilmentStatus === "active" ? "Your domain payment is confirmed and registration is active."
+      : `Your domain payment is confirmed. Registration is ${opts.fulfilmentStatus || "pending verification"}. Do not pay again; check My Domains or contact support.`
+    : "Your subscription / credits are now active.";
   const html = `
-    <p>Hi ${opts.customerName || "there"},</p>
-    <p>Thanks for your payment to ${PLATFORM}. Your subscription / credits are now active. Here's your receipt:</p>
+    <p>Hi ${escape(opts.customerName || "there")},</p>
+    <p>Thanks for your payment to ${PLATFORM}. ${escape(outcome)} Here's your receipt:</p>
     <table style="width:100%;border-collapse:collapse;margin:18px 0;border-top:1px solid #27272a;">
-      ${row("Plan", opts.plan)}
+      ${row("Package", label)}
+      ${opts.userId ? row("User ID", opts.userId) : ""}
+      ${opts.paymentId ? row("Payment ID", String(opts.paymentId)) : ""}
+      ${opts.purchaseDetails ? row("Billing", opts.purchaseDetails.billingPeriod) : ""}
+      ${opts.purchaseDetails?.registrationYears ? row("Registration years", String(opts.purchaseDetails.registrationYears)) : ""}
+      ${opts.purchaseDetails?.credits ? row("Credits", String(opts.purchaseDetails.credits)) : ""}
       ${row("Amount", `${opts.currency} ${opts.amount}`)}
       ${row("Payment method", opts.method || "—")}
       ${row("Confirmation code", opts.confirmationCode || "—")}
@@ -73,7 +86,7 @@ export async function sendReceiptEmail(to: string, opts: {
       ${row("Date", opts.date)}
     </table>
     <p style="margin-top:18px;"><a href="https://afroaigroup.com/billing" style="background:${BRAND_COLOR};color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">View in your account →</a></p>`;
-  const text = `Receipt for ${opts.plan}\nAmount: ${opts.currency} ${opts.amount}\nMethod: ${opts.method}\nConfirmation: ${opts.confirmationCode}\nRef: ${opts.merchantRef}\nDate: ${opts.date}\n\nView in your account: https://afroaigroup.com/billing`;
+  const text = `Receipt for ${label}\n${outcome}\nUser ID: ${opts.userId || "—"}\nPayment ID: ${opts.paymentId || "—"}\nBilling: ${opts.purchaseDetails?.billingPeriod || "—"}\nAmount: ${opts.currency} ${opts.amount}\nMethod: ${opts.method}\nConfirmation: ${opts.confirmationCode}\nRef: ${opts.merchantRef}\nDate: ${opts.date}\n\nView in your account: https://afroaigroup.com/billing`;
   const wrapped = shell("Payment received ✓", html, text);
   return send(to, subject, wrapped.html, wrapped.text);
 }

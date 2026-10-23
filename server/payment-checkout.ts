@@ -2,6 +2,7 @@ import type { Express, RequestHandler, Response } from "express";
 import { createHash } from "node:crypto";
 import rateLimit from "express-rate-limit";
 import { CREDIT_PACKS, creditCheckoutUrl } from "../shared/credit-checkout";
+import { purchaseDetails } from "../shared/purchase-details";
 import { paymentProvider } from "./payment-provider";
 
 /** Scope browser-origin protection to dashboard payment creation, not customer APIs/IPNs. */
@@ -28,6 +29,7 @@ export const paymentBrowserGuard: RequestHandler = (req, res, next) => {
 export function checkoutResponse(payment: any, order: any) {
   return {
     redirectUrl: creditCheckoutUrl(order.redirect_url), paymentId: payment.id,
+    userId: payment.userId, purchaseDetails: payment.purchaseDetails ?? purchaseDetails(payment.plan),
     amount: payment.amount, currency: payment.currency, plan: payment.plan, provider: paymentProvider.id,
   };
 }
@@ -50,6 +52,8 @@ export function paymentReturnPage(res: Response) {
 export function registerPaymentCheckoutStatus(app: Express, auth: RequestHandler, dependencies: {
   getPayment: (id: number) => Promise<any>;
   reconcile: (payment: any) => Promise<void>;
+  fulfilmentStatus?: (payment: any) => Promise<string | null>;
+  resumeCompleted?: (payment: any) => Promise<boolean>;
 }) {
   const statusLimiter = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false,
     keyGenerator: (req: any) => String(req.user.claims.sub),
@@ -63,7 +67,7 @@ export function registerPaymentCheckoutStatus(app: Express, auth: RequestHandler
       // Deliberately return the same response for foreign and missing records.
       if (!payment || payment.userId !== req.user.claims.sub) return res.status(404).json({ message: "Payment not found." });
       let verificationDelayed = false;
-      if (payment.status !== "completed" && payment.pesapalTrackingId) {
+      if (payment.pesapalTrackingId && (payment.status !== "completed" || await dependencies.resumeCompleted?.(payment))) {
         try { await dependencies.reconcile(payment); }
         catch { verificationDelayed = true; }
         payment = await dependencies.getPayment(id);
@@ -72,6 +76,9 @@ export function registerPaymentCheckoutStatus(app: Express, auth: RequestHandler
       res.json({
         id: payment.id, status: payment.status, amount: payment.amount, currency: payment.currency,
         plan: payment.plan, credits: CREDIT_PACKS.find(p => `payg-${p.key}` === payment.plan)?.credits ?? null,
+        userId: payment.userId, merchantReference: payment.merchantReference, createdAt: payment.createdAt,
+        completedAt: payment.completedAt ?? null, purchaseDetails: payment.purchaseDetails ?? purchaseDetails(payment.plan),
+        fulfilmentStatus: dependencies.fulfilmentStatus ? await dependencies.fulfilmentStatus(payment) : (payment.status === "completed" ? "active" : "pending"),
         verificationDelayed,
       });
     } catch {

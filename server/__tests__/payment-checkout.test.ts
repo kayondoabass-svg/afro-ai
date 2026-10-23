@@ -41,7 +41,7 @@ describe("owned embedded checkout status", () => {
     const base = await start(appFor(async () => saved, reconcile));
     const response = await fetch(`${base}/api/payments/14/status`, { headers: { "x-test-user": "owner" } });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(await response.json()).toEqual({ id: 14, status: "completed", amount: "19000",
+    expect(await response.json()).toMatchObject({ id: 14, status: "completed", amount: "19000",
       currency: "UGX", plan: "payg-pack5", credits: 500, verificationDelayed: false });
     expect(reconcile).toHaveBeenCalledOnce();
   });

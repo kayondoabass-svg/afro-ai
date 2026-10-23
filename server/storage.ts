@@ -883,6 +883,8 @@ class DatabaseStorage implements IStorage {
         merchantReference: payments.merchantReference,
         paymentMethod: payments.paymentMethod,
         confirmationCode: payments.confirmationCode,
+        purchaseDetails: payments.purchaseDetails,
+        completedAt: payments.completedAt,
         status: payments.status,
         createdAt: payments.createdAt,
         userEmail: users.email,

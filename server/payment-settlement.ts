@@ -74,6 +74,15 @@ export async function settlePayment(pool: Pick<Pool, "connect">, merchantRef: st
         expires_at=NOW()+INTERVAL '30 days' WHERE user_id=$1 RETURNING id`, [payment.user_id, plan.slice(5)]);
       if (!updated.rowCount) await conn.query(`INSERT INTO ussd_subscriptions(user_id,plan,status,expires_at)
         VALUES($1,$2,'active',NOW()+INTERVAL '30 days')`, [payment.user_id, plan.slice(5)]);
+    } else if (plan === "domain-registration") {
+      const details = payment.purchase_details;
+      const orderId = details?.domainOrderId;
+      if (!Number.isSafeInteger(orderId) || details?.category !== "domain") throw new Error("Invalid domain purchase");
+      const domain = (await conn.query("SELECT * FROM domain_orders WHERE id=$1 AND user_id=$2 FOR UPDATE", [orderId, payment.user_id])).rows[0];
+      if (!domain || domain.domain_name !== details.domainName || domain.years !== details.registrationYears ||
+          cents(payment.amount) !== domain.price_paid_cents ||
+          payment.currency !== "USD" || domain.pesapal_order_id !== trackingId) throw new Error("Domain purchase mismatch");
+      // Registration is an external paid action and must run after COMMIT, never inside this transaction.
     } else if (["pro", "business"].includes(plan)) {
       if (!isFounder(account.email || "")) await conn.query("UPDATE users SET plan=$2,updated_at=NOW() WHERE id=$1", [payment.user_id, plan]);
       await conn.query(`UPDATE published_apps SET app_status='active',suspended_at=NULL,
@@ -81,7 +90,7 @@ export async function settlePayment(pool: Pick<Pool, "connect">, merchantRef: st
     } else {
       throw new Error("Unknown purchased package; manual review required");
     }
-    await conn.query(`UPDATE payments SET status='completed',pesapal_tracking_id=$2,
+    await conn.query(`UPDATE payments SET status='completed',completed_at=COALESCE(completed_at,NOW()),pesapal_tracking_id=$2,
       payment_method=$3,confirmation_code=$4 WHERE id=$1`,
       [payment.id, trackingId, status.payment_method || null, status.confirmation_code || null]);
     await conn.query("COMMIT");

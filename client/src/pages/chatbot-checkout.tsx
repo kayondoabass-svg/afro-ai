@@ -53,10 +53,10 @@ export default function ChatbotCheckoutPage() {
 
   const params = new URLSearchParams(window.location.search);
   const planKey = (params.get("plan") || "starter").replace("chatbot-", "");
-  const billing = params.get("billing") || "monthly";
+  const billing = "monthly";
 
   const plan = PLANS[planKey] || PLANS.starter;
-  const price = billing === "annual" ? plan.annualPrice : plan.price;
+  const price = plan.price;
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -97,11 +97,12 @@ export default function ChatbotCheckoutPage() {
         firstName: firstName.trim(),
         lastName: lastName.trim() || undefined,
         phoneNumber: phone.trim() || undefined,
+        billingPeriod: "monthly",
         embedded: true,
       });
       const data = await res.json();
       if (data.redirectUrl) {
-        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan });
+        openPaymentCheckout({ paymentId: data.paymentId, redirectUrl: data.redirectUrl, amount: data.amount, currency: data.currency, plan: data.plan, userId: data.userId, purchaseDetails: data.purchaseDetails });
       } else {
         throw new Error("No payment URL received");
       }
@@ -126,10 +127,8 @@ export default function ChatbotCheckoutPage() {
       {/* Header */}
       <div className="border-b border-border/40 bg-background/80 backdrop-blur-md">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Link href="/chatbot-api">
-            <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-back-to-pricing">
+          <Link href="/chatbot-api" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-back-to-pricing">
               <ChevronLeft className="w-4 h-4" /> Back to Pricing
-            </button>
           </Link>
           <span className="font-bold text-primary text-sm">Afro AI Chatbot</span>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -177,18 +176,14 @@ export default function ChatbotCheckoutPage() {
                 <div className="border-t border-border/40 pt-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">
-                      {billing === "annual" ? "Annual billing" : "Monthly billing"}
+                       Monthly billing
                     </span>
                     <div className="text-right">
                       <span className="text-2xl font-extrabold">${price}</span>
                       <span className="text-muted-foreground text-xs">/mo</span>
                     </div>
                   </div>
-                  {billing === "annual" && (
-                    <p className="text-xs text-green-500 mt-0.5 text-right">
-                      Save ${(plan.price - plan.annualPrice) * 12}/year vs monthly
-                    </p>
-                  )}
+                  <p className="text-xs text-muted-foreground mt-0.5 text-right">Annual billing is not available yet.</p>
                 </div>
               </CardContent>
             </Card>

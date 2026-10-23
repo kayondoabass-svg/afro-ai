@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Globe, Loader2, ShieldCheck, Lock, ArrowLeft, CreditCard } from "lucide-react";
+import { openPaymentCheckout } from "@/components/payment-checkout";
 
 export default function DomainsCheckoutPage() {
   const { user, isLoading } = useAuth();
@@ -76,15 +77,25 @@ export default function DomainsCheckoutPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ domainName: domain, years, contact }),
+        body: JSON.stringify({ domainName: domain, years, contact, embedded: true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Could not create order");
-      if (data.paymentUrl) {
-        window.location.href = data.paymentUrl;
+      if (data.paymentId && (data.redirectUrl || data.paymentUrl)) {
+        openPaymentCheckout({
+          paymentId: data.paymentId,
+          redirectUrl: data.redirectUrl || data.paymentUrl,
+          amount: data.amount,
+          currency: data.currency,
+          plan: data.plan || domain,
+          userId: data.userId,
+          purchaseDetails: data.purchaseDetails,
+        });
       } else {
-        toast({ title: "Order created", description: "Payment is pending. Check your dashboard." });
-        navigate("/domains");
+        throw new Error("The secure payment details were not returned. Please try again or check your domain orders.");
+      }
+      if (data.orderId) {
+        toast({ title: "Domain order created", description: "Complete payment in the secure checkout window. Registration is confirmed only after processing." });
       }
     } catch (e: any) {
       toast({ title: "Checkout error", description: e.message, variant: "destructive" });
@@ -215,8 +226,7 @@ export default function DomainsCheckoutPage() {
                   {submitting ? "Creating order..." : `Pay ${totalPrice ? `$${totalPrice}` : ""} with Pesapal`}
                 </Button>
                 <p className="text-[11px] text-center text-muted-foreground">
-                  You'll be redirected to Pesapal to complete payment with mobile money or card.
-                  After payment, your domain is registered automatically.
+                  Complete payment securely with mobile money or card. Payment confirmation and domain registration are separate steps; we’ll show the domain’s fulfilment status.
                 </p>
               </form>
             </CardContent>

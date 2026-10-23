@@ -43,6 +43,7 @@ export function CreditPurchaseDialog({ onClose, onBack, onCheckout }: {
         if (onCheckout) onCheckout(secureUrl);
         else {
           openPaymentCheckout({
+          ...data,
           paymentId: data.paymentId,
           redirectUrl: secureUrl,
           amount: data.amount,
