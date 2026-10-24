@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CircleAlert, Database, MailCheck, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
+import { MailDiagnostics } from "@/components/auth-setup/mail-diagnostics";
 
 interface TenantUser {
   id: string;
@@ -45,7 +46,9 @@ export function UserDirectory({ tenantId, active }: { tenantId: string; active: 
   const total = data?.total ?? 0;
   const end = Math.min(offset + (data?.users.length ?? 0), total);
 
-  return <Card>
+  return <>
+    <MailDiagnostics tenantId={tenantId} active={active} />
+    <Card>
     <CardHeader>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><CardTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" />Owner-only user directory</CardTitle>
@@ -104,5 +107,6 @@ export function UserDirectory({ tenantId, active }: { tenantId: string; active: 
       </div>}
       <p className="text-xs text-muted-foreground">A successful resend response acknowledges the request; it does not prove delivery. Check the customer's correct inbox and spam or junk, and wait at least 60 seconds before a deliberate resend. Website ownership TXT proof, email sending, and customer mailbox confirmation are separate. For platform sender failures, contact Afro Auth support; customers do not need to configure sending-domain DNS.</p>
     </CardContent>
-  </Card>;
+    </Card>
+  </>;
 }

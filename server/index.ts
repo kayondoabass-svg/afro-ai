@@ -19,6 +19,7 @@ import { apiVersioning } from "./api-versioning";
 import { hasEndpointPreflight } from "@shared/api-version-policy";
 import { pool } from "./db";
 import { prepareIntegrationSchema } from "./integration-schema-readiness";
+import { isTrustedPlatformOrigin } from "./platform-origins";
 import { preparePaymentSchema } from "./payment-schema";
 import { privateResponseCache } from "./private-response-cache";
 import { prepareFounderAlerts, startFounderAlertMonitor } from "./founder-alerts";
@@ -66,23 +67,13 @@ app.use(securityHeaders);
 
 // CORS — allow the Replit origin, Cloudflare Pages domains, and any custom frontend URL
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    "https://afroaigroup.com",
-    "https://www.afroaigroup.com",
-    ...(process.env.CLOUDFLARE_PAGES_URL ? [process.env.CLOUDFLARE_PAGES_URL] : []),
-  ];
   const origin = req.headers.origin || "";
-  const isAllowed =
-    allowedOrigins.includes(origin) ||
-    /^https:\/\/[a-z0-9-]+\.pages\.dev$/.test(origin) ||
-    /^https:\/\/[a-z0-9-]+\.afroaigroup\.com$/.test(origin) ||
-    origin.endsWith(".replit.dev") ||
-    origin.endsWith(".repl.co");
+  const isAllowed = isTrustedPlatformOrigin(origin);
   if (isAllowed) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,Idempotency-Key");
   }
   // Versioned preflights must reach the version guard; unsupported versions
   // should not appear available merely because this is an OPTIONS request.

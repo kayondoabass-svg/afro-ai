@@ -16,7 +16,7 @@
 // "just works" for Resend traffic too.
 
 import crypto from "crypto";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { emailApiLogs } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { addSuppression } from "./ses-webhook";
@@ -91,11 +91,12 @@ interface ResendEvent {
 
 async function patchLog(messageId: string | undefined, patch: Record<string, any>): Promise<void> {
   if (!messageId) return;
-  try {
-    await db.update(emailApiLogs).set(patch).where(eq(emailApiLogs.messageId, messageId));
-  } catch (e: any) {
-    console.warn("[resend-webhook] Could not patch email_api_logs:", e?.message || e);
-  }
+  // Persist before updating the log: a webhook may arrive before the send
+  // response is saved. Database failures must produce a retryable webhook 500.
+  await pool.query(`INSERT INTO email_provider_events(message_id,status,occurred_at) VALUES($1,$2,now())
+    ON CONFLICT(message_id) DO UPDATE SET status=excluded.status,occurred_at=excluded.occurred_at
+    WHERE email_provider_events.status NOT IN ('bounced','complained')`,[messageId,patch.status]);
+  await db.update(emailApiLogs).set(patch).where(eq(emailApiLogs.messageId, messageId));
 }
 
 function recipientsOf(d: ResendEvent["data"]): string[] {

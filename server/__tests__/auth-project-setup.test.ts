@@ -15,6 +15,7 @@ let messages: any[];
 beforeEach(() => {
   vi.stubGlobal("crypto", webcrypto);
   db = sqliteD1(); db.exec(readFileSync("cloudflare/schema.sql", "utf8")); db.exec(readFileSync("cloudflare/migrations/0007_tenant_auth.sql", "utf8"));
+  db.exec(readFileSync("cloudflare/migrations/0010_tenant_mail_status.sql", "utf8"));
   db.exec("INSERT INTO tenants (id,slug,name,owner_user_id,created_at,updated_at,setup_required) VALUES ('a','alpha','Alpha','owner',0,0,1),('b','beta','Beta','another-owner',0,0,1)");
   dnsStatus=0; dnsAvailable=true; mailAvailable=true; messages=[];
   vi.spyOn(globalThis,"fetch").mockImplementation(async (input, init) => {
@@ -37,6 +38,44 @@ async function req(path: string, body?: any, method?: string, signedIn = true) {
   }),{DB:db,JWT_SECRET:"test-only-session-signing",RESEND_API_KEY:"mock-only",APP_URL:"https://afroaigroup.com"} as any,{waitUntil(){}} as any);
 }
 const base = "/v1/admin/tenants/a";
+it("keeps mail diagnostics private and refreshes delivery without sending an email",async()=>{
+  db.exec(`INSERT INTO tenant_mail_events VALUES
+    ('attempt-a','a','user-a','verify','accepted',NULL,'provider-a',1,1),
+    ('attempt-b','b','user-b','verify','accepted',NULL,'provider-b',1,1)`);
+  const reads:string[]=[];
+  vi.mocked(fetch).mockImplementation(async(input,init)=>{
+    const url=new URL(String(input));
+    if(url.pathname==="/api/auth/user") return Response.json({id:"owner",email:"owner@example.test",emailVerified:true});
+    reads.push(url.toString());
+    expect(init?.method || "GET").toBe("GET");
+    if(url.pathname==="/emails/provider-a") return Response.json({last_event:"delivered"});
+    if(url.pathname==="/domains") return Response.json({data:[]});
+    throw new Error("Unexpected upstream request");
+  });
+  expect((await req(`${base}/mail-status`,undefined,undefined,false)).status).toBe(401);
+  expect((await req("/v1/admin/tenants/b/mail-status")).status).toBe(404);
+  expect(reads).toHaveLength(0);
+  const first=await req(`${base}/mail-status`);
+  expect(first.headers.get("cache-control")).toContain("no-store");
+  expect(await first.json()).toMatchObject({health:{status:"available"},events:[{id:"attempt-a",outcome:"accepted"}]});
+  const refreshed=await (await req(`${base}/mail-status/refresh`,{})).json() as any;
+  expect(refreshed.events).toHaveLength(1);
+  expect(refreshed.events[0].outcome).toBe("delivered");
+  expect(reads.filter(url=>url.includes("/domains"))).toHaveLength(1);
+  expect(reads).not.toContain("https://api.resend.com/emails/provider-b");
+  expect(db.query("SELECT outcome FROM tenant_mail_events WHERE id='attempt-b'")[0].outcome).toBe("accepted");
+});
+it("shows invalid platform provider credentials without exposing credentials or falsely proving delivery",async()=>{
+  vi.mocked(fetch).mockImplementation(async input=>{
+    const url=new URL(String(input));
+    if(url.pathname==="/api/auth/user") return Response.json({id:"owner",email:"owner@example.test",emailVerified:true});
+    return new Response('{"message":"private upstream details"}',{status:401});
+  });
+  const result=await (await req(`${base}/mail-status`)).json() as any;
+  expect(result.health.status).toBe("invalid_credential");
+  expect(JSON.stringify(result)).not.toMatch(/mock-only|private upstream/);
+  expect(result.events).toEqual([]);
+});
 it("lets an owner adopt v1 or keep legacy without modifying saved customers, keys or sessions", async () => {
   db.exec("UPDATE tenants SET setup_required=0 WHERE id='a'");
   await domain(true);

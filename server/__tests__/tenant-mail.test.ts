@@ -27,7 +27,7 @@ it.each([
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ name, message: messageText + " private@example.com private-token" }), { status })));
   await expect(sendTenantMail({ RESEND_API_KEY: "private-key" }, context, "hash", message)).rejects.toThrow();
   const entry = JSON.parse(log.mock.calls[0][0]);
-  expect(entry).toMatchObject({ outcome: "rejected", providerStatus: status, reason });
+  expect(entry).toMatchObject({ outcome: status>=500 ? "unknown" : "rejected", providerStatus: status, reason });
   expect(log.mock.calls[0][0]).not.toMatch(/private@example|private-token|private-key/);
 });
 

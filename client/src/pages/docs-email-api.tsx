@@ -10,7 +10,7 @@ import {
 
 const STEPS = [
   { id: 1, title: "Create your Afro AI account", icon: Mail },
-  { id: 2, title: "Open the Email API", icon: BookOpen },
+  { id: 2, title: "Choose your email project", icon: BookOpen },
   { id: 3, title: "Add your domain", icon: Globe },
   { id: 4, title: "Add the DNS records", icon: ShieldCheck },
   { id: 5, title: "Wait for verification", icon: Check },
@@ -18,11 +18,14 @@ const STEPS = [
   { id: 7, title: "Send your first email", icon: Send },
 ];
 
-const CODE_NODE = `await fetch("https://afroaigroup.com/api/email-api/send", {
+const CODE_NODE = `import { randomUUID } from "node:crypto";
+
+await fetch("https://afroaigroup.com/api/email-api/send", {
   method: "POST",
   headers: {
     "Authorization": "Bearer sk_live_YOUR_KEY_HERE",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "Idempotency-Key": randomUUID()
   },
   body: JSON.stringify({
     from: "Hello <hello@mywebsite.com>",
@@ -33,9 +36,13 @@ const CODE_NODE = `await fetch("https://afroaigroup.com/api/email-api/send", {
 });`;
 
 const CODE_PYTHON = `import requests
+import uuid
 
 requests.post("https://afroaigroup.com/api/email-api/send",
-  headers={"Authorization": "Bearer sk_live_YOUR_KEY_HERE"},
+  headers={
+    "Authorization": "Bearer sk_live_YOUR_KEY_HERE",
+    "Idempotency-Key": str(uuid.uuid4())
+  },
   json={
     "from": "Hello <hello@mywebsite.com>",
     "to": "customer@example.com",
@@ -44,12 +51,21 @@ requests.post("https://afroaigroup.com/api/email-api/send",
   })`;
 
 const CODE_PHP = `<?php
+$idempotencyKey = sprintf(
+  "%s-%s-4%s-%s-%s",
+  bin2hex(random_bytes(4)),
+  bin2hex(random_bytes(2)),
+  substr(bin2hex(random_bytes(2)), 1),
+  dechex(8 + random_int(0, 3)) . substr(bin2hex(random_bytes(2)), 1),
+  bin2hex(random_bytes(6))
+);
 $ch = curl_init("https://afroaigroup.com/api/email-api/send");
 curl_setopt_array($ch, [
   CURLOPT_POST => true,
   CURLOPT_HTTPHEADER => [
     "Authorization: Bearer sk_live_YOUR_KEY_HERE",
-    "Content-Type: application/json"
+    "Content-Type: application/json",
+    "Idempotency-Key: " . $idempotencyKey
   ],
   CURLOPT_POSTFIELDS => json_encode([
     "from" => "Hello <hello@mywebsite.com>",
@@ -63,6 +79,7 @@ echo curl_exec($ch);`;
 
 const CODE_CURL = `curl -X POST https://afroaigroup.com/api/email-api/send \\
   -H "Authorization: Bearer sk_live_YOUR_KEY_HERE" \\
+  -H "Idempotency-Key: 8a7d1be3-f829-4e53-8db3-395d566578f4" \\
   -H "Content-Type: application/json" \\
   -d '{
     "from": "Hello <hello@mywebsite.com>",
@@ -157,8 +174,8 @@ export default function EmailApiDocsPage() {
           </StepCard>
 
           {/* Step 2 */}
-          <StepCard num={2} title="Open the Email API">
-            <p>In your dashboard sidebar, click <strong>Email API</strong>. You'll see two tabs: <strong>Domains</strong> and <strong>API Keys</strong>.</p>
+          <StepCard num={2} title="Choose your email project">
+            <p>In your dashboard sidebar, click <strong>Email API</strong>. Create a named project or open your existing project. Manage that project's sending domains, API keys, activity and test emails together.</p>
           </StepCard>
 
           {/* Step 3 */}
@@ -197,7 +214,7 @@ export default function EmailApiDocsPage() {
 
           {/* Step 6 */}
           <StepCard num={6} title="Create an API key">
-            <p>Click the <strong>API Keys</strong> tab → <strong>Create New Key</strong>. Give it a name (e.g. "Production").</p>
+            <p>Inside the same project, verify a sending domain, then open <strong>API Keys</strong> and create a named key (e.g. "Production"). A key can send only from verified domains linked to its own project.</p>
             <p>Copy the secret key starting with <code className="bg-muted px-1.5 py-0.5 rounded text-xs">sk_live_...</code></p>
             <div className="flex items-start gap-2 p-3 rounded-lg border border-destructive/30 bg-destructive/5 text-sm">
               <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
@@ -241,6 +258,10 @@ export default function EmailApiDocsPage() {
             </div>
 
             <p className="text-xs text-muted-foreground">Replace <code className="bg-muted px-1 rounded">sk_live_YOUR_KEY_HERE</code> with the key from Step 6, and <code className="bg-muted px-1 rounded">hello@mywebsite.com</code> with any address on your verified domain.</p>
+            <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-2">
+              <p><strong>Safe retries:</strong> send a fresh UUID in the <code>Idempotency-Key</code> header for each new email attempt. If a network failure leaves the outcome unknown, retry the exact same request with the same key; the API replays its result instead of sending again. A 202 uncertain response also reuses that key. Only a definite 503 rejection with a documented <code>EMAIL_PROVIDER_…</code> code means the attempt was not accepted; after that, a deliberate new attempt uses a new key.</p>
+              <p className="text-muted-foreground">A 200/202 accepted response means the provider accepted the request, not that it was delivered or the mailbox is verified. Monthly quota is counted in UTC by recipient.</p>
+            </div>
           </StepCard>
         </div>
       </section>

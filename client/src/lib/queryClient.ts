@@ -57,12 +57,13 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
+  requestHeaders?: Record<string, string>,
 ): Promise<Response> {
   const started = generation;
   const fullUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
   const res = await fetch(fullUrl, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: { ...(data ? { "Content-Type": "application/json" } : {}), ...requestHeaders },
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
     cache: "no-store",

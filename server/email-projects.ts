@@ -57,11 +57,12 @@ export async function linkEmailProjectDomain(userId: string, projectId: number, 
   if (!rowCount) integrationError(404, "Sending domain not found");
 }
 export async function emailKeyAccess(keyId: number) {
-  const { rows } = await pool.query(`SELECT s.*, k.user_id, q.emails_sent_month AS used,
+  const { rows } = await pool.query(`SELECT s.*, k.user_id, COALESCE(m.used,0) AS used,
     q.monthly_limit AS quota_limit FROM email_key_state s
     JOIN email_api_keys k ON k.id=s.key_id
     JOIN email_api_keys q ON q.id=s.quota_key_id AND q.user_id=k.user_id
     JOIN email_projects p ON p.id=s.project_id AND p.user_id=k.user_id
+    LEFT JOIN email_quota_periods m ON m.quota_key_id=q.id AND m.period=date_trunc('month',now() AT TIME ZONE 'UTC')::date
     WHERE s.key_id=$1`, [keyId]);
   if (!rows[0]) integrationError(503, "Email project setup is not ready");
   if (rows[0].revoked_at) integrationError(401, "API key has been revoked");
@@ -78,9 +79,10 @@ export async function emailProjectDetail(userId: string, projectId: unknown, own
   const project = await ownedEmailProject(userId, projectId);
   const [keys, domains, logs] = await Promise.all([
     pool.query(`SELECT k.*,s.project_id,s.quota_key_id,s.replaces_key_id,s.revoked_at,
-      q.emails_sent_month AS quota_used,q.monthly_limit AS quota_limit
+      COALESCE(m.used,0) AS quota_used,q.monthly_limit AS quota_limit
       FROM email_api_keys k JOIN email_key_state s ON s.key_id=k.id
       JOIN email_api_keys q ON q.id=s.quota_key_id AND q.user_id=k.user_id
+      LEFT JOIN email_quota_periods m ON m.quota_key_id=q.id AND m.period=date_trunc('month',now() AT TIME ZONE 'UTC')::date
       WHERE s.project_id=$1 AND k.user_id=$2 ORDER BY k.created_at DESC`, [project.id,userId]),
     pool.query(`SELECT d.* FROM email_api_domains d JOIN email_project_domains a ON a.domain_id=d.id
       WHERE a.project_id=$1 AND d.user_id=$2 ORDER BY d.created_at DESC`, [project.id,userId]),
@@ -130,8 +132,8 @@ export async function createProjectEmailKey(userId: string, ownerEmail: unknown,
       secret_key_preview,plan,monthly_limit,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,true) RETURNING *`,
       [userId,name.trim(),`afro_live_${crypto.randomBytes(20).toString("hex")}`,hash,secretKey.slice(-4),
         previous?.plan || (isFounderEmail(ownerEmail) ? "enterprise" : "starter"),previous?.monthly_limit || 1000]);
-    await client.query(`INSERT INTO email_key_state(key_id,project_id,quota_key_id,replaces_key_id)
-      VALUES($1,$2,$3,$4)`, [key.id,project.id,previous?.quota_key_id || key.id,rotateId || null]);
+    await client.query(`INSERT INTO email_key_state(key_id,project_id,quota_key_id,replaces_key_id,secret_fingerprint)
+      VALUES($1,$2,$3,$4,$5)`, [key.id,project.id,previous?.quota_key_id || key.id,rotateId || null,crypto.createHash("sha256").update(secretKey).digest("hex")]);
     await client.query("COMMIT");
     return { ...presentEmailApiKey({...camelRow(key),projectId:project.id,quotaKeyId:previous?.quota_key_id || key.id,
       replacesKeyId:rotateId || null,revokedAt:null},ownerEmail),secretKey };

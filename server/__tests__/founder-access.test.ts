@@ -39,9 +39,10 @@ function emailSendHandler(secretMatches = true) {
   visit(ast);
   if (!callback) throw new Error("Email send callback missing");
   const js=ts.transpileModule(`const handler=${callback.getText(ast)}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
-  return new Function("db","emailApiKeys","dbEq","storage","isFounderEmail","bcrypt","emailKeyAccess",`${js};return handler;`)(
+  return new Function("db","emailApiKeys","dbEq","storage","isFounderEmail","bcrypt","emailKeyAccess","resolveEmailKey",`${js};return handler;`)(
     {select:mocks.select},{publicKey:"public_key",isActive:"is_active"},()=>true,
     {getUser:mocks.getUser},isFounderEmail,{compare:vi.fn().mockResolvedValue(secretMatches)},mocks.keyAccess,
+    async () => secretMatches ? (await mocks.select().from().where())[0] : null,
   );
 }
 beforeEach(() => vi.clearAllMocks());

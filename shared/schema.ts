@@ -1,7 +1,7 @@
 export * from "./models/auth";
 export * from "./models/chat";
 
-import { pgTable, serial, bigserial, check, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index, customType, uuid } from "drizzle-orm/pg-core";
+import { pgTable, serial, bigserial, check, text, timestamp, varchar, boolean, integer, numeric, jsonb, uniqueIndex, index, customType, uuid, date, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -783,8 +783,38 @@ export const emailKeyState = pgTable("email_key_state", {
   keyId: integer("key_id").primaryKey().references(() => emailApiKeys.id, {onDelete:"cascade"}),
   projectId: integer("project_id").notNull().references(() => emailProjects.id),
   quotaKeyId: integer("quota_key_id").notNull().references(() => emailApiKeys.id),
+  secretFingerprint: text("secret_fingerprint"),
   replacesKeyId: integer("replaces_key_id").references(() => emailApiKeys.id),
   revokedAt: timestamp("revoked_at", {withTimezone:true}),
+});
+export const emailQuotaPeriods = pgTable("email_quota_periods",{
+  quotaKeyId:integer("quota_key_id").notNull().references(()=>emailApiKeys.id),
+  period:date("period").notNull(),
+  used:integer("used").notNull().default(0),
+},t=>[primaryKey({columns:[t.quotaKeyId,t.period]}),check("email_quota_periods_used_check",sql`${t.used}>=0`)]);
+export const emailSendRequests = pgTable("email_send_requests",{
+  id:uuid("id").primaryKey(),
+  userId:varchar("user_id").notNull().references(()=>users.id),
+  keyId:integer("key_id").notNull().references(()=>emailApiKeys.id),
+  projectId:integer("project_id").notNull().references(()=>emailProjects.id),
+  quotaKeyId:integer("quota_key_id").notNull().references(()=>emailApiKeys.id),
+  period:date("period").notNull(),
+  idempotencyHash:text("idempotency_hash").notNull(),
+  payloadHash:text("payload_hash").notNull(),
+  recipientCount:integer("recipient_count").notNull(),
+  status:text("status").notNull(),
+  messageId:text("message_id"),
+  errorCode:text("error_code"),
+  createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+  updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
+},t=>[uniqueIndex("email_send_requests_user_id_key_id_idempotency_hash_key").on(t.userId,t.keyId,t.idempotencyHash),
+  index("email_send_requests_owner").on(t.userId,t.projectId,t.createdAt),
+  check("email_send_requests_recipient_count_check",sql`${t.recipientCount}>0`),
+  check("email_send_requests_status_check",sql`${t.status} IN ('pending','accepted','rejected','uncertain')`)]);
+export const emailProviderEvents = pgTable("email_provider_events",{
+  messageId:text("message_id").primaryKey(),
+  status:text("status").notNull(),
+  occurredAt:timestamp("occurred_at",{withTimezone:true}).notNull(),
 });
 export const chatbotApiPolicy = pgTable("chatbot_api_policy", {
   widgetId: integer("widget_id").primaryKey().references(() => chatbotWidgets.id, {onDelete:"cascade"}),

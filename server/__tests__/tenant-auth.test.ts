@@ -20,6 +20,7 @@ beforeEach(() => {
   db = sqliteD1();
   db.exec(readFileSync("cloudflare/schema.sql", "utf8"));
   db.exec(readFileSync("cloudflare/migrations/0007_tenant_auth.sql", "utf8"));
+  db.exec(readFileSync("cloudflare/migrations/0010_tenant_mail_status.sql", "utf8"));
   db.exec(`INSERT INTO tenants (id,slug,name,allowed_origins,created_at,updated_at) VALUES
     ('a','alpha','Alpha','["https://client.example"]',0,0),('b','beta','Beta','["https://other.example"]',0,0);`);
   messages = [];

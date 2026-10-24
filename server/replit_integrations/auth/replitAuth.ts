@@ -216,6 +216,7 @@ export async function setupAuth(app: Express) {
           secure: isProduction,
           sameSite: isProduction ? "none" : "lax",
         });
+        res.clearCookie("afroai_session", {path:"/",httpOnly:true,secure:isProduction,sameSite:"lax"});
         res.redirect("/");
       });
     });

@@ -37,3 +37,12 @@ Investigate tenant-auth email delivery in the deployed authentication Worker sep
 **Why:** The Worker's mail credential was rejected with HTTP 401 while the workspace credential and sender domain worked. These deployments have independent secrets. A saved unverified account or token was not delivery evidence.
 
 **How to apply:** Correlate the failed tenant request with Worker logs and provider acceptance/delivery events. A bound secret name proves presence, not validity; a working workspace credential does not prove the Worker uses it. Preserve existing test accounts and do not repeatedly resend or rotate customer keys to diagnose an outbound-mail failure.
+
+Keep platform sessions host-only and use the site's canonical apex routing
+instead of sharing sessions with every customer-controlled subdomain. Migrate
+valid legacy cookies without revoking the underlying session; logout clears
+both scopes. Credentialed platform CORS must use exact trusted origins.
+
+**Why:** Parent-domain sessions and wildcard credentialed CORS can expose a
+platform account to customer-controlled hosts. Earlier mobile host-flip issues
+must be handled by canonical routing, not by widening session-cookie scope.

@@ -1,3 +1,4 @@
+import { saveMailEvent } from "./tenant-mail-status";
 type MailContext = {
   tenantId: string;
   userId: string;
@@ -24,16 +25,21 @@ function rejectionReason(status: number, data: any) {
 }
 
 export async function sendTenantMail(
-  env: { RESEND_API_KEY?: string; MAIL_FROM?: string },
+  env: { RESEND_API_KEY?: string; MAIL_FROM?: string; DB?: any },
   context: MailContext,
   tokenHash: string,
   message: { to: string; subject: string; text: string; html: string },
 ) {
+  const persist = async(fields:any) => {
+    record(context,fields);
+    await saveMailEvent(env,context,fields).catch(()=>console.error(JSON.stringify({event:"tenant_mail_audit_unavailable",tenantId:context.tenantId})));
+  };
   if (!env.RESEND_API_KEY) {
-    record(context, { outcome: "unavailable", reason: "missing_provider_credential" });
+    await persist({ outcome: "rejected", reason: "missing_provider_credential" });
     throw new Error("Email transport unavailable");
   }
   let response: Response;
+  await saveMailEvent(env,context,{outcome:"pending"}).catch(()=>{});
   try {
     response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -47,13 +53,13 @@ export async function sendTenantMail(
     });
   } catch {
     // An interrupted request may already have been accepted. Do not retry blindly.
-    record(context, { outcome: "unknown", reason: "provider_transport_interrupted" });
+    await persist({ outcome: "unknown", reason: "provider_transport_interrupted" });
     throw new Error("Email submission could not be confirmed");
   }
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    record(context, {
-      outcome: "rejected",
+    await persist({
+      outcome: response.status>=500 ? "unknown" : "rejected",
       providerStatus: response.status,
       reason: rejectionReason(response.status, data),
       providerCode: typeof data?.name === "string" && /^[a-z_]{1,60}$/.test(data.name) ? data.name : null,
@@ -61,7 +67,8 @@ export async function sendTenantMail(
     throw new Error("Email delivery failed");
   }
   const messageId = typeof data?.id === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(data.id) ? data.id : null;
-  record(context, { outcome: "accepted", providerStatus: response.status, messageId });
+  await persist({ outcome: messageId?"accepted":"unknown", providerStatus: response.status, messageId });
+  if (!messageId) throw new Error("Email submission could not be confirmed");
   // Provider acceptance is not inbox delivery. Delivery must be checked separately.
   return { sent: true, accepted: true, messageId };
 }

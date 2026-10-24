@@ -77,7 +77,7 @@ describe("real Worker reset and session lifecycle", () => {
     expect(db.query("SELECT id FROM device_sessions WHERE revoked_at IS NOT NULL ORDER BY id")).toEqual([{ id: "a" }, { id: "b" }]);
     expect(db.query("SELECT id FROM password_reset_tokens WHERE used_at IS NULL")).toHaveLength(0);
     expect((await (await request("/me", undefined, oldCookie)).json()).user).toBeNull();
-    const freshCookie = result.headers.get("set-cookie")!.split(";")[0];
+    const freshCookie = result.headers.getSetCookie().find(value=>!value.includes("Max-Age=0"))!.split(";")[0];
     expect((await (await request("/me", undefined, freshCookie)).json()).user.id).toBe("one");
     const retry = await request("/reset-password", { token: raw, password: "Should-not-work!" });
     expect(retry.status).toBe(400);
@@ -100,6 +100,17 @@ describe("real Worker reset and session lifecycle", () => {
     expect((await request("/logout", {}, cookie)).status).toBe(200);
     expect(db.query("SELECT id FROM device_sessions WHERE revoked_at IS NOT NULL")).toEqual([{ id: "a" }]);
     expect((await (await request("/me", undefined, cookie)).json()).user).toBeNull();
+  });
+  it("migrates a valid parent-domain cookie to host-only without invalidating the session",async()=>{
+    const cookie=`afroai_session=${await token()}`;
+    const res=await request("/me",undefined,cookie);
+    const headers=res.headers.get("set-cookie") || "";
+    expect(headers).toContain("Max-Age=0");
+    const fresh=headers.split(/, (?=afroai_session=)/).find(value=>!value.includes("Max-Age=0"));
+    expect(fresh).toContain("HttpOnly");
+    expect(fresh).not.toMatch(/domain=/i);
+    expect((await res.json()).user.id).toBe("one");
+    expect(db.query("SELECT id FROM device_sessions WHERE revoked_at IS NOT NULL")).toHaveLength(0);
   });
   it("reset email has a functional frontend link including an encoded token", async () => {
     let email: any;

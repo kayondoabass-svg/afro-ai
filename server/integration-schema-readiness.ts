@@ -1,5 +1,6 @@
 import { CHATBOT_VERIFICATION_SCHEMA } from "./chatbot-verification-schema";
 import { INTEGRATION_PROJECT_SCHEMA } from "./integration-project-schema";
+import { EMAIL_DELIVERY_SCHEMA } from "./email-delivery-schema";
 
 interface SchemaClient {
   query(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
@@ -11,6 +12,7 @@ const tables = [
   "integration_project_migrations", "email_projects", "email_project_domains",
   "email_key_state", "chatbot_api_policy", "chatbot_api_credentials",
   "chatbot_site_settings", "chatbot_verified_domains",
+  "email_quota_periods", "email_send_requests", "email_provider_events",
 ];
 const triggerNames = [
   "chatbot_new_site_policy_trigger", "chatbot_private_api_new_widget_trigger",
@@ -45,6 +47,7 @@ export async function prepareIntegrationSchema(pool: SchemaPool): Promise<void> 
     if (await isReady(client)) return;
     await client.query(CHATBOT_VERIFICATION_SCHEMA);
     await client.query(INTEGRATION_PROJECT_SCHEMA);
+    await client.query(EMAIL_DELIVERY_SCHEMA);
     if (!await isReady(client)) throw new Error("Schema readiness verification failed");
   } catch (error: any) {
     // A failed multi-statement migration may leave this connection in a

@@ -81,6 +81,8 @@ import { createFullstackProject, initializeFullstackProject, FullstackSetupError
 import { ProjectFileError } from "./project-file-policy";
 import { hasForbiddenCustomerBrand, applyCustomerPublishName } from "./customer-branding";
 import { ZodError } from "zod";
+import { resolveEmailKey, reserveEmailSend, settleEmailSend, emailPayloadHash } from "./email-delivery";
+import { sendEmail as sendProjectEmail } from "./email-provider";
 import { extractWebsiteHtml } from "@shared/html-extraction";
 
 const apiLimiter = rateLimit({
@@ -5134,25 +5136,14 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
 
   // Send email (public endpoint — authenticated via API key)
   async function emailApiSend(req:any, res:any, ownerTestKey?:any) {
+    res.setHeader("Cache-Control","private, no-store");
     const authHeader = req.headers.authorization || "";
     const token = authHeader.replace("Bearer ", "").replace("Basic ", "");
 
     if (!token && !ownerTestKey) return res.status(401).json({ error: "No API key provided" });
 
     // Find key by public key prefix match, then verify secret
-    let apiKey = ownerTestKey;
-    if (!apiKey && token.startsWith("afro_live_")) {
-      // Public key only (limited use) — find by public key
-      const [found] = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.publicKey, token));
-      apiKey = found;
-    } else if (!apiKey && token.startsWith("sk_live_")) {
-      // Secret key — need to find and bcrypt compare
-      const allKeys = await db.select().from(emailApiKeys).where(dbEq(emailApiKeys.isActive, true));
-      for (const k of allKeys) {
-        const match = await bcrypt.compare(token, k.secretKeyHash);
-        if (match) { apiKey = k; break; }
-      }
-    }
+    const apiKey = ownerTestKey || await resolveEmailKey(token);
 
     if (!apiKey || !apiKey.isActive) return res.status(401).json({ error: "Invalid or inactive API key" });
     const quota = await emailKeyAccess(apiKey.id);
@@ -5161,7 +5152,10 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
     if (!emailKeyOwner) return res.status(401).json({ error: "API key owner account not found" });
     // Public keys remain limited: exposing one must never confer founder privileges.
     const founderSecretAccess = (Boolean(ownerTestKey) || token.startsWith("sk_live_")) && isFounderEmail(emailKeyOwner.email);
-    if (!founderSecretAccess && quota.used >= quota.quotaLimit) return res.status(429).json({ error: "Monthly email limit reached" });
+    // Fast rejection for new over-quota requests. Replays must still reach the
+    // reservation ledger so a successful prior request remains retrievable.
+    if (!req.headers["idempotency-key"] && !founderSecretAccess && quota.used>=quota.quotaLimit)
+      return res.status(429).json({error:"Monthly email limit reached"});
 
     const { from, to, subject, html, text } = req.body;
     if (!from || !to || !subject || (!html && !text)) {
@@ -5193,6 +5187,9 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
     // Filter out suppressed recipients (hard bounces and complaints) before hitting SES.
     // Sending to known-bad addresses is the fastest way to wreck your sender reputation.
     const recipientsRaw = Array.isArray(to) ? to : [to];
+    if (!recipientsRaw.length || recipientsRaw.length>50 || recipientsRaw.some((r:any)=>typeof r!=="string" || !/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(r))) {
+      return res.status(400).json({error:"Provide between 1 and 50 valid recipient email addresses",code:"EMAIL_RECIPIENTS_INVALID"});
+    }
     const allowed: string[] = [];
     const suppressedSkipped: string[] = [];
     for (const r of recipientsRaw) {
@@ -5212,11 +5209,36 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
       return res.status(400).json({ error: "All recipients are on the suppression list", suppressed: suppressedSkipped });
     }
 
+    const suppliedId = req.headers["idempotency-key"];
+    if (suppliedId && (typeof suppliedId!=="string" || !/^[a-zA-Z0-9_.:-]{8,128}$/.test(suppliedId))) {
+      return res.status(400).json({error:"Idempotency-Key must be 8–128 letters, numbers, dots, colons, underscores or hyphens"});
+    }
+    const request = await reserveEmailSend({
+      userId:apiKey.userId,keyId:apiKey.id,projectId:quota.projectId,quotaKeyId:quota.quotaKeyId,
+      idempotencyKey:suppliedId || crypto.randomUUID(),payloadHash:emailPayloadHash({from,to:recipientsRaw,subject,html:html||null,text:text||null}),
+      recipientCount:allowed.length,exempt:founderSecretAccess,
+    });
+    if (request.replayed) {
+      if (request.status==="rejected") return res.status(409).json({error:"This request was rejected. Correct the cause and start a new request with a new Idempotency-Key.",code:request.errorCode,requestId:request.id});
+      return res.status(request.status==="accepted"?200:202).json({success:true,accepted:request.status==="accepted",
+        outcome:request.status==="accepted"?"accepted":"uncertain",messageId:request.messageId,requestId:request.id,replayed:true});
+    }
+    let messageId: string;
     try {
-      const { sendEmail } = await import("./email-provider");
-      const result = await sendEmail({ from, to: allowed, subject, html, text });
-      const messageId = result.messageId;
+      const result = await sendProjectEmail({ from, to: allowed, subject, html, text, idempotencyKey:`email-api/${request.id}` });
+      messageId = result.messageId;
+    } catch (error:any) {
+      // Unknown transport outcomes keep their reservation; never retry blindly.
+      const uncertain=error.uncertain!==false;
+      const code=error.code || "EMAIL_OUTCOME_UNKNOWN";
+      await settleEmailSend(request.id,apiKey.userId,uncertain?"uncertain":"rejected",undefined,code).catch(()=>{});
+      if (uncertain) return res.status(202).json({success:true,accepted:false,outcome:"uncertain",requestId:request.id,
+        message:"Delivery submission is uncertain. Reuse the same Idempotency-Key to check without sending again."});
+      return res.status(503).json({error:error.message,code,requestId:request.id});
+    }
 
+    try {
+      await settleEmailSend(request.id,apiKey.userId,"accepted",messageId);
       // Log & increment counter
       await db.insert(emailApiLogs).values({
         userId: apiKey.userId,
@@ -5227,28 +5249,28 @@ ${manualKnowledge(widget.knowledgeBase) || "No approved business information yet
         status: "sent",
         messageId,
       });
+      await pool.query(`UPDATE email_api_logs l SET status=e.status
+        FROM email_provider_events e WHERE l.message_id=e.message_id AND l.message_id=$1 AND l.user_id=$2`,
+        [messageId,apiKey.userId]);
 
       await db.update(emailApiKeys).set({
-        emailsSentMonth: sql`${emailApiKeys.emailsSentMonth} + 1`,
+        emailsSentMonth: sql`COALESCE((SELECT used FROM email_quota_periods WHERE quota_key_id=${quota.quotaKeyId} AND period=date_trunc('month',now() AT TIME ZONE 'UTC')::date),0)`,
         lastUsedAt: new Date(),
       }).where(dbEq(emailApiKeys.id, quota.quotaKeyId));
       if (quota.quotaKeyId!==apiKey.id) await db.update(emailApiKeys).set({lastUsedAt:new Date()}).where(dbEq(emailApiKeys.id,apiKey.id));
 
-      res.json({ success: true, messageId, suppressed: suppressedSkipped });
+      res.json({ success: true, accepted:true,outcome:"accepted",messageId,requestId:request.id,suppressed: suppressedSkipped });
     } catch (e: any) {
-      await db.insert(emailApiLogs).values({
-        userId: apiKey.userId,
-        apiKeyId: apiKey.id,
-        fromAddress: from,
-        toAddress: allowed.join(", "),
-        subject,
-        status: "failed",
-        error: e.message,
-      });
-      res.status(500).json({ error: e.message });
+      // The provider already accepted this email. A local bookkeeping failure
+      // must never be reported as a rejected send or release its allowance.
+      console.error("[EmailAPI] Accepted message bookkeeping incomplete",{requestId:request.id});
+      res.status(202).json({success:true,accepted:true,outcome:"accepted",messageId,requestId:request.id,
+        message:"Provider accepted the message; activity-log synchronization is pending. Do not send it again."});
     }
   }
-  app.post("/api/email-api/send", integrationHandler(emailApiSend));
+  const emailSendLimiter=rateLimit({windowMs:60_000,max:60,standardHeaders:true,legacyHeaders:false,
+    message:{error:"Email request rate limit reached. No automatic retry was made.",code:"EMAIL_RATE_LIMIT"}});
+  app.post("/api/email-api/send",emailSendLimiter,integrationHandler(emailApiSend));
 
   // ─────────── SES bounce/complaint webhook (SNS notifications) ───────────
   // Configure your SES Configuration Set to publish Bounce, Complaint, and

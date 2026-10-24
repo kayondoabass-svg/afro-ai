@@ -60,7 +60,7 @@ describe("safe email key lifecycle",()=>{
     const insert=mocks.client.query.mock.calls.find(([sql])=>sql.startsWith("INSERT INTO email_api_keys"))!;
     expect(insert[1]).not.toContain(result.secretKey);
     expect(insert[1][3]).toMatch(/^\$2[aby]\$/);
-    expect(mocks.client.query.mock.calls.find(([sql])=>sql.startsWith("INSERT INTO email_key_state"))![1]).toEqual([8,4,2,7]);
+    expect(mocks.client.query.mock.calls.find(([sql])=>sql.startsWith("INSERT INTO email_key_state"))![1]).toEqual([8,4,2,7,createHash("sha256").update(result.secretKey).digest("hex")]);
     expect(mocks.client.query.mock.calls.some(([sql])=>sql.includes("SET is_active=false"))).toBe(false);
   });
   it("blocks duplicate outstanding replacements, without revoking the original",async()=>{

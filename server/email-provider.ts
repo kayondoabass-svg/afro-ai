@@ -18,6 +18,11 @@ export interface SendEmailInput {
   html?: string;
   text?: string;
   replyTo?: string;
+  idempotencyKey?: string;
+}
+
+export class EmailProviderError extends Error {
+  constructor(public code: string, public uncertain: boolean, message: string) { super(message); }
 }
 
 export interface SendEmailResult {
@@ -35,6 +40,7 @@ let _sesClient: SESClient | null = null;
 function sesClient(): SESClient {
   if (_sesClient) return _sesClient;
   _sesClient = new SESClient({
+    maxAttempts: 1,
     region: (process.env.AWS_REGION || "us-east-1").toLowerCase(),
     ...(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
       credentials: {
@@ -58,20 +64,33 @@ async function sendViaResend(input: SendEmailInput): Promise<SendEmailResult> {
   if (input.text) body.text = input.text;
   if (input.replyTo) body.reply_to = input.replyTo;
 
-  const res = await fetch("https://api.resend.com/emails", {
+  let res: Response;
+  try {
+    res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${key}`,
       "Content-Type": "application/json",
+      ...(input.idempotencyKey ? {"Idempotency-Key":input.idempotencyKey} : {}),
     },
     body: JSON.stringify(body),
-  });
+    signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new EmailProviderError("EMAIL_OUTCOME_UNKNOWN",true,"The provider response could not be confirmed. Do not submit a new request; check this request's status.");
+  }
   const data: any = await res.json().catch(() => ({}));
   if (!res.ok) {
     // Resend errors come back as { name, message, statusCode }
-    const msg = data?.message || data?.error || `Resend HTTP ${res.status}`;
-    throw new Error(`Resend send failed: ${msg}`);
+    const code = res.status===401 ? "EMAIL_PROVIDER_AUTH" : res.status===429 ? "EMAIL_PROVIDER_LIMIT"
+      : res.status===403 ? "EMAIL_PROVIDER_PERMISSION" : res.status>=500 ? "EMAIL_PROVIDER_UNAVAILABLE" : "EMAIL_PROVIDER_REJECTED";
+    throw new EmailProviderError(code,res.status>=500,
+      res.status===401 ? "The platform email provider credential is invalid. Contact support; replacing your project key will not fix this."
+        : res.status===429 ? "The email provider has reached a rate or sending limit. No automatic retry was made."
+        : res.status===403 ? "The email provider did not authorize this sender. Check sending-domain verification or contact support."
+        : "The email provider could not confirm this message. Check the request status before sending again.");
   }
+  if (!data?.id) throw new EmailProviderError("EMAIL_OUTCOME_UNKNOWN",true,"Provider acceptance could not be confirmed. Do not send a new request.");
   return { messageId: data?.id || "", provider: "resend" };
 }
 
@@ -89,7 +108,14 @@ async function sendViaSes(input: SendEmailInput): Promise<SendEmailResult> {
     ...(input.replyTo ? { ReplyToAddresses: [input.replyTo] } : {}),
     ...(configSet ? { ConfigurationSetName: configSet } : {}),
   });
-  const result = await sesClient().send(cmd);
+  let result;
+  try {
+    result = await sesClient().send(cmd, {abortSignal:AbortSignal.timeout(15_000)});
+  } catch(error: any) {
+    const status=error?.$metadata?.httpStatusCode;
+    throw new EmailProviderError("EMAIL_PROVIDER_UNAVAILABLE",!status || status>=500,
+      "The email provider could not complete the request. Check request status before trying again.");
+  }
   return { messageId: result.MessageId || "", provider: "ses" };
 }
 

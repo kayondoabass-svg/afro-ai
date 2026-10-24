@@ -41,6 +41,16 @@ export function registerIntegrationProjectRoutes(app:Express, auth:RequestHandle
     const detail=await emailProjectDetail(userId(req),req.params.id,owner?.email);
     res.json({...detail,stats:{...detail.stats,emailProvider:activeEmailProvider()}});
   });
+  route("get","/api/email-api/projects/:id/requests/:requestId",async(req,res)=>{
+    await ownedEmailProject(userId(req),req.params.id);
+    if (!/^[a-f0-9-]{36}$/i.test(req.params.requestId)) integrationError(400,"Invalid request ID");
+    const {rows:[row]}=await pool.query(`SELECT r.id,r.status,r.message_id,r.error_code,r.created_at,r.updated_at,e.status AS delivery_status
+      FROM email_send_requests r LEFT JOIN email_provider_events e ON e.message_id=r.message_id
+      WHERE r.id=$1 AND r.user_id=$2 AND r.project_id=$3`,
+      [req.params.requestId,userId(req),req.params.id]);
+    if (!row) integrationError(404,"Email request not found");
+    res.json(camelRow(row));
+  });
   route("patch","/api/email-api/projects/:id",async(req,res)=>{
     await ownedEmailProject(userId(req),req.params.id);
     const name=req.body?.name;

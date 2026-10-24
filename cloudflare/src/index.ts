@@ -23,6 +23,7 @@ import bcrypt from 'bcryptjs';
 import { tenantAuth } from './tenant-auth';
 import { registerTenantSetup, tenantSetup, tenantIsActive } from './tenant-project-setup';
 import { registerTenantApiUpgrade } from './tenant-api-upgrade';
+import { registerTenantMailStatus, checkTenantMailHealth } from './tenant-mail-status';
 import { platformAdminIdentity } from './platform-admin-auth';
 import { parseTenantOrigins, validTenantOrigin } from '../../shared/tenant-origins';
 import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
@@ -276,22 +277,15 @@ async function issueSession(c: any, userId: string) {
     .setIssuedAt()
     .setExpirationTime('30d')
     .sign(secret);
-  // Cookie is scoped to the whole afroaigroup.com domain (apex + every
-  // subdomain). This is required because mobile browsers and some upstream
-  // CDN/DNS rules can flip a user between `afroaigroup.com` and
-  // `www.afroaigroup.com` mid-session — a host-only cookie set on one host
-  // would be invisible on the other and the user would silently appear
-  // logged-out (the "mobile login bounce" bug). The Worker reads the scope
-  // from `COOKIE_DOMAIN` (set in wrangler.toml) so it can be tightened
-  // without a code change.
-  //
-  // SECURITY NOTE: this cookie is now sent to every *.afroaigroup.com
-  // subdomain. Do NOT host untrusted user content on a subdomain of
-  // afroaigroup.com without first revisiting this scoping (use a separate
-  // domain like *.afroai.app instead, or scope the cookie back to host-only
-  // and fix the host-flip at the edge).
+  setSessionCookie(c,token);
+}
+
+function setSessionCookie(c:any,token:string) {
+  // The Express site canonicalizes www to the apex before serving the UI.
+  // Expire legacy parent-domain cookies before writing a host-only cookie;
+  // customer-controlled subdomains must never receive new platform sessions.
+  deleteCookie(c,'afroai_session',{domain:c.env.COOKIE_DOMAIN || 'afroaigroup.com',path:'/'});
   setCookie(c, 'afroai_session', token, {
-    domain: c.env.COOKIE_DOMAIN || 'afroaigroup.com',
     path: '/',
     secure: true,
     httpOnly: true,
@@ -310,6 +304,10 @@ async function getCurrentUserId(c: any): Promise<string | null> {
     const session = await c.env.DB.prepare('SELECT id, last_seen_at FROM device_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?')
       .bind(payload.sid, payload.sub, nowSec()).first();
     if (!session) return null;
+    // Migrate an existing valid browser session without revoking it or asking
+    // the customer to recreate an account. The response expires only the old
+    // domain-scoped cookie and retains this exact live session token.
+    setSessionCookie(c,token);
     if (session.last_seen_at < nowSec() - 300) {
       await c.env.DB.prepare('UPDATE device_sessions SET last_seen_at = ? WHERE id = ? AND last_seen_at < ?')
         .bind(nowSec(), payload.sid, nowSec() - 300).run();
@@ -699,6 +697,7 @@ app.post('/logout', async (c) => {
       const payload = await verifyPlatformSession(token, enc.encode(c.env.JWT_SECRET)).catch(() => null);
       if (!payload) {
         deleteCookie(c, 'afroai_session', { domain: c.env.COOKIE_DOMAIN || 'afroaigroup.com', path: '/' });
+        deleteCookie(c,'afroai_session',{path:'/'});
         return c.json({ ok: true });
       }
       if (typeof payload.sid === 'string') {
@@ -716,6 +715,7 @@ app.post('/logout', async (c) => {
     domain: c.env.COOKIE_DOMAIN || 'afroaigroup.com',
     path: '/',
   });
+  deleteCookie(c,'afroai_session',{path:'/'});
   return c.json({ ok: true });
 });
 
@@ -1597,6 +1597,7 @@ async function ownedTenantOr401(
 }
 
 registerTenantApiUpgrade(app, ownedTenantOr401);
+registerTenantMailStatus(app, ownedTenantOr401);
 registerTenantSetup(app, {ownedTenant: ownedTenantOr401, sendVerification: async (c, tenant, user) => {
   const key = `tenant:${tenant.id}:admin-verification:${c.req.header('CF-Connecting-IP') || 'unknown'}`;
   if (await checkThrottles(c.env.DB, [key], nowSec())) return {sent:false,rateLimited:true};
@@ -1974,6 +1975,7 @@ export default {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) =>
     handleVersionedAuthRequest(request, routed => root.fetch(routed, env, ctx)),
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(checkTenantMailHealth(env).catch(()=>console.error("[cron] Mail health check unavailable")));
     ctx.waitUntil(
       cleanupAuthThrottle(env.DB, nowSec()).catch((err) => {
         console.error('[cron] auth_throttle cleanup failed', err);
