@@ -80,7 +80,10 @@ export function tenantAuth(deps: Dependencies) {
   }
   function page(c: any, title: string, content: string) {
     c.header("Cache-Control", "no-store");
-    c.header("Referrer-Policy", "no-referrer");
+    // no-referrer makes browser navigation POSTs send Origin:null, so our
+    // tenant origin guard rejects this very form. Keep the same-host Origin
+    // while still withholding the token-bearing referrer from external apps.
+    c.header("Referrer-Policy", "same-origin");
     c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     return c.html(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title><style>body{font:16px system-ui;max-width:460px;margin:10vh auto;padding:24px;background:#101014;color:#eee}input,button{box-sizing:border-box;width:100%;padding:12px;margin:10px 0}a{color:#facc15}button{cursor:pointer}</style></head><body><h1>${escape(title)}</h1>${content}</body></html>`);
   }

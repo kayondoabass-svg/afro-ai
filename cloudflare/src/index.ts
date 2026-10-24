@@ -1654,7 +1654,7 @@ app.patch('/v1/admin/tenants/:id', async (c) => {
       const legacyOrigin = !r.setup_required && oldOrigins.includes(origin);
       const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
       if (!local && !legacyOrigin && !domains.results.some(d => url.hostname === d.domain || url.hostname.endsWith(`.${d.domain}`))) {
-        return c.json({message:'Verify ownership of the website domain before adding its production origin.'}, 400);
+        return c.json({code:'WEBSITE_OWNERSHIP_REQUIRED',message:`Verify ownership of ${url.hostname} in Setup before adding ${origin}. Verifying a subdomain does not verify its parent domain. Existing saved origins remain unchanged.`}, 400);
       }
     }
     updates.push('allowed_origins = ?');

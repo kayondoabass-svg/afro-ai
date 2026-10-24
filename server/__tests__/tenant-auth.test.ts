@@ -61,6 +61,47 @@ it("requires confirmation, sends one message, and rejects cross-tenant and reuse
   expect((await req("/t/alpha/verify-email", { token })).status).toBe(400);
   expect((await req("/t/alpha/login", { email, password })).status).toBe(200);
 });
+it.each(["/t", "/v1/t"])("accepts same-host confirmation forms through %s without allowing opaque or foreign origins", async prefix => {
+  await signup();
+  const token = mailToken();
+  const path = `${prefix}/alpha/verify-email`;
+  const page = await req(`${path}?token=${token}`);
+  expect(page.headers.get("Referrer-Policy")).toBe("same-origin");
+  expect(page.headers.get("Content-Security-Policy")).toContain("form-action 'self'");
+  expect(await page.text()).toContain("Confirm my email");
+  expect(db.query("SELECT email_verified FROM users WHERE tenant_id='a'")[0].email_verified).toBe(0);
+  const post = (origin: string, slug = "alpha") => worker.fetch(new Request(
+    `https://afroaigroup.com/cf-auth${prefix}/${slug}/verify-email`,
+    { method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded", Origin:origin},
+      body:new URLSearchParams({token}).toString() },
+  ), {DB:db, JWT_SECRET:secret, APP_URL:"https://afroaigroup.com"} as any, {waitUntil(){}} as any);
+  expect((await post("null")).status).toBe(403);
+  expect((await post("https://untrusted.example")).status).toBe(403);
+  expect((await post("https://afroaigroup.com","beta")).status).toBe(400);
+  const confirmed = await post("https://afroaigroup.com");
+  expect(confirmed.status).toBe(200);
+  expect(confirmed.headers.get("Set-Cookie")).toBeNull();
+  expect(await confirmed.text()).toContain("Completed");
+  expect((await post("https://afroaigroup.com")).status).toBe(400);
+  expect((await req("/t/alpha/login",{email,password})).status).toBe(200);
+});
+
+it.each(["/t", "/v1/t"])("accepts the same-host password-reset form through %s", async prefix => {
+  const session = await verified();
+  await req("/t/alpha/forgot-password",{email});
+  const token = mailToken(), path = `${prefix}/alpha/reset-password`;
+  const page = await req(`${path}?token=${token}`);
+  expect(page.headers.get("Referrer-Policy")).toBe("same-origin");
+  const response = await worker.fetch(new Request(`https://afroaigroup.com/cf-auth${path}`, {
+    method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded",Origin:"https://afroaigroup.com"},
+    body:new URLSearchParams({token,password:"Replacement-password!42",confirm:"Replacement-password!42"}).toString(),
+  }),{DB:db,JWT_SECRET:secret,APP_URL:"https://afroaigroup.com"} as any,{waitUntil(){}} as any);
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain("Completed");
+  expect((await (await req("/t/alpha/me",undefined,session)).json()).user).toBeNull();
+  expect((await req("/t/alpha/login",{email,password:"Replacement-password!42"})).status).toBe(200);
+});
+
 it("reset revokes all sessions only for the target tenant, rejects reuse and preserves email verification", async () => {
   const a1 = await verified(), a2 = (await (await req("/t/alpha/login", { email, password })).json()).token;
   const b = await verified("beta");

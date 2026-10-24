@@ -46,3 +46,14 @@ both scopes. Credentialed platform CORS must use exact trusted origins.
 **Why:** Parent-domain sessions and wildcard credentialed CORS can expose a
 platform account to customer-controlled hosts. Earlier mobile host-flip issues
 must be handled by canonical routing, not by widening session-cookie scope.
+
+Hosted confirmation/reset forms must preserve their same-host POST Origin.
+Do not apply `Referrer-Policy: no-referrer` to these form pages; use
+`same-origin` to suppress external referrers without making form submissions
+opaque. Never solve this by trusting arbitrary `Origin: null` requests.
+
+**Why:** A real-browser reproduction showed navigation form POSTs under
+`no-referrer` sending `Origin: null`, although equivalent JSON API tests passed.
+
+**How to apply:** Test browser-style URL-encoded submissions on legacy and
+versioned routes as well as JSON API calls; retain cross-project token checks.
