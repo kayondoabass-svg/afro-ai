@@ -87,6 +87,16 @@ export function tenantAuth(deps: Dependencies) {
     c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     return c.html(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title><style>body{font:16px system-ui;max-width:460px;margin:10vh auto;padding:24px;background:#101014;color:#eee}input,button{box-sizing:border-box;width:100%;padding:12px;margin:10px 0}a{color:#facc15}button{cursor:pointer}</style></head><body><h1>${escape(title)}</h1>${content}</body></html>`);
   }
+  function projectPage(c: any, t: any, title: string, content: string) {
+    // Only use the project's saved exact origin. Never accept a return URL
+    // from the email query string or carry the action token to another site.
+    const origin = parseTenantOrigins(t.allowed_origins).find(validTenantOrigin);
+    const back = origin
+      ? `<p><a href="${escape(origin)}" rel="noreferrer">Return to ${escape(t.name)}</a></p>`
+      : `<p>Return to ${escape(t.name)} directly. Its owner has not configured a return website.</p>`;
+    return page(c, `${title} — ${t.name}`,
+      `<p>This page handles authentication for ${escape(t.name)}.</p>${content}${back}`);
+  }
   function register(app: any) {
     for (const [path, purpose] of [["send-verification", "verify"], ["forgot-password", "reset"]] as const) {
       app.post(`/t/:slug/${path}`, async (c: any) => {
@@ -109,9 +119,22 @@ export function tenantAuth(deps: Dependencies) {
         if (!t) return c.text("Project not found.", 404);
         const token = c.req.query("token") || "";
         const row = await actionRow(c, t, token, purpose);
-        if (!row) return page(c, "Link unavailable", "<p>This link is invalid, expired, or already used. Request another link from the app.</p>");
+        if (!row) {
+          // A consumed confirmation is not a failed account. Recognize only
+          // this exact project-bound token, without revealing any identity or
+          // treating it as a credential for a new session.
+          const confirmed = purpose === "verify" && token && await c.env.DB.prepare(
+            `SELECT u.email_verified FROM tenant_auth_tokens a
+             JOIN users u ON u.id=a.user_id AND u.tenant_id=a.tenant_id
+             WHERE a.hash=? AND a.tenant_id=? AND a.purpose='verify' AND a.used_at IS NOT NULL`,
+          ).bind(await digest(token),t.id).first();
+          if (confirmed?.email_verified) return projectPage(c,t,"Email already confirmed",
+            `<p>Your email has already been confirmed for ${escape(t.name)}. Return to the app and sign in with your email and password. Opening this link does not sign you in.</p>`);
+          return projectPage(c,t,"Link unavailable",
+            `<p>This link is invalid, expired, or already used. Return to ${escape(t.name)} to sign in or request a new link.</p>`);
+        }
         const fields = purpose === "reset" ? '<label>New password (at least 12 characters)<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label><label>Confirm password<input name="confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>' : "";
-        return page(c, `${purpose === "verify" ? "Confirm email" : "Reset password"} — ${t.name}`,
+        return projectPage(c, t, purpose === "verify" ? "Confirm email" : "Reset password",
           `<form method="post"><input type="hidden" name="token" value="${escape(token)}">${fields}<button>${purpose === "verify" ? "Confirm my email" : "Save new password"}</button></form>`);
       });
       app.post(`/t/:slug/${path}`, async (c: any) => {
@@ -121,9 +144,9 @@ export function tenantAuth(deps: Dependencies) {
         const body = await (form ? c.req.parseBody() : c.req.json()).catch(() => ({}));
         const respond = (message: string, status = 200) => {
           if (!form) return c.json({ok:status === 200,message}, status);
-          const origin = parseTenantOrigins(t.allowed_origins).find(validTenantOrigin);
           c.status(status);
-          return page(c, status === 200 ? "Completed" : "Unable to continue", `<p>${escape(message)}</p>${status === 200 && origin ? `<p><a href="${escape(origin)}">Return to ${escape(t.name)}</a></p>` : ""}`);
+          const next = status === 200 ? `<p>Return to ${escape(t.name)} and sign in. No login session was created by this page.</p>` : "";
+          return projectPage(c,t,status === 200 ? "Completed" : "Unable to continue",`<p>${escape(message)}</p>${next}`);
         };
         if (await limited(c, t, `${purpose}-consume`)) return respond("Too many attempts. Please wait.", 429);
         const row = await actionRow(c, t, String(body.token || ""), purpose);

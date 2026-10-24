@@ -102,6 +102,55 @@ it.each(["/t", "/v1/t"])("accepts the same-host password-reset form through %s",
   expect((await req("/t/alpha/login",{email,password:"Replacement-password!42"})).status).toBe(200);
 });
 
+it.each(["/t", "/v1/t"])("keeps used and invalid hosted links tied to the customer app through %s", async prefix => {
+  await signup();
+  const token = mailToken();
+  expect((await req("/t/alpha/verify-email",{token})).status).toBe(200);
+  const used = await req(`${prefix}/alpha/verify-email?token=${token}&return_to=https://untrusted.example`);
+  const html = await used.text();
+  expect(html).toContain("<title>Email already confirmed — Alpha</title>");
+  expect(html).toContain('href="https://client.example"');
+  expect(html).toContain("Return to Alpha");
+  expect(html).toContain("Opening this link does not sign you in.");
+  expect(html).not.toContain(token);
+  expect(html).not.toContain(email);
+  expect(html).not.toContain("https://untrusted.example");
+  expect(used.headers.get("Set-Cookie")).toBeNull();
+  expect(db.query("SELECT id FROM tenant_sessions")).toHaveLength(0);
+  const foreign = await (await req(`${prefix}/beta/verify-email?token=${token}`)).text();
+  expect(foreign).toContain("Link unavailable — Beta");
+  expect(foreign).toContain('href="https://other.example"');
+  expect(foreign).not.toContain("Email already confirmed");
+  expect(foreign).not.toContain("https://client.example");
+  const reset = await (await req(`${prefix}/alpha/reset-password?token=${token}`)).text();
+  expect(reset).toContain("Link unavailable — Alpha");
+  expect(reset).not.toContain("Email already confirmed");
+});
+
+it("returns expired links and form errors to saved origins only, without guessing a login URL", async () => {
+  await signup();
+  const token = mailToken();
+  db.exec("UPDATE tenant_auth_tokens SET expires_at=1");
+  const expired = await (await req(`/t/alpha/verify-email?token=${token}`)).text();
+  expect(expired).toContain("Link unavailable — Alpha");
+  expect(expired).toContain('href="https://client.example"');
+  const form = await worker.fetch(new Request("https://afroaigroup.com/cf-auth/v1/t/alpha/verify-email",{
+    method:"POST",headers:{Origin:"https://afroaigroup.com","Content-Type":"application/x-www-form-urlencoded"},
+    body:new URLSearchParams({token,return_to:"https://untrusted.example"}).toString(),
+  }),{DB:db,JWT_SECRET:secret,APP_URL:"https://afroaigroup.com"} as any,{waitUntil(){}} as any);
+  expect(form.status).toBe(400);
+  const error = await form.text();
+  expect(error).toContain('href="https://client.example"');
+  expect(error).not.toContain("https://untrusted.example");
+  expect(error).not.toContain(token);
+  db.exec(`UPDATE tenants SET allowed_origins='["javascript:alert(1)","https://untrusted.example/path"]', name='<img src=x>' WHERE id='a'`);
+  const unconfigured = await (await req("/t/alpha/verify-email?token=invalid")).text();
+  expect(unconfigured).toContain("has not configured a return website");
+  expect(unconfigured).toContain("&lt;img src=x&gt;");
+  expect(unconfigured).not.toContain("<img");
+  expect(unconfigured).not.toContain('href=');
+});
+
 it("reset revokes all sessions only for the target tenant, rejects reuse and preserves email verification", async () => {
   const a1 = await verified(), a2 = (await (await req("/t/alpha/login", { email, password })).json()).token;
   const b = await verified("beta");

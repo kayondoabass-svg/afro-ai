@@ -57,3 +57,14 @@ opaque. Never solve this by trusting arbitrary `Origin: null` requests.
 
 **How to apply:** Test browser-style URL-encoded submissions on legacy and
 versioned routes as well as JSON API calls; retain cross-project token checks.
+
+Customer-facing Auth pages must clearly identify the customer's project and
+provide a route back to that app, including when a link was already used.
+Do not send customers to the platform dashboard or imply that confirmation
+automatically signs them in.
+
+**Why:** The user found hosted error pages stranded their customers on Afro AI
+and made the integration appear to belong to the wrong product.
+
+**How to apply:** Use saved, validated project origins for return links; never
+forward action tokens or trust a return destination from an email URL.
