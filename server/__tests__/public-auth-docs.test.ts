@@ -22,6 +22,18 @@ describe("public authentication discovery", () => {
     const html = enhancePublicHtml(shell, '/"><script>alert(1)</script>');
     expect(html).not.toContain("<script>alert");
   });
+  it("explains setup, honest delivery evidence, safe troubleshooting and non-breaking key replacement", () => {
+    const body = publicAuthMarkup("/docs/auth")!.body;
+    for (const text of [
+      "Three different verification checks",
+      "publish the provided TXT record",
+      "one-time secret only in your backend",
+      "A signup 503 can leave a saved unverified account",
+      "generic resend or recovery 200 response is not proof",
+      "Test your integration before launch",
+      "Replacement does not automatically revoke",
+    ]) expect(body).toContain(text);
+  });
   it("documents each live session operation and separates user tokens from server keys", () => {
     const api = authOpenApi();
     expect(api.openapi).toBe("3.1.0");

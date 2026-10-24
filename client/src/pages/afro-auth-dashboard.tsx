@@ -139,6 +139,23 @@ export default function AfroAuthDashboardPage() {
         </Button>
       </div>
 
+      <Card className="mb-6 border-primary/20 bg-primary/[0.035]">
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Setup guide</p>
+            <h2 className="mt-1 font-semibold">From website proof to a verified customer session</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Follow the full sequence for domain ownership, allowed origins, one-time server keys, customer email confirmation, and live session checks.
+            </p>
+          </div>
+          <Button variant="outline" asChild className="shrink-0">
+            <Link href="/docs/auth#start">
+              Read setup guide <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
       {hasHandoffContext && (
         <Card className="mb-6" data-testid="card-auth-handoff-context">
           <CardContent className="p-4">
@@ -197,27 +214,30 @@ export default function AfroAuthDashboardPage() {
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
           {tenants.map((t) => (
-            <Card
+            <Link
               key={t.id}
-              className="cursor-pointer hover-elevate active-elevate-2 transition"
-              onClick={() => setLocation(tenantUrl(t.id))}
+              href={tenantUrl(t.id)}
+              className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label={`Manage ${t.name} Afro Auth project`}
               data-testid={`card-project-${t.id}`}
             >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <CardTitle className="text-lg" data-testid={`text-project-name-${t.id}`}>{t.name}</CardTitle>
-                  <Badge variant="secondary" data-testid={`badge-plan-${t.id}`}>{t.plan}</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <p className="text-sm text-muted-foreground font-mono mb-3" data-testid={`text-project-slug-${t.id}`}>
-                  {t.slug}
-                </p>
-                <div className="flex items-center text-sm text-primary">
-                  Manage <ArrowRight className="h-4 w-4 ml-1" />
-                </div>
-              </CardContent>
-            </Card>
+              <Card className="h-full cursor-pointer transition hover-elevate active-elevate-2">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="text-lg" data-testid={`text-project-name-${t.id}`}>{t.name}</CardTitle>
+                    <Badge variant="secondary" data-testid={`badge-plan-${t.id}`}>{t.plan}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <p className="text-sm text-muted-foreground font-mono mb-3" data-testid={`text-project-slug-${t.id}`}>
+                    {t.slug}
+                  </p>
+                  <div className="flex items-center text-sm text-primary">
+                    Manage <ArrowRight className="h-4 w-4 ml-1" />
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
       )}

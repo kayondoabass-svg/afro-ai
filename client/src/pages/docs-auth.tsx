@@ -8,6 +8,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 const sections = [
+  ["start", "Start here: end-to-end setup"],
   ["scope", "Scope & capabilities"],
   ["signup", "Signup & login"],
   ["recovery", "Verification & recovery"],
@@ -80,8 +81,95 @@ export default function AuthDocsPage() {
             </nav>
           </aside>
           <article className="min-w-0 max-w-4xl space-y-14">
+            <Section id="start" title="Start here: end-to-end setup">
+              <p>
+                Afro Auth is customer authentication for your application. It is separate from the Afro AI account you use to manage projects. Complete these steps in order; a dashboard status is not a substitute for testing customer email delivery or your application code.
+              </p>
+              <ol className="list-decimal space-y-5 pl-5">
+                <li>
+                  <strong className="text-foreground">Create a project.</strong> Sign in to the Afro AI dashboard, open <Link href="/dashboard/auth" className="text-primary underline underline-offset-4">Afro Auth projects</Link>, and create a project for one customer app. Its slug and users, keys, and configuration are isolated from other projects.
+                </li>
+                <li>
+                  <strong className="text-foreground">Prove control of your website hostname.</strong> In that project's Setup tab, add the hostname and publish the exact TXT record shown there. Wait for the dashboard/API to confirm it. This TXT proof verifies website ownership so the project can issue keys. It is not an email-sending DNS record, does not configure an email provider, and does not confirm any customer's mailbox.
+                </li>
+                <li>
+                  <strong className="text-foreground">Set exact allowed origins.</strong> In Settings, add each browser origin your app uses, such as <code>https://shop.example</code> and <code>https://www.shop.example</code> on separate lines. An origin is scheme + hostname + optional port; do not add a path or wildcard. Add localhost separately for local development. Website TXT ownership and allowed origins serve different purposes.
+                </li>
+                <li>
+                  <strong className="text-foreground">Create and store a project key.</strong> Once ownership is verified, generate a key in Setup. Copy the secret or save the downloaded environment file immediately: the secret is displayed once. Put it in your server's environment, not browser code, a public build variable, or source control. The public key and project slug may be used by a client when the selected integration requires them; the secret key is server-only.
+                  <p className="mt-2">When replacing a key, deploy and verify the new key while the old one is still active, then explicitly revoke the old key. A signup or email problem is not a reason to rotate keys.</p>
+                </li>
+                <li>
+                  <strong className="text-foreground">Sign up, check the inbox, and explicitly confirm.</strong> Use the exact Website API base URL displayed in this project's Setup tab; do not guess or reconstruct it. Signup requires a 12–128 character password, starts email confirmation, and does not return a login token. Tell the customer to check the inbox for the address they entered (including spam/junk), then submit the confirmation form from the message. Login is available after confirmation.
+                  <Snippet>{`// Use the exact Website API base URL shown in your project Setup tab.
+const base = "PASTE_THIS_PROJECTS_WEBSITE_API_BASE_URL";
+const response = await fetch(base + "/signup", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email, password })
+});
+const result = await response.json();
+if (!response.ok) {
+  // Present a useful next step; do not blindly repeat signup.
+  throw new Error(result.message || "Signup could not be completed");
+}
+// Show "Check your email". This response is not a login session.
+// The customer must submit the emailed confirmation form first.
+
+const loginResponse = await fetch(base + "/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email, password })
+});
+if (!loginResponse.ok) throw new Error("Check confirmation, then try signing in");
+const { token } = await loginResponse.json();`}</Snippet>
+                </li>
+                <li>
+                  <strong className="text-foreground">Validate every protected request on your backend.</strong> Use the server-only secret key to check the customer's token against the live session verification endpoint. Fail closed if verification fails or is unavailable, and enforce your own application authorization after verification. Do not rely on offline JWT signature checks alone; they cannot detect revoked sessions.
+                  <Snippet>{`// Backend only. Never ship AFRO_AUTH_SECRET_KEY to the browser.
+const verifyResponse = await fetch(
+  "https://afroaigroup.com/cf-auth/v1/sessions/verify",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: \`Bearer \${process.env.AFRO_AUTH_SECRET_KEY}\`
+    },
+    body: JSON.stringify({ token: customerToken })
+  }
+);
+if (!verifyResponse.ok) throw new Error("Session verification failed");
+const session = await verifyResponse.json();
+if (session.valid !== true) throw new Error("Sign in again");
+// Authorize this verified user for the requested application action.`}</Snippet>
+                </li>
+                <li>
+                  <strong className="text-foreground">Plan recovery and revocation.</strong> Offer <code>/send-verification</code> for an unconfirmed account and <code>/forgot-password</code> for password recovery; use the hosted forms or the documented JSON submission flow. Responses are deliberately generic. Customers can end their own sessions through logout/session endpoints; project owners can explicitly revoke API keys in the API keys tab.
+                </li>
+              </ol>
+              <Card className="border-primary/25">
+                <CardContent className="space-y-2 p-5">
+                  <p className="font-semibold text-foreground">Three separate things, three different proofs</p>
+                  <ul className="list-disc space-y-2 pl-5">
+                    <li><strong className="text-foreground">Website ownership DNS:</strong> the project-specific TXT record proves control of the website hostname.</li>
+                    <li><strong className="text-foreground">Email-sending DNS:</strong> mail-provider records belong to the sender/platform's delivery infrastructure. Customers do not need to buy a sending domain or configure their own mail provider for Afro Auth confirmation.</li>
+                    <li><strong className="text-foreground">Mailbox confirmation:</strong> the end customer receives a message at their address and explicitly submits the confirmation form. DNS verification or an API acknowledgement does not prove receipt.</li>
+                  </ul>
+                </CardContent>
+              </Card>
+              <div>
+                <h3 className="mb-2 font-semibold text-foreground">Deliberate test checklist</h3>
+                <ul className="list-disc space-y-2 pl-5">
+                  <li>Use a real test inbox and the exact configured browser origin; confirm that a non-allowed origin is not silently treated as allowed.</li>
+                  <li>Sign up once, check the correct inbox and spam/junk folder, submit the confirmation form, then log in. Confirm signup alone did not create a session.</li>
+                  <li>Test an unconfirmed login, password recovery, reset, login after reset, logout, and a protected backend action with both valid and revoked/expired sessions.</li>
+                  <li>Verify server-side live-session checks fail closed, and confirm your app applies its own authorization rules.</li>
+                  <li>For key replacement, deploy the replacement before explicitly revoking the previous active key.</li>
+                </ul>
+              </div>
+            </Section>
             <Section id="scope" title="Scope & capabilities">
-              <p>Afro Auth is custom, tenant-scoped authentication for your customer application, not Clerk and not the Afro AI platform login. Each project uses its own slug. All customer routes below are relative to <code className="text-foreground">/cf-auth/t/:slug</code>.</p>
+              <p>Afro Auth is tenant-scoped authentication for your customer application, not Clerk and not the Afro AI platform login. Each project uses its own slug. Use the exact Website API base URL displayed in the project dashboard; customer routes below are relative to that base.</p>
               <p>Capabilities in this release: email/password signup and login, email confirmation and resend, password recovery, live session listing and revocation, Google/GitHub sign-in with PKCE, exact allowed origins, and server-side session verification.</p>
               <div className="overflow-x-auto rounded-lg border">
                 <table className="w-full text-left text-sm">
@@ -116,7 +204,7 @@ const signup = await post("/signup", {
 const login = await post("/login", { email, password });
 // Keep login.token in memory or in a secure server-side session.
 // Handle expired/revoked sessions by asking the user to log in again.`}</Snippet>
-              <p>Signup explicitly reports email delivery failure while retaining the account for a later resend. Do not assume a failed email means no account was created.</p>
+              <p>A signup <code>503</code> can mean the account was created but the platform sender could not send its confirmation. Treat account creation as uncertain: do not submit signup repeatedly and do not rotate a project key. Check the customer's correct inbox and spam/junk folder; once eligible, deliberately request a resend.</p>
             </Section>
             <Section id="recovery" title="Hosted confirmation & password recovery">
               <p>Email links open hosted forms. Fetching or previewing a verification link does not activate the account; confirmation requires a POST. The hosted reset form also requires submission. For your own forms, JSON POST accepts a verification <code>token</code>, or a reset <code>token</code> and <code>password</code>.</p>
@@ -244,9 +332,10 @@ if (!session.valid) throw new Error("Sign in again");
                       ["Unverified account", "Login is blocked. Offer email confirmation/resend."],
                       ["Expired, revoked, or legacy token", "Stop protected actions and require a new login."],
                       ["Invalid new/reset password", "Require 12–128 characters before submission."],
-                      ["Signup email delivery failure", "The account is retained; offer a later resend."],
-                      ["Recovery acknowledgement", "Show a generic message; it does not prove account existence or delivery."],
-                      ["Issuance cooldown or rate limit", "Wait and retry deliberately; do not create an automatic request loop."],
+                      ["Signup returns 503 during email sending", "The account may already exist. Do not repeat signup or rotate keys. Check the correct inbox and spam/junk, then deliberately resend after the cooldown."],
+                      ["Resend or recovery returns generic 200", "Show a neutral acknowledgement only. It is not proof of delivery or account existence; check the intended inbox and spam/junk."],
+                      ["Resend cooldown", "Wait at least 60 seconds from the previous issuance attempt before a deliberate resend. Do not create an automatic request loop."],
+                      ["Platform sender/provider failure", "Contact Afro Auth platform support with the failure context. Customers do not need to purchase a sending domain or configure sender DNS."],
                       ["Origin not allowed", "Check the exact origin in dashboard settings; an empty list denies cross-origin calls."],
                       ["Expired/used OAuth code or mismatched exchange", "Restart the flow in the same browser; do not reuse a code or substitute a verifier."],
                       ["Unowned session deletion", "Only revoke sessions belonging to the current user."],
@@ -254,7 +343,7 @@ if (!session.valid) throw new Error("Sign in again");
                   </tbody>
                 </table>
               </div>
-              <p>Email issuance has a one-minute account cooldown plus IP/email rate limits. The source does not specify numeric IP/email quotas. Recovery responses deliberately avoid revealing account existence. Email failures are logged without credentials.</p>
+              <p>Email issuance has a 60-second account cooldown plus IP/email rate limits. A generic resend HTTP 200 is not delivery confirmation. If signup returns 503 while sending email, the account may remain; do not submit signup repeatedly or rotate keys. Check the address and spam/junk folder, then make a deliberate resend after cooldown. For sender/provider failures, contact platform support; a customer sending-domain purchase will not repair the platform sender. Recovery responses deliberately avoid revealing account existence.</p>
             </Section>
             <Section id="security" title="Security boundaries & release limitations">
               <Card className="border-primary/30">

@@ -32,5 +32,9 @@ it("renders public docs without signing in or making auth requests", () => {
   render(<AuthDocs />);
   expect(screen.getByRole("heading", { name: "Scope & capabilities" })).toBeInTheDocument();
   expect(screen.getAllByText(/Server-side verification/).length).toBeGreaterThan(0);
+  expect(screen.getByRole("heading", { name: "Start here: end-to-end setup" })).toBeInTheDocument();
+  expect(screen.getByText("Three separate things, three different proofs")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Deliberate test checklist" })).toBeInTheDocument();
+  expect(screen.getByText(/A generic resend HTTP 200 is not delivery confirmation/)).toBeInTheDocument();
   expect(network).not.toHaveBeenCalled();
 });

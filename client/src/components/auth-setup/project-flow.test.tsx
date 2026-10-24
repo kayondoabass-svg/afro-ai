@@ -41,6 +41,8 @@ it("renders the owner's setup and blocks production key generation before DNS pr
     expect(ui.container.textContent).toContain("sample-app");
     expect(ui.container.textContent).toContain("Use v1 with existing users");
     expect(ui.container.textContent).toContain("Keep current API");
+    expect(ui.container.textContent).toContain("It does not confirm email delivery");
+    expect(ui.container.querySelector('a[href="/docs/auth#start"]')).not.toBeNull();
   } finally {ui.close();}
 });
 it("enables key generation only after a real verified-state API response", () => {

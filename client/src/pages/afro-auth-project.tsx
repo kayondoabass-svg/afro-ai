@@ -182,6 +182,11 @@ export default function AfroAuthProjectPage() {
         <StatCard label="Active keys" value={String(liveKeys.length)} />
       </div>
     </header>
+    <Alert className="mb-5">
+      <AlertDescription>
+        “Ready” reflects website ownership proof and an active key only. It does not confirm email delivery or prove your customer app has completed integration.
+      </AlertDescription>
+    </Alert>
 
     <Tabs value={activeTab} onValueChange={setActiveTab}>
       <TabsList className="mb-2 grid h-auto w-full grid-cols-4 p-1 sm:inline-flex sm:w-auto">
@@ -191,6 +196,20 @@ export default function AfroAuthProjectPage() {
         <TabsTrigger value="settings" data-testid="tab-settings"><Settings className="mr-1.5 hidden h-4 w-4 sm:inline" />Settings</TabsTrigger>
       </TabsList>
       <TabsContent value="quickstart" className="mt-4 space-y-5">
+        <Card className="border-primary/20 bg-primary/[0.035]">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Your integration details</p>
+              <p className="mt-1 font-medium">{t.name} · <code className="break-all">{t.slug}</code></p>
+              <p className="mt-1 text-sm text-muted-foreground">Use this exact API base URL in your customer app and the matching server environment.</p>
+              <code className="mt-2 block break-all rounded-md border bg-background/70 px-3 py-2 text-xs">{projectUrl}</code>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setActiveTab("settings")}>Configure origins</Button>
+              <Button variant="outline" asChild><Link href="/docs/auth#start">Full setup guide</Link></Button>
+            </div>
+          </CardContent>
+        </Card>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,.7fr)]">
           <DomainSetup tenantId={id} />
           <Card className="h-fit">
@@ -205,6 +224,9 @@ export default function AfroAuthProjectPage() {
                 {verifiedDomainCount > 0 ? <Check className="mt-0.5 h-5 w-5 text-primary" /> : <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border text-xs">•</span>}
                 <div><p className="font-medium">{verifiedDomainCount > 0 ? "Website ownership verified" : "Waiting for website proof"}</p><p className="mt-1 text-xs text-muted-foreground">{verifiedDomainCount > 0 ? `${verifiedDomainCount} domain${verifiedDomainCount === 1 ? "" : "s"} verified` : "Add your hostname and publish its TXT record above."}</p></div>
               </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                This TXT record proves control of your website hostname. It is not email-sending DNS and does not confirm a customer's mailbox.
+              </p>
               <label htmlFor="key-label" className="text-sm font-medium">Key label</label>
               <Input id="key-label" value={keyLabel} onChange={(e) => setKeyLabel(e.target.value)} maxLength={80} placeholder="production" />
               <Button className="w-full" onClick={() => { setKeyError(""); createKey.mutate(); }} disabled={!createAllowed || createKey.isPending}>
@@ -231,6 +253,9 @@ export default function AfroAuthProjectPage() {
   return data;
 });`}</code></pre>
             <Alert><AlertDescription>Email confirmation is separate from DNS ownership. Afro Auth sends signup confirmation links using the platform sender. You do not need an email API key or a sending domain for customer signup confirmation.</AlertDescription></Alert>
+            <p className="text-sm text-muted-foreground">
+              After signup, direct the customer to check the inbox for the address they entered, including spam or junk, and explicitly submit the confirmation form before attempting login. A successful response from a resend endpoint acknowledges the request; it is not proof the email arrived.
+            </p>
           </CardContent>
         </Card>
         <div className="grid gap-4 lg:grid-cols-2">

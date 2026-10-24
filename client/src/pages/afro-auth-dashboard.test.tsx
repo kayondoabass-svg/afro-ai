@@ -67,6 +67,22 @@ afterEach(() => {
 });
 
 describe("Afro Auth project handoff", () => {
+  it("links to setup and exposes owned projects as keyboard-accessible links without creating anything", async () => {
+    mocks.authState = { user: { id: "owner-1" }, isLoading: false };
+    window.history.pushState({}, "", "/dashboard/auth");
+    mocks.authAdminRequest.mockResolvedValue({
+      tenants: [{ id: "tenant-owned", slug: "owned-app", name: "Owned App", plan: "free", created_at: 0 }],
+    });
+    renderPage();
+    expect(screen.getByRole("link", { name: /Read setup guide/ })).toHaveAttribute("href", "/docs/auth#start");
+    const project = await screen.findByRole("link", { name: "Manage Owned App Afro Auth project" });
+    expect(project).toHaveAttribute("href", "/dashboard/auth/tenant-owned");
+    project.focus();
+    expect(project).toHaveFocus();
+    expect(mocks.authAdminRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.authAdminRequest).toHaveBeenCalledWith("/cf-auth/v1/admin/tenants");
+  });
+
   it("keeps hook order stable when auth transitions from loading to signed in", async () => {
     const view = renderPage();
     expect(screen.queryByTestId("text-page-title")).not.toBeInTheDocument();

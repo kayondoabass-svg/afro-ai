@@ -74,7 +74,7 @@ export default function AfroAuthLandingPage() {
               Get started free
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <Link href="/docs/auth">Read the documentation</Link>
+              <Link href="/docs/auth#start">Follow the setup guide</Link>
             </Button>
             <Button
               size="lg"
@@ -96,7 +96,7 @@ export default function AfroAuthLandingPage() {
         <FeatureCard
           icon={<Zap className="h-6 w-6" />}
           title="Confirm email before sign-in"
-          body="Signup sends an email confirmation form, not a login token. Accounts must be verified before password login."
+          body="Signup asks the customer to confirm the address they entered. No login token is issued until they confirm and sign in."
           testId="card-feature-fast"
         />
         <FeatureCard
@@ -146,9 +146,12 @@ if (!res.ok) throw new Error(data.message || "Signup failed");
 // Never expose your sk_ key in browser code.`}
           </pre>
           <div className="flex flex-wrap gap-4 mt-6 text-sm text-primary">
-            <Link href="/docs/auth" className="hover:underline">Complete integration guide</Link>
+            <Link href="/docs/auth#start" className="hover:underline">Complete setup, from project to live session</Link>
             <a href="/openapi.json" className="hover:underline">OpenAPI specification</a>
           </div>
+          <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
+            Website ownership TXT proof, browser origins, and customer mailbox confirmation are separate steps. The guide explains what each one proves and how to test the whole flow.
+          </p>
         </div>
       </section>
 

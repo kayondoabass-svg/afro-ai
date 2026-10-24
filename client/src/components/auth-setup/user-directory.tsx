@@ -39,7 +39,7 @@ export function UserDirectory({ tenantId, active }: { tenantId: string; active: 
   });
   const sendVerification = useMutation({
     mutationFn: async (userId: string) => (await apiRequest("POST", `${path}/${encodeURIComponent(userId)}/send-verification`)).json() as Promise<{ ok: boolean; message: string }>,
-    onSuccess: async (result) => { setFeedback(result.message || "Verification email sent."); await queryClient.invalidateQueries({ queryKey: [path] }); },
+    onSuccess: async () => { setFeedback("Request acknowledged. Ask the customer to check the correct inbox and spam or junk; this response does not confirm delivery."); await queryClient.invalidateQueries({ queryKey: [path] }); },
     onError: (e) => setFeedback(readableApiError(e, "Could not send the verification email. Check the connection and try again.")),
   });
   const total = data?.total ?? 0;
@@ -102,7 +102,7 @@ export function UserDirectory({ tenantId, active }: { tenantId: string; active: 
         <p className="text-muted-foreground">Showing {offset + 1}–{end} of {total}</p>
         <div className="flex gap-2"><Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Previous</Button><Button variant="outline" size="sm" disabled={end >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</Button></div>
       </div>}
-      <p className="text-xs text-muted-foreground">Resending sends an actual confirmation email to that unverified user. Cooldown or transport limits are reported as actionable errors. Email confirmation is not the same as proving website DNS ownership.</p>
+      <p className="text-xs text-muted-foreground">A successful resend response acknowledges the request; it does not prove delivery. Check the customer's correct inbox and spam or junk, and wait at least 60 seconds before a deliberate resend. Website ownership TXT proof, email sending, and customer mailbox confirmation are separate. For platform sender failures, contact Afro Auth support; customers do not need to configure sending-domain DNS.</p>
     </CardContent>
   </Card>;
 }
