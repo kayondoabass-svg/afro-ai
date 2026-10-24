@@ -16,6 +16,7 @@ beforeEach(() => {
   vi.stubGlobal("crypto", webcrypto);
   db = sqliteD1(); db.exec(readFileSync("cloudflare/schema.sql", "utf8")); db.exec(readFileSync("cloudflare/migrations/0007_tenant_auth.sql", "utf8"));
   db.exec(readFileSync("cloudflare/migrations/0010_tenant_mail_status.sql", "utf8"));
+  db.exec(readFileSync("cloudflare/migrations/0011_confirmation_callbacks.sql", "utf8"));
   db.exec("INSERT INTO tenants (id,slug,name,owner_user_id,created_at,updated_at,setup_required) VALUES ('a','alpha','Alpha','owner',0,0,1),('b','beta','Beta','another-owner',0,0,1)");
   dnsStatus=0; dnsAvailable=true; mailAvailable=true; messages=[];
   vi.spyOn(globalThis,"fetch").mockImplementation(async (input, init) => {
@@ -38,6 +39,23 @@ async function req(path: string, body?: any, method?: string, signedIn = true) {
   }),{DB:db,JWT_SECRET:"test-only-session-signing",RESEND_API_KEY:"mock-only",APP_URL:"https://afroaigroup.com"} as any,{waitUntil(){}} as any);
 }
 const base = "/v1/admin/tenants/a";
+it("keeps backend confirmation callbacks owner-scoped and bound to verified origins",async()=>{
+  expect((await req(`${base}/confirmation-flow`,undefined,undefined,false)).status).toBe(401);
+  expect((await req("/v1/admin/tenants/b/confirmation-flow")).status).toBe(404);
+  const before=await (await req(`${base}/confirmation-flow`)).json() as any;
+  expect(before.enabled).toBe(false);
+  expect((await req(`${base}/confirmation-flow`,{callbackUrl:"https://example.com/auth/confirm"},"PATCH")).status).toBe(400);
+  await domain(true);
+  const result=await req(`${base}/confirmation-flow`,{callbackUrl:"https://example.com/auth/confirm"},"PATCH");
+  expect(result.status).toBe(200);
+  expect(await result.json()).toMatchObject({enabled:true,callbackUrl:"https://example.com/auth/confirm"});
+  for(const callbackUrl of ["https://untrusted.example/auth/confirm","https://example.com/auth/confirm?next=https://untrusted.example",
+    "https://example.com@untrusted.example/auth/confirm","https://example.com/auth/confirm#token","http://example.com/auth/confirm"])
+    expect((await req(`${base}/confirmation-flow`,{callbackUrl},"PATCH")).status).toBe(400);
+  expect((await req("/v1/admin/tenants/b/confirmation-flow",{callbackUrl:null},"PATCH")).status).toBe(404);
+  expect((await req(`${base}/confirmation-flow`,{callbackUrl:null},"PATCH")).status).toBe(200);
+  expect(db.query("SELECT id FROM users")).toHaveLength(0);
+});
 it("keeps mail diagnostics private and refreshes delivery without sending an email",async()=>{
   db.exec(`INSERT INTO tenant_mail_events VALUES
     ('attempt-a','a','user-a','verify','accepted',NULL,'provider-a',1,1),

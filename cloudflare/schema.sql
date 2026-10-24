@@ -38,6 +38,13 @@ CREATE TABLE IF NOT EXISTS tenant_domains (
 );
 CREATE INDEX IF NOT EXISTS tenant_domains_owner ON tenant_domains(tenant_id,verified_at);
 
+-- Backend confirmation is opt-in and separately configured for each customer.
+CREATE TABLE IF NOT EXISTS tenant_confirmation_config (
+  tenant_id TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  callback_url TEXT,
+  updated_at INTEGER NOT NULL
+);
+
 -- Seed the platform tenant for afroaigroup.com itself. INSERT-OR-IGNORE
 -- makes this safe to re-run; the owner_user_id stays NULL forever for the
 -- platform tenant since "afroaigroup.com" doesn't have a separate owner.

@@ -60,11 +60,26 @@ versioned routes as well as JSON API calls; retain cross-project token checks.
 
 Customer-facing Auth pages must clearly identify the customer's project and
 provide a route back to that app, including when a link was already used.
-Do not send customers to the platform dashboard or imply that confirmation
-automatically signs them in.
+Never send customers to the platform dashboard. Legacy integrations remain
+manual; automatic verified-session creation belongs to the configured customer
+backend handoff, not a cross-domain platform cookie.
 
 **Why:** The user found hosted error pages stranded their customers on Afro AI
 and made the integration appear to belong to the wrong product.
 
 **How to apply:** Use saved, validated project origins for return links; never
 forward action tokens or trust a return destination from an email URL.
+
+Backend-managed confirmation and session rotation must be available per project
+for all customers, not hard-coded to Brightboard. Initial sign-in is pending
+only; confirmation consumes that pending transaction and a one-use backend
+exchange creates a fresh verified session. Replace any explicitly identified
+previous session without logging out unrelated customers or devices.
+
+**Why:** The user explicitly requested backend-only setup, no customer-facing
+iframe, a fresh session after confirmation, and a platform-wide solution.
+
+**How to apply:** Keep API secrets on each customer's backend, validate exact
+verified callbacks, bind exchanges to state and PKCE, and require a first-party
+cookie from the customer's own server. Preserve existing integrations until
+owners enable and install the new handoff.

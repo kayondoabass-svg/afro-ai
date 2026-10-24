@@ -17,6 +17,8 @@ type Dependencies = {
   hashPassword: (password: string) => Promise<string>;
   checkThrottles: (db: any, keys: string[], now: number) => Promise<number>;
   recordThrottleFailure: (db: any, key: string, now: number) => Promise<unknown>;
+  completeConfirmation?: (c:any,t:any,verification:any)=>Promise<string|null>;
+  isBackend?: (c:any,t:any)=>Promise<boolean>;
 };
 
 export function tenantAuth(deps: Dependencies) {
@@ -53,22 +55,40 @@ export function tenantAuth(deps: Dependencies) {
     for (const key of keys) await deps.recordThrottleFailure(c.env.DB, key, now());
     return false;
   }
-  async function mail(c: any, t: any, user: any, purpose: "verify" | "reset") {
+  async function mail(c: any, t: any, user: any, purpose: "verify" | "reset", context?:any) {
     const raw = rawToken(), hash = await digest(raw);
+    if(purpose==="verify" && !context) {
+      const pending=await c.env.DB.prepare("SELECT hash FROM tenant_auth_tokens WHERE tenant_id=? AND user_id=? AND purpose='confirmation_pending' AND used_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1")
+        .bind(t.id,user.id,now()).first();
+      if(pending)context={confirmation_pending:pending.hash};
+    }
     // One statement claims issuance before delivery; retries cannot flood mail.
-    const result = await c.env.DB.prepare(`INSERT INTO tenant_auth_tokens (hash,tenant_id,user_id,purpose,expires_at,created_at)
-      SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM tenant_auth_tokens WHERE tenant_id=? AND user_id=? AND purpose=? AND created_at>?)`)
-      .bind(hash, t.id, user.id, purpose, now() + (purpose === "verify" ? 86400 : 3600), now(), t.id, user.id, purpose, now() - 60).run();
+    const result = await c.env.DB.prepare(`INSERT INTO tenant_auth_tokens (hash,tenant_id,user_id,purpose,expires_at,context,created_at)
+      SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM tenant_auth_tokens WHERE tenant_id=? AND user_id=? AND purpose=? AND created_at>?)`)
+      .bind(hash, t.id, user.id, purpose, now() + (purpose === "verify" ? 86400 : 3600), context?JSON.stringify(context):null, now(), t.id, user.id, purpose, now() - 60).run();
     if (!result.meta.changes) return {sent:false};
     const url = new URL(`/cf-auth/v1/t/${encodeURIComponent(t.slug)}/${purpose === "verify" ? "verify-email" : "reset-password"}`, c.env.APP_URL);
     url.searchParams.set("token", raw);
+    let destination=url;
+    if(purpose==="verify" && context?.confirmation_pending) {
+      const pending=await c.env.DB.prepare("SELECT context FROM tenant_auth_tokens WHERE hash=? AND tenant_id=? AND user_id=? AND purpose='confirmation_pending' AND used_at IS NULL AND expires_at>?")
+        .bind(context.confirmation_pending,t.id,user.id,now()).first();
+      const config=await c.env.DB.prepare("SELECT callback_url FROM tenant_confirmation_config WHERE tenant_id=?").bind(t.id).first();
+      const details=pending && JSON.parse(pending.context);
+      if(details?.callback && config?.callback_url===details.callback &&
+        parseTenantOrigins(t.allowed_origins).includes(new URL(details.callback).origin)) {
+        destination=new URL(details.callback);
+        destination.searchParams.set("verification_token",raw);
+        destination.searchParams.set("state",details.state);
+      }
+    }
     const action = purpose === "verify" ? "Confirm your email" : "Reset your password";
     return sendTenantMail(c.env, {
       tenantId: t.id, userId: user.id, purpose, attemptId: crypto.randomUUID(),
     }, hash, { to: user.email,
         subject: `${action} — ${t.name}`,
-        text: `${action} for ${t.name}: ${url}. ${purpose === "verify" ? "Expires in 24 hours." : "Expires in one hour."}`,
-         html: `<p>${escape(action)} for ${escape(t.name)}.</p><p><a href="${escape(url.toString())}">${escape(action)}</a></p><p>If you did not request this, ignore this email.</p>` });
+        text: `${action} for ${t.name}: ${destination}. ${purpose === "verify" ? "Expires in 24 hours." : "Expires in one hour."}`,
+         html: `<p>${escape(action)} for ${escape(t.name)}.</p><p><a href="${escape(destination.toString())}">${escape(action)}</a></p><p>If you did not request this, ignore this email.</p>` });
   }
   async function actionRow(c: any, t: any, token: string, purpose: string) {
     return c.env.DB.prepare("SELECT * FROM tenant_auth_tokens WHERE hash=? AND tenant_id=? AND purpose=? AND used_at IS NULL AND expires_at>?")
@@ -148,7 +168,9 @@ export function tenantAuth(deps: Dependencies) {
           const next = status === 200 ? `<p>Return to ${escape(t.name)} and sign in. No login session was created by this page.</p>` : "";
           return projectPage(c,t,status === 200 ? "Completed" : "Unable to continue",`<p>${escape(message)}</p>${next}`);
         };
-        if (await limited(c, t, `${purpose}-consume`)) return respond("Too many attempts. Please wait.", 429);
+        const backend=await deps.isBackend?.(c,t);
+        const action=`${purpose}-consume${backend?":"+await digest(String(body.token||"")):""}`;
+        if (await limited(c, t, action)) return respond("Too many attempts. Please wait.", 429);
         const row = await actionRow(c, t, String(body.token || ""), purpose);
         if (!row) return respond("Invalid, expired, or already used link. Request a new link.", 400);
         const ts = now();
@@ -169,6 +191,11 @@ export function tenantAuth(deps: Dependencies) {
           .bind(ts, t.id, row.user_id, row.hash, t.id, ts));
         const result = await c.env.DB.batch(statements);
         if (!result[0].meta.changes) return respond("Link already used or expired.", 400);
+        if(purpose==="verify" && deps.completeConfirmation) {
+          const destination=await deps.completeConfirmation(c,t,row);
+          if(destination) return form ? c.redirect(destination,303) :
+            c.json({ok:true,confirmationCompleted:true,redirect:destination});
+        }
         return respond(purpose === "reset" ? "Password changed. All previous sessions are logged out. Return to your app and sign in." : "Email confirmed. Return to your app and sign in.");
       });
     }
@@ -231,5 +258,5 @@ export function tenantAuth(deps: Dependencies) {
     c.header("Referrer-Policy", "no-referrer");
     return c.redirect(url.toString());
   }
-  return { issue, verify, mail, register, oauthTarget, finishOAuth };
+  return { issue, verify, mail, register, oauthTarget, finishOAuth, limited };
 }

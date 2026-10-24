@@ -7,6 +7,7 @@ import { prepareAuthOrigins, readableApiError } from "@shared/customer-api-setup
 import { DomainSetup } from "@/components/auth-setup/domain-setup";
 import { UserDirectory } from "@/components/auth-setup/user-directory";
 import { ApiUpgrade } from "@/components/auth-setup/api-upgrade";
+import { BackendConfirmationSetup } from "@/components/auth-setup/backend-confirmation-setup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -239,7 +240,7 @@ export default function AfroAuthProjectPage() {
           </Card>
         </div>
         <Card>
-          <CardHeader><CardTitle>3. Connect your website</CardTitle><CardDescription>Use the canonical project endpoint. Signup sends a confirmation link; it does not issue a session token.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>3. Connect your website</CardTitle><CardDescription>Use the canonical project endpoint. Signup creates a pending confirmation transaction, not a login session. Legacy integrations complete confirmation and then log in manually; the optional backend flow below can establish a session through your callback.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <CopyableCode text={`${projectUrl}/signup`} label="Signup endpoint" onCopy={copy} />
             <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-4 text-xs leading-relaxed"><code>{`fetch("${projectUrl}/signup", {
@@ -249,15 +250,16 @@ export default function AfroAuthProjectPage() {
 }).then(async response => {
   const data = await response.json();
   if (!response.ok) throw new Error(data.message);
-  // Show a “check your email” message. The user must confirm before login.
+              // Show a “check your email” message. Signup is not a login.
   return data;
 });`}</code></pre>
             <Alert><AlertDescription>Email confirmation is separate from DNS ownership. Afro Auth sends signup confirmation links using the platform sender. You do not need an email API key or a sending domain for customer signup confirmation.</AlertDescription></Alert>
             <p className="text-sm text-muted-foreground">
-              After signup, direct the customer to check the inbox for the address they entered, including spam or junk, and explicitly submit the confirmation form before attempting login. A successful response from a resend endpoint acknowledges the request; it is not proof the email arrived.
+              In the legacy flow, direct the customer to check their inbox (including spam or junk) and explicitly submit the confirmation form before attempting login. If the optional backend confirmation handoff below is configured, the confirmation callback can establish a fresh server session instead. A successful resend response acknowledges the request; it is not proof the email arrived.
             </p>
           </CardContent>
         </Card>
+        <BackendConfirmationSetup tenantId={id} />
         <div className="grid gap-4 lg:grid-cols-2">
           <Card><CardHeader><CardTitle>Verify sessions on your server</CardTitle><CardDescription>Keep the secret key in server-side environment variables; never expose it to browser code.</CardDescription></CardHeader><CardContent className="space-y-3">
             <CopyableCode text={`${projectUrl}/login`} label="Login endpoint" onCopy={copy} />

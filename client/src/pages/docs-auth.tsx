@@ -100,7 +100,7 @@ export default function AuthDocsPage() {
                   <p className="mt-2">When replacing a key, deploy and verify the new key while the old one is still active, then explicitly revoke the old key. A signup or email problem is not a reason to rotate keys.</p>
                 </li>
                 <li>
-                  <strong className="text-foreground">Sign up, check the inbox, and explicitly confirm.</strong> Use the exact Website API base URL displayed in this project's Setup tab; do not guess or reconstruct it. Signup requires a 12–128 character password, starts email confirmation, and does not return a login token. Tell the customer to check the inbox for the address they entered (including spam/junk), then submit the confirmation form from the message. Login is available after confirmation.
+                  <strong className="text-foreground">Sign up, check the inbox, and explicitly confirm.</strong> Use the exact Website API base URL displayed in this project's Setup tab; do not guess or reconstruct it. Signup requires a 12–128 character password, starts email confirmation, and does not return a login token. In the legacy flow, the customer checks the inbox (including spam/junk), submits the confirmation form, then logs in. An owner may separately opt in to the backend confirmation handoff in Setup; that configured callback can establish a fresh server session after confirmation.
                   <Snippet>{`// Use the exact Website API base URL shown in your project Setup tab.
 const base = "PASTE_THIS_PROJECTS_WEBSITE_API_BASE_URL";
 const response = await fetch(base + "/signup", {
@@ -113,8 +113,9 @@ if (!response.ok) {
   // Present a useful next step; do not blindly repeat signup.
   throw new Error(result.message || "Signup could not be completed");
 }
-// Show "Check your email". This response is not a login session.
-// The customer must submit the emailed confirmation form first.
+// Show "Check your email". Signup itself is never a login session.
+// Legacy: the customer confirms, then logs in. The optional backend
+// handoff instead completes through the owner's configured callback.
 
 const loginResponse = await fetch(base + "/login", {
   method: "POST",
@@ -199,12 +200,19 @@ const signup = await post("/signup", {
 });
 // signup.verificationRequired === true; no signup token.
 // Show a "Check your email" screen.
-// The user submits the emailed confirmation form before login.
+// Legacy: submit the confirmation form before login.
+// An owner-configured backend handoff can establish a session after confirm.
 
 const login = await post("/login", { email, password });
 // Keep login.token in memory or in a secure server-side session.
 // Handle expired/revoked sessions by asking the user to log in again.`}</Snippet>
               <p>A signup <code>503</code> can mean the account was created but the platform sender could not send its confirmation. Treat account creation as uncertain: do not submit signup repeatedly and do not rotate a project key. Check the customer's correct inbox and spam/junk folder; once eligible, deliberately request a resend.</p>
+            </Section>
+            <Section id="backend-confirmation" title="Optional backend confirmation handoff">
+              <p>Project owners can opt in from the project's Setup tab by supplying the exact HTTPS callback URL implemented by their own backend, on one of their verified and allowed origins. HTTP localhost is allowed only for development. Install and configure the customer backend integration before enabling it. Leaving the callback empty disables only new handoffs; it does not change legacy integrations, whose email links continue to use the hosted confirmation page.</p>
+              <p>The owner setting is <code>GET /cf-auth/v1/admin/tenants/:id/confirmation-flow</code>, which reports <code>{'{ enabled, callbackUrl, exchangeUrl }'}</code>; update it with <code>PATCH</code> and <code>{'{ callbackUrl: string | null }'}</code>. This is an owner configuration endpoint, not a customer browser endpoint.</p>
+              <p>Signup creates a pending transaction, not a login; in this mode the signup confirmation object includes state and an S256 PKCE challenge. The email link targets the registered customer callback with a verification token and state. By default the sample's GET serves a customer-owned confirmation form and does not mutate state, so link scanners cannot confirm accounts. After explicit user submission, the customer backend POSTs to Afro Auth's verify-email endpoint server-to-server. Afro Auth returns JSON shaped like <code>{'{ ok: true, confirmationCompleted: true, redirect }'}</code>, where redirect contains a one-use code and state valid for 2 minutes. The backend extracts the code, exchanges it using its server-only API secret and PKCE verifier, destroys the pending session and cookie, sets a fresh Secure, HttpOnly cookie, then redirects home.</p>
+              <p>For a customer-owned React confirmation screen, use the downloadable <code>CallbackPage.jsx</code> and configure the backend router with <code>renderCallback: false</code> so React handles callback GET while the sample continues to handle the nonce-protected POST. The React page posts only to the customer's own backend; its response sets a first-party HttpOnly cookie. This is backend-only: no iframe and no API secret or JWT in a URL or browser code. If confirmation happens on another device, the original browser is needed to finish the handoff; otherwise the customer can use normal login. Setup offers both runnable sample files for download/copy, but saving a callback configures Afro Auth only—it does not deploy or implement the customer's backend.</p>
             </Section>
             <Section id="recovery" title="Hosted confirmation & password recovery">
               <p>Email links open hosted forms. Fetching or previewing a verification link does not activate the account; confirmation requires a POST. The hosted reset form also requires submission. For your own forms, JSON POST accepts a verification <code>token</code>, or a reset <code>token</code> and <code>password</code>.</p>

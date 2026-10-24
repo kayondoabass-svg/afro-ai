@@ -21,6 +21,7 @@ import { deviceLabel, resetPasswordUrl, resetStatements } from '../../shared/dev
 import { PLATFORM_ISSUER, PLATFORM_AUDIENCE, PLATFORM_PURPOSE, verifyPlatformSession } from '../../shared/platform-session';
 import bcrypt from 'bcryptjs';
 import { tenantAuth } from './tenant-auth';
+import { tenantConfirmationFlow } from './tenant-confirmation-flow';
 import { registerTenantSetup, tenantSetup, tenantIsActive } from './tenant-project-setup';
 import { registerTenantApiUpgrade } from './tenant-api-upgrade';
 import { registerTenantMailStatus, checkTenantMailHealth } from './tenant-mail-status';
@@ -61,7 +62,14 @@ interface Env {
 const root = new Hono<{ Bindings: Env }>();
 const app = root.basePath('/cf-auth');
 const enc = new TextEncoder();
-const tenantSecurity = tenantAuth({ hashPassword, checkThrottles, recordThrottleFailure });
+const tenantSecurity = tenantAuth({ hashPassword, checkThrottles, recordThrottleFailure,
+  completeConfirmation:(c,t,row)=>confirmationFlow.complete(c,t,row),
+  isBackend:async(c,t)=>(await authenticateBySecretKey(c))?.id===t.id });
+const confirmationFlow = tenantConfirmationFlow({
+  authenticate:authenticateBySecretKey,ownedTenant:ownedTenantOr401,
+  issue:tenantSecurity.issue,verify:tenantSecurity.verify,
+  mail:tenantSecurity.mail,limited:tenantSecurity.limited,checkPassword:verifyPassword,
+});
 
 /* ------------------------------ CORS ------------------------------ */
 app.use('/*', async (c, next) => {
@@ -1801,6 +1809,7 @@ app.get('/v1/users/:id', async (c) => {
 
 /* --------------------------- Public tenant API (slug) --------------------------- */
 tenantSecurity.register(app);
+confirmationFlow.register(app);
 
 app.post('/t/:slug/signup', async (c) => {
   const tenant = await findTenantBySlug(c.env.DB, c.req.param('slug'));
@@ -1817,11 +1826,15 @@ app.post('/t/:slug/signup', async (c) => {
 
   if (!isValidEmail(email)) return c.json({ message: 'Please enter a valid email.' }, 400);
   if (password.length < 12 || password.length > 128) return c.json({ message: 'Password must be 12–128 characters.' }, 400);
+  const confirmation = await confirmationFlow.prepare(c,tenant,body);
+  if(confirmation instanceof Response)return confirmation;
 
   // Per-tenant + per-IP throttle
   const ip = c.req.header('CF-Connecting-IP') || 'unknown';
   const now = nowSec();
-  const ipKey = `tsignup:${tenant.id}:ip:${ip}`;
+  // Authenticated customer backends share one egress IP for all visitors.
+  // Keep anonymous IP limits, but scope trusted backend signup to the email.
+  const ipKey = confirmation ? `tsignup:${tenant.id}:backend-email:${email}` : `tsignup:${tenant.id}:ip:${ip}`;
   const emailKey = `tsignup:${tenant.id}:email:${email}`;
   const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
   if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_signup');
@@ -1858,10 +1871,12 @@ app.post('/t/:slug/signup', async (c) => {
     .run();
   await recordTenantMau(c.env.DB, tenant.id, id, now);
 
-  try { await tenantSecurity.mail(c, tenant, { id, email }, 'verify'); }
+  const pending=await confirmationFlow.start(c,tenant,id,confirmation);
+  try { await tenantSecurity.mail(c, tenant, { id, email }, 'verify',pending?.mailContext); }
   catch { return c.json({ code: 'verification_delivery_failed', message: 'Account created, but verification delivery failed. Request another verification email after one minute.' }, 503); }
   return c.json({
     verificationRequired: true,
+    ...(pending ? {pendingId:pending.pendingId} : {}),
     user: { id, email, firstName, lastName, email_verified: 0 },
   });
 });
