@@ -34,6 +34,6 @@ Customer API upgrades must be optional and preserve saved client accounts. The u
 
 Investigate tenant-auth email delivery in the deployed authentication Worker separately from mail sent by the main application.
 
-**Why:** Working main-app email and a verified sender domain did not establish that the separately configured Worker's confirmation-email transport was working. A saved unverified account or token was not delivery evidence.
+**Why:** The Worker's mail credential was rejected with HTTP 401 while the workspace credential and sender domain worked. These deployments have independent secrets. A saved unverified account or token was not delivery evidence.
 
 **How to apply:** Correlate the failed tenant request with Worker logs and provider acceptance/delivery events. A bound secret name proves presence, not validity; a working workspace credential does not prove the Worker uses it. Preserve existing test accounts and do not repeatedly resend or rotate customer keys to diagnose an outbound-mail failure.

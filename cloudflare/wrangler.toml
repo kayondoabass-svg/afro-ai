@@ -29,6 +29,9 @@ crons = ["0 * * * *"]
 # Secrets are NOT committed here. Set them via:
 #   npx wrangler secret put JWT_SECRET
 #   npx wrangler secret put TURNSTILE_SECRET_KEY
+#   npx wrangler secret put RESEND_API_KEY           # required for tenant confirmation/recovery mail
+# MAIL_FROM is optional; the default sender is noreply@afroaigroup.com.
+# Worker secrets are separate from the Express/Replit runtime configuration.
 #   npx wrangler secret put INTERNAL_EMAIL_SECRET    # shared with Express /api/internal/send-email
 #   npx wrangler secret put EXPRESS_BASE_URL         # optional, defaults to APP_URL
 #   npx wrangler secret put GOOGLE_CLIENT_ID          # optional, for OAuth pass 2

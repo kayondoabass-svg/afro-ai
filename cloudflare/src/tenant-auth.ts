@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { parseTenantOrigins, validTenantOrigin } from "../../shared/tenant-origins";
 import { tenantIsActive } from "./tenant-project-setup";
+import { sendTenantMail } from "./tenant-mail";
 
 const issuer = "https://afroaigroup.com/cf-auth";
 const now = () => Math.floor(Date.now() / 1000);
@@ -59,19 +60,15 @@ export function tenantAuth(deps: Dependencies) {
       SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM tenant_auth_tokens WHERE tenant_id=? AND user_id=? AND purpose=? AND created_at>?)`)
       .bind(hash, t.id, user.id, purpose, now() + (purpose === "verify" ? 86400 : 3600), now(), t.id, user.id, purpose, now() - 60).run();
     if (!result.meta.changes) return {sent:false};
-    if (!c.env.RESEND_API_KEY) throw new Error("Email transport unavailable");
     const url = new URL(`/cf-auth/v1/t/${encodeURIComponent(t.slug)}/${purpose === "verify" ? "verify-email" : "reset-password"}`, c.env.APP_URL);
     url.searchParams.set("token", raw);
     const action = purpose === "verify" ? "Confirm your email" : "Reset your password";
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST", headers: { Authorization: `Bearer ${c.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: c.env.MAIL_FROM || "Afro AI <noreply@afroaigroup.com>", to: user.email,
+    return sendTenantMail(c.env, {
+      tenantId: t.id, userId: user.id, purpose, attemptId: crypto.randomUUID(),
+    }, hash, { to: user.email,
         subject: `${action} — ${t.name}`,
         text: `${action} for ${t.name}: ${url}. ${purpose === "verify" ? "Expires in 24 hours." : "Expires in one hour."}`,
-        html: `<p>${escape(action)} for ${escape(t.name)}.</p><p><a href="${escape(url.toString())}">${escape(action)}</a></p><p>If you did not request this, ignore this email.</p>` }),
-    });
-    if (!response.ok) throw new Error("Email delivery failed");
-    return {sent:true};
+         html: `<p>${escape(action)} for ${escape(t.name)}.</p><p><a href="${escape(url.toString())}">${escape(action)}</a></p><p>If you did not request this, ignore this email.</p>` });
   }
   async function actionRow(c: any, t: any, token: string, purpose: string) {
     return c.env.DB.prepare("SELECT * FROM tenant_auth_tokens WHERE hash=? AND tenant_id=? AND purpose=? AND used_at IS NULL AND expires_at>?")
