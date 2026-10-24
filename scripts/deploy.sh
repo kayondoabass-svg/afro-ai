@@ -174,19 +174,27 @@ restart_service() {
 }
 
 health_check() {
-  local attempts=5
+  # A successful build can take more than the old ~13-second probe window
+  # to start on the small VPS. Bound startup by elapsed time, not attempts.
+  local deadline=$((SECONDS + 60))
   local i=1
-  while [ $i -le $attempts ]; do
-    local code
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$HEALTH_URL" 2>/dev/null || echo "000")
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    local code remaining request_timeout
+    remaining=$((deadline - SECONDS))
+    request_timeout=$remaining
+    [ "$request_timeout" -le 5 ] || request_timeout=5
+    code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout "$request_timeout" --max-time "$request_timeout" "$HEALTH_URL" 2>/dev/null) || code="000"
     if [ "$code" = "200" ] || [ "$code" = "204" ]; then
       log "Health check OK on attempt $i ($code)"
       return 0
     fi
-    log "Health check attempt $i/$attempts: HTTP $code"
-    sleep 2
+    log "Health check attempt $i (60s startup window): HTTP $code"
+    remaining=$((deadline - SECONDS))
+    [ "$remaining" -gt 0 ] || break
+    if [ "$remaining" -ge 2 ]; then sleep 2; else sleep "$remaining"; fi
     i=$((i + 1))
   done
+  log "Health check timed out after 60s"
   return 1
 }
 

@@ -70,3 +70,9 @@ the output mode, while the application error file held the deployment failure.
 **How to apply:** When the journal is empty, inspect the running process's
 standard-output/error file targets and read bounded, redacted log excerpts.
 Do not interpret an empty journal as evidence that startup succeeded.
+
+Treat a deploy-time health timeout separately from an application crash, and allow a bounded startup grace period before rollback.
+
+**Why:** On the small production VPS, a healthy new process became ready just after the old five-probe window ended. The deployment script stopped it for rollback despite no crash or systemd restart.
+
+**How to apply:** Correlate readiness timestamps with probe attempts and process exits. Keep the startup deadline, short bounded HTTP probes, automatic recovery and post-start stability checks; do not bypass health checks to make a release pass.
