@@ -215,7 +215,7 @@ export default function PricingPage() {
                     </div>
                     <div>
                       <h3 className="font-semibold flex items-center gap-2">Email API <Badge variant="outline" className="text-[10px]">Free tier</Badge></h3>
-                      <p className="text-xs text-muted-foreground">Free / $9 / $29</p>
+                      <p className="text-xs text-muted-foreground">Free / $15 / $25</p>
                     </div>
                   </div>
                   <p className="text-sm text-muted-foreground">Transactional email at half the price of Resend or SendGrid. Built for African senders.</p>

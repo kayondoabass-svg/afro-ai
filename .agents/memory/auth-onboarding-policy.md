@@ -1,3 +1,18 @@
+Auth branding is a paid product capability for all customers, not a Brightboard-only
+customisation. Keep Auth subscriptions distinct from app-builder plans, credit
+purchases and Email API quotas. Preserve the advertised Starter/Builder/Business/
+Scale prices rather than inventing a new billing catalogue.
+
+**Why:** The founder approved package-dependent branding and supplied screenshots
+of the existing Auth prices. Their own Business account must retain full access
+without a customer payment.
+
+**How to apply:** Security and callback/session exchange stay available on every
+tier. Expiry must fall back to working standard confirmation/recovery mail,
+retain saved branding, and never delete customer accounts, keys or sessions.
+Auth access applies owner-wide to the package's app allowance; do not market
+prepaid access as automatic recurring billing.
+
 ---
 name: Auth onboarding policy
 description: DNS proof, mailbox proof, storage isolation and non-breaking credential rollout.

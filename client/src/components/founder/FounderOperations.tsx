@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowUpRight, ChevronLeft, ChevronRight, CircleAlert, Database, ExternalLink, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -7,10 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+const FounderAuthBranding = lazy(() => import("@/components/founder-auth-branding").then(module => ({ default: module.FounderAuthBranding })));
+
 export const FOUNDER_SECTIONS = [
   ["users", "Users"], ["projects", "Projects"], ["apps", "Apps"], ["domains", "Domains"],
   ["chatbots", "Chatbots"], ["email-projects", "Email projects"], ["email-domains", "Email domains"],
   ["email-keys", "Email keys"], ["email-logs", "Email logs"], ["auth-projects", "Auth projects"],
+  ["auth-branding", "Auth branding"], ["auth-branding-mail", "Auth mail delivery"], ["auth-branding-audit", "Auth branding audit"],
   ["auth-users", "Auth users"], ["auth-domains", "Auth domains"], ["auth-keys", "Auth keys"],
   ["ussd", "USSD"], ["marketplace", "Marketplace"], ["blog", "Blog"], ["subscribers", "Subscribers"],
   ["files", "Files"], ["forms", "Forms"], ["webhooks", "Webhooks"], ["payments", "Payments"], ["audit", "Founder action history"],
@@ -91,6 +94,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
   const [status, setStatus] = useState("");
   const [owner, setOwner] = useState(initialOwner || "");
   const [id, setId] = useState(initialId || "");
+  const [authBrandingRecordId, setAuthBrandingRecordId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const overviewQuery = useQuery<Overview>({ queryKey: ["/api/founder/overview"], enabled: isFounder, refetchInterval: 60_000 });
   const params = new URLSearchParams();
@@ -120,6 +124,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
       setStatus(initialStatus || "");
       setOwner(initialOwner || "");
       setId(initialId || "");
+      setAuthBrandingRecordId(null);
       setPage(1);
     }
   }, [initialSection, initialStatus, initialOwner, initialId]);
@@ -129,6 +134,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
     setStatus("");
     setOwner("");
     setId("");
+    setAuthBrandingRecordId(null);
     setSearch("");
     setPage(1);
     onClearSection?.();
@@ -140,6 +146,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
     setStatus("");
     setOwner("");
     setId(recordId);
+    setAuthBrandingRecordId(null);
     setPage(1);
     onClearSection?.();
     document.getElementById("founder-records")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
@@ -179,7 +186,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
     return displayValue(rawValue);
   };
   const rowLiveHref = (row: Record<string, unknown>) => section === "apps" ? safeFounderAppHref(row) : null;
-  const changeFilter = (setter: (value: string) => void, value: string) => { setter(value); setPage(1); };
+  const changeFilter = (setter: (value: string) => void, value: string) => { setter(value); setPage(1); setAuthBrandingRecordId(null); };
 
   if (!isFounder) return null;
   return (
@@ -280,7 +287,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
         <CardHeader className="border-b border-border/60 pb-4">
           <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
             <div><p className="text-xs font-semibold uppercase tracking-wider text-primary">Founder records</p><CardTitle className="mt-1 text-lg">{recordsQuery.data?.label || sectionName}</CardTitle><CardDescription>Read-only operational view. Customer credentials and secret values are not exposed.</CardDescription></div>
-            <div className="flex items-center gap-2"><Button size="sm" variant="outline" onClick={() => recordsQuery.refetch()} disabled={recordsQuery.isFetching}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${recordsQuery.isFetching ? "animate-spin" : ""}`} />Retry</Button><Button size="sm" variant="ghost" onClick={() => { setSection(null); setSearch(""); setStatus(""); setOwner(""); setId(""); setPage(1); onClearSection?.(); }}>Close records</Button></div>
+            <div className="flex items-center gap-2"><Button size="sm" variant="outline" onClick={() => recordsQuery.refetch()} disabled={recordsQuery.isFetching}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${recordsQuery.isFetching ? "animate-spin" : ""}`} />Retry</Button><Button size="sm" variant="ghost" onClick={() => { setSection(null); setSearch(""); setStatus(""); setOwner(""); setId(""); setAuthBrandingRecordId(null); setPage(1); onClearSection?.(); }}>Close records</Button></div>
           </div>
           <div className="grid gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-4">
             <label className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input aria-label="Search records" value={search} onChange={event => changeFilter(setSearch, event.target.value)} placeholder="Search records" className="pl-9" /></label>
@@ -308,6 +315,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
                       <td className="whitespace-nowrap px-4 py-3 align-top">
                         <div className="flex items-center gap-2">
                           {recordId !== "—" && <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => openRelatedRecord(section, recordId)} aria-label={`View details for record ${recordId}`}>View details</Button>}
+                          {(section === "auth-projects" || section === "auth-branding") && recordId !== "—" && <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setAuthBrandingRecordId(recordId)} aria-label={`View Auth branding for project ${recordId}`}>Branding</Button>}
                           {liveHref && <a href={liveHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Live site<ExternalLink className="h-3 w-3" /></a>}
                         </div>
                       </td>
@@ -323,6 +331,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
             </> : <p className="p-6 text-sm text-muted-foreground">No records response received.</p>}
         </CardContent>
       </Card>}
+      {(section === "auth-projects" || section === "auth-branding") && authBrandingRecordId && <Suspense fallback={<div className="rounded-lg border p-4 text-sm text-muted-foreground">Loading Auth branding record…</div>}><FounderAuthBranding projectId={authBrandingRecordId} /></Suspense>}
     </section>
   );
 }

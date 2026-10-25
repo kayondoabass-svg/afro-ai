@@ -1,5 +1,7 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
 import { registerFounderOversight } from "./founder-oversight";
+import { registerAuthBranding, ownedAuthProject, syncAuthEntitlement } from "./auth-branding";
+import { AUTH_PACKAGES } from "../shared/auth-packages";
 import { registerProgrammeRoutes, programmeError } from "./programmes/routes";
 import { submitApplication, review as reviewProgramme, manualPayout } from "./programmes/actions";
 import { creditProgrammePayment, trackProgrammeClick } from "./programmes/billing";
@@ -2194,9 +2196,11 @@ export async function registerRoutes(
     }
   });
 
+  registerAuthBranding(app, isAuthenticated);
   let cachedIpnId: string | null = null;
 
-  const PLAN_PRICES_USD: Record<string, number> = { pro: 15, business: 29.90, "chatbot-starter": 19, "chatbot-business": 49, "chatbot-agency": 99, "ussd-starter": 29, "ussd-growth": 79, "ussd-enterprise": 199 };
+  const PLAN_PRICES_USD: Record<string, number> = { pro: 15, business: 29.90, "chatbot-starter": 19, "chatbot-business": 49, "chatbot-agency": 99, "ussd-starter": 29, "ussd-growth": 79, "ussd-enterprise": 199,
+    ...Object.fromEntries(AUTH_PACKAGES.filter(p=>p.usd>0).map(p=>[`auth-${p.key}`,p.usd])) };
   const CHATBOT_PLAN_CONFIG: Record<string, { repliesLimit: number; botsLimit: number }> = {
     "chatbot-starter":  { repliesLimit: 1000,  botsLimit: 1 },
     "chatbot-business": { repliesLimit: 5000,  botsLimit: 5 },
@@ -2221,9 +2225,15 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Plan is required" });
       }
 
-      const validPlans = ["pro", "business", "chatbot-starter", "chatbot-business", "chatbot-agency"];
+      const validPlans = ["pro", "business", "chatbot-starter", "chatbot-business", "chatbot-agency","auth-builder","auth-business","auth-scale"];
       if (!validPlans.includes(plan)) {
         return res.status(400).json({ message: "Invalid plan" });
+      }
+      let authProject: Awaited<ReturnType<typeof ownedAuthProject>> | null = null;
+      if (plan.startsWith("auth-")) {
+        if (typeof req.body.projectId !== "string") return res.status(400).json({message:"Choose your Auth project before purchasing."});
+        try { authProject = await ownedAuthProject(userId, req.body.projectId); }
+        catch { return res.status(404).json({message:"Auth project not found."}); }
       }
 
       const userEmail = req.user.claims.email || req.user.claims.preferred_username;
@@ -2258,7 +2268,8 @@ export async function registerRoutes(
 
       const merchantReference = `${plan}-${userId}-${crypto.randomBytes(4).toString("hex")}`;
       const payment = await storage.createPayment({
-        userId, plan, amount: amount.toString(), currency, merchantReference, status: "pending", purchaseDetails: purchaseDetails(plan),
+        userId, plan, amount: amount.toString(), currency, merchantReference, status: "pending",
+        purchaseDetails: authProject ? {...purchaseDetails(plan)!,projectId:authProject.id,projectName:authProject.name} : purchaseDetails(plan),
       });
 
       console.log(`[Subscribe] Plan=${plan} countryCode=${countryCode || "none"} amount=${amount} currency=${currency} usdAmount=${usdAmount}`);
@@ -2403,6 +2414,11 @@ export async function registerRoutes(
 
   async function processCompletedPayment(merchantRef: string, status: any, trackingId: string) {
     const settled = await settlePayment(pool, merchantRef, trackingId, status, isFounderEmail);
+    if (String(settled.payment.plan).startsWith("auth-")) {
+      // Completion is durable in PostgreSQL. Do not report active/send a receipt
+      // until the Auth Worker can enforce the newly purchased entitlement.
+      await syncAuthEntitlement(settled.payment.user_id);
+    }
     if (settled.payment.plan === "domain-registration") {
       try { await completeDomainRegistration(settled.payment.purchase_details.domainOrderId, settled.payment.user_id); }
       catch (error) {
@@ -2474,11 +2490,16 @@ export async function registerRoutes(
   registerPaymentCheckoutStatus(app, isAuthenticated, {
     getPayment: id => storage.getPaymentById(id),
     resumeCompleted: async payment => {
+      if (payment.purchaseDetails?.category === "auth") return true;
       if (payment.purchaseDetails?.category !== "domain") return false;
       const domain = await storage.getDomainOrder(payment.purchaseDetails.domainOrderId);
       return !!domain && domain.userId === payment.userId && domain.status === "pending_payment";
     },
     fulfilmentStatus: async payment => {
+      if (payment.purchaseDetails?.category === "auth") {
+        if (payment.status!=="completed") return "pending";
+        try { await syncAuthEntitlement(payment.userId); return "active"; } catch { return "activation_pending"; }
+      }
       if (payment.purchaseDetails?.category !== "domain") return payment.status === "completed" ? "active" : "pending";
       const domain = await storage.getDomainOrder(payment.purchaseDetails.domainOrderId);
       return domain && domain.userId === payment.userId ? domain.status : "review";

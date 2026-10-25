@@ -11,6 +11,7 @@ function section(label: string, table: string, keys: string[], status?: string):
   return {label, source:base(table), fields:Object.fromEntries(keys.map(k=>[k,text(k)])),status};
 }
 export const founderSections: Record<string,RecordSection> = {
+  "auth-branding-audit":section("Auth branding audit","auth_branding_audit",["id","actor_id","owner_id","project_id","action","metadata","created_at"],"action"),
   users:section("Users","users",["id","email","first_name","last_name","plan","email_verified","created_at"],"plan"),
   projects:section("Projects","projects",["id","user_id","name","type","status","created_at"],"status"),
   apps:{label:"Published apps",source:`SELECT to_jsonb(a) || jsonb_build_object('project_ids',

@@ -21,6 +21,8 @@ import { pool } from "./db";
 import { prepareIntegrationSchema } from "./integration-schema-readiness";
 import { isTrustedPlatformOrigin } from "./platform-origins";
 import { preparePaymentSchema } from "./payment-schema";
+import { prepareAuthBrandingSchema } from "./auth-branding-schema";
+import { reconcileAuthEntitlements } from "./auth-branding";
 import { privateResponseCache } from "./private-response-cache";
 import { prepareFounderAlerts, startFounderAlertMonitor } from "./founder-alerts";
 import { prepareProgrammes } from "./programmes/schema";
@@ -196,12 +198,17 @@ httpServer.listen(
   await prepareProgrammes();
   log("✓ Integration schema ready");
   await preparePaymentSchema(pool);
+  await prepareAuthBrandingSchema(pool);
   await registerRoutes(httpServer, app);
   markRoutesReady();
   startFounderAlertMonitor(founderOverview);
   startProgrammeMailWorker();
   startProgrammeReconciliation();
   log("✓ Routes ready — accepting traffic");
+  // Retry expiring, idempotent mirrors after a process/network interruption.
+  const reconcileBranding = () => reconcileAuthEntitlements().catch(() => console.error("[auth-branding] Entitlement reconciliation pending"));
+  void reconcileBranding();
+  setInterval(reconcileBranding, 5 * 60_000).unref();
 
   // Start daily cleanup job that trims old chatbot conversations per plan retention
   const { startChatbotRetentionJob } = await import("./chatbot-retention");

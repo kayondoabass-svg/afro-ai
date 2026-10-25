@@ -63,6 +63,18 @@ export async function settlePayment(pool: Pick<Pool, "connect">, merchantRef: st
           await conn.query("RELEASE SAVEPOINT credit_reminder");
         } catch { await conn.query("ROLLBACK TO SAVEPOINT credit_reminder"); }
       }
+    } else if (["auth-builder","auth-business","auth-scale"].includes(plan)) {
+      if (payment.purchase_details?.category!=="auth" || typeof payment.purchase_details.projectId!=="string")
+        throw new Error("Auth purchase is missing its project association.");
+      const tier=plan.slice(5);
+      // Access is prepaid for 30 days; there is no automatic recurring debit.
+      // Same-tier renewals extend, package switches begin a new period.
+      await conn.query(`INSERT INTO auth_branding_subscriptions(user_id,plan,source,expires_at,payment_id)
+        VALUES($1,$2,'payment',NOW()+INTERVAL '30 days',$3)
+        ON CONFLICT(user_id) DO UPDATE SET plan=excluded.plan,source='payment',
+        expires_at=CASE WHEN auth_branding_subscriptions.plan=excluded.plan AND auth_branding_subscriptions.source='payment'
+          THEN GREATEST(auth_branding_subscriptions.expires_at,NOW()) ELSE NOW() END + INTERVAL '30 days',
+        payment_id=excluded.payment_id,updated_at=NOW()`,[payment.user_id,tier,payment.id]);
     } else if (["chatbot-starter", "chatbot-business", "chatbot-agency"].includes(plan)) {
       const [replies, bots] = plan === "chatbot-starter" ? [1000, 1] : plan === "chatbot-business" ? [5000, 5] : [20000, -1];
       const updated = await conn.query(`UPDATE chatbot_subscriptions SET plan=$2,replies_limit=$3,bots_limit=$4,

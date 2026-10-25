@@ -22,6 +22,8 @@ import { PLATFORM_ISSUER, PLATFORM_AUDIENCE, PLATFORM_PURPOSE, verifyPlatformSes
 import bcrypt from 'bcryptjs';
 import { tenantAuth } from './tenant-auth';
 import { tenantConfirmationFlow } from './tenant-confirmation-flow';
+import { tenantBrandingEntitlement } from './tenant-email-branding';
+import { authPackage } from '../../shared/auth-packages';
 import { registerTenantSetup, tenantSetup, tenantIsActive } from './tenant-project-setup';
 import { registerTenantApiUpgrade } from './tenant-api-upgrade';
 import { registerTenantMailStatus, checkTenantMailHealth } from './tenant-mail-status';
@@ -1567,6 +1569,13 @@ app.post('/v1/admin/tenants', async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
   const name = String(body.name || '').trim().slice(0, 80);
   if (!name) return c.json({ message: 'Project name is required.' }, 400);
+  const entitlement = await tenantBrandingEntitlement(c.env.DB,{owner_user_id:platformUser.id});
+  if (entitlement.source!=="free" && entitlement.source!=="founder") {
+    const cap=authPackage(entitlement.plan).apps;
+    const count=await c.env.DB.prepare("SELECT count(*) n FROM tenants WHERE owner_user_id=? AND id<>'platform'").bind(platformUser.id).first<{n:number}>();
+    if (cap>0 && (count?.n||0)>=cap)
+      return c.json({message:"Your Auth package's app allowance is reached. Existing apps remain available; upgrade before adding another.",code:"auth_app_limit"},402);
+  }
 
   const id = genId('tnt_');
   const slug = genSlug(name);
@@ -1587,7 +1596,8 @@ app.get('/v1/admin/tenants', async (c) => {
   )
     .bind(platformUser.id)
     .all<{ id: string; slug: string; name: string; plan: string; created_at: number }>();
-  return c.json({ tenants: rows.results || [] });
+  const entitlement=await tenantBrandingEntitlement(c.env.DB,{owner_user_id:platformUser.id});
+  return c.json({ tenants: (rows.results || []).map(row=>({...row,plan:entitlement.present ? entitlement.plan : row.plan})) });
 });
 
 /** Helper used by all per-tenant admin routes to enforce ownership. */
@@ -1618,6 +1628,8 @@ app.get('/v1/admin/tenants/:id', async (c) => {
   if (r instanceof Response) return r;
   const now = nowSec();
   const mau = await getTenantMauThisMonth(c.env.DB, r.id, now);
+  const entitlement = await tenantBrandingEntitlement(c.env.DB,r);
+  const effectivePlan = !entitlement.present ? r.plan : entitlement.plan;
   const userCount = await c.env.DB.prepare(
     'SELECT COUNT(*) AS n FROM users WHERE tenant_id = ?',
   )
@@ -1629,10 +1641,10 @@ app.get('/v1/admin/tenants/:id', async (c) => {
     .bind(r.id)
     .all();
   return c.json({
-    tenant: r,
+    tenant: {...r,plan:effectivePlan},
     stats: {
       mau,
-      mauLimit: PLAN_MAU_LIMITS[r.plan] || PLAN_MAU_LIMITS.free,
+      mauLimit: PLAN_MAU_LIMITS[effectivePlan] || PLAN_MAU_LIMITS.free,
       totalUsers: userCount?.n || 0,
     },
     keys: keys.results || [],
@@ -1842,7 +1854,9 @@ app.post('/t/:slug/signup', async (c) => {
   await recordThrottleFailure(c.env.DB, emailKey, now);
 
   // MAU enforcement before creating new accounts
-  const mauLimit = PLAN_MAU_LIMITS[tenant.plan] || PLAN_MAU_LIMITS.free;
+  const entitlement = await tenantBrandingEntitlement(c.env.DB,tenant);
+  const effectivePlan = !entitlement.present ? tenant.plan : entitlement.plan;
+  const mauLimit = PLAN_MAU_LIMITS[effectivePlan] || PLAN_MAU_LIMITS.free;
   const currentMau = await getTenantMauThisMonth(c.env.DB, tenant.id, now);
   if (currentMau >= mauLimit) {
     return c.json(

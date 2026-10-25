@@ -8,6 +8,7 @@ import { DomainSetup } from "@/components/auth-setup/domain-setup";
 import { UserDirectory } from "@/components/auth-setup/user-directory";
 import { ApiUpgrade } from "@/components/auth-setup/api-upgrade";
 import { BackendConfirmationSetup } from "@/components/auth-setup/backend-confirmation-setup";
+import { EmailBrandingSetup } from "@/components/auth-setup/email-branding-setup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, AlertTriangle, Check, CircleAlert, Copy, Download, KeyRound, Plus, RefreshCw, Settings, Users } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Check, CircleAlert, Copy, Download, KeyRound, Mail, Plus, RefreshCw, Settings, Users } from "lucide-react";
 
 interface TenantDetail {
   tenant: {
@@ -190,11 +191,12 @@ export default function AfroAuthProjectPage() {
     </Alert>
 
     <Tabs value={activeTab} onValueChange={setActiveTab}>
-      <TabsList className="mb-2 grid h-auto w-full grid-cols-4 p-1 sm:inline-flex sm:w-auto">
-        <TabsTrigger value="quickstart" data-testid="tab-quickstart">Setup</TabsTrigger>
-        <TabsTrigger value="keys" data-testid="tab-keys"><KeyRound className="mr-1.5 hidden h-4 w-4 sm:inline" />API keys</TabsTrigger>
-        <TabsTrigger value="users" data-testid="tab-users"><Users className="mr-1.5 hidden h-4 w-4 sm:inline" />Users</TabsTrigger>
-        <TabsTrigger value="settings" data-testid="tab-settings"><Settings className="mr-1.5 hidden h-4 w-4 sm:inline" />Settings</TabsTrigger>
+      <TabsList className="mb-2 flex h-auto w-full flex-nowrap justify-start overflow-x-auto p-1 sm:inline-flex sm:w-auto">
+        <TabsTrigger className="shrink-0 px-2 sm:px-3" value="quickstart" data-testid="tab-quickstart">Setup</TabsTrigger>
+        <TabsTrigger className="shrink-0 px-2 sm:px-3" value="keys" data-testid="tab-keys"><KeyRound className="mr-1.5 hidden h-4 w-4 sm:inline" />API keys</TabsTrigger>
+        <TabsTrigger className="shrink-0 px-2 sm:px-3" value="users" data-testid="tab-users"><Users className="mr-1.5 hidden h-4 w-4 sm:inline" />Users</TabsTrigger>
+        <TabsTrigger className="shrink-0 px-2 sm:px-3" value="branding" data-testid="tab-branding"><Mail className="mr-1.5 hidden h-4 w-4 sm:inline" />Branding</TabsTrigger>
+        <TabsTrigger className="shrink-0 px-2 sm:px-3" value="settings" data-testid="tab-settings"><Settings className="mr-1.5 hidden h-4 w-4 sm:inline" />Settings</TabsTrigger>
       </TabsList>
       <TabsContent value="quickstart" className="mt-4 space-y-5">
         <Card className="border-primary/20 bg-primary/[0.035]">
@@ -335,6 +337,9 @@ return result.user;`}</code></pre>
 
       <TabsContent value="users" className="mt-4">
         <UserDirectory tenantId={id} active={activeTab === "users"} />
+      </TabsContent>
+      <TabsContent value="branding" className="mt-4">
+        <EmailBrandingSetup projectId={id} />
       </TabsContent>
       <TabsContent value="settings" className="mt-4">
         <SettingsForm tenant={t} onSave={renameMutation.mutate} saving={renameMutation.isPending} />

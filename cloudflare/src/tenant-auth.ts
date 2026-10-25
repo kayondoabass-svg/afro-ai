@@ -2,6 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { parseTenantOrigins, validTenantOrigin } from "../../shared/tenant-origins";
 import { tenantIsActive } from "./tenant-project-setup";
 import { sendTenantMail } from "./tenant-mail";
+import { brandedTenantEmail } from "./tenant-email-branding";
 
 const issuer = "https://afroaigroup.com/cf-auth";
 const now = () => Math.floor(Date.now() / 1000);
@@ -82,13 +83,10 @@ export function tenantAuth(deps: Dependencies) {
         destination.searchParams.set("state",details.state);
       }
     }
-    const action = purpose === "verify" ? "Confirm your email" : "Reset your password";
+    const message = await brandedTenantEmail(c.env,t,purpose,destination.toString());
     return sendTenantMail(c.env, {
       tenantId: t.id, userId: user.id, purpose, attemptId: crypto.randomUUID(),
-    }, hash, { to: user.email,
-        subject: `${action} — ${t.name}`,
-        text: `${action} for ${t.name}: ${destination}. ${purpose === "verify" ? "Expires in 24 hours." : "Expires in one hour."}`,
-         html: `<p>${escape(action)} for ${escape(t.name)}.</p><p><a href="${escape(destination.toString())}">${escape(action)}</a></p><p>If you did not request this, ignore this email.</p>` });
+    }, hash, { ...message, to: user.email });
   }
   async function actionRow(c: any, t: any, token: string, purpose: string) {
     return c.env.DB.prepare("SELECT * FROM tenant_auth_tokens WHERE hash=? AND tenant_id=? AND purpose=? AND used_at IS NULL AND expires_at>?")

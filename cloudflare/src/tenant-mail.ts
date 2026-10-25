@@ -28,7 +28,7 @@ export async function sendTenantMail(
   env: { RESEND_API_KEY?: string; MAIL_FROM?: string; DB?: any },
   context: MailContext,
   tokenHash: string,
-  message: { to: string; subject: string; text: string; html: string },
+  message: { to: string; subject: string; text: string; html: string; from?: string; replyTo?: string },
 ) {
   const persist = async(fields:any) => {
     record(context,fields);
@@ -48,7 +48,9 @@ export async function sendTenantMail(
         "Content-Type": "application/json",
         "Idempotency-Key": `tenant-auth/${tokenHash}`,
       },
-      body: JSON.stringify({ from: env.MAIL_FROM || "Afro AI <noreply@afroaigroup.com>", ...message }),
+      body: JSON.stringify({ from: message.from || env.MAIL_FROM || "Afro AI <noreply@afroaigroup.com>",
+        to:message.to,subject:message.subject,text:message.text,html:message.html,
+        ...(message.replyTo ? {reply_to:message.replyTo} : {}) }),
       signal: AbortSignal.timeout(15_000),
     });
   } catch {

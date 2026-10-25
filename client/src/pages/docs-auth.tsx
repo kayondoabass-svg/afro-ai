@@ -9,6 +9,7 @@ import afroLogo from "@assets/IMG_5719_1771852498362.png";
 
 const sections = [
   ["start", "Start here: end-to-end setup"],
+  ["branding", "Email identity & branding"],
   ["scope", "Scope & capabilities"],
   ["signup", "Signup & login"],
   ["recovery", "Verification & recovery"],
@@ -96,6 +97,9 @@ export default function AuthDocsPage() {
                   <strong className="text-foreground">Set exact allowed origins.</strong> In Settings, add each browser origin your app uses, such as <code>https://shop.example</code> and <code>https://www.shop.example</code> on separate lines. An origin is scheme + hostname + optional port; do not add a path or wildcard. Add localhost separately for local development. Website TXT ownership and allowed origins serve different purposes.
                 </li>
                 <li>
+                  <strong className="text-foreground">Set your email identity if needed.</strong> Open the project's Branding tab to review package limits, sender identity and message copy. Custom sending domains must be verified in the same account's Email API project. A free project can use platform-managed delivery; a callback page you operate remains available on every tier. See <a href="#branding" className="text-primary underline underline-offset-4">Email identity & branding</a> for access and testing details.
+                </li>
+                <li>
                   <strong className="text-foreground">Create and store a project key.</strong> Once ownership is verified, generate a key in Setup. Copy the secret or save the downloaded environment file immediately: the secret is displayed once. Put it in your server's environment, not browser code, a public build variable, or source control. The public key and project slug may be used by a client when the selected integration requires them; the secret key is server-only.
                   <p className="mt-2">When replacing a key, deploy and verify the new key while the old one is still active, then explicitly revoke the old key. A signup or email problem is not a reason to rotate keys.</p>
                 </li>
@@ -179,6 +183,14 @@ if (session.valid !== true) throw new Error("Sign in again");
                   <tbody>{endpoints.map(([method, route, input]) => <tr key={route} className="border-t"><td className="p-3 whitespace-nowrap font-mono text-xs">{method}</td><td className="p-3 font-mono text-xs whitespace-nowrap">{route}</td><td className="p-3">{input}</td></tr>)}</tbody>
                 </table>
               </div>
+            </Section>
+            <Section id="branding" title="Email identity & branding">
+              <p>Afro Auth can manage the verification and password-recovery sender identity without exposing provider credentials to your team. Open a project's <strong className="text-foreground">Branding</strong> tab to review the current package, edit the settings it includes, preview a message, and send a test to the signed-in account email.</p>
+              <p>Branding packages are separate from the Afro AI app-builder and Email API subscriptions. One Auth package covers projects owned by the same account up to its advertised app limit. Paid access is prepaid for 30 days and does not debit automatically; credits do not unlock branding.</p>
+              <p>A customer-owned verification callback remains available on every tier. For a custom sending domain, choose a domain that is verified in the owned Email API project. Website ownership TXT proof and sender-domain verification are different records and prove different things.</p>
+              <p>A preview uses a fake action link and runs inside a sandboxed frame; it does not send email. A test sends the saved template only to the current account email. “Accepted” means the request was queued for processing, not that it reached the mailbox. Delivery depends on the sender and recipient systems.</p>
+              <p>When a feature is locked, existing values remain preserved. Upgrade from the project's Branding tab to edit those values. The server validates entitlements and eligible sender domains on save.</p>
+              <Button asChild variant="outline"><Link href="/dashboard/auth">Open Afro Auth projects</Link></Button>
             </Section>
             <Section id="signup" title="Signup starts verification, not a session">
               <p>New and reset passwords must contain 12–128 characters. Existing passwords still work after email verification. Signup returns <code className="text-foreground">{'{ verificationRequired: true, user }'}</code> without a token and sends one confirmation email. Unverified accounts cannot log in; existing accounts can request confirmation through <code>/send-verification</code>.</p>

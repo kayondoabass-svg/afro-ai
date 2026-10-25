@@ -4,45 +4,41 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Check, Globe2, ShieldCheck, Code2, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { AUTH_PACKAGES } from "@shared/auth-packages";
 
-const TIERS = [
-  {
-    name: "Starter",
-    price: "Free",
-    sub: "forever",
-    mau: "5,000",
-    features: ["Email + password login", "Hosted JSON API", "Basic dashboard", "Community support"],
-    cta: "Start free",
-    highlight: false,
+const TIER_DETAILS: Record<string, { features: string[]; cta: string; highlight: boolean }> = {
+  free: {
+    features: ["Email and password authentication", "Hosted verification and password recovery", "Revocable customer sessions", "1 owned Afro Auth project"],
+    cta: "Start free", highlight: false,
   },
-  {
-    name: "Builder",
-    price: "$5",
-    sub: "/ month",
-    mau: "25,000",
-    features: ["Everything in Starter", "Custom branding", "Email support", "1 production app"],
-    cta: "Choose Builder",
-    highlight: true,
+  builder: {
+    features: ["Everything in Starter", "Custom sender name, reply-to, logo and color", "1 owned Afro Auth project", "25,000 monthly active users"],
+    cta: "Choose Builder", highlight: true,
   },
-  {
-    name: "Business",
-    price: "$25",
-    sub: "/ month",
-    mau: "100,000",
-    features: ["Up to 5 apps", "Email/password authentication", "Email verification and recovery", "Revocable sessions"],
-    cta: "Choose Business",
-    highlight: false,
+  business: {
+    features: ["Everything in Builder", "Verified sender domain from your owned Email API project", "Custom verification and recovery copy", "White-label email identity · up to 5 owned projects"],
+    cta: "Choose Business", highlight: false,
   },
-  {
-    name: "Scale",
-    price: "$100",
-    sub: "/ month",
-    mau: "500,000",
-    features: ["Unlimited apps", "Email/password authentication", "Google and GitHub sign-in", "Server-side session verification"],
-    cta: "Talk to us",
-    highlight: false,
+  scale: {
+    features: ["Everything in Business", "Custom HTML verification and recovery templates", "500,000 monthly active users", "Unlimited owned Afro Auth projects"],
+    cta: "Choose Scale", highlight: false,
   },
-];
+};
+
+const TIERS = Object.values(AUTH_PACKAGES).map((pkg) => {
+  const key = String(pkg.key).toLowerCase();
+  const details = TIER_DETAILS[key] ?? { features: [], cta: `Choose ${pkg.name}`, highlight: false };
+  return {
+    ...details,
+    key,
+    name: pkg.name,
+    price: Number(pkg.usd) === 0 ? "Free" : `$${pkg.usd}`,
+    sub: Number(pkg.usd) === 0 ? "forever" : "/ month · prepaid 30 days",
+    mau: Number(pkg.mau).toLocaleString(),
+    apps: Number(pkg.apps) === -1 ? "unlimited" : pkg.apps,
+    appCount: pkg.apps,
+  };
+});
 
 export default function AfroAuthLandingPage() {
   const { user, isLoading } = useAuth();
@@ -61,7 +57,7 @@ export default function AfroAuthLandingPage() {
             Afro Auth
           </h1>
           <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto mb-8" data-testid="text-hero-tagline">
-            Customer-app authentication with email, password, and Google or GitHub sign-in.
+            Give your app its own identity. Afro Auth handles the authentication plumbing while you keep your secrets on your server.
             Built in Africa for teams shipping anywhere in the world.
           </p>
           <div className="flex flex-wrap gap-3 justify-center" data-testid="container-hero-cta">
@@ -162,31 +158,32 @@ if (!res.ok) throw new Error(data.message || "Signup failed");
             Plans for your next app
           </h2>
           <p className="text-muted-foreground">
-            Email verification, password recovery, and revocable 24-hour sessions.
+            Four clear limits: active users, owned app count, email branding, and a 30-day prepaid term on paid packages.
           </p>
         </div>
+        <p className="mb-5 text-center text-sm text-muted-foreground">Choose a plan, then select one of your owned projects in the dashboard. Paid access is prepaid for 30 days and does not renew automatically.</p>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
           {TIERS.map((tier) => (
             <Card
-              key={tier.name}
+              key={tier.key}
               className={tier.highlight ? "border-primary border-2 shadow-lg" : ""}
               data-testid={`card-tier-${tier.name.toLowerCase()}`}
             >
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle data-testid={`text-tier-name-${tier.name.toLowerCase()}`}>{tier.name}</CardTitle>
+                  <CardTitle data-testid={`text-tier-name-${tier.key}`}>{tier.name}</CardTitle>
                   {tier.highlight && (
-                    <Badge data-testid={`badge-popular-${tier.name.toLowerCase()}`}>Popular</Badge>
+                    <Badge data-testid={`badge-popular-${tier.key}`}>Popular</Badge>
                   )}
                 </div>
                 <div className="flex items-baseline gap-1 mt-2">
-                  <span className="text-4xl font-bold" data-testid={`text-tier-price-${tier.name.toLowerCase()}`}>
+                  <span className="text-4xl font-bold" data-testid={`text-tier-price-${tier.key}`}>
                     {tier.price}
                   </span>
                   <span className="text-muted-foreground">{tier.sub}</span>
                 </div>
-                <CardDescription data-testid={`text-tier-mau-${tier.name.toLowerCase()}`}>
-                  Up to <strong>{tier.mau}</strong> monthly active users
+                <CardDescription data-testid={`text-tier-mau-${tier.key}`}>
+                  Up to <strong>{tier.mau}</strong> monthly active users · {tier.apps}{Number(tier.appCount) === 1 ? " owned app" : " owned apps"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -202,7 +199,7 @@ if (!res.ok) throw new Error(data.message || "Signup failed");
                   className="w-full"
                   variant={tier.highlight ? "default" : "outline"}
                   onClick={() => setLocation(ctaHref)}
-                  data-testid={`button-tier-cta-${tier.name.toLowerCase()}`}
+                  data-testid={`button-tier-cta-${tier.key}`}
                 >
                   {tier.cta}
                 </Button>
@@ -236,7 +233,7 @@ if (!res.ok) throw new Error(data.message || "Signup failed");
           Stop building login from scratch.
         </h2>
         <p className="text-muted-foreground mb-6">
-          Create a project, configure your allowed origins, and follow the integration guide.
+          Create a project, select it in your dashboard, and configure its integration.
         </p>
         <Button size="lg" onClick={() => setLocation(ctaHref)} data-testid="button-final-cta">
           Create your project

@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { settlePayment } from "../payment-settlement";
 import { PAYMENT_SCHEMA } from "../payment-schema";
 import { lockDomainCheckout } from "../domain-checkout";
+import { AUTH_BRANDING_SCHEMA } from "../auth-branding-schema";
 
 // Isolated schema: no customer fixtures, provider requests, emails or public rows.
 const suite = process.env.DATABASE_URL && !process.env.CI &&
@@ -35,12 +36,36 @@ suite("payment settlement with PostgreSQL transactions and concurrent callbacks"
     }
   });
   beforeEach(async () => {
+    await database.query(AUTH_BRANDING_SCHEMA);
+    await database.query("TRUNCATE auth_branding_subscriptions,auth_branding_audit RESTART IDENTITY");
     await database.query("TRUNCATE users,payments,domain_orders,activity_logs,chatbot_subscriptions,ussd_subscriptions,published_apps RESTART IDENTITY");
     await database.query("INSERT INTO users(id,email) VALUES('owner','checkout@example.invalid')");
     await database.query(`INSERT INTO payments(user_id,plan,amount,currency,merchant_reference,pesapal_tracking_id,status)
       VALUES('owner','payg-pack5',5,'USD','order','track','pending')`);
   });
   const settle = (pool: Pool, status = paid) => settlePayment(pool, "order", "track", status, () => false);
+  it("activates Auth only once, without changing app-builder plan or credits",async()=>{
+    await database.query(`UPDATE payments SET plan='auth-builder',purchase_details='{"category":"auth","projectId":"owned-project"}'`);
+    const results=await Promise.all(Array.from({length:5},()=>settle(database)));
+    expect(results.filter(r=>r.newlyCompleted)).toHaveLength(1);
+    const sub=(await database.query("SELECT * FROM auth_branding_subscriptions")).rows[0];
+    expect(sub).toMatchObject({user_id:"owner",plan:"builder",source:"payment",payment_id:1});
+    expect(sub.expires_at.getTime()-Date.now()).toBeGreaterThan(29*86400000);
+    expect((await database.query("SELECT plan,payg_balance FROM users")).rows[0]).toEqual({plan:"starter",payg_balance:0});
+  });
+  it("rolls Auth access back if final payment completion fails",async()=>{
+    await database.query(`UPDATE payments SET plan='auth-business',purchase_details='{"category":"auth","projectId":"owned-project"}'`);
+    await database.query("ALTER TABLE payments ADD CONSTRAINT auth_simulate_failure CHECK(status <> 'completed')");
+    try {
+      await expect(settle(database)).rejects.toThrow();
+      expect((await database.query("SELECT * FROM auth_branding_subscriptions")).rows).toHaveLength(0);
+    }finally{await database.query("ALTER TABLE payments DROP CONSTRAINT auth_simulate_failure");}
+  });
+  it("requires a server-created Auth project purchase snapshot",async()=>{
+    await database.query("UPDATE payments SET plan='auth-scale'");
+    await expect(settle(database)).rejects.toThrow("project association");
+    expect((await database.query("SELECT status FROM payments")).rows[0].status).toBe("pending");
+  });
   it("credits exactly once across six simultaneous IPN/callback/poll attempts", async () => {
     const results = await Promise.all(Array.from({ length: 6 }, () => settle(database)));
     expect(results.filter(result => result.newlyCompleted)).toHaveLength(1);

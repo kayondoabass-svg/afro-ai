@@ -387,7 +387,7 @@ export function PaymentCheckoutHost() {
         setPaymentUrl("");
         restoredProviderUrl.current = null;
         const isDomainOrder = data.purchaseDetails?.category?.toLowerCase() === "domain" || !!data.purchaseDetails?.domainName;
-        if (isDomainOrder && data.fulfilmentStatus !== "active") return;
+        if ((isDomainOrder || data.purchaseDetails?.category === "auth") && data.fulfilmentStatus !== "active") return;
         clearCheckout();
         refreshAfterCompletion();
         return;
@@ -484,7 +484,10 @@ export function PaymentCheckoutHost() {
   const purchase = visiblePayment?.purchaseDetails;
   const domainPurchase = purchase?.category?.toLowerCase() === "domain" || !!purchase?.domainName;
   const domainActive = visiblePayment?.fulfilmentStatus === "active";
-  const completedDescription = domainPurchase && !domainActive
+  const authActivationPending = purchase?.category === "auth" && !domainActive;
+  const completedDescription = authActivationPending
+    ? "Payment received. Auth package activation is pending. Check fulfilment again before making another purchase."
+    : domainPurchase && !domainActive
     ? "Payment received. Your domain order is being processed; registration is not confirmed yet."
     : domainPurchase
     ? "Payment confirmed and domain fulfilment is active."
@@ -645,7 +648,7 @@ export function PaymentCheckoutHost() {
             {(viewState === "delayed" || (viewState === "error" && paymentId !== null)) && (
               <Button variant="outline" onClick={manualRetry}>Check status again</Button>
             )}
-            {viewState === "completed" && domainPurchase && !domainActive && (
+            {viewState === "completed" && (domainPurchase || authActivationPending) && !domainActive && (
               <Button variant="outline" onClick={checkFulfilmentAgain} data-testid="button-check-domain-fulfilment">Check fulfilment again</Button>
             )}
             {viewState === "review" ? (
