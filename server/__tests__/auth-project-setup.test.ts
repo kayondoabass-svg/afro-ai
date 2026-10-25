@@ -39,6 +39,16 @@ async function req(path: string, body?: any, method?: string, signedIn = true) {
   }),{DB:db,JWT_SECRET:"test-only-session-signing",RESEND_API_KEY:"mock-only",APP_URL:"https://afroaigroup.com"} as any,{waitUntil(){}} as any);
 }
 const base = "/v1/admin/tenants/a";
+it("enforces the paid owner-wide app allowance atomically and preserves existing projects",async()=>{
+  db.exec("INSERT INTO auth_branding_entitlements(owner_user_id,plan,source,expires_at,updated_at) VALUES('owner','builder','payment',9999999999,0)");
+  expect((await req("/v1/admin/tenants",{name:"Over Builder allowance"})).status).toBe(402);
+  expect(db.query("SELECT id FROM tenants WHERE owner_user_id='owner'")).toHaveLength(1);
+  db.exec("UPDATE auth_branding_entitlements SET plan='business' WHERE owner_user_id='owner'");
+  const results=await Promise.all(Array.from({length:6},(_,i)=>req("/v1/admin/tenants",{name:`Business app ${i}`})));
+  expect(results.filter(r=>r.status===200)).toHaveLength(4);
+  expect(results.filter(r=>r.status===402)).toHaveLength(2);
+  expect(db.query("SELECT id FROM tenants WHERE owner_user_id='owner'")).toHaveLength(5);
+});
 it("keeps backend confirmation callbacks owner-scoped and bound to verified origins",async()=>{
   expect((await req(`${base}/confirmation-flow`,undefined,undefined,false)).status).toBe(401);
   expect((await req("/v1/admin/tenants/b/confirmation-flow")).status).toBe(404);

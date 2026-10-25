@@ -29,5 +29,6 @@ export async function brandedTenantEmail(env:any,t:any,purpose:"verify"|"reset",
   }
   let settings={};
   try{settings=row ? JSON.parse(row.settings) : {};}catch{}
-  return renderAuthEmail({name:t.name,purpose,url,plan:entitlement.plan,settings,platformFrom:env.MAIL_FROM,senderVerified});
+  return {...renderAuthEmail({name:t.name,purpose,url,plan:entitlement.plan,settings,platformFrom:env.MAIL_FROM,senderVerified}),
+    senderFallback:!!row?.provider_domain_id && ["business","scale"].includes(entitlement.plan) && !senderVerified};
 }

@@ -73,6 +73,7 @@ it("falls back to the platform sender if provider domain proof fails without bre
   vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({name:"example.com",status:"pending"}))));
   const mail=await brandedTenantEmail({DB:db,RESEND_API_KEY:"mock-only"},{id:"a",owner_user_id:"owner",name:"Lakeside"},"reset","https://client.example/reset");
   expect(mail.from).toBe("Lakeside <noreply@afroaigroup.com>");
+  expect(mail.senderFallback).toBe(true);
   expect(mail.html).toContain("Reset your password");
 });
 it("exempts only the server-controlled founder identity, not arbitrary owners",async()=>{

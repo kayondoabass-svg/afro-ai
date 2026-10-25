@@ -28,7 +28,7 @@ export async function sendTenantMail(
   env: { RESEND_API_KEY?: string; MAIL_FROM?: string; DB?: any },
   context: MailContext,
   tokenHash: string,
-  message: { to: string; subject: string; text: string; html: string; from?: string; replyTo?: string },
+  message: { to: string; subject: string; text: string; html: string; from?: string; replyTo?: string; senderFallback?: boolean },
 ) {
   const persist = async(fields:any) => {
     record(context,fields);
@@ -69,7 +69,8 @@ export async function sendTenantMail(
     throw new Error("Email delivery failed");
   }
   const messageId = typeof data?.id === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(data.id) ? data.id : null;
-  await persist({ outcome: messageId?"accepted":"unknown", providerStatus: response.status, messageId });
+  await persist({ outcome: messageId?"accepted":"unknown", providerStatus: response.status, messageId,
+    ...(message.senderFallback ? {reason:"sender_domain_fallback"} : {}) });
   if (!messageId) throw new Error("Email submission could not be confirmed");
   // Provider acceptance is not inbox delivery. Delivery must be checked separately.
   return { sent: true, accepted: true, messageId };

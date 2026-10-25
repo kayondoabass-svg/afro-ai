@@ -1570,21 +1570,23 @@ app.post('/v1/admin/tenants', async (c) => {
   const name = String(body.name || '').trim().slice(0, 80);
   if (!name) return c.json({ message: 'Project name is required.' }, 400);
   const entitlement = await tenantBrandingEntitlement(c.env.DB,{owner_user_id:platformUser.id});
+  let maxApps = -1; // Preserve existing free/legacy project creation.
   if (entitlement.source!=="free" && entitlement.source!=="founder") {
-    const cap=authPackage(entitlement.plan).apps;
-    const count=await c.env.DB.prepare("SELECT count(*) n FROM tenants WHERE owner_user_id=? AND id<>'platform'").bind(platformUser.id).first<{n:number}>();
-    if (cap>0 && (count?.n||0)>=cap)
-      return c.json({message:"Your Auth package's app allowance is reached. Existing apps remain available; upgrade before adding another.",code:"auth_app_limit"},402);
+    maxApps=authPackage(entitlement.plan).apps;
   }
 
   const id = genId('tnt_');
   const slug = genSlug(name);
   const ts = nowSec();
-  await c.env.DB.prepare(
-    'INSERT INTO tenants (id, slug, name, owner_user_id, plan, created_at, updated_at, setup_required) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+  const created = await c.env.DB.prepare(
+    `INSERT INTO tenants (id, slug, name, owner_user_id, plan, created_at, updated_at, setup_required)
+     SELECT ?,?,?,?,?,?,?,1 WHERE ?<0 OR
+       (SELECT count(*) FROM tenants WHERE owner_user_id=? AND id<>'platform')<?`,
   )
-    .bind(id, slug, name, platformUser.id, 'free', ts, ts)
+    .bind(id, slug, name, platformUser.id, 'free', ts, ts,maxApps,platformUser.id,maxApps)
     .run();
+  if (!created.meta.changes)
+    return c.json({message:"Your Auth package's app allowance is reached. Existing apps remain available; upgrade before adding another.",code:"auth_app_limit"},402);
   return c.json({ id, slug, name, plan: 'free', created_at: ts });
 });
 
