@@ -1,72 +1,23 @@
-modules = ["nodejs-20", "web", "python-3.11", "postgresql-16"]
-run = "npm run dev"
-hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
-
-[nix]
-channel = "stable-24_05"
-
-[[ports]]
-localPort = 5000
-externalPort = 80
-
-[[ports]]
-localPort = 5001
-externalPort = 3001
-
-[[ports]]
-localPort = 5173
-externalPort = 5173
-
-[[ports]]
-localPort = 8976
-externalPort = 3000
-
-[env]
-PORT = "5000"
+modules = ["nodejs-24"]
 
 [deployment]
+router = "application"
 deploymentTarget = "autoscale"
-run = ["node", "./dist/index.cjs"]
-build = ["npm", "run", "build"]
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
 
 [workflows]
 runButton = "Project"
 
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start application"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "test"
-
-[[workflows.workflow]]
-name = "Start application"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run dev"
-waitForPort = 5000
-
-[[workflows.workflow]]
-name = "test"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npx vitest run"
-
-[workflows.workflow.metadata]
-isValidation = true
-
 [agent]
-integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_openai_ai_integrations:2.0.0"]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
 
 [userenv]
 
@@ -87,7 +38,3 @@ PROJECT_FILES_D1_DATABASE_NAME = "afro-ai-project-files"
 [userenv.development]
 AFRO_AI_BASE_URL = "https://6ab436f78392dd29385e9538.endpoints.huggingface.cloud/v1"
 AFRO_AI_MODEL = "kayondoabass/afroai-qwen15b-v1-merged"
-
-[postMerge]
-path = "scripts/post-merge.sh"
-timeoutMs = 20000
