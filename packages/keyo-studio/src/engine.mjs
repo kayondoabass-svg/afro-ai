@@ -1,8 +1,6 @@
-import path from 'node:path';
-import { setImmediate as yieldTurn } from 'node:timers/promises';
-import { readJson, loadTensors, matvec, normalize, softmax, rotary, gelu } from './tensors.mjs';
+import { matvec, normalize, softmax, rotary, gelu } from './math.mjs';
 import { ByteBPE } from './tokenizer.mjs';
-import { cpuKernel } from './cpu-kernel.mjs';
+const yieldTurn = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function integer(value, name, max = 500000) {
   if (!Number.isSafeInteger(value) || value <= 0 || value > max) throw new Error(`Invalid model dimension: ${name}.`);
@@ -13,12 +11,10 @@ const add = (a, b) => Float32Array.from(a, (value, i) => value + b[i]);
 // All transformer execution is our own typed-array implementation. No model
 // runner, Transformers, ONNX, Ollama, llama.cpp, vLLM or remote API is invoked.
 export class KeyoEngine {
-  static async load(directory, {kernel = process.env.KEYO_CPU_KERNEL ?? 'javascript'} = {}) {
-    const config = await readJson(path.join(directory, 'config.json'));
-    const tokenizer = await ByteBPE.load(directory, config.model_type);
-    const tensors = await loadTensors(directory, cpuKernel(kernel));
-    try { return new KeyoEngine(config, tensors, tokenizer, path.basename(path.resolve(directory))); }
-    catch (error) { tensors.close?.(); throw error; }
+  static async load(directory, options = {}) {
+    // Node I/O is an adapter, never part of the portable worker dependency graph.
+    const adapter = './node-loader.mjs';
+    return (await import(/* @vite-ignore */ adapter)).loadNodeEngine(directory, options);
   }
   constructor(config, tensors, tokenizer, id = 'local-model') {
     this.config = config; this.tensors = tensors; this.tokenizer = tokenizer; this.id = id;
@@ -148,7 +144,12 @@ export class KeyoEngine {
     if (!Array.isArray(messages) || !messages.length || messages.length > 32 ||
         messages.some(m => !m || !['system','user','assistant'].includes(m.role) || typeof m.content !== 'string')) throw new Error('Invalid chat messages.');
     if (messages.some(m => [...this.tokenizer.special.keys()].some(token => m.content.includes(token)))) throw new Error('Chat content must not contain model control tokens.');
-    if (this.family === 'qwen2' && this.tokenizer.special.has('<|im_start|>') && this.tokenizer.special.has('<|im_end|>'))
+    // SmolLM2's published ChatML adapter adds this system turn when absent.
+    if (this.family === 'llama' && this.config.is_llama_config === true &&
+        this.config.vocab_size === 49152 && this.tokenizer.special.has('<|im_start|>') &&
+        messages[0].role !== 'system')
+      messages = [{role:'system',content:'You are a helpful AI assistant named SmolLM, trained by Hugging Face'}, ...messages];
+    if (['qwen2','llama'].includes(this.family) && this.tokenizer.special.has('<|im_start|>') && this.tokenizer.special.has('<|im_end|>'))
       return messages.map(m => `<|im_start|>${m.role}\n${m.content}<|im_end|>\n`).join('') + '<|im_start|>assistant\n';
     if (this.family === 'llama' && ['<|begin_of_text|>','<|start_header_id|>','<|end_header_id|>','<|eot_id|>'].every(t => this.tokenizer.special.has(t)))
       return '<|begin_of_text|>' + messages.map(m => `<|start_header_id|>${m.role}<|end_header_id|>\n\n${m.content}<|eot_id|>`).join('') + '<|start_header_id|>assistant<|end_header_id|>\n\n';
@@ -198,7 +199,7 @@ export class KeyoEngine {
     yield {type:'done', finishReason:reason, usage:{prompt_tokens:tokens.length, completion_tokens:count, total_tokens:tokens.length + count}};
   }
   info() {
-    const chatTemplate = this.family === 'qwen2' && ['<|im_start|>','<|im_end|>'].every(t => this.tokenizer.special.has(t)) ? 'chatml'
+    const chatTemplate = ['qwen2','llama'].includes(this.family) && ['<|im_start|>','<|im_end|>'].every(t => this.tokenizer.special.has(t)) ? 'chatml'
       : this.family === 'llama' && ['<|begin_of_text|>','<|start_header_id|>','<|end_header_id|>','<|eot_id|>'].every(t => this.tokenizer.special.has(t)) ? 'llama3' : null;
     return { id:this.id, architecture:this.family, engine:'keyo-cpu', context_limit:this.context, chatTemplate,
       storage:this.tensors.storage ?? 'memory', checkpointBytes:this.tensors.checkpointBytes,

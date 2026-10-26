@@ -3,6 +3,7 @@ import type { KeyoDownloadAnalytics } from "../shared/keyo-downloads";
 import { keyoDownloadCategory } from "../shared/keyo-downloads";
 import { keyoDownloadStore, type KeyoDownloadStore } from "./keyo-download-store";
 import { KEYO_VERSION } from "../scripts/keyo-release";
+import { KEYO_DESKTOP_VERSION } from "../packages/keyo-studio/src/version.mjs";
 import { KEYO_RELEASE_ASSETS, KEYO_PUBLIC_LINKS } from "../scripts/keyo-release-assets";
 import { KEYO_FILENAME } from "../scripts/keyo-release";
 import rateLimit from "express-rate-limit";
@@ -25,7 +26,7 @@ export function observeKeyoTransfer(req: Request, res: Response, name: string, s
 }
 export function registerKeyoOutbound(app: Express, store = keyoDownloadStore) {
   const allowed = new Set([...KEYO_RELEASE_ASSETS, KEYO_FILENAME,
-    ...["win32-x64.zip","linux-x64.tar.gz","darwin-arm64.zip","darwin-x64.zip"].map(s=>`KEYO-Studio-${KEYO_VERSION}-${s}`)]);
+    ...["win32-x64.zip","linux-x64.tar.gz","darwin-arm64.zip","darwin-x64.zip"].map(s=>`KEYO-Studio-${KEYO_DESKTOP_VERSION}-${s}`)]);
   const limiter=rateLimit({windowMs:60_000,max:60,standardHeaders:true,legacyHeaders:false});
   app.get("/api/keyo-studio/outbound/:destination", limiter, async (req,res) => {
     const destination = String(req.params.destination);
@@ -35,7 +36,7 @@ export function registerKeyoOutbound(app: Express, store = keyoDownloadStore) {
     }
     const root = destination === "github" ? KEYO_PUBLIC_LINKS.github : KEYO_PUBLIC_LINKS.huggingFace;
     const url = asset ? destination === "github"
-      ? `${root}/releases/download/v${KEYO_VERSION}/${encodeURIComponent(asset as string)}`
+      ? `${root}/releases/download/v${String(asset).startsWith(`KEYO-Studio-${KEYO_DESKTOP_VERSION}-`)?KEYO_DESKTOP_VERSION:KEYO_VERSION}/${encodeURIComponent(asset as string)}`
       : `${root}/resolve/main/${encodeURIComponent(asset as string)}?download=true` : root;
     if (req.method === "GET" && (!asset || keyoDownloadCategory(asset as string)!=="metadata")) {
       void store.record(destination === "github" ? "github-link" : "hugging-face-link", asset as string || "(project page)").catch(()=>{

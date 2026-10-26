@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, writeFile, cp, lstat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, cp, lstat, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { KEYO_GIT_EXTRAS, KEYO_UPLOAD_FILENAME, KEYO_SPACE_UPLOAD_FILENAME, sourceZip } from "./keyo-upload-zip";
 import { KEYO_PUBLIC_LINKS, prepareReleaseAssets } from "./keyo-release-assets";
+import { prepareMobileSource, mobileSourcePermitted } from "./keyo-mobile-source.mjs";
 
 const exec = promisify(execFile);
 import { KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
@@ -14,6 +15,7 @@ export const KEYO_FILENAME = `afro-ai-keyo-studio-${KEYO_VERSION}.tgz`;
 export async function buildKeyoRelease(root = process.cwd()) {
   const directory = path.join(root, "dist", "keyo-studio");
   await mkdir(directory, { recursive: true });
+  await prepareMobileSource();
   const { stdout } = await exec("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", directory], {
     cwd: path.join(root, "packages", "keyo-studio"), timeout: 30000, maxBuffer: 1024 * 1024
   });
@@ -24,7 +26,7 @@ export async function buildKeyoRelease(root = process.cwd()) {
     ["package.json", "README.md", "CONTRIBUTING.md", "LICENSE", "SECURITY.md", "bin/keyo.mjs", "bin/validate.mjs"].includes(file) ||
     /^src\/[a-z-]+\.mjs$/.test(file) || file === "src/version.d.mts" ||
     ["native/kernels.cc", "native/build.mjs"].includes(file) ||
-    /^test\/[a-z-]+(?:\.test)?\.mjs$/.test(file) ||
+    /^test\/[a-z-]+(?:\.test)?\.(?:mjs|py)$/.test(file) || file === "test/requirements.txt" || mobileSourcePermitted(file) ||
     /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(file) ||
     /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file) ||
     /^desktop\/renderer\/locales\/[a-z-]+\.mjs$/.test(file);
@@ -39,15 +41,17 @@ export async function buildKeyoRelease(root = process.cwd()) {
   const zip = sourceZip(uploadFiles);
   await writeFile(path.join(directory, KEYO_UPLOAD_FILENAME), zip);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const spaceFiles = await Promise.all(files.filter(name => name.startsWith("desktop/renderer/")).map(async sourceName => {
-    const name = sourceName.slice("desktop/renderer/".length);
-    const file = path.join(root, "packages", "keyo-studio", sourceName);
-    if (!(await lstat(file)).isFile()) throw new Error("Non-regular Space asset refused.");
-    let data = await readFile(file);
-    if (name === "index.html") data = Buffer.from(data.toString().replace("</body>",
-      `<footer class="notice"><a href="./${KEYO_FILENAME}" download>Download KEYO Studio source — developer alpha</a></footer>\n</body>`));
-    return { name, data };
-  }));
+  const spaceFiles: {name:string;data:Buffer}[]=[];
+  async function collectPortable(folder:string,prefix=""):Promise<void> {
+    for(const entry of await readdir(folder,{withFileTypes:true})) {
+      if(entry.isSymbolicLink())throw new Error("Symlink refused in portable release.");
+      if(entry.isDirectory())await collectPortable(path.join(folder,entry.name),prefix+entry.name+"/");
+      else if(/^(?:index\.html|sw\.js|favicon\.svg|robots\.txt|assets\/[a-zA-Z0-9_.-]+\.(?:js|css|svg))$/.test(prefix+entry.name))
+        spaceFiles.push({name:prefix+entry.name,data:await readFile(path.join(folder,entry.name))});
+      else throw new Error("Unexpected portable release asset.");
+    }
+  }
+  await collectPortable(path.join(root,"artifacts/keyo-mobile/dist/public"));
   spaceFiles.push({ name: KEYO_FILENAME, data: bytes });
   spaceFiles.push({ name: "LICENSE", data: await readFile(path.join(root, "packages", "keyo-studio", "LICENSE")) });
   spaceFiles.push({ name: "README.md", data: Buffer.from(`---
@@ -57,15 +61,19 @@ app_file: index.html
 license: mit
 colorFrom: green
 colorTo: yellow
-short_description: Ugandan-built local AI runner — preview and source
+short_description: KEYO-owned portable CPU engine and Android development alpha
 ---
 
 # KEYO Studio — KEYO Technologies, Uganda
 
 Open-source local LLM/SLM runner with our own CPU engine.
-This Space is an **interface preview and source download**, not cloud/browser inference.
-Conversation creation, editing and deletion are browser-local. Model selection and
-generation are disabled here; install the desktop source on your device to run models.
+This Space runs KEYO's **portable CPU alpha** after explicit model download/import.
+Models and chats stay locally in OPFS and IndexedDB. No paid cloud inference.
+Requires a modern secure browser with OPFS, Web Locks and sufficient storage.
+The two pinned Qwen2.5 0.5B and SmolLM2 135M variants have numerical evidence;
+this is not certification of other models or phone performance.
+Android debug APKs are development builds, not Play Store certified.
+Existing desktop archives remain v0.1.0-alpha.5, unchanged.
 
 [Download the developer-alpha source](./${KEYO_FILENAME})
 
@@ -100,6 +108,13 @@ model weights. Listing on Hugging Face does not automatically generate payments.
     desktopInterfacePreview: "/keyo-studio/workspace/",
     engine: "Independent JavaScript CPU transformer implementation",
     dependencyCount: 0,
+    dependencyScope: "CLI/inference core. Portable UI dependencies are listed separately in mobile/package.json.",
+    portable: {
+      version:KEYO_VERSION,url:"/keyo-studio/portable/",backend:"KEYO JavaScript CPU worker",
+      formats:["F32","F16","BF16"],contextTokens:512,maxOutputTokens:128,
+      webGpu:false,wasm:false,integerQuantization:false,physicalAndroidDeviceCertified:false,
+      androidDebugApk:`${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-android-debug.apk`,
+    },
     downloadUrl: `/downloads/keyo-studio/${KEYO_FILENAME}`,
     sha256,
     bytes: bytes.length,
@@ -134,5 +149,7 @@ model weights. Listing on Hugging Face does not automatically generate payments.
   };
   await writeFile(path.join(directory, "release.json"), JSON.stringify(manifest, null, 2));
   await cp(path.join(root,"packages/keyo-studio/desktop/renderer"),path.join(directory,"workspace"),{recursive:true});
+  // Frontend-only portable app is built separately; do not replace desktop files.
+  await cp(path.join(root,"artifacts/keyo-mobile/dist/public"),path.join(directory,"portable"),{recursive:true});
   return manifest;
 }

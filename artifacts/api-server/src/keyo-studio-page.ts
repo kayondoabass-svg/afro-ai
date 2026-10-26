@@ -1,5 +1,5 @@
 import { KEYO_PUBLIC_LINKS, KEYO_RELEASE_BUNDLE, KEYO_RELEASE_NOTES } from "../scripts/keyo-release-assets";
-import { KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
+import { KEYO_VERSION as KEYO_SOURCE_VERSION, KEYO_DESKTOP_VERSION as KEYO_VERSION } from "../packages/keyo-studio/src/version.mjs";
 import { escapeKeyoText, keyoLanguages, keyoText, localizeKeyoMarkup, validKeyoLanguage } from "./keyo-studio-i18n";
 import { keyoTrackedHref } from "../shared/keyo-downloads";
 
@@ -218,7 +218,8 @@ export function keyoStudioPage(requestedLanguage = "en"): string {
         <p class="alpha-note"><strong>Download size: about 158 MB for Windows.</strong> Both links deliver the same portable ZIP. If GitHub is slow, try the Hugging Face mirror; speed depends on your connection and location. The first test model is a separate download of about 1 GB. No models are bundled.</p>
         <p class="alpha-note"><strong>Slow or interrupted download?</strong> Use your browser’s Downloads menu to pause or resume when supported. If you switch hosts, start a fresh file—do not combine partial downloads. Extract All, keep the files together, then open KEYO Studio.exe. No separate Node.js installation is needed for the Windows app.</p>
         <p class="alpha-note"><strong>Developer alpha ${KEYO_VERSION}.</strong> Ugandan-built by KEYO Technologies. Unsigned Windows portable and Linux desktop archives are available with our own CPU engine and model-download library. Extract the entire archive before opening the app. Windows runtime execution is not certified by the Linux build host. CLI requires Node.js 20+; desktop packages include their runtime.</p>
-        <a class="text-link" href="/keyo-studio/workspace/">Explore the workspace interface preview →</a>
+        <a class="text-link" href="/keyo-studio/portable/">Open the portable CPU alpha ${KEYO_SOURCE_VERSION} →</a>
+        <p class="alpha-note">Android debug APK and portable source: <a href="https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v${KEYO_SOURCE_VERSION}">new portable release</a>. Debug build—not Play Store certified. Models download separately; phone speed is not certified. Existing desktop packages above remain ${KEYO_VERSION}.</p>
         <p>Ugandan-built by KEYO Technologies, KEYO Studio aims to contribute to the AI revolution and add value to the development of AI and future superintelligence.</p>
       </div>
       <div class="hero-art" aria-label="Diagram showing a local model folder connected to a JavaScript CPU engine and localhost API">
@@ -239,7 +240,7 @@ export function keyoStudioPage(requestedLanguage = "en"): string {
 
     <section class="section" id="platforms">
       <div class="wrap">
-        <div class="section-head"><div class="section-kicker">Choose your platform</div><div><h2>Windows, Linux and Mac—not iOS.</h2><p class="section-intro">Desktop builds use our own local CPU engine. Models download separately. None of these archives installs an iPhone or iPad app.</p></div></div>
+        <div class="section-head"><div class="section-kicker">Choose your platform</div><div><h2>Desktop and Android development alpha.</h2><p class="section-intro">KEYO's own local CPU engine. Models download separately. No native iPhone or iPad app is available.</p></div></div>
         <div class="platform-scroll">
           <table class="platform-table" aria-label="Desktop and mobile platform availability">
             <thead><tr><th scope="col">Platform</th><th scope="col">Download and instructions</th><th scope="col">Verification status</th></tr></thead>
@@ -247,7 +248,8 @@ export function keyoStudioPage(requestedLanguage = "en"): string {
               <tr><th scope="row">Windows x64</th><td>Portable ZIP, about 158 MB. <a href="#install-windows">Windows instructions</a>.</td><td>Unsigned developer build; execution on Windows is unverified.</td></tr>
               <tr><th scope="row">Linux x64 desktop</th><td>Archive, about 123 MB. <a href="#install-linux">Linux instructions</a>. Requires a graphical desktop—not ARM or a headless VPS.</td><td>Packaged local model-download/chat smoke passed; not every distribution is certified.</td></tr>
               <tr><th scope="row">macOS Apple Silicon / Intel</th><td>Separate arm64 / x64 previews, about 130 / 134 MB. <a href="#install-macos">Mac instructions</a>. No separate Node.js installation.</td><td>Must finish signing on a Mac. Not Developer ID signed or notarized; Mac GUI execution is unverified.</td></tr>
-              <tr><th scope="row">iOS iPhone / iPad</th><td>No mobile application yet.</td><td>Desktop archives do not run on iOS. Safari offers only an interface preview—not local inference.</td></tr>
+              <tr><th scope="row">Android</th><td><a href="https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v${KEYO_SOURCE_VERSION}">Debug APK ${KEYO_SOURCE_VERSION}</a></td><td>Build verified; physical-device inference, battery and speed not certified. Models are separate downloads.</td></tr>
+              <tr><th scope="row">iOS iPhone / iPad</th><td>No native iOS application yet.</td><td>Desktop archives and Android APK do not run on iOS. Browser runtime requires OPFS, Web Locks and sufficient local storage; Safari inference has not been certified.</td></tr>
             </tbody>
           </table>
         </div>
@@ -310,7 +312,7 @@ cd KEYO-Studio-${KEYO_VERSION}-linux-x64
             <div class="code-card">
               <div class="code-top"><span>TERMINAL / commands to run locally</span><button class="copy-button" id="copy-commands" type="button" aria-label="Copy command examples">Copy commands</button></div>
               <pre><code><span class="code-muted"># Node.js 20 or newer</span>
-<span class="prompt">$</span> npm install -g ./afro-ai-keyo-studio-${KEYO_VERSION}.tgz
+<span class="prompt">$</span> npm install -g ./afro-ai-keyo-studio-${KEYO_SOURCE_VERSION}.tgz
 <span class="prompt">$</span> keyo inspect /path/to/model
 <span class="prompt">$</span> keyo chat /path/to/model --prompt "Hello"
 <span class="prompt">$</span> keyo serve /path/to/model</code></pre>
@@ -358,9 +360,9 @@ cd KEYO-Studio-${KEYO_VERSION}-linux-x64
       <div class="wrap">
         <div class="section-head"><div class="section-kicker">05 / Get the alpha</div><div><h2>Choose the app or developer source.</h2><p class="section-intro">To run on Windows, use a Windows app link above. Developer source and release-file bundles below are not Windows installers; they require Node.js 20 or newer.</p></div></div>
         <div class="release">
-          <div><h3>KEYO Studio ${KEYO_VERSION}</h3><p>Early developer alpha · Source package · Model weights not included</p></div>
+          <div><h3>KEYO Studio ${KEYO_SOURCE_VERSION}</h3><p>Portable developer alpha · Source package · Model weights not included</p></div>
           <div class="actions" style="margin:0">
-            <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_VERSION}.tgz">Download source <span class="arrow" aria-hidden="true">↓</span></a>
+            <a class="button" href="/downloads/keyo-studio/afro-ai-keyo-studio-${KEYO_SOURCE_VERSION}.tgz">Download source <span class="arrow" aria-hidden="true">↓</span></a>
             <a class="button secondary" href="/downloads/keyo-studio/${KEYO_RELEASE_BUNDLE}">Developer release files — not the Windows app</a>
             <a class="button secondary" href="${KEYO_PUBLIC_LINKS.githubRelease}" target="_blank" rel="noopener noreferrer">GitHub prerelease</a>
             <a class="button secondary" href="${KEYO_PUBLIC_LINKS.github}/releases/download/v${KEYO_VERSION}/KEYO-Studio-${KEYO_VERSION}-linux-x64.tar.gz">Linux desktop archive</a>
@@ -433,7 +435,7 @@ cd KEYO-Studio-${KEYO_VERSION}-linux-x64
     (function () {
       var button = document.getElementById("copy-commands");
       var status = document.getElementById("copy-status");
-      var commands = "npm install -g ./afro-ai-keyo-studio-${KEYO_VERSION}.tgz\\nkeyo inspect /path/to/model\\nkeyo chat /path/to/model --prompt \\"Hello\\"\\nkeyo serve /path/to/model";
+      var commands = "npm install -g ./afro-ai-keyo-studio-${KEYO_SOURCE_VERSION}.tgz\\nkeyo inspect /path/to/model\\nkeyo chat /path/to/model --prompt \\"Hello\\"\\nkeyo serve /path/to/model";
       if (!button || !status) return;
       function fallbackCopy() {
         var field = document.createElement("textarea");

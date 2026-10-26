@@ -36,6 +36,17 @@ export async function release() {
 
 export function registerKeyoStudio(app: Express) {
   registerKeyoOutbound(app);
+  app.get("/keyo-studio/portable",(req,res,next)=>{
+    if(req.path.endsWith("/"))return next();
+    res.redirect(302,"/keyo-studio/portable/");
+  });
+  app.use("/keyo-studio/portable/",express.static(path.resolve(process.env.NODE_ENV==="production"
+    ?"dist/keyo-studio/portable":"artifacts/keyo-mobile/dist/public"),{
+    dotfiles:"deny",maxAge:0,setHeaders:res=>{
+      res.setHeader("Cache-Control","no-cache");
+      res.setHeader("Content-Security-Policy","default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.hfcdn.net; object-src 'none'; base-uri 'self'; frame-ancestors 'self'");
+    },
+  }));
   app.get("/keyo-studio/workspace", (req,res,next) => {
     if (req.path.endsWith("/")) return next();
     res.redirect(302,"/keyo-studio/workspace/");

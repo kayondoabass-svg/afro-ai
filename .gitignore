@@ -82,3 +82,6 @@ attached_assets/*
 *client_secret*.json
 /.migration-backup/
 /package-lock.legacy.json
+/packages/keyo-studio/mobile/
+/uv.lock
+/.pythonlibs/

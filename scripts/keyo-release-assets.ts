@@ -17,7 +17,18 @@ export const KEYO_RELEASE_ASSETS = [KEYO_SOURCE_RELEASE, KEYO_RELEASE_NOTES, KEY
 
 export const keyoReleaseNotes = `# KEYO Studio v${KEYO_VERSION}
 
-**Developer alpha · Unsigned desktop packages and source · MIT code licence**
+**Portable CPU / Android development alpha · MIT code licence**
+
+New in this version: browser-worker KEYO execution, local OPFS model storage,
+verified/resumable downloads, offline app/worker caching, local IndexedDB chats,
+and Capacitor Android source. An Android debug APK is published separately after
+building. It is debug-signed, not Play Store certified or physically phone-tested.
+Existing desktop binary downloads remain v0.1.0-alpha.5, unchanged.
+
+The pinned Qwen2.5 0.5B and SmolLM2 135M Llama-architecture checkpoints passed
+independent full-vocabulary NumPy checks on Linux (303,872 and 98,304 logits,
+zero values outside the declared tolerance). Phone performance is not certified.
+GPU/WebGPU, WASM/SIMD and integer/low-bit quantization remain unfinished.
 
 Ugandan-built by KEYO Technologies. A local LLM/SLM runner with our own
 JavaScript CPU transformer engine, not an Ollama, llama.cpp or vLLM wrapper.
@@ -88,8 +99,8 @@ The code licence does not grant rights to third-party model weights.
 - GitHub: ${KEYO_PUBLIC_LINKS.github}
 - Hugging Face: ${KEYO_PUBLIC_LINKS.huggingFace}
 
-The Hugging Face Space is a browser-local interface preview and source
-download. Model loading and generation are deliberately disabled there.
+The new portable Hugging Face app can load the pinned downloaded models in a
+supported secure browser. The older desktop interface preview stays separate.
 `;
 
 export async function prepareReleaseAssets(directory: string, packageName: string, tgz: Buffer, zip: Buffer) {

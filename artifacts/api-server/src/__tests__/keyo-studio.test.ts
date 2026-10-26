@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { keyoStudioPage } from "../keyo-studio-page";
 import { KEYO_FILENAME, KEYO_VERSION } from "../../scripts/keyo-release";
+import { KEYO_DESKTOP_VERSION } from "../../packages/keyo-studio/src/version.mjs";
 import { KEYO_PUBLIC_LINKS, KEYO_RELEASE_BUNDLE, keyoReleaseNotes, prepareReleaseAssets, KEYO_CHECKSUMS } from "../../scripts/keyo-release-assets";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -29,7 +30,7 @@ describe("KEYO Studio independent runner", () => {
     expect(html).toContain(KEYO_PUBLIC_LINKS.github);
     expect(html).toContain(KEYO_PUBLIC_LINKS.huggingFace);
     expect(html).toContain(KEYO_RELEASE_BUNDLE);
-    expect(html).toContain(`${KEYO_PUBLIC_LINKS.huggingFace}/resolve/main/KEYO-Studio-${KEYO_VERSION}-win32-x64.zip?download=true`);
+    expect(html).toContain(`${KEYO_PUBLIC_LINKS.huggingFace}/resolve/main/KEYO-Studio-${KEYO_DESKTOP_VERSION}-win32-x64.zip?download=true`);
     expect(html).toContain("about 158 MB");
     expect(html).toContain("separate download of about 1 GB");
     expect(html).toContain("not the Windows app");
@@ -43,10 +44,13 @@ describe("KEYO Studio independent runner", () => {
     expect(html).toContain('id="install-linux"');
     expect(html).toContain("./keyo-studio");
     expect(html).toContain('id="install-macos"');
-    expect(html).toContain(`KEYO-Studio-${KEYO_VERSION}-darwin-arm64.zip`);
-    expect(html).toContain(`KEYO-Studio-${KEYO_VERSION}-darwin-x64.zip`);
+    expect(html).toContain(`KEYO-Studio-${KEYO_DESKTOP_VERSION}-darwin-arm64.zip`);
+    expect(html).toContain(`KEYO-Studio-${KEYO_DESKTOP_VERSION}-darwin-x64.zip`);
     expect(html).toContain("bash finish-on-mac.command");
-    expect(html).toContain("No mobile application yet.");
+    expect(html).toContain("No native iOS application yet.");
+    expect(html).toContain(`/keyo-studio/portable/`);
+    expect(html).toContain(`Debug APK ${KEYO_VERSION}`);
+    expect(html).not.toContain(`KEYO-Studio-${KEYO_VERSION}-win32-x64.zip`);
     expect(html).toContain("Not a certified Mac release.");
     expect(html).toContain('rel="canonical" href="https://afroaigroup.com/keyo-studio"');
     expect(html).toContain(KEYO_VERSION);
@@ -67,7 +71,7 @@ describe("KEYO Studio independent runner", () => {
         expect(createHash("sha256").update(data).digest("hex")).toBe(asset.sha256);
         if (asset.filename !== KEYO_CHECKSUMS && asset.filename !== KEYO_RELEASE_BUNDLE) expect(checksums).toContain(`${asset.sha256}  ${asset.filename}`);
       }
-      expect(keyoReleaseNotes).toContain("Unsigned desktop packages and source");
+      expect(keyoReleaseNotes).toContain("Portable CPU / Android development alpha");
       expect(keyoReleaseNotes).toContain("verified downloads");
       expect(keyoReleaseNotes).toMatch(/does not establish[\s\S]*7B\/14B support/);
     } finally { await rm(directory, { recursive: true, force: true }); }

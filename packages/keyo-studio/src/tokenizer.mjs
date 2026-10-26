@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { readJson } from './tensors.mjs';
+const encoder = new TextEncoder();
 
 // GPT byte-to-Unicode mapping, implemented here rather than delegated to a
 // model runner. Byte-level BPE retains UTF-8, including non-English text.
@@ -26,8 +25,12 @@ export class ByteBPE {
     this.nfc = nfc;
     const parts = json.pre_tokenizer?.type === 'Sequence' ? json.pre_tokenizer.pretokenizers : [json.pre_tokenizer];
     if (!Array.isArray(parts) || !parts.some(p => p?.type === 'ByteLevel') ||
-        parts.some(p => !['ByteLevel', 'Split'].includes(p?.type)) ||
+        parts.some(p => !['ByteLevel', 'Split', 'Digits'].includes(p?.type)) ||
+        parts.some(p => p?.type === 'Digits' && p.individual_digits !== true) ||
         parts.some(p => p?.type === 'ByteLevel' && p.add_prefix_space)) throw new Error('Unsupported BPE pre-tokenizer.');
+    this.individualDigits = parts.some(p => p?.type === 'Digits');
+    if (this.individualDigits && (parts.length !== 2 || parts[0]?.type !== 'Digits' || parts[1]?.type !== 'ByteLevel'))
+      throw new Error('Unsupported digit pre-tokenizer order.');
     const split = parts.find(p => p?.type === 'Split');
     if (split) {
       const regex = split.pattern?.Regex;
@@ -68,7 +71,10 @@ export class ByteBPE {
     this.alphabet = byteAlphabet();
     this.cache = new Map();
   }
-  static async load(directory, family) { return new ByteBPE(await readJson(path.join(directory, 'tokenizer.json'), 16 * 1024 * 1024), family); }
+  static async load(directory, family) {
+    const adapter = './node-loader.mjs';
+    return new ByteBPE(await (await import(/* @vite-ignore */ adapter)).readNodeTokenizer(directory), family);
+  }
   bpe(text) {
     if (this.cache.has(text)) return this.cache.get(text);
     let tokens = [...text];
@@ -97,8 +103,10 @@ export class ByteBPE {
     for (const piece of pieces) {
       if (allowSpecial && this.special.has(piece)) { result.push(this.special.get(piece)); continue; }
       if (this.literal.has(piece)) { result.push(this.literal.get(piece)); continue; }
-      for (const match of (this.nfc ? piece.normalize('NFC') : piece).matchAll(this.pattern)) {
-        const encoded = [...Buffer.from(match[0], 'utf8')].map(byte => this.alphabet.encode.get(byte)).join('');
+      const normalized = this.nfc ? piece.normalize('NFC') : piece;
+      const chunks = this.individualDigits ? normalized.split(/(\p{N})/u) : [normalized];
+      for (const chunk of chunks) for (const match of chunk.matchAll(this.pattern)) {
+        const encoded = [...encoder.encode(match[0])].map(byte => this.alphabet.encode.get(byte)).join('');
         result.push(...this.bpe(encoded));
       }
     }
@@ -107,13 +115,16 @@ export class ByteBPE {
   tokenBytes(id) {
     const token = this.ids.get(id);
     if (token === undefined) throw new Error('Model generated a token absent from its tokenizer.');
-    if (this.special.has(token)) return Buffer.alloc(0);
-    if (this.literal.has(token)) return Buffer.from(token,'utf8');
-    return Buffer.from([...token].map(char => {
+    if (this.special.has(token)) return new Uint8Array(0);
+    if (this.literal.has(token)) return encoder.encode(token);
+    return Uint8Array.from([...token].map(char => {
       const byte = this.alphabet.decode.get(char);
       if (byte === undefined) throw new Error('Unsupported token encoding.');
       return byte;
     }));
   }
-  decode(ids) { return Buffer.concat(ids.map(id => this.tokenBytes(id))).toString('utf8'); }
+  decode(ids) {
+    const decoder = new TextDecoder();
+    return ids.map(id => decoder.decode(this.tokenBytes(id), {stream:true})).join('') + decoder.decode();
+  }
 }

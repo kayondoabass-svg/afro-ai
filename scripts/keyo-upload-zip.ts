@@ -60,7 +60,7 @@ export function sourceZip(files: Array<{ name: string; data: Buffer }>): Buffer 
     entry.writeUInt16LE(date, 14); entry.writeUInt32LE(crc, 16);
     entry.writeUInt32LE(packed.length, 20); entry.writeUInt32LE(file.data.length, 24);
     entry.writeUInt16LE(name.length, 28);
-    entry.writeUInt32LE(((file.name === "bin/keyo.mjs" ? 0o100755 : 0o100644) << 16) >>> 0, 38);
+    entry.writeUInt32LE(((["bin/keyo.mjs","bin/validate.mjs","mobile/android/gradlew"].includes(file.name) ? 0o100755 : 0o100644) << 16) >>> 0, 38);
     entry.writeUInt32LE(offset, 42);
     central.push(entry, name);
     offset += header.length + name.length + packed.length;

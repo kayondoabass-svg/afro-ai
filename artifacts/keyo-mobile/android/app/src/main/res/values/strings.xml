@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">KEYO Studio</string>
+    <string name="title_activity_main">KEYO Studio</string>
+    <string name="package_name">com.keyostudio.app</string>
+    <string name="custom_url_scheme">com.keyostudio.app</string>
+</resources>

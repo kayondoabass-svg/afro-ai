@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { registerKeyoStudioAdmin } from "../keyo-studio-admin";
 import { KEYO_VERSION } from "../../scripts/keyo-release";
+import { KEYO_DESKTOP_VERSION } from "../../packages/keyo-studio/src/version.mjs";
 import { keyoStudioPage } from "../keyo-studio-page";
 const summary = {startedAt:"2026-10-13T10:00:00.000Z",rows:[
   {source:"platform",artifact:"source.tgz",count:2},
@@ -81,7 +82,7 @@ describe("KEYO source-specific download statistics",()=>{
   });
   it("records outbound archive clicks separately and prevents open redirects and HEAD inflation",async()=>{
     const s=store(),app=express();registerKeyoOutbound(app,s);
-    const url=await listen(app),asset=`KEYO-Studio-${KEYO_VERSION}-win32-x64.zip`;
+    const url=await listen(app),asset=`KEYO-Studio-${KEYO_DESKTOP_VERSION}-win32-x64.zip`;
     const result=await fetch(`${url}/api/keyo-studio/outbound/hugging-face?asset=${asset}`,{redirect:"manual"});
     expect(result.status).toBe(302);expect(result.headers.get("location")).toContain(`/resolve/main/${asset}?download=true`);
     expect(s.record).toHaveBeenCalledWith("hugging-face-link",asset);
@@ -103,7 +104,7 @@ describe("KEYO source-specific download statistics",()=>{
   });
   it("routes actual public archive links through fixed-source tracking",()=>{
     const html=keyoStudioPage();
-    expect(html).toContain(`/api/keyo-studio/outbound/hugging-face?asset=KEYO-Studio-${KEYO_VERSION}-win32-x64.zip`);
+    expect(html).toContain(`/api/keyo-studio/outbound/hugging-face?asset=KEYO-Studio-${KEYO_DESKTOP_VERSION}-win32-x64.zip`);
     expect(html).toContain('/api/keyo-studio/outbound/github');
   });
 });

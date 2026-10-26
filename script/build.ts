@@ -3,6 +3,7 @@ import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 import { buildKeyoRelease } from "../scripts/keyo-release";
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -37,6 +38,10 @@ async function buildAll() {
   console.log("building client...");
   await viteBuild();
 
+  console.log("building KEYO portable app...");
+  execFileSync(process.execPath,[path.resolve("artifacts/keyo-mobile/node_modules/vite/bin/vite.js"),"build"],{
+    cwd:path.resolve("artifacts/keyo-mobile"),stdio:"inherit",env:{...process.env,BASE_PATH:"",NODE_ENV:"production"},
+  });
   console.log("packaging KEYO Studio developer release...");
   await buildKeyoRelease();
 

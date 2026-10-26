@@ -61,3 +61,4 @@
 - [Parallel visual fixtures](parallel-visual-fixtures.md) — isolate dependency caches; ignored fixture wrappers may fall outside Tailwind’s source scan.
 - [JSX preview instrumentation](jsx-preview-instrumentation.md) — named Fragments may receive unsupported preview metadata; use a layout-safe element for keyed boundaries.
 - [Terminal dependency updates](terminal-dependency-updates.md) — updating Socket.IO alone can retain vulnerable nested dependencies; verify the complete transport tree.
+- [KEYO portable contract](keyo-portable-contract.md) — hard worker cancellation, production offline checks and independent desktop/mobile release identities.

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/keyo-mobile/"
+title = "KEYO Studio"
+description = "KEYO Studio portable offline-first interface, running KEYO’s own CPU inference engine in a browser worker and packaged for Android with Capacitor. Model downloads and local conversations stay on the device."
+version = "1.0.0"
+id = "artifacts/keyo-mobile"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/keyo-mobile/" ]
+localPort = 23665
+
+[services.development]
+run = "pnpm --filter @workspace/keyo-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/keyo-mobile", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/keyo-mobile/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23665"
+BASE_PATH = "/keyo-mobile/"

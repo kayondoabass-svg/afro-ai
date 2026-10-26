@@ -1,3 +1,25 @@
+# Portable CPU / Android alpha
+
+The new **0.2.0-alpha.1** source includes `mobile/`: KEYO's own engine in a
+dedicated browser worker, an offline app shell, OPFS model storage and a
+Capacitor Android project. Run `cd mobile && npm install && npm run build`.
+Build an Android debug APK with JDK 21 + SDK 36 using `npm run apk`.
+Debug builds are not production-signed or phone-execution certified.
+
+Pinned Qwen2.5 0.5B and SmolLM2 135M (Llama architecture) have passed
+independent full-vocabulary NumPy comparisons on Linux. The optional
+`test/public-check.mjs` + `test/public-reference.py` reproduce the numerical
+check against a supplied, licensed checkpoint. Model files are separate
+downloads, never bundled.
+
+This is CPU-only. GPU/WebGPU, WASM/SIMD, integer/low-bit quantization,
+Gemma/Phi support and measured Android speed remain unfinished.
+F16/BF16 storage is not integer quantization.
+
+The **existing desktop binary release remains 0.1.0-alpha.5**, unchanged.
+Do not assume a new source version means new certified Windows/macOS binaries.
+The Node CLI, HTTP runner and Electron source remain supported.
+
 # KEYO Studio LLM/SLM Runner
 
 **Ugandan-built by KEYO Technologies**, adding an open-source local AI workspace

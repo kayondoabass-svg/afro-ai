@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
+import { prepareMobileSource, mobileSourcePermitted } from './keyo-mobile-source.mjs';
+import { KEYO_DESKTOP_VERSION } from '../packages/keyo-studio/src/version.mjs';
 
+await prepareMobileSource();
 const source=fileURLToPath(new URL('../packages/keyo-studio/',import.meta.url));
 const pkg=JSON.parse(await fs.readFile(path.join(source,'package.json'),'utf8'));
 const output=path.resolve(process.argv[2] || `generated-artifacts/keyo-publication/${pkg.version}`);
@@ -15,7 +18,7 @@ await fs.mkdir(github); await fs.mkdir(hf);
 const permitted=file => ['package.json','README.md','CONTRIBUTING.md','LICENSE','SECURITY.md','bin/keyo.mjs','bin/validate.mjs'].includes(file) ||
   /^src\/[a-z-]+\.mjs$/.test(file) || file === 'src/version.d.mts' ||
   ['native/kernels.cc','native/build.mjs'].includes(file) ||
-  /^test\/[a-z-]+(?:\.test)?\.mjs$/.test(file) ||
+  /^test\/[a-z-]+(?:\.test)?\.(?:mjs|py)$/.test(file) || file==='test/requirements.txt' || mobileSourcePermitted(file) ||
   /^desktop\/[a-z-]+\.(?:cjs|mjs|md)$/.test(file) ||
   /^desktop\/renderer\/[a-z-]+\.(?:html|css|mjs|svg)$/.test(file) ||
   /^desktop\/renderer\/locales\/[a-z-]+\.mjs$/.test(file);
@@ -25,7 +28,7 @@ async function walk(directory,prefix='') {
     const relative=prefix+entry.name;
     if (entry.isSymbolicLink()) throw new Error(`Symlink refused: ${relative}`);
     if (entry.isDirectory()) {
-      if (!['src','bin','test','native','desktop','desktop/renderer','desktop/renderer/locales'].includes(relative)) continue;
+      if (!relative.startsWith('mobile')&&!['src','bin','test','native','desktop','desktop/renderer','desktop/renderer/locales'].includes(relative)) continue;
       files.push(...await walk(path.join(directory,entry.name),relative+'/'));
     } else if (entry.isFile() && permitted(relative)) files.push(relative);
   }
@@ -72,10 +75,18 @@ for (const file of files.filter(file => file.startsWith('desktop/renderer/'))) {
   await fs.mkdir(path.dirname(target), {recursive:true});
   await fs.copyFile(path.join(source,file),target);
 }
-// Explicit preview-only links; the Space never pretends to execute local models.
+// Replace the old interface-only preview with the verified portable build.
+await fs.cp(fileURLToPath(new URL('../artifacts/keyo-mobile/dist/public/',import.meta.url)),hf,{recursive:true});
 const html=await fs.readFile(path.join(hf,'index.html'),'utf8');
 await fs.writeFile(path.join(hf,'index.html'),html.replace('</body>',`<footer class="notice"><a href="https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-${pkg.version}-win32-x64.zip?download=true">Windows app — 158 MB</a> · <a href="https://github.com/kayondoabass-svg/keyo-studio/releases/download/v${pkg.version}/KEYO-Studio-${pkg.version}-linux-x64.tar.gz">Linux x64 — 123 MB</a> · <a href="https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-${pkg.version}-darwin-arm64.zip?download=true">Mac Apple Silicon preview — 130 MB</a> · <a href="https://huggingface.co/spaces/kayondoabass/KEYO-Studio/resolve/main/KEYO-Studio-${pkg.version}-darwin-x64.zip?download=true">Mac Intel preview — 134 MB</a> · <a href="https://github.com/kayondoabass-svg/keyo-studio#platform-status">Platform status and first-run instructions</a><p>Unsigned developer builds. Mac previews must finish signing on a Mac and are not notarized or GUI-certified. iOS has no app yet. Models download separately (about 1 GB). This browser workspace is an interface preview, not local inference. Do not disable security protections.</p><a href="./${pack.filename}" download>Developer source — not a desktop installer</a></footer>\n</body>`));
 await fs.copyFile(path.join(source,'LICENSE'),path.join(hf,'LICENSE'));
+// Desktop links refer to the existing, immutable desktop release, not new names.
+await fs.writeFile(path.join(hf,'index.html'),(await fs.readFile(path.join(hf,'index.html'),'utf8'))
+  .replaceAll(`KEYO-Studio-${pkg.version}-win32`, `KEYO-Studio-${KEYO_DESKTOP_VERSION}-win32`)
+  .replaceAll(`KEYO-Studio-${pkg.version}-linux`, `KEYO-Studio-${KEYO_DESKTOP_VERSION}-linux`)
+  .replaceAll(`KEYO-Studio-${pkg.version}-darwin`, `KEYO-Studio-${KEYO_DESKTOP_VERSION}-darwin`)
+  .replaceAll(`/releases/download/v${pkg.version}/KEYO-Studio-${KEYO_DESKTOP_VERSION}`, `/releases/download/v${KEYO_DESKTOP_VERSION}/KEYO-Studio-${KEYO_DESKTOP_VERSION}`)
+  .replace('This browser workspace is an interface preview, not local inference.','This portable alpha can run the pinned public models locally in a supported browser.'));
 await fs.writeFile(path.join(hf,'README.md'),`---
 title: KEYO Studio
 sdk: static
@@ -89,9 +100,11 @@ short_description: Ugandan-built local AI runner — preview and source
 # KEYO Studio — KEYO Technologies, Uganda
 
 Open-source LLM/SLM runner with our own CPU engine. This Space is an
-**interface preview and code download**, not browser/cloud model inference.
-Conversation CRUD is browser-local. Model loading and generation are disabled
-in the preview; install the desktop source on your own device to use them.
+**portable CPU alpha**. After an explicit pinned model download or import,
+KEYO's own worker engine generates locally. No cloud inference is used.
+OPFS and Web Locks require a modern secure browser. Embedded Space storage can
+be restricted by browser privacy settings; open the Space app directly if needed.
+Desktop app binaries remain at v0.1.0-alpha.5, not this portable source version.
 
 Source archive: [${pack.filename}](./${pack.filename})
 
