@@ -16,7 +16,7 @@ const github=path.join(output,'github'), hf=path.join(output,'huggingface');
 // Refuse to overwrite a previous export or an existing Git working tree.
 await fs.mkdir(github); await fs.mkdir(hf);
 const permitted=file => ['package.json','README.md','CONTRIBUTING.md','LICENSE','SECURITY.md','bin/keyo.mjs','bin/validate.mjs'].includes(file) ||
-  /^src\/[a-z-]+\.mjs$/.test(file) || file === 'src/version.d.mts' ||
+  /^src\/[a-z-]+\.mjs$/.test(file) || ['src/version.d.mts','src/portable-shell.d.mts'].includes(file) ||
   ['native/kernels.cc','native/build.mjs'].includes(file) ||
   /^test\/[a-z-]+(?:\.test)?\.(?:mjs|py)$/.test(file) || file==='test/requirements.txt' || mobileSourcePermitted(file) ||
   /^desktop\/[a-z-]+\.(?:cjs|mjs|md)$/.test(file) ||

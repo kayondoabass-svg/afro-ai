@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 import { readdirSync, writeFileSync } from 'node:fs';
+import {keyoShellSource} from '../../packages/keyo-studio/src/portable-shell.mjs';
+import {KEYO_VERSION} from '../../packages/keyo-studio/src/version.mjs';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
@@ -39,10 +41,7 @@ export default defineConfig({
       closeBundle() {
         const directory=path.resolve(import.meta.dirname,'dist/public');
         const files=['./','./index.html',...readdirSync(path.join(directory,'assets')).map(name=>'./assets/'+name)];
-        writeFileSync(path.join(directory,'sw.js'),`const PREFIX='keyo-shell:'+self.registration.scope+':';const CACHE=PREFIX+'${Date.now()}';const FILES=${JSON.stringify(files)};
-self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));
-self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith(PREFIX)&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener('fetch',event=>{if(event.request.method!=='GET'||!event.request.url.startsWith(self.registration.scope))return;event.respondWith(caches.open(CACHE).then(c=>c.match(event.request,{ignoreSearch:true}).then(hit=>hit||fetch(event.request))));});`);
+        writeFileSync(path.join(directory,'sw.js'),keyoShellSource(KEYO_VERSION,files));
       },
     },
     react(),

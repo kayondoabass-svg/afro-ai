@@ -15,6 +15,7 @@ const server=http.createServer(async(req,res)=>{
     const name=path.join(root,'artifacts/keyo-mobile/dist/public',relative||'index.html');
     const body=await fs.readFile(name);
     res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html');
+    res.setHeader('Vary','Origin');
     res.end(body);
   }catch{res.writeHead(404).end();}
 });

@@ -1,4 +1,9 @@
-# KEYO portable release: 0.2.0-alpha.1
+# KEYO portable release: 0.2.0-alpha.2
+
+The patch preserves the engine and pinned weights tested in alpha.1. It fixes
+offline static-file cache matching on hosts that send `Vary: Origin`; the browser
+regression server now sends that header too. Existing release bytes are not
+replaced. The APK remains a debug-signed development build.
 
 ## What is built
 

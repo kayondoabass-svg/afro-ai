@@ -4,6 +4,7 @@ import {
   Power, Settings2, ShieldAlert, Square, Trash2, Wifi, WifiOff, X, Library,
 } from 'lucide-react';
 import { useKeyoStudio } from './useKeyoStudio';
+import { KEYO_VERSION } from '../../../packages/keyo-studio/src/version.mjs';
 import type { ModelEntry, StudioState } from './studio-types';
 
 function fmtBytes(n: number) {
@@ -346,7 +347,7 @@ function ModelPanel({ s, setDlg }: { s: StudioState; setDlg: (d: Dlg) => void })
         );
       })}
       {s.engineInfo && <p className="font-mono text-[11px] text-muted-foreground" data-testid="text-engine-info">{s.engineInfo}</p>}
-      <p className="text-[11px] text-muted-foreground"><a className="underline" href="https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v0.2.0-alpha.1" target="_blank" rel="noreferrer">Android development release</a>. Debug APK—not Play Store or phone-execution certified. Models download separately.</p>
+      <p className="text-[11px] text-muted-foreground"><a className="underline" href={`https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v${KEYO_VERSION}`} target="_blank" rel="noreferrer">Android development release</a>. Debug APK—not Play Store or phone-execution certified. Models download separately.</p>
     </section>
   );
 }

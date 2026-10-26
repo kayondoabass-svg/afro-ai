@@ -24,7 +24,7 @@ export async function buildKeyoRelease(root = process.cwd()) {
   const files: string[] = result.files.map((file: {path: string}) => file.path);
   const permitted = (file: string) =>
     ["package.json", "README.md", "CONTRIBUTING.md", "LICENSE", "SECURITY.md", "bin/keyo.mjs", "bin/validate.mjs"].includes(file) ||
-    /^src\/[a-z-]+\.mjs$/.test(file) || file === "src/version.d.mts" ||
+    /^src\/[a-z-]+\.mjs$/.test(file) || ["src/version.d.mts","src/portable-shell.d.mts"].includes(file) ||
     ["native/kernels.cc", "native/build.mjs"].includes(file) ||
     /^test\/[a-z-]+(?:\.test)?\.(?:mjs|py)$/.test(file) || file === "test/requirements.txt" || mobileSourcePermitted(file) ||
     /^desktop\/[a-z-]+\.(?:mjs|cjs|md)$/.test(file) ||

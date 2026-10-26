@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {KEYO_VERSION} from '../packages/keyo-studio/src/version.mjs';
 // Also bundled into the production CJS server; never evaluate import.meta here.
 const root=process.cwd();
 export const mobileSourcePermitted=name=>
@@ -21,7 +22,7 @@ export async function prepareMobileSource() {
   for(const file of ['favicon.svg','robots.txt'])await fs.copyFile(path.join(source,'public',file),path.join(target,'public',file));
   await fs.copyFile(path.join(source,'capacitor.config.ts'),path.join(target,'capacitor.config.ts'));
   const portablePackage={
-    name:'keyo-studio-portable',version:'0.2.0-alpha.1',private:true,type:'module',
+    name:'keyo-studio-portable',version:KEYO_VERSION,private:true,type:'module',
     engines:{node:'>=22.12'},scripts:{dev:'vite --host 0.0.0.0',build:'vite build',android:'npm run build && cap sync android',apk:'npm run android && cd android && ./gradlew assembleDebug'},
     dependencies:{react:'19.1.0','react-dom':'19.1.0','lucide-react':'0.577.0','@noble/hashes':'2.2.0','@capacitor/core':'8.5.3','@capacitor/android':'8.5.3'},
     devDependencies:{'@capacitor/cli':'8.5.3','@vitejs/plugin-react':'4.7.0',vite:'7.3.7',typescript:'5.9.3','@types/node':'22.19.15','@types/react':'19.1.0','@types/react-dom':'19.1.0','@tailwindcss/vite':'4.1.18',tailwindcss:'4.1.18','tw-animate-css':'1.4.0','@tailwindcss/typography':'0.5.19'},
@@ -34,8 +35,8 @@ export async function prepareMobileSource() {
     }
   await fs.writeFile(path.join(target,'package.json'),JSON.stringify(portablePackage,null,2));
   await fs.writeFile(path.join(target,'tsconfig.json'),JSON.stringify({compilerOptions:{target:'ES2022',module:'ESNext',moduleResolution:'bundler',jsx:'react-jsx',strict:true,skipLibCheck:true,allowImportingTsExtensions:true,noEmit:true,types:['vite/client'],paths:{'@/*':['./src/*']}},include:['src']},null,2));
-  await fs.writeFile(path.join(target,'vite.config.ts'),`import {defineConfig} from 'vite';import react from '@vitejs/plugin-react';import tailwind from '@tailwindcss/vite';import path from 'node:path';import {readdirSync,writeFileSync} from 'node:fs';
-export default defineConfig({base:'./',css:{postcss:{plugins:[]}},plugins:[react(),tailwind(),{name:'offline',closeBundle(){const files=['./','./index.html',...readdirSync('dist/public/assets').map(n=>'./assets/'+n)];writeFileSync('dist/public/sw.js',\`const CACHE='keyo-portable-'+self.registration.scope+'-0.2.0-alpha.1';self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(\${JSON.stringify(files)})).then(()=>self.skipWaiting())));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',e=>{if(e.request.method==='GET'&&e.request.url.startsWith(self.registration.scope))e.respondWith(caches.open(CACHE).then(c=>c.match(e.request,{ignoreSearch:true}).then(r=>r||fetch(e.request))));});\`);}}],resolve:{alias:{'@':path.resolve(import.meta.dirname,'src')}},build:{outDir:'dist/public',emptyOutDir:true},server:{fs:{allow:['..']}}});`);
+  await fs.writeFile(path.join(target,'vite.config.ts'),`import {defineConfig} from 'vite';import react from '@vitejs/plugin-react';import tailwind from '@tailwindcss/vite';import path from 'node:path';import {readdirSync,writeFileSync} from 'node:fs';import {keyoShellSource} from '../src/portable-shell.mjs';import {KEYO_VERSION} from '../src/version.mjs';
+export default defineConfig({base:'./',css:{postcss:{plugins:[]}},plugins:[react(),tailwind(),{name:'offline',closeBundle(){const files=['./','./index.html',...readdirSync('dist/public/assets').map(n=>'./assets/'+n)];writeFileSync('dist/public/sw.js',keyoShellSource(KEYO_VERSION,files));}}],resolve:{alias:{'@':path.resolve(import.meta.dirname,'src')}},build:{outDir:'dist/public',emptyOutDir:true},server:{fs:{allow:['..']}}});`);
   async function walk(directory,prefix='android/') {
     for(const entry of await fs.readdir(directory,{withFileTypes:true})) {
       const relative=prefix+entry.name;
