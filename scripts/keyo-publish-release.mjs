@@ -6,6 +6,7 @@ import os from 'node:os';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {KEYO_VERSION} from '../packages/keyo-studio/src/version.mjs';
+import {uploadFiles} from '@huggingface/hub';
 const root=process.cwd(),version=KEYO_VERSION;
 if(!process.argv.includes('--execute'))throw new Error('Use --execute only after reviewing the export and verifying this release.');
 if(!process.env.GITHUB_TOKEN||!process.env.HF_TOKEN)throw new Error('Existing GitHub and Hugging Face credentials are required.');
@@ -40,7 +41,7 @@ try {
   git(['tag',`v${version}`]);
   git(['push','origin','HEAD:main',`refs/tags/v${version}`]);
   const release=await gh(`${api}/releases`,{method:'POST',body:JSON.stringify({
-    tag_name:`v${version}`,name:`KEYO Studio ${version} — portable CPU / Android development alpha`,prerelease:true,
+    tag_name:`v${version}`,name:`KEYO Studio ${version} — portable CPU / Android development alpha`,prerelease:true,draft:true,
     body:await fs.readFile(path.join(root,`dist/keyo-studio/KEYO-Studio-${version}-release-notes.md`),'utf8'),
   })});
   const assets=path.join(publication,'release');
@@ -68,12 +69,13 @@ try {
     if(existing){if(existing.value.content!==content)throw new Error('Mirror bytes disagree before HF publication.');}
     else operations.push({key:'file',value:{content,path:file.name,encoding:'base64'}});
   }
-  const hf=await fetch('https://huggingface.co/api/spaces/kayondoabass/KEYO-Studio/commit/main',{
-    method:'POST',headers:{Authorization:`Bearer ${process.env.HF_TOKEN}`,'Content-Type':'application/x-ndjson'},
-    body:operations.map(op=>JSON.stringify(op)).join('\n'),
+  const hf=await uploadFiles({
+    repo:{type:'space',name:'kayondoabass/KEYO-Studio'},accessToken:process.env.HF_TOKEN,
+    commitTitle:`KEYO portable ${version}: own CPU engine and Android development release`,
+    files:operations.filter(op=>op.key==='file').map(op=>({path:op.value.path,content:new Blob([Buffer.from(op.value.content,'base64')])})),
   });
-  if(!hf.ok)throw new Error(`Hugging Face publication failed: HTTP ${hf.status}. GitHub release may already be published; do not rerun blindly.`);
-  const receipt={version,githubRelease:release.html_url,githubCommit:git(['rev-parse','HEAD']).toString().trim(),huggingFace:await hf.json(),assets:uploaded};
+  await gh(`${api}/releases/${release.id}`,{method:'PATCH',body:JSON.stringify({draft:false})});
+  const receipt={version,githubRelease:release.html_url,githubCommit:git(['rev-parse','HEAD']).toString().trim(),huggingFace:hf,assets:uploaded};
   await fs.writeFile(path.join(publication,'publication-receipt.json'),JSON.stringify(receipt,null,2));
   console.log(JSON.stringify({version,githubRelease:release.html_url,huggingFacePublished:true,assets:uploaded.map(a=>({name:a.name,bytes:a.bytes,sha256:a.sha256}))},null,2));
 } finally {await fs.rm(temp,{recursive:true,force:true});}
