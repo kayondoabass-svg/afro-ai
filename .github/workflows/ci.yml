@@ -17,6 +17,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -24,9 +29,8 @@ jobs:
 
       - name: Clean install (no cache reuse)
         run: |
-          npm cache clean --force
           rm -rf node_modules
-          npm ci --include=dev
+          pnpm install --frozen-lockfile
 
       - name: Diagnose vite
         run: |
@@ -39,11 +43,11 @@ jobs:
           node --input-type=module -e "import('vite').then(()=>console.log('ESM import vite: OK')).catch(e=>console.log('ESM import vite FAILED:',e.code,e.message))"
 
       - name: Typecheck (non-blocking)
-        run: node node_modules/typescript/bin/tsc
+        run: pnpm exec tsc -p tsconfig.legacy.json
         continue-on-error: true
 
       - name: Test
-        run: node node_modules/vitest/vitest.mjs run
+        run: pnpm exec vitest run --maxWorkers=2
 
       - name: Build
-        run: node node_modules/tsx/dist/cli.mjs script/build.ts
+        run: pnpm exec tsx script/build.ts

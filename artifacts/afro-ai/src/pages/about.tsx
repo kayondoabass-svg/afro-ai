@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { KEYO_VERSION } from "../../../packages/keyo-studio/src/version.mjs";
+import { KEYO_VERSION } from "../../../../packages/keyo-studio/src/version.mjs";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";

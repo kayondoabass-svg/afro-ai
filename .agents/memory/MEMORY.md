@@ -1,0 +1,63 @@
+- [Migration install parity](migration-install-parity.md) — npm hoisting and symlink resolution can hide backend/release failures despite a working frontend preview.
+- [Partner programme audience](partner-program-audience.md) — individuals use affiliate marketing; registered businesses use the partner programme and may have teams.
+- [Programme test isolation](programme-test-isolation.md) — use temporary SQL tables and mocked mail; ordinary fixtures can trigger real background work.
+- [Native CPU rollout](native-cpu-rollout.md) — opt-in owned kernels; strict numerical checks and source-only distribution until platform builds are certified.
+- [Model library releases](model-library-release-policy.md) — verified downloads, checkpoint execution and desktop platform certification are separate claims.
+- [KEYO distribution](keyo-distribution.md) — mirrors must preserve release bytes; distinguish app ZIPs from source bundles and disclose separate model downloads.
+- [i18n translations](i18n-translations.md) — t()/translations.ts conventions: 15 langs, {name} + count plural, grep before adding keys to avoid TS1117 dup-key errors; missing keys fall back to en.
+- [Knowledge RAG + tool-calling](knowledge-rag.md) — per-user jsonb vector store + in-app cosine (no pgvector); embeddings reuse Gemini→OpenAI fallback; server-side URL fetch must be SSRF-guarded; RAG content is untrusted (injection vector).
+- [Blank page after deploy](blank-page-chunk-errors.md) — lazy-route SPA crashes to a black screen when stale PWA/cache chunks 404; needs an ErrorBoundary that auto-reloads on chunk-load errors.
+- [Caddy empty-200 white screen](caddy-empty-200-missing-site.md) — blank prod page returning 200 + content-length 0 + no content-type = the request Host has no Caddy site block (e.g. apex missing while api. exists); app is healthy, add the block.
+- [Build vs typecheck](build-typecheck.md) — esbuild build skips tsc; ~60 pre-existing tsc errors, so CI typecheck stays non-blocking. Never claim "tsc clean" without diffing the baseline.
+- [Ownership/IDOR checks](authz-ownership.md) — scope per-user rows by req.user.claims.sub; founder-bypass policy is inconsistent across chat/audio/routes (FOUNDER_EMAIL vs FOUNDER_EMAILS vs none).
+- [attached_assets gitignore trap](attached-assets-gitignore.md) — @assets images can pass locally/prod but be untracked → CI test file fails to LOAD + build can't resolve; use `attached_assets/*` + `!` negation + commit the binary.
+- [CI "vitest: not found" w/ healthy lock](ci-npx-vs-bin.md) — npm ci green but `npm run test` can't find the bin on the runner; use `npx vitest run`/`npx tsx` in CI. Don't regenerate an all-platform lock against a 1-platform node_modules (prunes optional deps).
+- [Droplet build "tsx: not found"](deploy-devdeps-build.md) — prod-only node_modules + deploy.sh skip-npm-ci-when-unchanged = build fails on missing dev tools; fix: `rm -rf node_modules && bash scripts/deploy.sh`.
+- [GitHub push authentication](github-workflow-scope-push.md) — distinguish credential failure from workflow-scope rejection; a healthy git-provider binding does not prove a push will authenticate.
+- [Production publishing target](production-publishing-target.md) — the Replit deployment is separate from the Afro AI VPS; a Git push does not prove the live domain was rebuilt.
+- [Replit lockfile registry URLs](lockfile-replit-registry.md) — package-firewall.replit.local URLs baked into package-lock.json break npm ci off-Replit (EAI_AGAIN/partial install); --registry can't override, sed-rewrite resolved host.
+- [Caddy shared-log-dir outage](caddy-log-permission-outage.md) — whole-site "Host Error" with healthy Node = Caddy can't write /srv/afro-ai/logs/access.log after dir/file chowned to afro; status=1 ≠ OOM (check dmesg).
+- [AutoTrain SFT smoke test](autotrain-sft-smoke-test.md) — tiny Qwen 1.5B LoRA tests need short block sizes; expand the dataset before a real 512-token run.
+- [Afro AI pilot scope](afro-provider-pilot.md) — serving success is not tool-call or production-quality evidence; keep the trained model opt-in until evaluated.
+- [Paid provider uncertainty](paid-provider-uncertainty.md) — never automatically retry ambiguous paid jobs; cancellation does not prove provider billing stopped.
+- [Generated media retention](media-retention-policy.md) — media is retained for 72 hours after completion; storage expiry is separate from spending caps and accounting.
+- [Metering price compatibility](metering-price-compatibility.md) — protect budgets without changing existing tariffs; customer fees and provider usage are distinct.
+- [Binary project storage](binary-project-storage.md) — bounded assets share the owned database transaction; LFS fails closed rather than pretending pointers are assets.
+- [SQLite CLI portability](sqlite-cli-portability.md) — error-path tests must not assume every CLI version continues through same-line statements.
+- [Binary test fixtures](binary-test-fixtures.md) — validate font fixtures before round-trips; dependency-bundled assets may already contain corrupted bytes.
+- [Cloudflare purge permissions](cloudflare-purge-permissions.md) — active tokens and D1 access do not prove purge permission; keep purge authorization separate.
+- [SSH key line wrapping](ssh-key-format.md) — check single-line key formatting before treating parse failures as invalid credentials.
+- [Generated website boundary](generated-website-boundary.md) — assistant narration is not website HTML; enforce extraction across preview/publish/serve and repair legacy contamination on read.
+- [Project agent scope](project-agent-scope.md) — cost-sensitive, existing-services-only coding assistance with explicit review; execution and pilot-model activation need separate approval.
+- [Project validation boundary](project-validation-boundary.md) — customer-controlled checks, honest evidence labels and explicit legacy workspace imports.
+- [Project retention policy](project-retention-policy.md) — founder requests hidden deletion and long retention; confirm legal scope before implementing an archive.
+- [Provider contract checks](provider-contract-checks.md) — verify actual provider and tool results; explicitly request a final answer after a tool-only instruction.
+- [Full-stack starters](fullstack-starter-scope.md) — automatic files for full-stack projects only; paid access must be server-enforced before expanding runtime capabilities.
+- [Customer branding](customer-branding.md) — never use Afro AI/KEYO as client brands; obtain the preferred customer name before new builds.
+- [Verification requirement](verification-requirement.md) — account access must wait for email confirmation; avoid automatic resend loops during session mirroring.
+- [Auth onboarding](auth-onboarding-policy.md) — separate DNS and mailbox proof; preserve legacy integrations and overlap replacement keys before explicit revocation.
+- [Auth developer audience](auth-developer-audience.md) — Afro Auth targets developers in Africa and worldwide, not an Africa-only market.
+- [Crypto test environments](crypto-test-environments.md) — use Node for real JWT tests; jsdom can mix incompatible typed-array realms.
+- [Upgrade recommendations](upgrade-recommendations.md) — user wants occasional, relevant upgrade suggestions without misleading free-hosting promises.
+- [Wide image delivery](wide-image-delivery.md) — verify image dimensions; editing may return square artwork despite a wide source and prompt.
+- [Branding scope](branding-scope.md) — Logo 1 is platform branding; the technology cover is an email background, not a homepage/login background.
+- [MCP product scope](mcp-product-scope.md) — user requires AI discoverability through MCP across domains, chatbots, email, web/app design, and USSD.
+- [Domain purchase experience](domain-purchase-experience.md) — after purchase, prioritize management and app connection, not repeated purchase prompts.
+- [Local currency pricing](local-currency-pricing.md) — USD is the base; each customer uses their country's currency, with conversion rather than relabeling.
+- [Credit & payment policy](credit-reminder-policy.md) — preserve free midnight resets; US$5-equivalent paid warnings; keep Pesapal and do not propose Stripe/Whop unless asked.
+- [Navigation grouping](navigation-grouping.md) — keep related products under expandable sidebar sections instead of extending the long flat menu.
+- [Platform admin identity](platform-admin-identity.md) — avoid requiring two login systems for Afro Auth management; preserve legacy ownership and distinguish outages from expired sessions.
+- [Founder entitlements](founder-entitlements.md) — founder has full platform access without customer subscriptions; provider capacity and security safeguards remain separate.
+- [Customer chatbot scope](customer-chatbot-scope.md) — chatbot fixes must serve all customers; never hard-code one demonstration site's identity or behavior.
+- [KEYO Studio scope](open-source-developer-product.md) — downloadable open-source runner with its own engine; reference research is not an installation request or proof of global rank.
+- [Native loader environment](native-loader-environment.md) — sanitized desktop checks must preserve Replit’s public loader/audit configuration, not provider credentials.
+- [KEYO founder dashboard](keyo-founder-dashboard.md) — private Command Center runner oversight, founder-managed email access, and separate authorized/active viewer counts.
+- [Customer agent labels](customer-agent-labels.md) — use Agent 1/2/3 in customer-facing chat notices; retain real provider identities privately.
+- [Upload-processing permission](upload-processing-permission.md) — signup disclosures should support routine requested processing without repeated prompts, not blanket reuse rights.
+- [Email API project flow](email-project-flow.md) — project-contained verification, keys and logs; explicit rotation/revocation without breaking existing integrations.
+- [Chatbot credential rollout](chatbot-credential-rollout.md) — public embed IDs stay separate from private API secrets; legacy integrations migrate only with explicit owner opt-in.
+- [Integration schema readiness](integration-schema-readiness.md) — build/restart can skip deploy prerequisites; check the running service’s database and gate readiness on complete setup.
+- [App management policy](app-management-policy.md) — one app library, actionable publish recommendations and typed confirmation with verified live-site removal.
+- [Parallel visual fixtures](parallel-visual-fixtures.md) — isolate dependency caches; ignored fixture wrappers may fall outside Tailwind’s source scan.
+- [JSX preview instrumentation](jsx-preview-instrumentation.md) — named Fragments may receive unsupported preview metadata; use a layout-safe element for keyed boundaries.
+- [Terminal dependency updates](terminal-dependency-updates.md) — updating Socket.IO alone can retain vulnerable nested dependencies; verify the complete transport tree.

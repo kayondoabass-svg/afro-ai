@@ -17,4 +17,6 @@
 //   export type InsertPost = z.infer<typeof insertPostSchema>;
 //   export type Post = typeof postsTable.$inferSelect;
 
-export * from "./schema";
+// The existing schema stays shared with the preserved application. Do not
+// rewrite validation semantics or generate a new production database here.
+export * from "@workspace/afro-shared/schema";

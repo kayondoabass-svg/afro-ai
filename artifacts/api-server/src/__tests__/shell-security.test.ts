@@ -1,11 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FOUNDER_EMAIL } from "../replit_integrations/auth";
 import { hasShellAccess, isAllowedShellOrigin } from "../shell-security";
 
 const secret = "a".repeat(40);
 const founder = { isAuthenticated: () => true, user: { claims: { email: FOUNDER_EMAIL } } };
+afterEach(() => vi.unstubAllEnvs());
 
 describe("shell connection security", () => {
+  it("accepts only the configured nested workspace origin in development", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("REPLIT_DEV_DOMAIN", "this-workspace.preview.replit.dev");
+    expect(isAllowedShellOrigin("https://this-workspace.preview.replit.dev")).toBe(true);
+    expect(isAllowedShellOrigin("https://other-workspace.preview.replit.dev")).toBe(false);
+    expect(isAllowedShellOrigin("https://this-workspace.preview.replit.dev.evil.example")).toBe(false);
+    vi.stubEnv("NODE_ENV", "production");
+    expect(isAllowedShellOrigin("https://this-workspace.preview.replit.dev")).toBe(false);
+  });
   it("requires an authenticated founder AND a matching, strong shared secret", () => {
     expect(hasShellAccess(founder, secret, secret, true)).toBe(true);
     expect(hasShellAccess(founder, secret, secret, false)).toBe(false);

@@ -461,7 +461,10 @@ httpServer.listen(
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.AFRO_WORKSPACE_API_ONLY === "1") {
+    // The web artifact owns the SPA in workspace development. API routes,
+    // authentication, callbacks and sockets retain their original handlers.
+  } else if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
     const { setupVite } = await import("./vite");

@@ -17,7 +17,7 @@ expertMode = true
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 20000
+timeoutMs = 300000
 
 [userenv]
 
@@ -38,3 +38,19 @@ PROJECT_FILES_D1_DATABASE_NAME = "afro-ai-project-files"
 [userenv.development]
 AFRO_AI_BASE_URL = "https://6ab436f78392dd29385e9538.endpoints.huggingface.cloud/v1"
 AFRO_AI_MODEL = "kayondoabass/afroai-qwen15b-v1-merged"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 3001
+
+[[ports]]
+localPort = 5173
+externalPort = 5173
+
+[[ports]]
+localPort = 8976
+externalPort = 3000

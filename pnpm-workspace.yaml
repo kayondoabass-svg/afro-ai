@@ -71,10 +71,18 @@ autoInstallPeers: false
 onlyBuiltDependencies:
   - '@swc/core'
   - esbuild
+  - electron
+  - node-pty
+  - bufferutil
   - msw
   - unrs-resolver
 
 overrides:
+  engine.io: 6.6.11
+  engine.io-client: 6.6.7
+  socket.io-adapter: 2.5.8
+  socket.io-parser: 4.2.7
+  ws: ^8.21.3
   "proxy-addr@^2": "^2.0.8"
   "source-map-js@^1": "^1.2.2"
   "fast-uri@^3": "^3.1.8"

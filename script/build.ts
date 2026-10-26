@@ -52,6 +52,9 @@ async function buildAll() {
 
   await esbuild({
     entryPoints: ["server/index.ts"],
+    // The server compatibility link now resolves inside an artifact. Keep
+    // the existing application aliases rather than picking scaffold options.
+    tsconfig: "tsconfig.legacy.json",
     platform: "node",
     bundle: true,
     format: "cjs",

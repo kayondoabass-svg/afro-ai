@@ -3,3 +3,8 @@
 
 # No need to store the pnpm store twice.
 .local
+
+# Migration references and generated validation output are not deploy inputs.
+.migration-backup
+generated-artifacts
+package-lock.legacy.json

@@ -1,45 +1,203 @@
-# [Project name]
+# Afro AI
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+## Workspace migration compatibility
 
-## Run & Operate
+- The existing web app is `artifacts/afro-ai`; the existing Express backend is
+  `artifacts/api-server/src`. Use their managed workflows, not a second root
+  development server.
+- Root `client`, `server`, and `shared` remain compatibility links for the
+  existing VPS build, tests and KEYO source/release tools. Preserve those
+  release contracts until they are intentionally migrated.
+- `pnpm install --frozen-lockfile` installs the workspace. The existing complete
+  VPS release is still built with `pnpm exec tsx script/build.ts`, producing
+  `dist/index.cjs`, `dist/public`, and `dist/keyo-studio`. GitHub CI and the
+  external deploy script now install with pnpm.
+- The web and API gateway routes remain on the same origin. Existing auth,
+  session, payment and database implementations are retained, not replaced by
+  scaffold APIs or newly generated clients.
+- Post-merge setup installs dependencies only. Do not push the scaffold
+  database schema or force synchronization as part of a source-layout change.
+- This migration does not build Android, change KEYO inference, or publish to
+  the live VPS. Check parity before the separate Android upgrade.
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+## Overview
+Afro AI, a product of KEYO TECHNOLOGIES, is a global AI-powered platform enabling creators to build digital products like websites, web apps, games, tools, and dashboards. Originating from Africa, it caters to a worldwide market. Its core features include an AI co-creation assistant, multi-page application generation, comprehensive project management, and ZIP project export functionality. The platform's vision is to democratize digital creation and foster innovation globally.
 
-## Stack
+## User Preferences
+- Dark mode as default
+- African-inspired color scheme (gold primary, warm tones)
+- Pesapal for payments across Africa (Mobile Money, Visa, Mastercard, bank transfers)
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+## System Architecture
+The platform is built on a modern web stack: React, TypeScript, Vite, Tailwind CSS, and shadcn/ui for the frontend; Express.js and Node.js for the backend; and PostgreSQL with Drizzle ORM for the database. Authentication is handled by a dedicated Cloudflare Worker (`cf-auth`) covering email/password, Google, and GitHub sign-in; Express trusts the Worker's session cookie via a small bridge middleware. AI capabilities are powered by OpenAI, with tiered models aligning with user subscription plans.
 
-## Where things live
+**Key Architectural Decisions & Features:**
+-   **AI Co-creation:** An AI-powered code generator provides a live preview and supports iterative development through context-aware generation.
+-   **Performance Optimization:** Prioritizes lazy loading and small page sizes (<500KB) for optimal performance.
+-   **App Publishing:** Users can publish apps to unique subdomains managed via Cloudflare DNS, with custom domain support.
+-   **Templating System:** Offers 21 pre-built African business templates for quick project initiation.
+-   **Project Management:** A dashboard facilitates project creation, viewing, deletion, and quick-start ideas, linking conversations to projects.
+-   **Form Builder:** A robust tool for creating forms with various field types, submission tracking, and embeddable code.
+-   **Block Builder:** A visual, block-based page composer with 27 pre-built sections, allowing users to configure and generate pages with AI.
+-   **Blog & CMS:** Full blog management system for creating, editing, and publishing posts.
+-   **Email Marketing:** Manages subscribers and provides an AI-powered campaign builder.
+-   **Tiered AI Models:** Utilizes different OpenAI models (gpt-4.1-nano, gpt-4.1-mini, gpt-4.1) based on user subscription tiers.
+-   **Context-Aware Editing:** Features an 80K character code window, auto-generated Project Map, Plan-Before-Action protocol, and Reflect self-check for precise AI modifications.
+-   **Security:** Implements global security headers, content security policies, HTML content scanning, and API rate limiting.
+-   **Referral System:** Includes a referral program with unique codes and commission tracking.
+-   **Affiliate Program:** A public sign-up and management system for affiliates with a 10% commission model.
+-   **Billing & Pricing:** Integrates Pesapal for payments, offering Free, Pro, Business plans, and Pay-As-You-Go credit packs. Includes cron jobs for managing free app suspensions.
+-   **Admin/Founder System:** A dedicated interface for managing users, projects, published apps, analytics, and administrative AI commands.
+-   **Analytics:** Tracks server-side app views and displays performance metrics on a dedicated dashboard.
+-   **Marketplace:** A community template marketplace where users can publish and clone apps.
+-   **PWA Builder:** Allows users to generate PWA files (manifest.json, sw.js) and an HTML head snippet for published apps.
+-   **Collaboration:** Project owners can invite collaborators with viewer/editor roles.
+-   **Domain Store:** Facilitates domain registration via name.com reseller API, including search, pricing, and nameserver management.
+-   **API Integrations:** Users can configure and test REST API connections, generating ready-to-paste JS fetch code snippets.
+-   **SEO Tools:** Configures SEO settings (title, description, keywords, OG tags) for published apps, including a live Google search preview and AI analysis.
+-   **Webhooks:** Users can register HTTP endpoints to receive real-time event payloads for various platform events.
+-   **Auth Builder:** Integrates Firebase Auth into apps, providing branded login screens and handling user authentication.
+-   **Version History:** Automatically saves snapshots of generated HTML pages, allowing users to preview and restore previous versions.
+-   **Experience Level System:** Adapts AI communication style (Beginner, Intermediate, Expert) based on user preference.
+-   **USSD Builder:** A standalone revenue stream providing a platform for building USSD applications with regional pricing and use case showcases.
+-   **Files & Storage:** Manages uploaded files, tracks ZIP exports, and provides a CDN browser for external libraries.
+-   **Overview:** A personal dashboard displaying key metrics, recent activity, and quick actions.
+-   **Secrets Manager:** Securely stores environment variables and API keys per published app or globally.
+-   **Activity Logs:** Provides a full event stream of user actions, filterable by type and searchable.
+-   **Dev Console (Unified Dashboard):** A professional IDE-style developer dashboard at /console with three tabs — Activity (color-coded, searchable, filterable real-time log feed), Terminal (interactive Xterm.js bash shell with admin key protection), and Deployments (list of published apps with status). Includes a persistent status bar showing server health, shell state, branch, and port.
+-   **Interactive Shell:** Real-time interactive bash terminal inside the Dev Console Terminal tab, powered by node-pty and Socket.io. Protected by SHELL_SECRET admin key.
+-   **Sidebar Search:** Filters navigation items in real time.
+-   **Email API:** A transactional email sending service powered by AWS SES, offering API keys, domain verification, and sending logs.
+-   **SES Bounce/Complaint Pipeline:** Public webhook at `/api/ses/sns` receives SNS notifications from SES (Bounce, Complaint, Delivery). Every message is signature-verified against the SNS signing cert (host whitelisted to `sns.*.amazonaws.com`), `SubscribeURL` handshake is auto-confirmed, and the `SES_SNS_TOPIC_ARN` env var optionally pins the allowed topic. Hard bounces and all complaints are added to a permanent `email_suppressions` table; soft bounces are logged but not suppressed. Both the public `/api/email-api/send` route and the platform `mailer.ts` filter recipients against the suppression list before calling SES, protecting sender reputation. Founder-only admin endpoints under `/api/admin/email-suppressions` and `/api/admin/email-reputation` expose the list and overall reputation stats (sent / delivered / bounce rate / complaint rate).
+-   **Chatbot API:** Enables users to create embeddable AI chatbots for external websites with a knowledge base and brand customization.
+-   **Team Management (Founder):** Country-first staff promotion at `/team` (founder-only). Founder picks one of 25 African countries, searches existing clients, then assigns one of 20 predefined roles and one of three access tiers (read-only / editor / full-admin). Personal details (phone, city, address), photo (JPG/PNG/WEBP) and ID document (PDF/JPG/PNG) optional, all uploaded to R2 with magic-byte content validation. Confidential ID documents are streamed through an authenticated backend endpoint (`/api/admin/team/:id/id-document`) gated to founders + active HR managers in the same country only — the file URL is never returned to the browser. Duplicate active membership for the same user/country is blocked at app + DB level via the partial unique index `team_members_unique_active_per_country (user_id, country) WHERE status <> 'removed'`. The companion `/api/team/me` endpoint exposes the calling user's role/tier/country/manager flag for the future staff dashboard. Constants live in `shared/team-constants.ts` (TEAM_ROLES, MANAGER_ROLES, CONFIDENTIAL_DOC_VIEWER_ROLES, TEAM_TIERS, AFRICAN_COUNTRIES).
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+## Production Deployment
 
-## Architecture decisions
+Production runs on a DigitalOcean droplet behind Caddy + Cloudflare, on the `afroaigroup.com` domain. (Droplet SSH details are kept out of source — see Replit Secrets / your password manager.) The Node service is managed by systemd as `afro-ai.service` with `WorkingDirectory=/opt/afro-ai` and `EnvironmentFile=/srv/afro-ai/shared/.env` (so prod secrets live outside the git checkout and survive any redeploy).
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+**Standard deploy** — push to `origin/main`, then on the droplet run:
 
-## Product
+```
+bash /opt/afro-ai/scripts/deploy.sh
+```
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+**Important:** do NOT run `git pull` manually before calling the script — the script does its own pull, and a manual pull beforehand will make it think nothing changed (it will still detect a stale `dist/` via `dist/.deployed_sha` and rebuild, but the log line will be confusing). Just call the script.
 
-## User preferences
+**Exception when updating the deployment script itself:** pull the update before
+invoking it, so Bash loads the new prerequisite checks rather than the old
+function definitions. Run `git -C /opt/afro-ai pull --ff-only origin main`, then
+the standard command above. The build marker still forces a rebuild when needed.
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+Media storage setup runs explicitly during deployment, before restarting the
+service, and on same-build redeploys. It creates missing storage or adds missing
+nullable delivery fields without deleting jobs, assets, or billing records.
+Prepared databases need only read privileges. For a read-only diagnostic, run
+`node scripts/media-storage-migrate.cjs --check` with the service environment
+loaded; never print that environment or its database connection string.
 
-## Gotchas
+Generated images/videos expire **72 hours after completion**, not after the
+request starts. Database completion tracking also supports older app releases.
+The app denies expired downloads and cleans up once per minute. A standalone
+`scripts/media-retention-run.cjs` entry point supports scheduled cleanup without
+starting any paid-generation or mail workers. The VPS compatibility timer
+`afro-ai-media-retention.timer` runs an independently bundled copy under
+`/opt/afro-ai-maintenance/`, using the app's systemd EnvironmentFile and user.
+It safely cooperates with app cleanup through row locks. It remains independent
+of the checkout so installing it cannot dirty or block normal deployments.
+To install/update that maintenance copy after code changes, build with
+`npx esbuild scripts/media-retention-run.cjs --bundle --platform=node --format=cjs --external:pg --outfile=/tmp/media-retention.cjs`
+and run `sudo bash scripts/install-media-retention.sh /tmp/media-retention.cjs`.
+Apply the storage migration first using the service environment. The installer
+refuses to overwrite unrelated units and does not restart the main application.
+Cleanup deletes media bytes, prompts and private objects, but preserves minimal
+job identities and financial/idempotency records. Failed object deletions retain
+their private pointer for retry. Historical completions lacking a timestamp get
+72 hours from rollout; do not pretend their historical completion time is known.
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+`scripts/deploy.sh` pulls from origin, builds client + server, restarts the service, runs a `/api/health` check, and purges the Cloudflare cache. Safety guarantees:
 
-## Pointers
+- **Concurrency lock** (`flock` on `/var/lock/afro-ai-deploy.lock`) — refuses to start if another deploy is already running.
+- **Refuses dirty working tree** — won't silently throw away an uncommitted hotfix on the droplet.
+- **Snapshots the live `dist/` as `dist.prev` before building** (cheap hardlink copy). If the build fails, the systemctl restart fails, OR the health check fails, the snapshot is restored and the service runs the old build. The site stays live even if the rollback rebuild itself would fail.
+- **Health check retries** 5× with 2-second backoff before declaring failure.
+- **Build timeout** (`BUILD_TIMEOUT`, default 600s) prevents a runaway build from blocking forever.
+- **Logs every run** to `/var/log/afro-ai-deploy.log` with UTC timestamps.
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+Tunable env vars: `PORT` (default 5000, used for health check URL), `BUILD_TIMEOUT` (default 600s).
+
+**Manual rollback** — to roll back without a new commit:
+
+```
+bash /opt/afro-ai/scripts/rollback.sh           # one commit back
+bash /opt/afro-ai/scripts/rollback.sh <sha>     # specific commit
+```
+
+(Use `git -C /opt/afro-ai log --oneline -10` first to pick a SHA.)
+
+**One-time bootstrap** — after the very first time these scripts land on the droplet:
+
+```
+chmod +x /opt/afro-ai/scripts/deploy.sh /opt/afro-ai/scripts/rollback.sh
+touch /var/log/afro-ai-deploy.log && chown root:root /var/log/afro-ai-deploy.log
+```
+
+Required env vars in `/srv/afro-ai/shared/.env`: everything the app needs at runtime, plus `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN` (token must have **Zone → Cache Purge → Purge** permission for `afroaigroup.com`) for the auto-purge step.
+
+### CI/CD (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+- **verify** job — `npm ci` → `npm run check` (tsc) → `npm run test` (vitest) → `npm run build`. Catches failing tests and build breaks before they ever reach the droplet. **Note:** the `npm run check` (tsc) step is currently `continue-on-error` (informational, non-blocking) because the project has a backlog of ~60 pre-existing type errors and ships via esbuild (`tsx script/build.ts`), which bundles without type-checking. It surfaces the type-error count but does not fail CI; make it blocking once the tsc baseline is cleaned up.
+- **deploy** job — runs only after `verify` passes and only on a push to `main` (never on PRs). It SSHes into the droplet and runs `scripts/deploy.sh`. The job auto-skips if the `DROPLET_HOST` secret is not configured, so CI keeps working as plain checks.
+
+Required GitHub repo secrets (Settings → Secrets and variables → Actions) for auto-deploy: `DROPLET_HOST`, `DROPLET_USER` (e.g. `root`), `DROPLET_SSH_KEY` (the PRIVATE key whose public key is in the droplet's `authorized_keys`), and optionally `DROPLET_SSH_PORT` (defaults to 22). Manual `bash /opt/afro-ai/scripts/deploy.sh` still works and is unaffected. Note: the deploy job runs the same lock-protected script, so a manual deploy and an auto-deploy can't clobber each other (the `flock` in deploy.sh serializes them).
+
+### Scaling & High Availability
+
+The app is already largely horizontally-scalable at the code level:
+- **Stateless sessions** — server sessions are stored in PostgreSQL via `connect-pg-simple`, and primary auth is the stateless Cloudflare `afroai_session` cookie. No in-memory session state, so any instance can serve any request.
+- **External storage** — uploaded files and published-app HTML live in Cloudflare R2, not on local disk.
+- **Proxy-aware** — `app.set("trust proxy", true)` is set, so the app reads the real client IP / protocol correctly behind a load balancer.
+
+To scale horizontally when traffic warrants it (this is infrastructure provisioning, a monthly cost, not a code change):
+1. Provision one or more additional droplets with the same `afro-ai.service` setup (same `/srv/afro-ai/shared/.env`, same deploy flow).
+2. Put a **DigitalOcean Load Balancer** in front, health-checking `/api/health`. Point the Cloudflare DNS record at the load balancer instead of the single droplet.
+3. Ensure all instances share the **same PostgreSQL database** (they already would via the shared env) and the **same R2 buckets**.
+4. **Known single-instance caveat — the Dev Console interactive terminal** (`/console` Terminal tab) uses Socket.io + `node-pty`, which binds a real shell process to one instance. Across multiple instances it needs either sticky sessions on that route or a Socket.io Redis adapter. It's a founder-only tool, so the simplest path is to pin `/console` (and the Socket.io path) to a single instance via the load balancer until a Redis adapter is added.
+5. Move any future in-process caches/cron locks to a shared store (e.g. Redis) before scaling past one instance, so scheduled jobs (free-app suspension cron, etc.) don't run on every instance simultaneously.
+
+## External Dependencies
+-   **AI Services:** Google Gemini (primary) with OpenAI fallback. Unified by `server/ai-chat-provider.ts` which exposes `aiChatComplete({ tier })`. Provider order is controlled by `AI_PRIMARY_PROVIDER` (default `gemini`); the helper auto-falls-back to OpenAI on auth/quota errors (HTTP 401/402/403/429, `insufficient_quota`, `invalid_api_key`, billing). Gemini is reached via its OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`) so the same client code works for both. **Tier-based model routing**: starter→`gemini-2.5-flash-lite` (~$0.10/1M), pro→`gemini-2.5-flash` (~$0.30/1M), business+payg→`gemini-2.5-pro` (~$1.25/1M). (Note: `gemini-2.0-flash` was retired by Google for new keys; we use `2.5-flash-lite` as the cheapest current model.) Per-tier output-token cap (starter 2k, pro 8k, business 16k, payg 32k) prevents a single reply from exceeding the user's plan economics. Used by `/api/demo-chat`, `/api/widget-chat/:apiKey`, `/api/v1/chatbot/message`, and the USSD AI route. `OPENAI_MODEL` and `GEMINI_MODEL` env vars still override defaults if set (useful for incident pinning).
+-   **Image Generation:** Imagen 3 (`imagen-3.0-generate-002`) via Gemini REST in `server/imagen.ts` is primary; OpenAI `gpt-image-1` is the auto-fallback. Routed at `POST /api/generate-image` (`server/replit_integrations/image/routes.ts`). Aspect ratio configurable (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`).
+-   **Video Generation:** Veo 2 (`veo-2.0-generate-001`) via Gemini REST in `server/veo.ts`, exposed at `POST /api/generate-video`. **Business-plan only** (starter + pro caps are 0/day). Hard-capped at 5 seconds per clip, 5 clips/day Business / 50/day PAYG. Async polling — calls can take 30-90s and time out at 5min. Wholesale cost ≈ $0.35/sec, plan-bounded so worst-case Business AI spend stays under $10/day per user.
+-   **Daily quota caps (May 2026, applied to all users):** starter 30 chats / 3 images / 10 audio / 0 video; pro 500 / 30 / 200 / 0; business 1500 / 100 / 400 / 5; payg 5000 / 500 / 1000 / 50. Defined in `server/replit_integrations/quota.ts` `DAILY_REQUEST_LIMITS`, enforced via `aiQuotaGuard(kind)` middleware on all AI routes.
+-   **Payment Gateway:** Pesapal (API 3.0).
+-   **Authentication:** Cloudflare Worker (`cf-auth`) with Google + GitHub OAuth and email/password.
+-   **Database:** PostgreSQL (primary). Cloudflare D1 wired but unused (Phase 2).
+-   **Object Storage:** Cloudflare R2 — published-app HTML mirrored at `sites/{appId}.html` and `sites/{appId}/v{n}.html` for versions. Read path prefers R2 with DB fallback (Phase 1 of off-Replit migration).
+-   **DNS Management:** Cloudflare DNS API.
+-   **Domain Registration:** name.com reseller API.
+-   **Email Sending:** AWS SES.
+-   **SMS:** Africa's Talking (live mode; awaiting production approval for non-sandbox numbers).
+-   **Authentication (External Apps):** Firebase Auth.
+-   **Frontend route guard:** `client/src/App.tsx` defines `AUTH_REQUIRED_EXACT` / `AUTH_REQUIRED_PREFIXES` (e.g. `/chat`, `/dashboard`, `/settings`, `/preview/:id`, `/dashboard/auth/...`). When `useAuth()` resolves to no user but the URL is in that set, `LoginRedirectGuard` saves the destination in `sessionStorage["after_login_redirect"]` and renders `<Redirect to="/login" />`. This prevents the previous "URL ends at /chat but the marketing homepage is shown" mobile bug, which happened when the worker session cookie was lost/dropped in transit and the catch-all silently rendered `LandingPage` for any unmatched path. The login page reads the same `after_login_redirect` key to bounce users back to the original destination after sign-in.
+-   **Cloudflare Worker (auth):** `cloudflare/` package — Hono Worker deployed as `afro-ai-auth`, mounted at `afroaigroup.com/cf-auth/*` via Worker Route. Owns email/password signup/login/logout/me/forgot/reset and Google + GitHub OAuth. Backed by D1 (`e796b2ab-d062-42c2-8412-7d281e4c0f5d`) with users / oauth_accounts / password_reset_tokens. Bot protection via Cloudflare Turnstile (frontend uses test key `1x00000000000000000000AA` on non-prod hostnames so the widget renders during dev). Frontend pages `client/src/pages/{login,forgot-password,reset-password}.tsx` and `client/src/components/turnstile-widget.tsx` call the Worker. Express trusts the Worker's `afroai_session` cookie via `server/replit_integrations/auth/cfBridge.ts`, so the existing `isAuthenticated`/`isFounder` middleware keeps working unchanged. The legacy Passport email/password and Google/GitHub strategies have been retired; only the TikTok PKCE flow and `/api/logout` (which clears both Passport and Worker cookies) remain in `replitAuth.ts`.
+-   **Afro Auth (multi-tenant Login-as-a-Service):** Same Worker (`cloudflare/src/index.ts`) hosts the customer-facing product on top of the same D1. Migration `cloudflare/migrations/001_multitenant.sql` added `tenants`, `api_keys`, `tenant_usage`, `tenant_user_activity` tables and rebuilt `users` with `tenant_id` (default `'platform'` for existing rows) + `UNIQUE(tenant_id, email)`. Tenant end-user APIs live under `/cf-auth/t/:slug/{signup,login,me}` (return JWT in body, no cookies; CORS enforces `tenants.allowed_origins` allowlist when set). Server-to-server APIs `/cf-auth/v1/sessions/verify` and `/cf-auth/v1/users` authenticate by `Authorization: Bearer sk_live_…` keys (secret stored as sha256 hex; revealed once on creation). Platform admin APIs `/cf-auth/v1/admin/tenants[/:id[/keys|users]]` use the existing `afroai_session` cookie. MAU is tracked per-tenant per-month in `tenant_user_activity`; signup is hard-capped per plan via `PLAN_MAU_LIMITS`. Customer-facing pages: `/afro-auth` (public landing), `/dashboard/auth` (project list), `/dashboard/auth/:id` (single project — quickstart, keys, users, settings). Sidebar entry "Afro Auth" points to `/dashboard/auth`. Pricing tiers: Free 5k / $5 Builder 25k / $25 Business 100k / $100 Scale 500k MAU.
+## Vibe-Coding Upgrades (May 2026)
+The AI chat (`/ai-chat`, `/agent`) now supports a structured marker syntax that the model can emit and the UI renders as rich, interactive components.
+
+**Marker syntax** (drop in any assistant message):
+- `[[file:path/to/file.ts:10-25]]` → renders a clickable FileChip; opens an inline CodeMirror-style viewer modal that shows the actual file snippet from the project (sandbox-restricted, blocks `.env`, `.git`, `.local`, `node_modules`).
+- `[[step:read|search|edit|write|test|deploy|fix:Label]]` → adds an entry to a per-message Build Ledger timeline.
+- `[[needs-secret:OPENAI_API_KEY:reason]]` → surfaces a "Required API Keys" card with green/red status (set vs missing).
+
+**Backend (`server/vibe-routes.ts`)**:
+- `GET /api/vibe/file?path=&start=&end=` — sandboxed file snippet
+- `POST /api/vibe/scan-secrets` — scans code for `process.env.X` / `import.meta.env.X` / `Deno.env.get(...)` references and returns which are missing
+- `POST /api/vibe/typecheck` — runs `tsc --noEmit` on a code snippet, returns errors
+- `GET /api/vibe/steps/:messageId`, `GET /api/vibe/refs/:messageId`, `POST /api/vibe/index/:messageId` — persisted build ledger / file refs (tables `vibe_steps`, `vibe_file_refs`)
+- `POST /api/vibe/rollback/:messageId` — returns the `app_versions` snapshot taken at-or-before that message so a single message can be rewound
+
+**Frontend (`client/src/components/vibe-chips.tsx`)**:
+- `parseVibeMarkers(text)` — pure parser, unit-tested in `client/src/__tests__/vibe-chips.test.ts`
+- `<FileChip>`, `<BuildLedger>`, `<RequiredSecrets>`, `<TypecheckBadge>`, and the composite `<VibePanel>` which is wired into `ai-chat.tsx`'s `renderMessageContent`.

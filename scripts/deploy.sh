@@ -95,11 +95,11 @@ install_deps_if_changed() {
   local new="$2"
   local changed=""
   if [ -n "$prev" ] && [ -n "$new" ] && [ "$prev" != "$new" ]; then
-    changed=$(git -C "$APP_DIR" diff --name-only "$prev" "$new" -- package.json package-lock.json 2>/dev/null)
+    changed=$(git -C "$APP_DIR" diff --name-only "$prev" "$new" -- package.json package-lock.json pnpm-lock.yaml pnpm-workspace.yaml artifacts lib scripts/package.json 2>/dev/null)
   fi
   # Also install if node_modules is missing entirely (fresh checkout).
   if [ -n "$changed" ] || [ ! -d "$APP_DIR/node_modules" ]; then
-    log "Dependency manifest changed (or node_modules missing) — running npm ci"
+    log "Dependency manifest changed (or node_modules missing) — installing locked dependencies"
     (
       cd "$APP_DIR" || exit 1
       # Preflight: package-lock.json generated inside Replit bakes
@@ -108,12 +108,18 @@ install_deps_if_changed() {
       # fails with EAI_AGAIN and leaves a partial node_modules (a different
       # module missing each run) that crash-loops the service. Fail loudly here
       # instead of half-installing.
-      if grep -qE "package-firewall\.replit\.(local|internal)" package-lock.json; then
+      local lockfile=package-lock.json
+      [ ! -f pnpm-lock.yaml ] || lockfile=pnpm-lock.yaml
+      if grep -qE "package-firewall\.replit\.(local|internal)" "$lockfile"; then
         echo "FATAL: package-lock.json contains Replit-internal registry URLs, unreachable here. Fix and commit the lockfile to use https://registry.npmjs.org/ before deploying." >&2
         exit 1
       fi
       # Pin the PUBLIC npm registry as belt-and-suspenders for env/.npmrc too.
-      timeout "$BUILD_TIMEOUT" npm ci --include=dev --registry=https://registry.npmjs.org/
+      if [ -f pnpm-lock.yaml ]; then
+        timeout "$BUILD_TIMEOUT" npx --yes pnpm@10.26.1 install --frozen-lockfile --prod=false --registry=https://registry.npmjs.org/
+      else
+        timeout "$BUILD_TIMEOUT" npm ci --include=dev --registry=https://registry.npmjs.org/
+      fi
     )
     local rc=$?
     if [ $rc -ne 0 ]; then

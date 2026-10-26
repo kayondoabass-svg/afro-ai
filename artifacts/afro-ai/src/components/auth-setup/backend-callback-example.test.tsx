@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { waitFor } from "@testing-library/react";
-import CallbackPage from "../../../../examples/afro-auth-backend/CallbackPage.jsx";
+import CallbackPage from "../../../../../examples/afro-auth-backend/CallbackPage.jsx";
 
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();window.history.replaceState({},"","/");});
 it("posts once to its own backend under Strict Mode, strips the URL and rejects foreign redirects",async()=>{

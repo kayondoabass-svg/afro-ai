@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseRobots, isAllowedByRobots, dedupeQas, detectSensitive } from "../../../server/chatbot-autoscan";
+import { parseRobots, isAllowedByRobots, dedupeQas, detectSensitive } from "../../../api-server/src/chatbot-autoscan";
 
 describe("parseRobots", () => {
   it("extracts sitemaps and per-UA rules", () => {

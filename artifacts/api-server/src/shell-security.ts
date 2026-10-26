@@ -20,6 +20,12 @@ export function isAllowedShellOrigin(origin: string | undefined, pagesUrl = proc
       // Invalid configuration does not grant access.
     }
   }
+  // Managed previews can have a nested Replit hostname. Trust only this
+  // workspace's configured HTTPS origin, never an additional wildcard.
+  if (process.env.NODE_ENV !== "production" && process.env.REPLIT_DEV_DOMAIN &&
+      origin === `https://${process.env.REPLIT_DEV_DOMAIN}`) {
+    return true;
+  }
   if (parsed.protocol === "https:") {
     return parsed.hostname === "afroaigroup.com" ||
       parsed.hostname === "www.afroaigroup.com" ||

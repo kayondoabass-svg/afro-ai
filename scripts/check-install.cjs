@@ -3,7 +3,20 @@ const fs = require("node:fs");
 const assert = require("node:assert/strict");
 
 async function main() {
-  const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+  let entries;
+  if (fs.existsSync("pnpm-lock.yaml")) {
+    const { parse } = require("yaml");
+    const lock = parse(fs.readFileSync("pnpm-lock.yaml", "utf8"));
+    assert.ok(lock.packages, "pnpm lockfile is missing packages");
+    entries = Object.entries(lock.packages).map(([key, entry]) => {
+      const match = /^((?:@[^/]+\/)?[^@]+)@([^()]+)/.exec(key);
+      assert.ok(match, `Unrecognized locked package: ${key}`);
+      return [match[1], { version: match[2], resolved: entry.resolution?.tarball }];
+    });
+  } else {
+    const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+    entries = Object.entries(lock.packages);
+  }
   const socketMinimums = {
     "socket.io": [4, 8, 4],
     "socket.io-client": [4, 8, 4],
@@ -13,7 +26,7 @@ async function main() {
     "socket.io-parser": [4, 2, 7],
     "ws": [8, 21, 0],
   };
-  for (const [name, entry] of Object.entries(lock.packages)) {
+  for (const [name, entry] of entries) {
     const packageName = name.split("node_modules/").at(-1);
     const minimum = socketMinimums[packageName];
     if (minimum) {

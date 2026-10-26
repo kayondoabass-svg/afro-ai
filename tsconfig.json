@@ -1,8 +1,18 @@
 {
   "extends": "./tsconfig.base.json",
   "compileOnSave": false,
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["./lib/afro-shared/*"],
+      "@/*": ["./artifacts/afro-ai/src/*"]
+    }
+  },
   "files": [],
   "references": [
+    {
+      "path": "./lib/afro-shared"
+    },
     {
       "path": "./lib/db"
     },
