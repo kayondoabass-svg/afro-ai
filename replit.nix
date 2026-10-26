@@ -1,5 +1,7 @@
 {pkgs}: {
   deps = [
+    pkgs.gradle
+    pkgs.jdk21
     pkgs.systemd
     pkgs.mesa
     pkgs.libxkbcommon
