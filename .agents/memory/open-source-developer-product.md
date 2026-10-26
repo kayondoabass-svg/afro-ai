@@ -11,9 +11,9 @@ The user wants us to build open-source software that developers can download. Th
 
 The user requires their own inference engine, not a product built around an existing third-party inference engine.
 
-**Why:** The user rejected the proposed engine reuse: “do not use there engine. i need to build my own.”
+**Why:** The user rejected the proposed engine reuse: “do not use there engine. i need to build my own.” For the Android upgrade, they explicitly selected “Keep KEYO’s own engine” rather than an optional ONNX backend.
 
-**How to apply:** Do not propose Ollama or llama.cpp as the product's underlying inference engine. This restriction does not establish whether lower-level libraries or external model weights are allowed.
+**How to apply:** Do not replace the engine with Ollama, llama.cpp, ONNX Runtime or Transformers.js. A mobile packaging framework does not replace the inference engine. This restriction does not establish whether lower-level libraries or external model weights are allowed.
 
 The product is KEYO Studio LLM/SLM Runner, intended to add value to Afro AI as open-source software downloadable by developers.
 
