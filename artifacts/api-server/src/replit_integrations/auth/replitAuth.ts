@@ -1,0 +1,254 @@
+import passport from "passport";
+import session from "express-session";
+import type { Express, RequestHandler } from "express";
+import connectPg from "connect-pg-simple";
+import { authStorage } from "./storage";
+import { storage } from "../../storage";
+import crypto from "crypto";
+
+export function getSession() {
+  const sessionTtl = 7 * 24 * 60 * 60 * 1000;
+  const pgStore = connectPg(session);
+  const sessionStore = new pgStore({
+    conString: process.env.DATABASE_URL,
+    createTableIfMissing: false,
+    ttl: sessionTtl,
+    tableName: "sessions",
+  });
+  const isProduction = process.env.REPLIT_DEPLOYMENT === "1" || process.env.NODE_ENV === "production";
+  return session({
+    secret: process.env.SESSION_SECRET!,
+    store: sessionStore,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: isProduction,
+      // "none" allows cross-origin cookies (needed when frontend is on Cloudflare Pages)
+      sameSite: isProduction ? "none" : "lax",
+      maxAge: sessionTtl,
+    },
+  });
+}
+
+function buildUserClaims(dbUser: any, fallback: { email?: string; firstName?: string; lastName?: string; profileImageUrl?: string }) {
+  return {
+    claims: {
+      sub: dbUser.id,
+      email: dbUser.email || fallback.email || "",
+      first_name: dbUser.firstName || fallback.firstName || "",
+      last_name: dbUser.lastName || fallback.lastName || "",
+      profile_image_url: dbUser.profileImageUrl || fallback.profileImageUrl || "",
+    },
+  };
+}
+
+async function handleReferral(req: any, user: any) {
+  const refCode = (req.session as any)?.referralCode;
+  if (!refCode) return;
+  try {
+    const referrer = await storage.getUserByReferralCode(refCode);
+    const userId = user.claims.sub;
+    if (referrer && referrer.id !== userId) {
+      const existingUser = await authStorage.getUser(userId);
+      if (existingUser && !existingUser.referredBy) {
+        const { db } = await import("../../db");
+        const { users } = await import("@shared/models/auth");
+        const { eq } = await import("drizzle-orm");
+        await db.update(users).set({ referredBy: refCode }).where(eq(users.id, userId));
+        await storage.createReferral({
+          referrerId: referrer.id,
+          referredId: userId,
+          status: "signed_up",
+          commissionAmount: 0,
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[Auth] Referral tracking error:", err);
+  }
+  delete (req.session as any).referralCode;
+}
+
+export async function setupAuth(app: Express) {
+  app.set("trust proxy", 1);
+  app.use(getSession());
+  // Passport is still initialised so the TikTok flow below can issue
+  // sessions via req.logIn. Google + GitHub OAuth and email/password auth
+  // now live exclusively in the Cloudflare Worker (`/cf-auth/*`).
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  // Bridge: trust session cookies issued by the Cloudflare Worker (cf-auth).
+  // Runs after Passport so existing logged-in users are unaffected; only
+  // requests that aren't already authenticated get checked against the
+  // Worker-signed JWT cookie.
+  const { cfAuthBridge } = await import("./cfBridge");
+  app.use(cfAuthBridge());
+
+  passport.serializeUser((user: Express.User, cb) => cb(null, user));
+  passport.deserializeUser((user: Express.User, cb) => cb(null, user));
+
+  const rateLimit = (await import("express-rate-limit")).default;
+  const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+
+  // ── TikTok routes (PKCE OAuth 2.0) ──────────────────────────
+  // TikTok is not yet supported by the Worker, so it remains here.
+  const baseURL = process.env.BASE_URL || "";
+  const tiktokClientKey = (process.env.TIKTOK_CLIENT_KEY || "").trim();
+  const tiktokClientSecret = (process.env.TIKTOK_CLIENT_SECRET || "").trim();
+  const tiktokCallbackURL = baseURL ? `${baseURL}/api/auth/tiktok/callback` : "/api/auth/tiktok/callback";
+
+  app.get("/api/auth/tiktok", authLimiter, (req: any, res) => {
+    if (!tiktokClientKey) return res.redirect("/?error=auth_failed&reason=tiktok_not_configured");
+    if (req.query.ref) req.session.referralCode = req.query.ref;
+
+    const codeVerifier = crypto.randomBytes(64).toString("base64url");
+    const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+    const state = crypto.randomBytes(16).toString("hex");
+
+    (req.session as any).tiktokCodeVerifier = codeVerifier;
+    (req.session as any).tiktokState = state;
+
+    const params = new URLSearchParams({
+      client_key: tiktokClientKey,
+      response_type: "code",
+      scope: "user.info.basic",
+      redirect_uri: tiktokCallbackURL,
+      state,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
+    });
+
+    res.redirect(`https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`);
+  });
+
+  app.get("/api/auth/tiktok/callback", async (req: any, res) => {
+    try {
+      const { code, state, error } = req.query;
+
+      if (error) return res.redirect("/?error=auth_failed&reason=" + encodeURIComponent(String(error)));
+
+      const storedState = (req.session as any).tiktokState;
+      const codeVerifier = (req.session as any).tiktokCodeVerifier;
+
+      if (!state || state !== storedState) return res.redirect("/?error=auth_failed&reason=state_mismatch");
+      if (!code || !codeVerifier) return res.redirect("/?error=auth_failed&reason=missing_code");
+
+      delete (req.session as any).tiktokState;
+      delete (req.session as any).tiktokCodeVerifier;
+
+      const tokenRes = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_key: tiktokClientKey,
+          client_secret: tiktokClientSecret,
+          code: String(code),
+          grant_type: "authorization_code",
+          redirect_uri: tiktokCallbackURL,
+          code_verifier: codeVerifier,
+        }),
+      });
+
+      const tokenData = await tokenRes.json() as any;
+      if (!tokenData.access_token) {
+        console.error("[Auth] TikTok token error:", tokenData);
+        return res.redirect("/?error=auth_failed&reason=tiktok_token_failed");
+      }
+
+      const userRes = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url", {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+
+      const userData = await userRes.json() as any;
+      const profile = userData?.data?.user;
+      if (!profile?.open_id) {
+        console.error("[Auth] TikTok user info error:", userData);
+        return res.redirect("/?error=auth_failed&reason=tiktok_user_failed");
+      }
+
+      const userId = `tt_${profile.open_id}`;
+      const email = `tiktok_${profile.open_id}@tiktok.afroai`;
+      const displayName = profile.display_name || "TikTok User";
+      const nameParts = displayName.split(" ");
+      const firstName = nameParts[0] || "TikTok";
+      const lastName = nameParts.slice(1).join(" ") || "User";
+      const profileImageUrl = profile.avatar_url || "";
+
+      const dbUser = await authStorage.upsertUser({ id: userId, email, firstName, lastName, profileImageUrl });
+      const user = buildUserClaims(dbUser, { email, firstName, lastName, profileImageUrl });
+      const { createPassportDeviceSession } = await import("./deviceSessions");
+      await createPassportDeviceSession(req, user);
+
+      req.logIn(user, async (loginErr: any) => {
+        if (loginErr) return res.redirect("/?error=auth_failed&reason=login_error");
+        await handleReferral(req, user);
+        return res.redirect("/");
+      });
+    } catch (err) {
+      console.error("[Auth] TikTok callback error:", err);
+      res.redirect("/?error=auth_failed&reason=tiktok_error");
+    }
+  });
+
+  // ── Logout ───────────────────────────────────────────────────
+  // Clears both the legacy Passport session and the Cloudflare Worker
+  // session cookie so a single round-trip fully signs the user out, no
+  // matter which system issued their session.
+  app.get("/api/logout", async (req, res) => {
+    const isProduction = process.env.REPLIT_DEPLOYMENT === "1" || process.env.NODE_ENV === "production";
+    const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+    const { sessionQuery } = await import("./deviceSessions");
+    const sid = (req.user as any)?.sid;
+    if (sid) {
+      await sessionQuery("UPDATE device_sessions SET revoked_at = ? WHERE id = ?", [Math.floor(Date.now() / 1000), sid]);
+    }
+    req.logout((err) => {
+      if (err) console.error("Logout error:", err);
+      req.session.destroy((destroyErr) => {
+        if (destroyErr) console.error("Session destroy error:", destroyErr);
+        res.clearCookie("connect.sid");
+        res.clearCookie("afroai_session", {
+          domain: cookieDomain,
+          path: "/",
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: isProduction ? "none" : "lax",
+        });
+        res.clearCookie("afroai_session", {path:"/",httpOnly:true,secure:isProduction,sameSite:"lax"});
+        res.redirect("/");
+      });
+    });
+  });
+}
+
+export const FOUNDER_EMAIL = "kayondoabass@gmail.com";
+
+export const isSignedIn: RequestHandler = async (req, res, next) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  return next();
+};
+
+export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
+  if (!req.isAuthenticated?.()) return res.status(401).json({ message: "Unauthorized" });
+  try {
+    const user = await authStorage.getUser(req.user?.claims?.sub);
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (!user.emailVerified) {
+      return res.status(403).json({ code: "EMAIL_VERIFICATION_REQUIRED", message: "Please verify your email before using your account." });
+    }
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const isFounder: RequestHandler = async (req: any, res, next) => {
+  return isAuthenticated(req, res, (error?: any) => {
+    if (error) return next(error);
+    const email = req.user?.claims?.email;
+    if (email !== FOUNDER_EMAIL) return res.status(403).json({ message: "Forbidden: Founder access only" });
+    return next();
+  });
+};

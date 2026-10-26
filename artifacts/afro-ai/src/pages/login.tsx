@@ -1,0 +1,599 @@
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
+import { useLanguage } from "@/hooks/use-language";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageSelector } from "@/components/language-selector";
+import { TurnstileWidget } from "@/components/turnstile-widget";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SiGoogle, SiGithub } from "react-icons/si";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  LockedPanel,
+  parseRetryAfter,
+  translateLockMessage,
+  type LockState,
+} from "@/components/locked-panel";
+import afroLogo from "@assets/IMG_5719_1771852498362.png";
+import { authDestination } from "@/lib/chat-entry";
+
+const AUTH_BASE = "/cf-auth";
+
+export default function LoginPage() {
+  const { t } = useLanguage();
+  const { toast } = useToast();
+  const params = new URLSearchParams(window.location.search);
+  const refCode = params.get("ref");
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Two separate widgets so a successful login doesn't burn the signup token
+  const [loginToken, setLoginToken] = useState("");
+  const [signupToken, setSignupToken] = useState("");
+  const [loginResetSignal, setLoginResetSignal] = useState(0);
+  const [signupResetSignal, setSignupResetSignal] = useState(0);
+
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState("");
+  const [registerFirstName, setRegisterFirstName] = useState("");
+  const [registerLastName, setRegisterLastName] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Per-form lock state. We keep them separate so a signup throttle doesn't
+  // hide the login form (and vice-versa) — the Worker tracks them as
+  // independent throttle keys, so the UI mirrors that.
+  const [loginLock, setLoginLock] = useState<LockState | null>(null);
+  const [signupLock, setSignupLock] = useState<LockState | null>(null);
+  // `now` ticks once a second while a lock is active so the countdown
+  // re-renders without re-running the lock-clearing effect.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!loginLock && !signupLock) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [loginLock, signupLock]);
+
+  // Auto-clear locks the moment they expire so the form comes back without
+  // requiring the user to click "Try again".
+  useEffect(() => {
+    if (loginLock && now >= loginLock.until) setLoginLock(null);
+    if (signupLock && now >= signupLock.until) setSignupLock(null);
+  }, [now, loginLock, signupLock]);
+
+  function preserveRef() {
+    if (refCode) sessionStorage.setItem("ref_code", refCode);
+  }
+
+  function redirectAfterAuth() {
+    const stored = sessionStorage.getItem("after_login_redirect");
+    if (stored) sessionStorage.removeItem("after_login_redirect");
+    // Default to /chat (the main product surface) rather than "/" so users
+    // see proof of being logged in instead of bouncing back to the marketing
+    // landing page.
+    const dest = authDestination(stored);
+    // Drop a short-lived marker so the next page load can tell the difference
+    // between "user never logged in" and "user logged in but the cookie didn't
+    // survive the redirect" (the bug where mobile users get bounced back to
+    // the home page). AppRouter reads this on boot and shows a friendly
+    // banner + reports it to the server so we can monitor it.
+    try {
+      sessionStorage.setItem(
+        "auth_just_succeeded",
+        JSON.stringify({ at: Date.now(), to: dest }),
+      );
+    } catch {
+      /* sessionStorage unavailable (private mode etc.) — proceed anyway */
+    }
+    window.location.href = dest;
+  }
+
+  async function handleEmailLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!loginToken) {
+      toast({
+        title: t("auth.toastCheckTitle"),
+        description: t("auth.toastCheckDesc"),
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${AUTH_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: loginEmail.trim(),
+          password: loginPassword,
+          turnstileToken: loginToken,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        const message = translateLockMessage(
+          t,
+          data,
+          t("auth.locked.body.login"),
+        );
+        const retryAfter = parseRetryAfter(res, data?.message || message);
+        setLoginLock({ until: Date.now() + retryAfter * 1000, message });
+        setNow(Date.now());
+        setLoginResetSignal((n) => n + 1);
+        setLoginToken("");
+        return;
+      }
+      if (!res.ok) {
+        toast({
+          title: t("auth.toastLoginFailedTitle"),
+          description: data?.message || t("auth.toastLoginFailedDesc"),
+          variant: "destructive",
+        });
+        setLoginResetSignal((n) => n + 1);
+        setLoginToken("");
+        return;
+      }
+      preserveRef();
+      redirectAfterAuth();
+    } catch {
+      toast({
+        title: t("auth.toastLoginFailedTitle"),
+        description: t("auth.toastNetworkDesc"),
+        variant: "destructive",
+      });
+      setLoginResetSignal((n) => n + 1);
+      setLoginToken("");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    if (registerPassword !== registerConfirmPassword) {
+      toast({
+        title: t("auth.passwordsMismatch"),
+        description: t("auth.toastMismatchDesc"),
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!signupToken) {
+      toast({
+        title: t("auth.toastCheckTitle"),
+        description: t("auth.toastCheckDesc"),
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${AUTH_BASE}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: registerEmail.trim(),
+          password: registerPassword,
+          firstName: registerFirstName.trim() || undefined,
+          lastName: registerLastName.trim() || undefined,
+          turnstileToken: signupToken,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        const message = translateLockMessage(
+          t,
+          data,
+          t("auth.locked.body.signup"),
+        );
+        const retryAfter = parseRetryAfter(res, data?.message || message);
+        setSignupLock({ until: Date.now() + retryAfter * 1000, message });
+        setNow(Date.now());
+        setSignupResetSignal((n) => n + 1);
+        setSignupToken("");
+        return;
+      }
+      if (!res.ok) {
+        toast({
+          title: t("auth.toastRegisterFailedTitle"),
+          description: data?.message || t("auth.toastRegisterFailedDesc"),
+          variant: "destructive",
+        });
+        setSignupResetSignal((n) => n + 1);
+        setSignupToken("");
+        return;
+      }
+      preserveRef();
+      redirectAfterAuth();
+    } catch {
+      toast({
+        title: t("auth.toastRegisterFailedTitle"),
+        description: t("auth.toastNetworkDesc"),
+        variant: "destructive",
+      });
+      setSignupResetSignal((n) => n + 1);
+      setSignupToken("");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function startOAuth(provider: "google" | "github") {
+    preserveRef();
+    // Forward the post-login destination to the Worker so OAuth lands on the
+    // same page as the email/password flow (sanitized server-side).
+    const stored = sessionStorage.getItem("after_login_redirect");
+    let url = `${AUTH_BASE}/${provider}/start`;
+    const dest = authDestination(stored);
+    const target = `${window.location.origin}${dest}`;
+    url += `?redirect=${encodeURIComponent(target)}`;
+    // Same "login didn't stick" marker as the email/password flow — sessionStorage
+    // is per-tab so it survives the round-trip to Google/GitHub and back, letting
+    // AppRouter detect a dropped cookie on the way home from OAuth too.
+    try {
+      sessionStorage.setItem(
+        "auth_just_succeeded",
+        JSON.stringify({ at: Date.now(), to: dest }),
+      );
+    } catch {
+      /* sessionStorage unavailable — proceed anyway */
+    }
+    window.location.href = url;
+  }
+
+  const loginRemaining = loginLock
+    ? Math.max(0, Math.ceil((loginLock.until - now) / 1000))
+    : 0;
+  const signupRemaining = signupLock
+    ? Math.max(0, Math.ceil((signupLock.until - now) / 1000))
+    : 0;
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+        <Link href="/" className="inline-flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" data-testid="link-login-home">
+          <ArrowLeft className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
+          {t("auth.backHome")}
+        </Link>
+        <div className="flex items-center gap-2">
+          <LanguageSelector compact />
+          <ThemeToggle />
+        </div>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center p-4">
+        <Card className="w-full max-w-sm p-8 space-y-6 border-primary/20">
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto">
+              <img src={afroLogo} alt="Afro AI" className="w-12 h-12 object-contain" loading="lazy" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold font-serif tracking-tight" data-testid="text-login-title">
+                Afro AI
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1" data-testid="text-login-subtitle">
+                {t("auth.tagline")}
+              </p>
+            </div>
+          </div>
+
+          <Tabs defaultValue="signup" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="signup" data-testid="tab-signup">{t("auth.tabSignup")}</TabsTrigger>
+              <TabsTrigger value="login" data-testid="tab-login">{t("auth.tabLogin")}</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="signup" className="space-y-4 mt-4">
+              {signupLock ? (
+                <LockedPanel
+                  title={t("auth.locked.signup.title")}
+                  lock={signupLock}
+                  remainingSec={signupRemaining}
+                  onDismiss={() => setSignupLock(null)}
+                  testIdPrefix="signup"
+                  t={t}
+                />
+              ) : (
+                <>
+                  <form onSubmit={handleRegister} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="reg-first-name">{t("auth.firstName")}</Label>
+                        <Input
+                          id="reg-first-name"
+                          placeholder="Ada"
+                          value={registerFirstName}
+                          onChange={(e) => setRegisterFirstName(e.target.value)}
+                          data-testid="input-register-firstname"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="reg-last-name">{t("auth.lastName")}</Label>
+                        <Input
+                          id="reg-last-name"
+                          placeholder="Okonkwo"
+                          value={registerLastName}
+                          onChange={(e) => setRegisterLastName(e.target.value)}
+                          data-testid="input-register-lastname"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="reg-email">{t("auth.email")}</Label>
+                      <Input
+                        id="reg-email"
+                        type="email"
+                        placeholder="you@example.com"
+                        required
+                        value={registerEmail}
+                        onChange={(e) => setRegisterEmail(e.target.value)}
+                        data-testid="input-register-email"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="reg-password">{t("auth.password")}</Label>
+                      <div className="relative">
+                        <Input
+                          id="reg-password"
+                          type={showRegisterPassword ? "text" : "password"}
+                          placeholder={t("auth.passwordPlaceholder")}
+                          required
+                          value={registerPassword}
+                          onChange={(e) => setRegisterPassword(e.target.value)}
+                          className="pr-10"
+                          autoComplete="new-password"
+                          data-testid="input-register-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRegisterPassword((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          aria-label={showRegisterPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+                          aria-pressed={showRegisterPassword}
+                          data-testid="button-toggle-register-password"
+                        >
+                          {showRegisterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="reg-confirm-password">{t("auth.confirmPassword")}</Label>
+                      <div className="relative">
+                        <Input
+                          id="reg-confirm-password"
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder={t("auth.confirmPasswordPlaceholder")}
+                          required
+                          value={registerConfirmPassword}
+                          onChange={(e) => setRegisterConfirmPassword(e.target.value)}
+                          className="pr-10"
+                          autoComplete="new-password"
+                          aria-invalid={
+                            registerConfirmPassword.length > 0 &&
+                            registerPassword !== registerConfirmPassword
+                          }
+                          aria-describedby="reg-confirm-password-error"
+                          data-testid="input-register-confirm-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          aria-label={showConfirmPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+                          aria-pressed={showConfirmPassword}
+                          data-testid="button-toggle-confirm-password"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      {registerConfirmPassword.length > 0 && registerPassword !== registerConfirmPassword && (
+                        <p
+                          id="reg-confirm-password-error"
+                          role="alert"
+                          aria-live="polite"
+                          className="text-xs text-destructive"
+                          data-testid="text-password-mismatch"
+                        >
+                          {t("auth.passwordsMismatch")}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex justify-center">
+                      <TurnstileWidget
+                        onToken={setSignupToken}
+                        onExpire={() => setSignupToken("")}
+                        resetSignal={signupResetSignal}
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={
+                        isLoading ||
+                        !signupToken ||
+                        registerPassword.length === 0 ||
+                        registerPassword !== registerConfirmPassword
+                      }
+                      data-testid="button-register-submit"
+                    >
+                      {isLoading ? t("auth.creatingAccount") : t("auth.createAccount")}
+                    </Button>
+                  </form>
+
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-background px-2 text-muted-foreground">{t("auth.orContinueWith")}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={() => startOAuth("google")}
+                      data-testid="button-google-signup"
+                    >
+                      <SiGoogle className="w-4 h-4" />
+                      Google
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={() => startOAuth("github")}
+                      data-testid="button-github-signup"
+                    >
+                      <SiGithub className="w-4 h-4" />
+                      GitHub
+                    </Button>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="login" className="space-y-4 mt-4">
+              {loginLock ? (
+                <LockedPanel
+                  title={t("auth.locked.login.title")}
+                  lock={loginLock}
+                  remainingSec={loginRemaining}
+                  onDismiss={() => setLoginLock(null)}
+                  testIdPrefix="login"
+                  t={t}
+                />
+              ) : (
+                <>
+                  <form onSubmit={handleEmailLogin} className="space-y-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="login-email">{t("auth.email")}</Label>
+                      <Input
+                        id="login-email"
+                        type="email"
+                        placeholder="you@example.com"
+                        required
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        data-testid="input-login-email"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="login-password">{t("auth.password")}</Label>
+                      <div className="relative">
+                        <Input
+                          id="login-password"
+                          type={showLoginPassword ? "text" : "password"}
+                          placeholder={t("auth.loginPasswordPlaceholder")}
+                          required
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="pr-10"
+                          autoComplete="current-password"
+                          data-testid="input-login-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowLoginPassword((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          aria-label={showLoginPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+                          aria-pressed={showLoginPassword}
+                          data-testid="button-toggle-login-password"
+                        >
+                          {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex justify-center">
+                      <TurnstileWidget
+                        onToken={setLoginToken}
+                        onExpire={() => setLoginToken("")}
+                        resetSignal={loginResetSignal}
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={isLoading || !loginToken}
+                      data-testid="button-login-submit"
+                    >
+                      {isLoading ? t("auth.signingIn") : t("auth.signIn")}
+                    </Button>
+                    <div className="text-center">
+                      <Link
+                        href="/forgot-password"
+                        className="text-xs text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+                        data-testid="link-forgot-password"
+                      >
+                        {t("auth.forgotPassword")}
+                      </Link>
+                    </div>
+                  </form>
+
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-background px-2 text-muted-foreground">{t("auth.orContinueWith")}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={() => startOAuth("google")}
+                      data-testid="button-google-login"
+                    >
+                      <SiGoogle className="w-4 h-4" />
+                      Google
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={() => startOAuth("github")}
+                      data-testid="button-github-login"
+                    >
+                      <SiGithub className="w-4 h-4" />
+                      GitHub
+                    </Button>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          <p className="text-center text-xs text-muted-foreground">
+            {t("auth.agreePrefix")}{" "}
+            <a href="/terms" className="underline hover:text-primary" data-testid="link-login-terms">{t("auth.termsOfService")}</a>
+            {" "}{t("auth.and")}{" "}
+            <a href="/privacy" className="underline hover:text-primary" data-testid="link-login-privacy">{t("auth.privacyPolicy")}</a>
+          </p>
+        </Card>
+      </div>
+
+      <footer className="text-center py-4 text-xs text-muted-foreground space-x-3">
+        <span>{t("auth.footerTagline")}</span>
+        <span aria-hidden>·</span>
+        <a href="/privacy" className="hover:text-primary" data-testid="link-footer-privacy">{t("auth.footerPrivacy")}</a>
+        <a href="/terms" className="hover:text-primary" data-testid="link-footer-terms">{t("auth.footerTerms")}</a>
+        <a href="/.well-known/security.txt" className="hover:text-primary" data-testid="link-footer-security">{t("auth.footerSecurity")}</a>
+      </footer>
+    </div>
+  );
+}

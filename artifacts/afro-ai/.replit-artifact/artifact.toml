@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Afro AI"
+description = "The existing Afro AI website, preserved during workspace migration so KEYO Studio can gain a separate Android application without changing the current platform."
+version = "1.0.0"
+id = "artifacts/afro-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19380
+
+[services.development]
+run = "pnpm --filter @workspace/afro-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/afro-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/afro-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19380"
+BASE_PATH = "/"

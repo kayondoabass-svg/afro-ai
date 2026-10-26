@@ -1,0 +1,376 @@
+import OpenAI from "openai";
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "high" | "low" | "auto" } })[];
+}
+
+export type UserTier = "starter" | "pro" | "business" | "payg";
+
+export interface ChatCompleteOptions {
+  messages: ChatMessage[];
+  /** Opt-in test provider; never selected by the default provider order. */
+  provider?: "default" | "afro-test";
+  /** Must be set by a server-side authorization check, never from the request body. */
+  afroAuthorized?: boolean;
+  signal?: AbortSignal;
+  maxTokens?: number;
+  temperature?: number;
+  responseFormat?: { type: "json_object" } | { type: "text" };
+  /**
+   * The plan/tier of the user making the request. Drives which Gemini model
+   * is selected so paying users get higher-quality output and free users get
+   * cost-controlled output. Falls back to "starter" if omitted.
+   */
+  tier?: UserTier;
+  /** OpenAI-style tool/function definitions. When set, the model may return tool_calls. */
+  tools?: any[];
+  /** "auto" | "none" | { type: "function", function: { name } }. Defaults to "auto" when tools are set. */
+  toolChoice?: any;
+  /** Server-side notice when a definitively unavailable Gemini model is replaced. */
+  onModelFallback?: (from: string, to: string) => void;
+  /** Never resubmit an ambiguous paid completion to another provider. */
+  noAmbiguousRetry?: boolean;
+}
+
+// Gemini model selection per plan. Free tier uses the cheapest model so a
+// runaway free user can't burn $50 of credits in an afternoon. Business gets
+// the flagship model for code-generation quality.
+const GEMINI_MODEL_BY_TIER: Record<UserTier, string> = {
+  starter:  "gemini-2.5-flash-lite", // ~$0.10 / 1M input — cheapest current model
+  pro:      "gemini-2.5-flash",      // ~$0.30 / 1M input
+  business: "gemini-2.5-pro",        // ~$1.25 / 1M input — best quality
+  payg:     "gemini-2.5-pro",        // PAYG users metered per token, give them best
+};
+
+// Hard ceiling on output tokens per reply, by tier. Stops a single chat from
+// producing a 50,000-token response that costs more than the user's plan.
+export const MAX_OUTPUT_TOKENS_BY_TIER: Record<UserTier, number> = {
+  starter:  8_000,   // raised from 2k — 2k truncates HTML code-gen mid-build
+  pro:      16_000,  // raised from 8k for the same reason on bigger pages
+  business: 32_000,
+  payg:     64_000,
+};
+
+export function geminiModelForTier(tier?: UserTier): string {
+  return GEMINI_MODEL_BY_TIER[tier || "starter"];
+}
+
+export function maxOutputTokensForTier(tier?: UserTier): number {
+  return MAX_OUTPUT_TOKENS_BY_TIER[tier || "starter"];
+}
+
+function validMaxTokens(value: number | undefined): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw Object.assign(new Error("maxTokens must be a finite positive integer."), { status: 400 });
+  }
+}
+
+export interface ChatCompleteResult {
+  text: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  provider: "openai" | "gemini" | "afro-test";
+  model: string;
+  /** Present when the model decided to call one or more tools. */
+  toolCalls?: any[];
+  finishReason?: string;
+}
+
+type Provider = "openai" | "gemini";
+
+export function hasAfroAiProvider(): boolean {
+  return Boolean(process.env.HF_TOKEN?.trim() && process.env.AFRO_AI_BASE_URL?.trim() && process.env.AFRO_AI_MODEL?.trim());
+}
+
+async function afroChatComplete(opts: ChatCompleteOptions, effectiveMax: number): Promise<ChatCompleteResult> {
+  if (!opts.afroAuthorized) {
+    throw Object.assign(new Error("Afro AI test provider is restricted to administrators."), { status: 403 });
+  }
+  if (!hasAfroAiProvider()) {
+    throw Object.assign(new Error("Afro AI test provider is not configured."), { status: 503 });
+  }
+  const client = new OpenAI({
+    apiKey: process.env.HF_TOKEN!,
+    baseURL: process.env.AFRO_AI_BASE_URL!,
+    maxRetries: 0,
+  });
+  // No fallback: failures in the test provider must remain visible to the caller.
+  const completion = await client.chat.completions.create({
+    model: process.env.AFRO_AI_MODEL!,
+    messages: opts.messages as any,
+    max_tokens: effectiveMax,
+    temperature: opts.temperature ?? 0.4,
+    ...(opts.responseFormat ? { response_format: opts.responseFormat as any } : {}),
+    ...(opts.tools ? { tools: opts.tools as any, tool_choice: (opts.toolChoice ?? "auto") as any } : {}),
+  }, { signal: opts.signal });
+  const choice = completion.choices?.[0];
+  return {
+    text: choice?.message?.content?.trim() || "",
+    completionTokens: completion.usage?.completion_tokens ?? 0,
+    provider: "afro-test",
+    model: process.env.AFRO_AI_MODEL!,
+    toolCalls: (choice?.message as any)?.tool_calls || undefined,
+    finishReason: choice?.finish_reason,
+  };
+}
+
+function geminiKey(): string | undefined {
+  // Accept either env name. GOOGLE_API_KEY is the modern name in
+  // Google AI Studio; GEMINI_API_KEY is the legacy alias still used
+  // throughout the codebase.
+  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API;
+}
+
+function isAvailable(provider: Provider): boolean {
+  if (provider === "openai") {
+    return Boolean(openAiConfiguration().apiKey);
+  }
+  return Boolean(geminiKey());
+}
+
+function openAiConfiguration() {
+  const usable = (key: string | undefined) => key && !key.includes("_DUMMY_") && !key.toLowerCase().includes("dummy");
+  const integration = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (usable(integration)) return { apiKey: integration, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || undefined };
+  const direct = process.env.OPENAI_API_KEY;
+  return { apiKey: usable(direct) ? direct : undefined, baseURL: undefined };
+}
+
+function makeClient(provider: Provider, tier?: UserTier): { client: OpenAI; model: string } {
+  if (provider === "openai") {
+    const { apiKey, baseURL } = openAiConfiguration();
+    return {
+      client: new OpenAI({ apiKey, baseURL }),
+      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+    };
+  }
+  // Gemini via Google's official OpenAI-compatible endpoint.
+  // GEMINI_MODEL env var still wins if explicitly set (lets ops pin a model
+  // during incidents), otherwise we pick by user tier.
+  return {
+    client: new OpenAI({
+      apiKey: geminiKey(),
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    }),
+    model: process.env.GEMINI_MODEL || geminiModelForTier(tier),
+  };
+}
+
+async function withAvailableModel<T>(
+  provider: Provider,
+  opts: Pick<ChatCompleteOptions, "tier" | "signal" | "onModelFallback">,
+  run: (client: OpenAI, model: string) => Promise<T>,
+  canRetry: () => boolean = () => true,
+) {
+  const { client, model } = makeClient(provider, opts.tier);
+  try {
+    return { result: await run(client, model), model };
+  } catch (error: any) {
+    // A rejected 404 has produced no billable answer. Never repeat an ambiguous
+    // timeout, quota error, aborted request or partially streamed response here.
+    const fallback = "gemini-2.5-flash";
+    if (provider !== "gemini" || Number(error?.status || error?.response?.status) !== 404 ||
+      model !== "gemini-2.5-pro" || opts.signal?.aborted || !canRetry()) throw error;
+    console.warn(`[ai-chat] Gemini model ${model} unavailable (404); using ${fallback}.`);
+    opts.onModelFallback?.(model, fallback);
+    return { result: await run(client, fallback), model: fallback };
+  }
+}
+
+export function publicChatError(error: any): string {
+  const status = Number(error?.status || error?.response?.status);
+  const code = String(error?.code || error?.error?.code || "").toLowerCase();
+  if (code.includes("credit_balance") || code.includes("insufficient_quota")) {
+    return "The AI provider account has no available API credits. Your Afro AI subscription is not the cause. Platform support must check the provider account.";
+  }
+  if (status === 404) return "The selected AI model is unavailable. This is a model-access problem, not a request to add money.";
+  if (status === 429) return "The AI provider is temporarily rate-limited or has reached its quota. Please wait; adding money may not resolve a rate limit.";
+  if (status === 401 || status === 403) return "The AI provider could not authorise this request. Platform support must check its API access.";
+  return "Could not complete your request. Please try again later or contact platform support.";
+}
+
+function isFatalAuthOrQuotaError(err: any): boolean {
+  const status = err?.status || err?.response?.status;
+  if (status === 401 || status === 402 || status === 403 || status === 429) return true;
+  const code = String(err?.code || err?.error?.code || "").toLowerCase();
+  if (
+    code.includes("insufficient_quota") ||
+    code.includes("invalid_api_key") ||
+    code.includes("billing") ||
+    code.includes("quota")
+  ) {
+    return true;
+  }
+  const msg = String(err?.message || "").toLowerCase();
+  return (
+    msg.includes("insufficient_quota") ||
+    msg.includes("exceeded your current quota") ||
+    msg.includes("invalid api key") ||
+    msg.includes("incorrect api key") ||
+    msg.includes("billing")
+  );
+}
+
+function getProviderOrder(): Provider[] {
+  // Default: Gemini primary, OpenAI fallback. Gemini Flash is ~10x cheaper
+  // than GPT-4.1-mini and the per-tier model picker still gives Business
+  // users 2.5-pro quality.
+  const primary = (process.env.AI_PRIMARY_PROVIDER || "gemini").toLowerCase() as Provider;
+  const secondary: Provider = primary === "openai" ? "gemini" : "openai";
+  const order: Provider[] = [];
+  if (isAvailable(primary)) order.push(primary);
+  if (isAvailable(secondary)) order.push(secondary);
+  return order;
+}
+
+export async function aiChatComplete(opts: ChatCompleteOptions): Promise<ChatCompleteResult> {
+  validMaxTokens(opts.maxTokens);
+  if (opts.provider && opts.provider !== "default" && opts.provider !== "afro-test") {
+    throw Object.assign(new Error("Invalid AI provider."), { status: 400 });
+  }
+  const tierCap = maxOutputTokensForTier(opts.tier);
+  const effectiveMax = opts.maxTokens ? Math.min(opts.maxTokens, tierCap) : tierCap;
+  if (opts.provider === "afro-test") return afroChatComplete(opts, effectiveMax);
+  const order = getProviderOrder();
+  if (order.length === 0) {
+    throw new Error("No AI provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY.");
+  }
+
+  // Cap output tokens at the tier ceiling — even if a caller asks for more,
+  // never exceed what the user's plan allows.
+  let lastErr: any = null;
+  for (let i = 0; i < order.length; i++) {
+    const provider = order[i];
+    try {
+      const { result: completion, model } = await withAvailableModel(provider, opts, (client, model) => client.chat.completions.create({
+        model,
+        messages: opts.messages as any,
+        max_tokens: effectiveMax,
+        temperature: opts.temperature ?? 0.4,
+        ...(opts.responseFormat ? { response_format: opts.responseFormat as any } : {}),
+        ...(opts.tools ? { tools: opts.tools as any, tool_choice: (opts.toolChoice ?? "auto") as any } : {}),
+      }, { signal: opts.signal, maxRetries: opts.noAmbiguousRetry ? 0 : undefined }));
+      const choice = completion.choices?.[0];
+      const text = choice?.message?.content?.trim() || "";
+      const toolCalls = (choice?.message as any)?.tool_calls || undefined;
+      return { text, provider, model, toolCalls, finishReason: choice?.finish_reason, promptTokens: completion.usage?.prompt_tokens, completionTokens: completion.usage?.completion_tokens };
+    } catch (err: any) {
+      if (opts.signal?.aborted) throw err;
+      if (opts.noAmbiguousRetry && ![400, 401, 403, 404, 429].includes(Number(err?.status))) throw err;
+      lastErr = err;
+      const fatal = isFatalAuthOrQuotaError(err);
+      const hasFallback = i < order.length - 1;
+      console.warn(
+        `[ai-chat] ${provider} failed (${err?.status || err?.code || "?"}): ${err?.message || err}. ${
+          fatal && hasFallback ? "Falling back to next provider." : hasFallback ? "Trying next provider." : "No more providers."
+        }`,
+      );
+      if (!fatal && !hasFallback) break;
+      continue;
+    }
+  }
+  throw lastErr || new Error("AI request failed across all providers.");
+}
+
+export function hasAnyAiProvider(): boolean {
+  return getProviderOrder().length > 0;
+}
+
+export interface ChatStreamOptions {
+  messages: any[]; // allows rich content (vision parts, etc.)
+  signal?: AbortSignal;
+  maxTokens?: number;
+  temperature?: number;
+  onChunk: (text: string) => void;
+  tier?: UserTier;
+  onModelFallback?: ChatCompleteOptions["onModelFallback"];
+  noAmbiguousRetry?: boolean;
+}
+
+export interface ChatStreamResult {
+  fullText: string;
+  provider: Provider;
+  model: string;
+  completionTokens: number;
+  promptTokens?: number;
+  usageEstimated?: boolean;
+}
+
+/**
+ * Streaming chat completion with automatic OpenAI <-> Gemini fallback.
+ * - Tries the primary provider first (configured via AI_PRIMARY_PROVIDER).
+ * - If the primary fails BEFORE sending any chunks (auth/quota/network),
+ *   transparently falls back to the secondary provider.
+ * - If the primary fails AFTER sending chunks, the error is re-thrown
+ *   (we cannot safely splice two providers' output mid-stream).
+ */
+export async function aiChatCompleteStream(opts: ChatStreamOptions): Promise<ChatStreamResult> {
+  opts.signal?.throwIfAborted();
+  validMaxTokens(opts.maxTokens);
+  const order = getProviderOrder();
+  if (order.length === 0) {
+    throw new Error("No AI provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY.");
+  }
+
+  const tierCap = maxOutputTokensForTier(opts.tier);
+  const effectiveMax = opts.maxTokens
+    ? Math.min(opts.maxTokens, tierCap)
+    : tierCap;
+
+  let lastErr: any = null;
+  for (let i = 0; i < order.length; i++) {
+    const provider = order[i];
+    let receivedAnyChunk = false;
+    try {
+      const { result, model } = await withAvailableModel(provider, opts, async (client, model) => {
+        const stream = await client.chat.completions.create({
+          model,
+          messages: opts.messages,
+          stream: true,
+          max_tokens: effectiveMax,
+          temperature: opts.temperature ?? 0.4,
+        } as any, { signal: opts.signal, maxRetries: opts.noAmbiguousRetry ? 0 : undefined });
+
+        let fullText = "";
+        let completionTokens = 0;
+        let promptTokens: number | undefined;
+        let reportedOutput = false;
+        for await (const chunk of stream as any) {
+          opts.signal?.throwIfAborted();
+          const content = chunk.choices?.[0]?.delta?.content || "";
+          if (content) {
+            fullText += content;
+            receivedAnyChunk = true;
+            opts.onChunk(content);
+          }
+          if (typeof chunk.usage?.completion_tokens === "number") {
+            completionTokens = chunk.usage.completion_tokens;
+            reportedOutput = true;
+          }
+          if (typeof chunk.usage?.prompt_tokens === "number") promptTokens = chunk.usage.prompt_tokens;
+        }
+        if (!completionTokens) completionTokens = Math.ceil(fullText.length / 4);
+        return { fullText, completionTokens, promptTokens, usageEstimated: promptTokens === undefined || !reportedOutput };
+      }, () => !receivedAnyChunk);
+      return { ...result, provider, model };
+    } catch (err: any) {
+      if (opts.signal?.aborted) throw err;
+      if (opts.noAmbiguousRetry && ![400,401,403,404,429].includes(Number(err?.status))) throw err;
+      lastErr = err;
+      // If we already streamed bytes to the client, we can't fall back cleanly.
+      if (receivedAnyChunk) throw err;
+
+      const fatal = isFatalAuthOrQuotaError(err);
+      const hasFallback = i < order.length - 1;
+      console.warn(
+        `[ai-chat-stream] ${provider} failed (${err?.status || err?.code || "?"}): ${err?.message || err}. ${
+          fatal && hasFallback ? "Falling back to next provider." : hasFallback ? "Trying next provider." : "No more providers."
+        }`,
+      );
+      if (!fatal && !hasFallback) break;
+      continue;
+    }
+  }
+  throw lastErr || new Error("AI streaming request failed across all providers.");
+}

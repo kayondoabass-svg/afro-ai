@@ -1,0 +1,260 @@
+import { SignJWT, jwtVerify } from "jose";
+import { parseTenantOrigins, validTenantOrigin } from "../../shared/tenant-origins";
+import { tenantIsActive } from "./tenant-project-setup";
+import { sendTenantMail } from "./tenant-mail";
+import { brandedTenantEmail } from "./tenant-email-branding";
+
+const issuer = "https://afroaigroup.com/cf-auth";
+const now = () => Math.floor(Date.now() / 1000);
+const enc = new TextEncoder();
+const escape = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+async function digest(value: string) {
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(value)))].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function rawToken() {
+  return [...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+type Dependencies = {
+  hashPassword: (password: string) => Promise<string>;
+  checkThrottles: (db: any, keys: string[], now: number) => Promise<number>;
+  recordThrottleFailure: (db: any, key: string, now: number) => Promise<unknown>;
+  completeConfirmation?: (c:any,t:any,verification:any)=>Promise<string|null>;
+  isBackend?: (c:any,t:any)=>Promise<boolean>;
+};
+
+export function tenantAuth(deps: Dependencies) {
+  async function tenant(c: any) {
+    const row = await c.env.DB.prepare("SELECT * FROM tenants WHERE slug = ? AND id != 'platform'").bind(c.req.param("slug")).first();
+    return row && await tenantIsActive(c.env.DB, row) ? row : null;
+  }
+  async function issue(c: any, tenantId: string, userId: string) {
+    const id = crypto.randomUUID();
+    const result = await c.env.DB.prepare(`INSERT INTO tenant_sessions (id,tenant_id,user_id,created_at,expires_at)
+      SELECT ?,tenant_id,id,?,? FROM users WHERE id=? AND tenant_id=? AND email_verified=1`)
+      .bind(id, now(), now() + 86400, userId, tenantId).run();
+    if (!result.meta.changes) throw new Error("Verified tenant account required");
+    return new SignJWT({ sub: userId, tid: tenantId, sid: id, kind: "afro_auth" })
+      .setProtectedHeader({ alg: "HS256" }).setIssuer(issuer).setAudience(`afro-auth:${tenantId}`)
+      .setIssuedAt().setExpirationTime("24h").sign(enc.encode(c.env.JWT_SECRET));
+  }
+  async function verify(c: any, token: string) {
+    try {
+      const { payload: p } = await jwtVerify(token, enc.encode(c.env.JWT_SECRET), {
+        algorithms: ["HS256"], issuer, requiredClaims: ["exp", "iat", "sub", "sid", "tid", "kind", "aud"],
+      });
+      if (p.kind !== "afro_auth" || typeof p.tid !== "string" || p.aud !== `afro-auth:${p.tid}` || typeof p.sid !== "string") return null;
+      const row = await c.env.DB.prepare(`SELECT s.id FROM tenant_sessions s JOIN users u ON u.id=s.user_id AND u.tenant_id=s.tenant_id
+        WHERE s.id=? AND s.tenant_id=? AND s.user_id=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.email_verified=1`)
+        .bind(p.sid, p.tid, p.sub, now()).first();
+      return row ? { tenantId: p.tid, userId: p.sub as string, sessionId: p.sid } : null;
+    } catch { return null; }
+  }
+  async function limited(c: any, t: any, action: string, email = "") {
+    const keys = [`tenant:${t.id}:${action}:ip:${c.req.header("CF-Connecting-IP") || "unknown"}`,
+      ...(email ? [`tenant:${t.id}:${action}:email:${email}`] : [])];
+    if (await deps.checkThrottles(c.env.DB, keys, now())) return true;
+    for (const key of keys) await deps.recordThrottleFailure(c.env.DB, key, now());
+    return false;
+  }
+  async function mail(c: any, t: any, user: any, purpose: "verify" | "reset", context?:any) {
+    const raw = rawToken(), hash = await digest(raw);
+    if(purpose==="verify" && !context) {
+      const pending=await c.env.DB.prepare("SELECT hash FROM tenant_auth_tokens WHERE tenant_id=? AND user_id=? AND purpose='confirmation_pending' AND used_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1")
+        .bind(t.id,user.id,now()).first();
+      if(pending)context={confirmation_pending:pending.hash};
+    }
+    // One statement claims issuance before delivery; retries cannot flood mail.
+    const result = await c.env.DB.prepare(`INSERT INTO tenant_auth_tokens (hash,tenant_id,user_id,purpose,expires_at,context,created_at)
+      SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM tenant_auth_tokens WHERE tenant_id=? AND user_id=? AND purpose=? AND created_at>?)`)
+      .bind(hash, t.id, user.id, purpose, now() + (purpose === "verify" ? 86400 : 3600), context?JSON.stringify(context):null, now(), t.id, user.id, purpose, now() - 60).run();
+    if (!result.meta.changes) return {sent:false};
+    const url = new URL(`/cf-auth/v1/t/${encodeURIComponent(t.slug)}/${purpose === "verify" ? "verify-email" : "reset-password"}`, c.env.APP_URL);
+    url.searchParams.set("token", raw);
+    let destination=url;
+    if(purpose==="verify" && context?.confirmation_pending) {
+      const pending=await c.env.DB.prepare("SELECT context FROM tenant_auth_tokens WHERE hash=? AND tenant_id=? AND user_id=? AND purpose='confirmation_pending' AND used_at IS NULL AND expires_at>?")
+        .bind(context.confirmation_pending,t.id,user.id,now()).first();
+      const config=await c.env.DB.prepare("SELECT callback_url FROM tenant_confirmation_config WHERE tenant_id=?").bind(t.id).first();
+      const details=pending && JSON.parse(pending.context);
+      if(details?.callback && config?.callback_url===details.callback &&
+        parseTenantOrigins(t.allowed_origins).includes(new URL(details.callback).origin)) {
+        destination=new URL(details.callback);
+        destination.searchParams.set("verification_token",raw);
+        destination.searchParams.set("state",details.state);
+      }
+    }
+    const message = await brandedTenantEmail(c.env,t,purpose,destination.toString());
+    return sendTenantMail(c.env, {
+      tenantId: t.id, userId: user.id, purpose, attemptId: crypto.randomUUID(),
+    }, hash, { ...message, to: user.email });
+  }
+  async function actionRow(c: any, t: any, token: string, purpose: string) {
+    return c.env.DB.prepare("SELECT * FROM tenant_auth_tokens WHERE hash=? AND tenant_id=? AND purpose=? AND used_at IS NULL AND expires_at>?")
+      .bind(await digest(token), t.id, purpose, now()).first();
+  }
+  async function owned(c: any, t: any) {
+    const session = await verify(c, (c.req.header("Authorization") || "").replace(/^Bearer /, ""));
+    return session?.tenantId === t.id ? session : null;
+  }
+  function page(c: any, title: string, content: string) {
+    c.header("Cache-Control", "no-store");
+    // no-referrer makes browser navigation POSTs send Origin:null, so our
+    // tenant origin guard rejects this very form. Keep the same-host Origin
+    // while still withholding the token-bearing referrer from external apps.
+    c.header("Referrer-Policy", "same-origin");
+    c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+    return c.html(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title><style>body{font:16px system-ui;max-width:460px;margin:10vh auto;padding:24px;background:#101014;color:#eee}input,button{box-sizing:border-box;width:100%;padding:12px;margin:10px 0}a{color:#facc15}button{cursor:pointer}</style></head><body><h1>${escape(title)}</h1>${content}</body></html>`);
+  }
+  function projectPage(c: any, t: any, title: string, content: string) {
+    // Only use the project's saved exact origin. Never accept a return URL
+    // from the email query string or carry the action token to another site.
+    const origin = parseTenantOrigins(t.allowed_origins).find(validTenantOrigin);
+    const back = origin
+      ? `<p><a href="${escape(origin)}" rel="noreferrer">Return to ${escape(t.name)}</a></p>`
+      : `<p>Return to ${escape(t.name)} directly. Its owner has not configured a return website.</p>`;
+    return page(c, `${title} — ${t.name}`,
+      `<p>This page handles authentication for ${escape(t.name)}.</p>${content}${back}`);
+  }
+  function register(app: any) {
+    for (const [path, purpose] of [["send-verification", "verify"], ["forgot-password", "reset"]] as const) {
+      app.post(`/t/:slug/${path}`, async (c: any) => {
+        const t = await tenant(c);
+        if (!t) return c.json({ message: "Project not found." }, 404);
+        const body = await c.req.json().catch(() => ({}));
+        const email = String(body.email || "").trim().toLowerCase();
+        if (await limited(c, t, purpose, email)) return c.json({ message: "Too many requests. Please wait." }, 429);
+        const user = await c.env.DB.prepare("SELECT id,email,email_verified FROM users WHERE tenant_id=? AND email=?").bind(t.id, email).first();
+        if (user && (purpose === "reset" || !user.email_verified)) {
+          try { await mail(c, t, user, purpose); } catch { console.error("[tenant-auth] Email could not be delivered"); }
+        }
+        return c.json({ ok: true, message: "If eligible, an email will arrive shortly." });
+      });
+    }
+    for (const purpose of ["verify", "reset"]) {
+      const path = purpose === "verify" ? "verify-email" : "reset-password";
+      app.get(`/t/:slug/${path}`, async (c: any) => {
+        const t = await tenant(c);
+        if (!t) return c.text("Project not found.", 404);
+        const token = c.req.query("token") || "";
+        const row = await actionRow(c, t, token, purpose);
+        if (!row) {
+          // A consumed confirmation is not a failed account. Recognize only
+          // this exact project-bound token, without revealing any identity or
+          // treating it as a credential for a new session.
+          const confirmed = purpose === "verify" && token && await c.env.DB.prepare(
+            `SELECT u.email_verified FROM tenant_auth_tokens a
+             JOIN users u ON u.id=a.user_id AND u.tenant_id=a.tenant_id
+             WHERE a.hash=? AND a.tenant_id=? AND a.purpose='verify' AND a.used_at IS NOT NULL`,
+          ).bind(await digest(token),t.id).first();
+          if (confirmed?.email_verified) return projectPage(c,t,"Email already confirmed",
+            `<p>Your email has already been confirmed for ${escape(t.name)}. Return to the app and sign in with your email and password. Opening this link does not sign you in.</p>`);
+          return projectPage(c,t,"Link unavailable",
+            `<p>This link is invalid, expired, or already used. Return to ${escape(t.name)} to sign in or request a new link.</p>`);
+        }
+        const fields = purpose === "reset" ? '<label>New password (at least 12 characters)<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label><label>Confirm password<input name="confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>' : "";
+        return projectPage(c, t, purpose === "verify" ? "Confirm email" : "Reset password",
+          `<form method="post"><input type="hidden" name="token" value="${escape(token)}">${fields}<button>${purpose === "verify" ? "Confirm my email" : "Save new password"}</button></form>`);
+      });
+      app.post(`/t/:slug/${path}`, async (c: any) => {
+        const t = await tenant(c);
+        if (!t) return c.json({ message: "Project not found." }, 404);
+        const form = !(c.req.header("Content-Type") || "").includes("application/json");
+        const body = await (form ? c.req.parseBody() : c.req.json()).catch(() => ({}));
+        const respond = (message: string, status = 200) => {
+          if (!form) return c.json({ok:status === 200,message}, status);
+          c.status(status);
+          const next = status === 200 ? `<p>Return to ${escape(t.name)} and sign in. No login session was created by this page.</p>` : "";
+          return projectPage(c,t,status === 200 ? "Completed" : "Unable to continue",`<p>${escape(message)}</p>${next}`);
+        };
+        const backend=await deps.isBackend?.(c,t);
+        const action=`${purpose}-consume${backend?":"+await digest(String(body.token||"")):""}`;
+        if (await limited(c, t, action)) return respond("Too many attempts. Please wait.", 429);
+        const row = await actionRow(c, t, String(body.token || ""), purpose);
+        if (!row) return respond("Invalid, expired, or already used link. Request a new link.", 400);
+        const ts = now();
+        const condition = "EXISTS (SELECT 1 FROM tenant_auth_tokens WHERE hash=? AND tenant_id=? AND used_at IS NULL AND expires_at>?)";
+        let change: any;
+        if (purpose === "reset") {
+          const password = String(body.password || "");
+          if (password.length < 12 || password.length > 128 || (form && password !== body.confirm)) return respond("Use 12–128 characters and matching passwords.", 400);
+          change = c.env.DB.prepare(`UPDATE users SET password_hash=?,updated_at=? WHERE id=? AND tenant_id=? AND ${condition}`)
+            .bind(await deps.hashPassword(password), ts, row.user_id, t.id, row.hash, t.id, ts);
+        } else {
+          change = c.env.DB.prepare(`UPDATE users SET email_verified=1,updated_at=? WHERE id=? AND tenant_id=? AND ${condition}`)
+            .bind(ts, row.user_id, t.id, row.hash, t.id, ts);
+        }
+        const statements = [change];
+        if (purpose === "reset") statements.push(c.env.DB.prepare(`UPDATE tenant_sessions SET revoked_at=? WHERE user_id=? AND tenant_id=? AND ${condition}`).bind(ts, row.user_id, t.id, row.hash, t.id, ts));
+        statements.push(c.env.DB.prepare(`UPDATE tenant_auth_tokens SET used_at=? WHERE tenant_id=? AND user_id=? ${purpose === "verify" ? "AND purpose='verify'" : ""} AND used_at IS NULL AND ${condition}`)
+          .bind(ts, t.id, row.user_id, row.hash, t.id, ts));
+        const result = await c.env.DB.batch(statements);
+        if (!result[0].meta.changes) return respond("Link already used or expired.", 400);
+        if(purpose==="verify" && deps.completeConfirmation) {
+          const destination=await deps.completeConfirmation(c,t,row);
+          if(destination) return form ? c.redirect(destination,303) :
+            c.json({ok:true,confirmationCompleted:true,redirect:destination});
+        }
+        return respond(purpose === "reset" ? "Password changed. All previous sessions are logged out. Return to your app and sign in." : "Email confirmed. Return to your app and sign in.");
+      });
+    }
+    app.get("/t/:slug/sessions", async (c: any) => {
+      const t = await tenant(c), s = t && await owned(c, t);
+      if (!s) return c.json({ message: "Unauthorized." }, 401);
+      const rows = await c.env.DB.prepare("SELECT id,created_at,expires_at FROM tenant_sessions WHERE tenant_id=? AND user_id=? AND revoked_at IS NULL AND expires_at>?").bind(t.id, s.userId, now()).all();
+      return c.json({ sessions: rows.results.map((r: any) => ({ ...r, current: r.id === s.sessionId })) });
+    });
+    for (const path of ["logout", "logout-all"]) app.post(`/t/:slug/${path}`, async (c: any) => {
+      const t = await tenant(c), s = t && await owned(c, t);
+      if (!s) return c.json({ message: "Unauthorized." }, 401);
+      await c.env.DB.prepare(`UPDATE tenant_sessions SET revoked_at=? WHERE tenant_id=? AND user_id=?${path === "logout" ? " AND id=?" : ""}`)
+        .bind(now(), t.id, s.userId, ...(path === "logout" ? [s.sessionId] : [])).run();
+      return c.json({ ok: true });
+    });
+    app.delete("/t/:slug/sessions/:id", async (c: any) => {
+      const t = await tenant(c), s = t && await owned(c, t);
+      if (!s) return c.json({ message: "Unauthorized." }, 401);
+      const result = await c.env.DB.prepare("UPDATE tenant_sessions SET revoked_at=? WHERE id=? AND tenant_id=? AND user_id=? AND revoked_at IS NULL")
+        .bind(now(), c.req.param("id"), t.id, s.userId).run();
+      return c.json({ ok: !!result.meta.changes }, result.meta.changes ? 200 : 404);
+    });
+    app.post("/t/:slug/oauth/exchange", async (c: any) => {
+      const t = await tenant(c);
+      if (!t) return c.json({ message: "Project not found." }, 404);
+      if (await limited(c, t, "oauth-exchange")) return c.json({ message: "Too many attempts." }, 429);
+      const body = await c.req.json().catch(() => ({}));
+      const row = await actionRow(c, t, String(body.code || ""), "oauth");
+      const verifier = String(body.code_verifier || "");
+      if (!row || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return c.json({ message: "Invalid authorization code." }, 400);
+      const context = JSON.parse(row.context);
+      const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(verifier)));
+      const challenge = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      if (challenge !== context.challenge || body.redirect_uri !== context.redirect) return c.json({ message: "Invalid authorization code." }, 400);
+      const result = await c.env.DB.prepare("UPDATE tenant_auth_tokens SET used_at=? WHERE hash=? AND used_at IS NULL AND expires_at>?").bind(now(), row.hash, now()).run();
+      if (!result.meta.changes) return c.json({ message: "Authorization code already used." }, 400);
+      return c.json({ token: await issue(c, t.id, row.user_id) });
+    });
+  }
+  async function oauthTarget(c: any, tenantId: string) {
+    const t = await c.env.DB.prepare("SELECT allowed_origins FROM tenants WHERE id=? AND id!='platform'").bind(tenantId).first();
+    const redirect = c.req.query("redirect_uri") || "";
+    try {
+      const u = new URL(redirect);
+      if (!t || u.hash || u.username || u.password || !parseTenantOrigins(t.allowed_origins).includes(u.origin) ||
+        !/^[A-Za-z0-9_-]{43}$/.test(c.req.query("code_challenge") || "")) return null;
+      return redirect;
+    } catch { return null; }
+  }
+  async function finishOAuth(c: any, state: any, userId: string) {
+    const t = await c.env.DB.prepare("SELECT allowed_origins FROM tenants WHERE id=?").bind(state.tenantId).first();
+    if (!t || !parseTenantOrigins(t.allowed_origins).includes(new URL(state.redirect).origin) || !state.challenge) return c.text("OAuth configuration changed. Start again.", 400);
+    const raw = rawToken();
+    await c.env.DB.prepare("INSERT INTO tenant_auth_tokens (hash,tenant_id,user_id,purpose,expires_at,context,created_at) VALUES (?,?,?,'oauth',?,?,?)")
+      .bind(await digest(raw), state.tenantId, userId, now() + 60, JSON.stringify({ redirect: state.redirect, challenge: state.challenge }), now()).run();
+    const url = new URL(state.redirect);
+    url.searchParams.set("code", raw);
+    c.header("Cache-Control", "no-store");
+    c.header("Referrer-Policy", "no-referrer");
+    return c.redirect(url.toString());
+  }
+  return { issue, verify, mail, register, oauthTarget, finishOAuth, limited };
+}

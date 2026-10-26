@@ -1,0 +1,52 @@
+.agent-shell.agent-new-entry {
+  position: relative;
+  isolation: isolate;
+  background: #10100e;
+}
+.agent-new-entry::before {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  z-index: -1;
+  pointer-events: none;
+  opacity: .22;
+  background-image: repeating-linear-gradient(55deg, transparent 0 86px, rgba(199, 160, 70, .19) 87px, transparent 88px 174px), repeating-linear-gradient(-55deg, transparent 0 86px, rgba(199, 160, 70, .12) 87px, transparent 88px 174px);
+  mask-image: radial-gradient(ellipse at center, transparent 15%, #10100e 85%);
+  animation: afro-gold-drift 36s ease-in-out infinite alternate;
+}
+@keyframes afro-gold-drift {
+  from { transform: translate3d(-16px, -10px, 0); }
+  to { transform: translate3d(24px, 22px, 0); }
+}
+.agent-new-entry .agent-scroll {
+  flex: 0 1 auto;
+  margin-top: auto;
+  overflow: auto;
+  padding: 32px 24px 24px;
+}
+.new-chat-entry { max-width: 680px; margin: 0 auto; text-align: center; }
+.new-chat-entry__eyebrow { color: #c3a663; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; margin-bottom: 16px; }
+.new-chat-entry h2 { font-size: clamp(27px, 4vw, 42px); line-height: 1.2; font-weight: 500; letter-spacing: -.035em; color: #f0e9da; }
+.new-chat-entry__subtitle { margin: 14px auto 24px; max-width: 490px; color: #aba89e; font-size: 14px; line-height: 1.7; }
+.new-chat-entry__suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.new-chat-entry__suggestions button { border: 1px solid #3a3322; border-radius: 24px; background: #191813; color: #d8ccb0; padding: 10px 16px; font-size: 12px; }
+.new-chat-entry__suggestions button:hover { background: #292419; border-color: #8e743e; }
+.agent-new-entry .agent-composer {
+  width: calc(100% - 48px);
+  max-width: 680px;
+  margin: 0 auto auto;
+  border: 1px solid #655333;
+  border-radius: 20px;
+  background: #1b1a16;
+  padding: 18px;
+  box-shadow: 0 12px 40px #09090740;
+}
+.agent-new-entry .agent-composer textarea { font-size: 15px; min-height: 64px; }
+@media (max-width: 767px) {
+  .agent-new-entry .agent-scroll { padding: 24px 16px 20px; }
+  .agent-new-entry .agent-composer { width: calc(100% - 32px); padding: 14px; }
+  .new-chat-entry__suggestions button { padding: 9px 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-new-entry::before { animation: none; transform: none; }
+}

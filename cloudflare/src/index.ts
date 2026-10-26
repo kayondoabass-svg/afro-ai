@@ -1,0 +1,2016 @@
+/**
+ * Afro AI authentication Worker
+ *
+ * Endpoints (Pass 1 — email + password + Turnstile + JWT cookie):
+ *   POST /api/auth/signup            { email, password, firstName?, lastName?, turnstileToken }
+ *   POST /api/auth/login             { email, password, turnstileToken }
+ *   POST /api/auth/logout
+ *   GET  /api/auth/me
+ *   POST /api/auth/forgot-password   { email }
+ *   POST /api/auth/reset-password    { token, password }
+ *   GET  /health
+ *
+ * OAuth (Google / GitHub / TikTok) lives in Pass 2.
+ */
+
+import { Hono } from 'hono';
+import { handleVersionedAuthRequest } from './api-versioning';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { SignJWT, jwtVerify } from 'jose';
+import { deviceLabel, resetPasswordUrl, resetStatements } from '../../shared/device-sessions';
+import { PLATFORM_ISSUER, PLATFORM_AUDIENCE, PLATFORM_PURPOSE, verifyPlatformSession } from '../../shared/platform-session';
+import bcrypt from 'bcryptjs';
+import { tenantAuth } from './tenant-auth';
+import { tenantConfirmationFlow } from './tenant-confirmation-flow';
+import { tenantBrandingEntitlement } from './tenant-email-branding';
+import { authPackage } from '../../shared/auth-packages';
+import { registerTenantSetup, tenantSetup, tenantIsActive } from './tenant-project-setup';
+import { registerTenantApiUpgrade } from './tenant-api-upgrade';
+import { registerTenantMailStatus, checkTenantMailHealth } from './tenant-mail-status';
+import { platformAdminIdentity } from './platform-admin-auth';
+import { parseTenantOrigins, validTenantOrigin } from '../../shared/tenant-origins';
+import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+
+interface Env {
+  DB: D1Database;
+  APP_URL: string;
+  COOKIE_DOMAIN: string;
+  JWT_SECRET: string;
+  TURNSTILE_SECRET_KEY: string;
+  // INTERNAL_EMAIL_SECRET still gates the admin /mint-reset-token endpoint
+  // (shared secret with the migration blast script). EXPRESS_BASE_URL is no
+  // longer used for mail — kept optional for backwards compat.
+  INTERNAL_EMAIL_SECRET?: string;
+  EXPRESS_BASE_URL?: string;
+  // Outbound transactional mail goes through Resend (https://resend.com)
+  // directly from the Worker. RESEND_API_KEY is the Bearer token; MAIL_FROM
+  // is the verified sender address.
+  RESEND_API_KEY?: string;
+  MAIL_FROM?: string; // e.g. "Afro AI <noreply@afroaigroup.com>"
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  // E2B cloud sandbox API key for /run-code. Set via:
+  //   npx wrangler secret put E2B_API_KEY
+  E2B_API_KEY?: string;
+}
+
+// All routes live under /cf-auth/* so the Worker can sit on a Cloudflare Route
+// like `afroaigroup.com/cf-auth/*`, side-by-side with the existing Express app
+// (which keeps owning /api/*). This makes the session cookie a first-party cookie,
+// which works on iOS Safari and avoids every CORS / third-party-cookie problem.
+const root = new Hono<{ Bindings: Env }>();
+const app = root.basePath('/cf-auth');
+const enc = new TextEncoder();
+const tenantSecurity = tenantAuth({ hashPassword, checkThrottles, recordThrottleFailure,
+  completeConfirmation:(c,t,row)=>confirmationFlow.complete(c,t,row),
+  isBackend:async(c,t)=>(await authenticateBySecretKey(c))?.id===t.id });
+const confirmationFlow = tenantConfirmationFlow({
+  authenticate:authenticateBySecretKey,ownedTenant:ownedTenantOr401,
+  issue:tenantSecurity.issue,verify:tenantSecurity.verify,
+  mail:tenantSecurity.mail,limited:tenantSecurity.limited,checkPassword:verifyPassword,
+});
+
+/* ------------------------------ CORS ------------------------------ */
+app.use('/*', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  const origin = c.req.header('Origin');
+  const path = c.req.path;
+  // Afro Auth product surfaces (tenant end-user auth + Management API non-admin
+  // calls) are called from ARBITRARY customer domains, so we mirror the
+  // request Origin and explicitly opt OUT of credentials (no cookies — clients
+  // pass the JWT as `Authorization: Bearer <token>` instead, which is safe to
+  // share across origins).
+  const isTenantSlugApi = path.startsWith('/cf-auth/t/');
+  const isV1PublicApi =
+    path.startsWith('/cf-auth/v1/') && !path.startsWith('/cf-auth/v1/admin');
+  if (!isTenantSlugApi && !isV1PublicApi && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
+    if (c.req.header('Sec-Fetch-Site') === 'cross-site' || (origin && origin !== new URL(c.env.APP_URL).origin)) {
+      return c.json({ message: 'Untrusted request origin.' }, 403);
+    }
+  }
+  if (isTenantSlugApi) {
+    // Extract slug from /cf-auth/t/:slug/...
+    const slugMatch = path.match(/^\/cf-auth\/t\/([^/]+)/);
+    const slug = slugMatch ? slugMatch[1] : null;
+    let allowOrigin = false;
+    if (slug && origin) {
+      try {
+        const t = await c.env.DB.prepare(
+          'SELECT allowed_origins FROM tenants WHERE slug = ?',
+        )
+          .bind(slug)
+          .first<{ allowed_origins: string | null }>();
+        if (t) {
+          const list = parseTenantOrigins(t.allowed_origins);
+          // Hosted verification/reset forms submit on the auth host itself.
+          const hostedForm = /\/(verify-email|reset-password)$/.test(path) && origin === new URL(c.env.APP_URL).origin;
+          if (list.includes(origin) || hostedForm) {
+            allowOrigin = true;
+          }
+        }
+      } catch {
+        // On lookup failure, be conservative and skip origin header.
+      }
+    }
+    if (origin && !allowOrigin) return c.json({ message: 'Origin is not allowed for this project.' }, 403);
+    if (allowOrigin && origin) {
+      c.header('Access-Control-Allow-Origin', origin);
+      c.header('Access-Control-Allow-Credentials', 'false');
+      c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      c.header('Vary', 'Origin');
+    }
+  } else if (isV1PublicApi) {
+    // Server-to-server Bearer API. Mirror Origin permissively (auth is via
+    // sk_live_ key, not cookies).
+    if (origin) {
+      c.header('Access-Control-Allow-Origin', origin);
+      c.header('Access-Control-Allow-Credentials', 'false');
+      c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      c.header('Vary', 'Origin');
+    }
+  } else {
+    const host = c.env.APP_URL.replace(/^https?:\/\//, '');
+    const allowed = new Set([
+      c.env.APP_URL,
+      `https://www.${host}`,
+      `https://${host}`,
+    ]);
+    if (origin && allowed.has(origin)) {
+      c.header('Access-Control-Allow-Origin', origin);
+      c.header('Access-Control-Allow-Credentials', 'true');
+      c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'Content-Type');
+      c.header('Vary', 'Origin');
+    }
+  }
+  if (c.req.method === 'OPTIONS') return c.body(null, 204);
+  await next();
+});
+
+/* ------------------------------ Helpers ------------------------------ */
+
+function uuid(): string {
+  return crypto.randomUUID();
+}
+function nowSec(): number {
+  return Math.floor(Date.now() / 1000);
+}
+function isValidEmail(s: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+/** Hash a password using PBKDF2-SHA256 (works in Workers, no native deps). */
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const km = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
+    km,
+    256,
+  );
+  const saltB64 = btoa(String.fromCharCode(...salt));
+  const hashB64 = btoa(String.fromCharCode(...new Uint8Array(bits)));
+  return `pbkdf2$100000$${saltB64}$${hashB64}`;
+}
+
+/**
+ * Verify a password against a stored hash. Supports two formats:
+ *
+ *   1. `pbkdf2$…` — native Worker hashes (preferred going forward).
+ *   2. `$2a$…` / `$2b$…` / `$2y$…` — bcrypt hashes carried over from the
+ *      legacy Express stack so existing users keep logging in with their
+ *      current password without any reset email blast.
+ *
+ * The login route silently re-hashes bcrypt verifications to PBKDF2 on
+ * success so the legacy format is gradually retired with zero user impact.
+ */
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  if (stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$')) {
+    try {
+      return await bcrypt.compare(password, stored);
+    } catch {
+      return false;
+    }
+  }
+  const parts = stored.split('$');
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
+  const iterations = parseInt(parts[1], 10);
+  if (!Number.isFinite(iterations) || iterations < 1000) return false;
+  const salt = Uint8Array.from(atob(parts[2]), (c) => c.charCodeAt(0));
+  const expectedB64 = parts[3];
+  // Use the pure-JS @noble/hashes implementation instead of crypto.subtle so
+  // we can handle ANY iteration count — including legacy 200,000-iteration
+  // hashes from accounts created before the Cloudflare Workers 100k cap was
+  // discovered. Pure JS is slower but well within the Paid-plan CPU budget.
+  const derived = await pbkdf2Async(sha256, enc.encode(password), salt, {
+    c: iterations,
+    dkLen: 32,
+  });
+  const actualB64 = btoa(String.fromCharCode(...derived));
+  // Fixed-length constant-time compare. Both values are PBKDF2-SHA256 base64
+  // outputs, so they're always 44 chars; we still iterate a fixed length to
+  // avoid leaking timing information if `stored` is malformed.
+  const len = Math.max(actualB64.length, expectedB64.length);
+  let diff = actualB64.length ^ expectedB64.length;
+  for (let i = 0; i < len; i++) {
+    const a = i < actualB64.length ? actualB64.charCodeAt(i) : 0;
+    const b = i < expectedB64.length ? expectedB64.charCodeAt(i) : 0;
+    diff |= a ^ b;
+  }
+  return diff === 0;
+}
+
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyTurnstile(token: string, secret: string, ip?: string): Promise<boolean> {
+  if (!token || !secret) return false;
+  const form = new FormData();
+  form.append('secret', secret);
+  form.append('response', token);
+  if (ip) form.append('remoteip', ip);
+  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) return false;
+  const data = (await res.json()) as { success: boolean };
+  return data.success === true;
+}
+
+/** Build the JWT payload for a session cookie. Includes a small set of public
+ *  user fields so the Express bridge on the Replit side can verify and trust
+ *  the session without an extra D1 lookup. */
+async function buildSessionClaims(c: any, userId: string): Promise<Record<string, any>> {
+  const row = await c.env.DB.prepare(
+    "SELECT email, first_name AS firstName, last_name AS lastName, profile_image_url AS profileImageUrl FROM users WHERE id = ? AND tenant_id = 'platform'",
+  )
+    .bind(userId)
+    .first<{ email: string; firstName?: string; lastName?: string; profileImageUrl?: string }>();
+  if (!row) throw new Error('Cannot issue a platform session for a tenant user');
+  return {
+    sub: userId,
+    email: row?.email || '',
+    first_name: row?.firstName || '',
+    last_name: row?.lastName || '',
+    profile_image_url: row?.profileImageUrl || '',
+  };
+}
+
+async function issueSession(c: any, userId: string) {
+  const secret = enc.encode(c.env.JWT_SECRET);
+  const claims = await buildSessionClaims(c, userId);
+  const sid = uuid();
+  const now = nowSec();
+  const geo = c.req.raw.cf;
+  const location = [geo?.city, geo?.region, geo?.country].filter(Boolean).join(', ') || 'Location unavailable';
+  await c.env.DB.prepare(
+    'INSERT INTO device_sessions (id, user_id, email, device, location, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).bind(sid, userId, String(claims.email || '').toLowerCase(), deviceLabel(c.req.header('User-Agent') || ''), location, now, now, now + 30 * 86400).run();
+  const token = await new SignJWT({ ...claims, sid, kind: PLATFORM_PURPOSE })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(PLATFORM_ISSUER)
+    .setAudience(PLATFORM_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime('30d')
+    .sign(secret);
+  setSessionCookie(c,token);
+}
+
+function setSessionCookie(c:any,token:string) {
+  // The Express site canonicalizes www to the apex before serving the UI.
+  // Expire legacy parent-domain cookies before writing a host-only cookie;
+  // customer-controlled subdomains must never receive new platform sessions.
+  deleteCookie(c,'afroai_session',{domain:c.env.COOKIE_DOMAIN || 'afroaigroup.com',path:'/'});
+  setCookie(c, 'afroai_session', token, {
+    path: '/',
+    secure: true,
+    httpOnly: true,
+    sameSite: 'Lax',
+    maxAge: 60 * 60 * 24 * 30,
+  });
+}
+
+async function getCurrentUserId(c: any): Promise<string | null> {
+  const token = getCookie(c, 'afroai_session');
+  if (!token) return null;
+  try {
+    const secret = enc.encode(c.env.JWT_SECRET);
+    const payload = await verifyPlatformSession(token, secret);
+    if (typeof payload.sid !== 'string' || !payload.sub) return null;
+    const session = await c.env.DB.prepare('SELECT id, last_seen_at FROM device_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?')
+      .bind(payload.sid, payload.sub, nowSec()).first();
+    if (!session) return null;
+    // Migrate an existing valid browser session without revoking it or asking
+    // the customer to recreate an account. The response expires only the old
+    // domain-scoped cookie and retains this exact live session token.
+    setSessionCookie(c,token);
+    if (session.last_seen_at < nowSec() - 300) {
+      await c.env.DB.prepare('UPDATE device_sessions SET last_seen_at = ? WHERE id = ? AND last_seen_at < ?')
+        .bind(nowSec(), payload.sid, nowSec() - 300).run();
+    }
+    return payload.sub as string;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------ Outbound email ------------------------------
+ *
+ * Transactional mail (password reset, set-password) is sent directly from
+ * the Worker via Resend (https://api.resend.com/emails).
+ *
+ * Auth is a Bearer API key set as a Worker secret (RESEND_API_KEY). The
+ * sending domain (afroaigroup.com) must be verified in Resend with the
+ * SPF/DKIM/DMARC DNS records they provide.
+ *
+ * Templates live inline here (small, transactional, rarely change). If we
+ * ever need richer templates we can lift them into a templates module.
+ */
+const BRAND_COLOR = '#facc15';
+const FALLBACK_FROM = 'Afro AI <noreply@afroaigroup.com>';
+
+import { platformEmailHeader } from "../../shared/email-branding";
+
+function emailShell(title: string, bodyHtml: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head>
+<body style="margin:0;padding:0;background:#0a0a0a;color:#e5e5e5;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
+<div style="max-width:560px;margin:0 auto;padding:32px 24px;">
+${platformEmailHeader}
+${bodyHtml}
+<p style="font-size:12px;color:#71717a;margin-top:32px;border-top:1px solid #27272a;padding-top:16px;">
+Afro AI · Built for Africa · <a href="https://afroaigroup.com" style="color:${BRAND_COLOR};">afroaigroup.com</a>
+</p></div></body></html>`;
+}
+
+function renderTemplate(
+  template: 'password_reset' | 'set_password',
+  vars: Record<string, string>,
+): { subject: string; html: string; text: string } {
+  const name = vars.name || 'there';
+  const resetUrl = vars.resetUrl || '';
+  if (template === 'set_password') {
+    const subject = 'Set your Afro AI password';
+    const body = `<p>Hi ${name},</p>
+<p>We've upgraded the way you sign in to Afro AI. Your existing account is still here — just choose a password to keep using it. Tap the button below to set one. The link works for the next <strong>60 minutes</strong> and can only be used once.</p>
+<p style="margin:24px 0;text-align:center;"><a href="${resetUrl}" style="background:${BRAND_COLOR};color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Set my password →</a></p>
+<p style="font-size:13px;color:#a1a1aa;">If the button doesn't work, copy this link into your browser:<br/><span style="word-break:break-all;color:${BRAND_COLOR};">${resetUrl}</span></p>
+<p style="font-size:13px;color:#a1a1aa;margin-top:18px;">If you don't recognise this account, you can safely ignore this email.</p>`;
+    const text = `Hi ${name},\n\nSet your Afro AI password using this one-time link (works for 60 minutes):\n${resetUrl}\n\nIf you don't recognise this account, just ignore the email.`;
+    return { subject, html: emailShell(subject, body), text };
+  }
+  const subject = 'Reset your Afro AI password';
+  const body = `<p>Hi ${name},</p>
+<p>We got a request to reset the password on your Afro AI account. Tap the button below to set a new one. The link works for the next <strong>60 minutes</strong> and can only be used once.</p>
+<p style="margin:24px 0;text-align:center;"><a href="${resetUrl}" style="background:${BRAND_COLOR};color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">Reset my password →</a></p>
+<p style="font-size:13px;color:#a1a1aa;">If the button doesn't work, copy this link into your browser:<br/><span style="word-break:break-all;color:${BRAND_COLOR};">${resetUrl}</span></p>
+<p style="font-size:13px;color:#a1a1aa;margin-top:18px;">Didn't ask to reset your password? You can safely ignore this email — your account stays the same.</p>`;
+  const text = `Hi ${name},\n\nReset your Afro AI password using this link (works for 60 minutes):\n${resetUrl}\n\nIf you didn't ask for this, just ignore the email.`;
+  return { subject, html: emailShell(subject, body), text };
+}
+
+function parseFrom(raw: string): { email: string; name?: string } {
+  const m = raw.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (m) return { name: m[1] || undefined, email: m[2] };
+  return { email: raw.trim() };
+}
+
+async function sendViaBridge(
+  env: Env,
+  template: 'password_reset' | 'set_password',
+  to: string,
+  vars: Record<string, string>,
+): Promise<void> {
+  if (!env.RESEND_API_KEY) {
+    console.error('[resend] RESEND_API_KEY not set — cannot send', template, 'to', to);
+    return;
+  }
+  const from = env.MAIL_FROM || FALLBACK_FROM;
+  const { subject, html, text } = renderTemplate(template, vars);
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from, to, subject, html, text }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error('[resend] send failed', res.status, body.slice(0, 500));
+    return;
+  }
+}
+
+/* ------------------------------ Throttling ------------------------------
+ *
+ * Server-side rate limiter that backs Turnstile on the abuse-sensitive
+ * endpoints (/login, /signup, /forgot-password). Turnstile alone isn't enough
+ * — a CAPTCHA-farm or single-solve-then-replay attacker can still brute-force
+ * passwords or spam reset emails. We keep one row per "throttle key" in D1
+ * (e.g. "login:ip:1.2.3.4" or "login:email:foo@bar.com") and lock the key
+ * for a cool-off period once too many failures land inside a rolling window.
+ *
+ * Defaults: 5 failures / 15 min → 30 min lock, applied per-IP AND per-email
+ * so a single bad actor can't pivot across either axis.
+ */
+const THROTTLE_WINDOW_SEC = 15 * 60;
+const THROTTLE_MAX_ATTEMPTS = 5;
+const THROTTLE_LOCK_SEC = 30 * 60;
+
+interface ThrottleRow {
+  count: number;
+  window_start: number;
+  locked_until: number | null;
+}
+
+/** Returns >0 retry-after if the key is currently locked, else 0. */
+async function throttleRetryAfter(
+  db: D1Database,
+  key: string,
+  now: number,
+): Promise<number> {
+  const row = await db
+    .prepare('SELECT count, window_start, locked_until FROM auth_throttle WHERE key = ?')
+    .bind(key)
+    .first<ThrottleRow>();
+  if (!row || !row.locked_until) return 0;
+  if (row.locked_until <= now) return 0;
+  return row.locked_until - now;
+}
+
+/** Check a list of keys; return the longest retry-after, or 0 if none locked. */
+async function checkThrottles(
+  db: D1Database,
+  keys: string[],
+  now: number,
+): Promise<number> {
+  let max = 0;
+  for (const k of keys) {
+    const r = await throttleRetryAfter(db, k, now);
+    if (r > max) max = r;
+  }
+  return max;
+}
+
+/**
+ * Bump the failure counter for `key`. If we cross THROTTLE_MAX_ATTEMPTS
+ * inside the current rolling window, set a lock for THROTTLE_LOCK_SEC.
+ * If the previous window has expired, reset the counter to 1.
+ */
+async function recordThrottleFailure(
+  db: D1Database,
+  key: string,
+  now: number,
+): Promise<void> {
+  const row = await db
+    .prepare('SELECT count, window_start FROM auth_throttle WHERE key = ?')
+    .bind(key)
+    .first<{ count: number; window_start: number }>();
+  if (!row || now - row.window_start >= THROTTLE_WINDOW_SEC) {
+    await db
+      .prepare(
+        'INSERT OR REPLACE INTO auth_throttle (key, count, window_start, locked_until) VALUES (?, 1, ?, NULL)',
+      )
+      .bind(key, now)
+      .run();
+    return;
+  }
+  const newCount = row.count + 1;
+  const lockedUntil = newCount >= THROTTLE_MAX_ATTEMPTS ? now + THROTTLE_LOCK_SEC : null;
+  await db
+    .prepare('UPDATE auth_throttle SET count = ?, locked_until = ? WHERE key = ?')
+    .bind(newCount, lockedUntil, key)
+    .run();
+}
+
+/** Wipe throttle state for a key (called on a successful login). */
+async function clearThrottle(db: D1Database, key: string): Promise<void> {
+  await db.prepare('DELETE FROM auth_throttle WHERE key = ?').bind(key).run();
+}
+
+/**
+ * Standard 429 response for a throttle hit. Sends a stable `code` so the
+ * frontend can render a translated body string per locale, plus an English
+ * `message` fallback for clients that don't recognize the code yet.
+ */
+function tooManyAttempts(
+  c: any,
+  retryAfter: number,
+  code: 'rate_limited_login' | 'rate_limited_signup' | 'rate_limited_reset',
+) {
+  c.header('Retry-After', String(Math.max(1, retryAfter)));
+  const minutes = Math.max(1, Math.ceil(retryAfter / 60));
+  const englishBody =
+    code === 'rate_limited_login'
+      ? 'Too many sign-in attempts. Please wait a few minutes and try again.'
+      : code === 'rate_limited_signup'
+        ? 'Too many signup attempts. Please wait a few minutes and try again.'
+        : 'Too many password reset attempts. Please wait a few minutes and try again.';
+  return c.json(
+    {
+      code,
+      message: englishBody,
+      retryAfterSec: Math.max(1, retryAfter),
+      retryAfterMinutes: minutes,
+    },
+    429,
+  );
+}
+
+/**
+ * Constant-time string compare for the Worker admin shared secret. Avoids
+ * leaking the secret length / contents through response-time differences.
+ */
+function timingSafeStrEq(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/* ------------------------------ Routes ------------------------------ */
+
+app.get('/health', (c) => c.json({ ok: true, ts: nowSec() }));
+
+app.post('/signup', async (c) => {
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ message: 'Invalid request.' }, 400);
+  }
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  const firstName = String(body.firstName || '').trim().slice(0, 60);
+  const lastName = String(body.lastName || '').trim().slice(0, 60);
+
+  if (!isValidEmail(email)) {
+    return c.json({ message: 'Please enter a valid email address.' }, 400);
+  }
+  if (password.length < 6) {
+    return c.json({ message: 'Password must be at least 6 characters.' }, 400);
+  }
+
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `signup:ip:${ip}`;
+  const emailKey = `signup:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_signup');
+
+  const captchaOk = await verifyTurnstile(
+    String(body.turnstileToken || ''),
+    c.env.TURNSTILE_SECRET_KEY,
+    ip,
+  );
+  if (!captchaOk) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'Captcha check failed. Please try again.' }, 400);
+  }
+
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE tenant_id = 'platform' AND email = ?",
+  )
+    .bind(email)
+    .first();
+  if (existing) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'An account with this email already exists.' }, 409);
+  }
+
+  const id = uuid();
+  const hash = await hashPassword(password);
+  const ts = nowSec();
+  await c.env.DB.prepare(
+    "INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, email_verified, plan, created_at, updated_at) VALUES (?, 'platform', ?, ?, ?, ?, 0, ?, ?, ?)",
+  )
+    .bind(id, email, hash, firstName || null, lastName || null, 'free', ts, ts)
+    .run();
+
+  await issueSession(c, id);
+  return c.json({ id, email, firstName, lastName });
+});
+
+app.post('/login', async (c) => {
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ message: 'Invalid request.' }, 400);
+  }
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+
+  if (!isValidEmail(email) || !password) {
+    return c.json({ message: 'Please enter your email and password.' }, 400);
+  }
+
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `login:ip:${ip}`;
+  const emailKey = `login:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_login');
+
+  const captchaOk = await verifyTurnstile(
+    String(body.turnstileToken || ''),
+    c.env.TURNSTILE_SECRET_KEY,
+    ip,
+  );
+  if (!captchaOk) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'Captcha check failed. Please try again.' }, 400);
+  }
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, password_hash, first_name, last_name, profile_image_url, plan FROM users WHERE tenant_id = 'platform' AND email = ?",
+  )
+    .bind(email)
+    .first<{
+      id: string;
+      password_hash: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      profile_image_url: string | null;
+      plan: string;
+    }>();
+
+  if (!user || !user.password_hash) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'Wrong email or password.' }, 401);
+  }
+  const ok = await verifyPassword(password, user.password_hash);
+  if (!ok) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'Wrong email or password.' }, 401);
+  }
+
+  // Successful login wipes the failure counters so a legitimate user who
+  // mistyped a few times before getting it right doesn't stay near the lock
+  // threshold. We clear both axes for the same reason.
+  await clearThrottle(c.env.DB, ipKey);
+  await clearThrottle(c.env.DB, emailKey);
+
+  // Rolling upgrade: if the stored hash is a legacy bcrypt one, transparently
+  // re-hash to the Worker's native PBKDF2 format. Best-effort — if the update
+  // fails, the user just stays on bcrypt and we'll try again next login.
+  if (
+    user.password_hash.startsWith('$2a$') ||
+    user.password_hash.startsWith('$2b$') ||
+    user.password_hash.startsWith('$2y$')
+  ) {
+    try {
+      const upgraded = await hashPassword(password);
+      await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+        .bind(upgraded, nowSec(), user.id)
+        .run();
+    } catch (err) {
+      console.warn('[login] bcrypt → pbkdf2 upgrade failed', err);
+    }
+  }
+
+  await issueSession(c, user.id);
+  return c.json({
+    id: user.id,
+    email,
+    firstName: user.first_name,
+    lastName: user.last_name,
+    profileImageUrl: user.profile_image_url,
+    plan: user.plan,
+  });
+});
+
+app.post('/logout', async (c) => {
+  const token = getCookie(c, 'afroai_session');
+  if (token) {
+    try {
+      const payload = await verifyPlatformSession(token, enc.encode(c.env.JWT_SECRET)).catch(() => null);
+      if (!payload) {
+        deleteCookie(c, 'afroai_session', { domain: c.env.COOKIE_DOMAIN || 'afroaigroup.com', path: '/' });
+        deleteCookie(c,'afroai_session',{path:'/'});
+        return c.json({ ok: true });
+      }
+      if (typeof payload.sid === 'string') {
+        await c.env.DB.prepare('UPDATE device_sessions SET revoked_at = ? WHERE id = ? AND user_id = ?')
+          .bind(nowSec(), payload.sid, payload.sub).run();
+      }
+    } catch {
+      return c.json({ message: 'Unable to revoke this session. Please retry.' }, 503);
+    }
+  }
+  // Must match the domain/path used when the cookie was issued — otherwise
+  // the browser keeps the cookie and the user stays "logged in" after they
+  // tap Sign out. See setSessionCookie above for the matching scope.
+  deleteCookie(c, 'afroai_session', {
+    domain: c.env.COOKIE_DOMAIN || 'afroaigroup.com',
+    path: '/',
+  });
+  deleteCookie(c,'afroai_session',{path:'/'});
+  return c.json({ ok: true });
+});
+
+// =============================================================================
+// /run-code — Cloud sandbox proxy
+// =============================================================================
+// Thin proxy to E2B's /sandboxes/code-interpreter endpoint. We keep the API key
+// server-side and meter per-user so a single account can't blow the bill.
+//
+// Auth: requires a valid afroai_session cookie (any logged-in user).
+// Throttle: 10 runs / minute / user, enforced via auth_throttle table.
+// Limits: code is hard-capped at 20 KB; runtime capped at 15s on E2B's side.
+//
+// To enable, set the worker secret:
+//   npx wrangler secret put E2B_API_KEY
+// (Sign up at https://e2b.dev — free tier is fine for early users.)
+// =============================================================================
+app.post('/run-code', async (c) => {
+  const userId = await getCurrentUserId(c);
+  if (!userId) return c.json({ ok: false, code: 'unauthorized', message: 'Sign in to run code.' }, 401);
+
+  // Platform verification is authoritative in Postgres, not the Worker's D1 mirror.
+  try {
+    const identity = await fetch(new URL('/api/auth/user', c.env.EXPRESS_BASE_URL || c.env.APP_URL), {
+      headers: { Cookie: c.req.header('Cookie') || '' },
+      redirect: 'manual',
+    });
+    const user: any = identity.ok ? await identity.json() : null;
+    if (!user?.emailVerified) {
+      return c.json({ ok: false, code: 'EMAIL_VERIFICATION_REQUIRED', message: 'Verify your email before running code.' }, 403);
+    }
+  } catch {
+    return c.json({ ok: false, code: 'verification_unavailable', message: 'Unable to check account verification. Try again later.' }, 503);
+  }
+
+  const apiKey = c.env.E2B_API_KEY;
+  if (!apiKey) {
+    return c.json({ ok: false, code: 'not_configured', message: 'Cloud sandbox not configured.' }, 503);
+  }
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, code: 'bad_request' }, 400); }
+  const language = String(body.language || 'node').toLowerCase();
+  const code = String(body.code || '');
+  if (!code) return c.json({ ok: false, code: 'empty' }, 400);
+  if (code.length > 20_000) return c.json({ ok: false, code: 'too_large', message: 'Code is too long (max 20 KB).' }, 413);
+  if (!['node', 'javascript', 'python', 'bash'].includes(language)) {
+    return c.json({ ok: false, code: 'unsupported_language' }, 400);
+  }
+
+  const now = nowSec();
+  const throttleKey = `runcode:${userId}`;
+  const lockedFor = await checkThrottles(c.env.DB, [throttleKey], now);
+  if (lockedFor > 0) {
+    return c.json({ ok: false, code: 'rate_limited', retryAfter: lockedFor, message: 'Slow down — too many runs.' }, 429);
+  }
+  await recordThrottleFailure(c.env.DB, throttleKey, now);
+
+  try {
+    const e2bRes = await fetch('https://api.e2b.dev/v1/sandboxes/code-interpreter/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+      },
+      body: JSON.stringify({ language: language === 'javascript' ? 'node' : language, code, timeout_ms: 15_000 }),
+    });
+    const text = await e2bRes.text();
+    let data: any;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (!e2bRes.ok) {
+      return c.json({ ok: false, code: 'sandbox_error', message: data?.message || 'Sandbox error', status: e2bRes.status }, 502);
+    }
+    return c.json({
+      ok: true,
+      stdout: data.stdout || data.output || '',
+      stderr: data.stderr || data.error || '',
+      exitCode: data.exit_code ?? data.exitCode ?? 0,
+    });
+  } catch (e: any) {
+    return c.json({ ok: false, code: 'network_error', message: e?.message || 'Network error' }, 502);
+  }
+});
+
+// Mirror of FOUNDER_EMAILS in server/replit_integrations/auth/storage.ts.
+// Keep these two lists in sync. Used to surface the `isFounder` flag on /me
+// so the React sidebar can render the Founder Dashboard entry without
+// round-tripping to Express.
+const FOUNDER_EMAILS = ['kayondoabass@gmail.com'];
+
+app.get('/me', async (c) => {
+  // Auth status MUST never be cached. Mobile carrier networks frequently route
+  // traffic through transparent HTTP proxies that aggressively cache GET
+  // responses; without an explicit no-store directive, a proxy can serve back
+  // a stale `{ user: null }` response even after a successful login, bouncing
+  // the user back to the marketing landing page. This was reproducible on
+  // mobile cellular but not on desktop Wi-Fi.
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  c.header('Pragma', 'no-cache');
+  const userId = await getCurrentUserId(c);
+  if (!userId) return c.json({ user: null });
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, first_name AS firstName, last_name AS lastName, profile_image_url AS profileImageUrl, plan FROM users WHERE id = ?',
+  )
+    .bind(userId)
+    .first<{ id: string; email: string; firstName?: string; lastName?: string; profileImageUrl?: string; plan?: string }>();
+  if (!user) return c.json({ user: null });
+  const isFounder = FOUNDER_EMAILS.includes((user.email || '').toLowerCase());
+  return c.json({ user: { ...user, isFounder } });
+});
+
+app.post('/forgot-password', async (c) => {
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: true });
+  }
+  const email = String(body.email || '').trim().toLowerCase();
+
+  // Always respond ok — never reveal whether the email exists
+  if (!isValidEmail(email)) return c.json({ ok: true });
+
+  // Per-IP and per-email throttling. The IP throttle hits a 429 with the
+  // stable `rate_limited_reset` code so the frontend can render a translated
+  // lock-out panel (matches the login/signup UX). The per-email throttle
+  // stays silent (still returns 200 { ok: true }) so it can't be used as an
+  // email-enumeration oracle — only the requester's own IP-bound abuse
+  // produces the visible lock screen.
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `forgot:ip:${ip}`;
+  const emailKey = `forgot:email:${email}`;
+  const ipLockedFor = await checkThrottles(c.env.DB, [ipKey], now);
+  if (ipLockedFor > 0) return tooManyAttempts(c, ipLockedFor, 'rate_limited_reset');
+  const emailLockedFor = await checkThrottles(c.env.DB, [emailKey], now);
+  if (emailLockedFor > 0) return c.json({ ok: true });
+
+  // Every well-formed request counts toward the throttle (regardless of
+  // whether the email exists), so an attacker can't blast reset emails.
+  await recordThrottleFailure(c.env.DB, ipKey, now);
+  await recordThrottleFailure(c.env.DB, emailKey, now);
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, first_name FROM users WHERE tenant_id = 'platform' AND email = ?",
+  )
+    .bind(email)
+    .first<{ id: string; first_name: string | null }>();
+  if (!user) return c.json({ ok: true });
+
+  // 256 bits of entropy, hex-encoded → 64 chars. Only the SHA-256 is stored.
+  const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+  const rawToken = [...tokenBytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const tokenHash = await sha256Hex(rawToken);
+  const ts = nowSec();
+  const expiresAt = ts + 60 * 60; // 1 hour
+
+  await c.env.DB.prepare(
+    'INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
+  )
+    .bind(uuid(), user.id, tokenHash, expiresAt, ts)
+    .run();
+
+  const resetUrl = resetPasswordUrl(c.env.APP_URL, rawToken);
+  try {
+    await sendViaBridge(c.env, 'password_reset', email, {
+      name: user.first_name || 'there',
+      resetUrl,
+    });
+  } catch (err) {
+    // Email failures are intentionally silent to the caller (we never want
+    // to reveal whether the email exists), but logged for ops.
+    console.error('[forgot-password] send failed', err);
+  }
+  return c.json({ ok: true });
+});
+
+/**
+ * Admin-only endpoint used by the existing-user reset blast script.
+ * Mints a single-use reset token (same shape as /forgot-password) and
+ * returns the URL to the caller — the caller sends the email itself
+ * (the blast script uses the "set_password" template via Express).
+ *
+ * Protected by the same INTERNAL_EMAIL_SECRET shared with Express, so we
+ * don't have to manage another secret. Never exposed to end users.
+ */
+app.post('/admin/mint-reset-token', async (c) => {
+  const secret = c.env.INTERNAL_EMAIL_SECRET;
+  if (!secret) return c.json({ message: 'Mail bridge not configured.' }, 503);
+  const auth = c.req.header('authorization') || '';
+  const provided = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!timingSafeStrEq(provided, secret)) return c.json({ message: 'Unauthorized.' }, 401);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ message: 'Invalid request.' }, 400);
+  }
+  const email = String(body.email || '').trim().toLowerCase();
+  if (!isValidEmail(email)) return c.json({ message: 'Invalid email.' }, 400);
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, first_name FROM users WHERE tenant_id = 'platform' AND email = ?",
+  )
+    .bind(email)
+    .first<{ id: string; first_name: string | null }>();
+  if (!user) return c.json({ message: 'No such user.' }, 404);
+
+  const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+  const rawToken = [...tokenBytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const tokenHash = await sha256Hex(rawToken);
+  const ts = nowSec();
+  const expiresAt = ts + 60 * 60;
+
+  await c.env.DB.prepare(
+    'INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
+  )
+    .bind(uuid(), user.id, tokenHash, expiresAt, ts)
+    .run();
+
+  // welcome=1 tells the /reset-password page that this is a first-time
+  // "set your password" flow (migration blast), so it shows friendlier copy
+  // instead of the default "Reset your password" wording.
+  const resetUrl = resetPasswordUrl(c.env.APP_URL, rawToken, true);
+  return c.json({ ok: true, resetUrl, name: user.first_name || '' });
+});
+
+app.post('/reset-password', async (c) => {
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ message: 'Invalid request.' }, 400);
+  }
+  const token = String(body.token || '');
+  const password = String(body.password || '');
+
+  if (!token || password.length < 6) {
+    return c.json(
+      { message: 'Please choose a password with at least 6 characters.' },
+      400,
+    );
+  }
+
+  // Throttle by IP and by token-prefix so an attacker can't brute-force reset
+  // tokens by hammering this endpoint. We only count *invalid* token attempts
+  // toward the throttle (a legit user with a valid link won't ever bump it).
+  // The token-prefix bucket adds defence-in-depth across IPs while keeping
+  // the key-space large enough that a single user retrying their own link
+  // doesn't poison reset attempts for unrelated tokens.
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const tokenPrefix = token.slice(0, 8);
+  const ipKey = `reset:ip:${ip}`;
+  const tokenKey = `reset:token:${tokenPrefix}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, tokenKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_reset');
+
+  const tokenHash = await sha256Hex(token);
+  const row = await c.env.DB.prepare(
+    'SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ?',
+  )
+    .bind(tokenHash)
+    .first<{ id: string; user_id: string; expires_at: number; used_at: number | null }>();
+
+  if (!row || row.used_at || row.expires_at < nowSec()) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, tokenKey, now);
+    return c.json(
+      { message: 'This reset link has expired or already been used. Please request a new one.' },
+      400,
+    );
+  }
+
+  const newHash = await hashPassword(password);
+  const ts = nowSec();
+  // D1 batch runs atomically. We:
+  //   1. Update the user's password hash
+  //   2. Mark THIS specific reset token as used (auditable)
+  //   3. Invalidate any other outstanding tokens for the same user
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(resetStatements[0]).bind(newHash, ts, row.user_id, row.id, ts),
+    c.env.DB.prepare(resetStatements[1]).bind(ts, row.user_id, row.user_id, row.id, ts),
+    c.env.DB.prepare(resetStatements[2]).bind(ts, row.user_id, row.id, ts),
+  ]);
+  if (!results[0].meta.changes) return c.json({ message: 'This reset link has expired or already been used. Please request a new one.' }, 400);
+
+  await issueSession(c, row.user_id);
+  // `loggedIn: true` tells the reset-password page that the cookie is now
+  // set and it can route the user straight into the dashboard.
+  return c.json({ ok: true, loggedIn: true });
+});
+
+/* ------------------------------ OAuth ------------------------------ */
+
+const STATE_COOKIE = 'afroai_oauth_state';
+
+async function makeStateToken(
+  c: any,
+  provider: string,
+  redirectTo: string,
+  tenantId: string = 'platform',
+): Promise<string> {
+  const secret = enc.encode(c.env.JWT_SECRET);
+  return await new SignJWT({ provider, redirect: redirectTo, tenantId, nonce: uuid(),
+    challenge: tenantId !== 'platform' ? c.req.query('code_challenge') : undefined })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('10m')
+    .sign(secret);
+}
+
+async function readStateToken(
+  c: any,
+  token: string,
+): Promise<{ provider: string; redirect: string; tenantId: string; challenge?: string } | null> {
+  try {
+    const secret = enc.encode(c.env.JWT_SECRET);
+    const { payload } = await jwtVerify(token, secret);
+    return {
+      provider: String(payload.provider || ''),
+      redirect: String(payload.redirect || c.env.APP_URL),
+      tenantId: String(payload.tenantId || 'platform'),
+      challenge: typeof payload.challenge === 'string' ? payload.challenge : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve an optional `?tenant=<slug>` query into a tenant_id.
+ *  Falls back to 'platform' (afroaigroup.com itself) if missing or unknown. */
+async function resolveTenantIdFromQuery(c: any): Promise<string> {
+  const slug = c.req.query('tenant');
+  if (!slug || slug === 'platform') return 'platform';
+  const row = await c.env.DB
+    .prepare('SELECT id FROM tenants WHERE slug = ?')
+    .bind(slug)
+    .first<{ id: string }>();
+  return row?.id || '';
+}
+
+/** Look up or create a user for an OAuth identity. Links by email if possible. */
+async function upsertOAuthUser(
+  db: D1Database,
+  provider: string,
+  providerUserId: string,
+  email: string,
+  firstName: string | null,
+  lastName: string | null,
+  profileImageUrl: string | null,
+  tenantId: string = 'platform',
+): Promise<string> {
+  if (tenantId !== 'platform') {
+    const linked = await db.prepare('SELECT user_id FROM tenant_oauth_accounts WHERE tenant_id=? AND provider=? AND provider_user_id=?')
+      .bind(tenantId, provider, providerUserId).first<{ user_id: string }>();
+    if (linked) return linked.user_id;
+  }
+  const linked = await db
+    .prepare(
+      "SELECT o.user_id FROM oauth_accounts o JOIN users u ON u.id=o.user_id WHERE o.provider=? AND o.provider_user_id=? AND u.tenant_id=?",
+    )
+    .bind(provider, providerUserId, tenantId)
+    .first<{ user_id: string }>();
+  if (linked) return linked.user_id;
+
+  const ts = nowSec();
+  const normalisedEmail = email.toLowerCase();
+  // Email is unique PER TENANT — same email can exist in multiple tenants.
+  const existing = await db
+    .prepare('SELECT id FROM users WHERE tenant_id = ? AND email = ?')
+    .bind(tenantId, normalisedEmail)
+    .first<{ id: string }>();
+
+  let userId: string;
+  if (existing) {
+    userId = existing.id;
+    // An unconfirmed password may have been planted by someone who never
+    // controlled this mailbox. Do not preserve it when linking verified OAuth.
+    await db.prepare('UPDATE users SET password_hash=CASE WHEN email_verified=0 THEN NULL ELSE password_hash END,email_verified=1,updated_at=? WHERE id=? AND tenant_id=?').bind(ts,userId,tenantId).run();
+  } else {
+    userId = uuid();
+    await db
+      .prepare(
+        'INSERT INTO users (id, tenant_id, email, first_name, last_name, profile_image_url, email_verified, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)',
+      )
+      .bind(
+        userId,
+        tenantId,
+        normalisedEmail,
+        firstName,
+        lastName,
+        profileImageUrl,
+        'free',
+        ts,
+        ts,
+      )
+      .run();
+  }
+
+  if (tenantId !== 'platform') {
+    await db.prepare('INSERT INTO tenant_oauth_accounts (tenant_id,provider,provider_user_id,user_id) VALUES (?,?,?,?)')
+      .bind(tenantId,provider,providerUserId,userId).run();
+    return userId;
+  }
+  await db
+    .prepare(
+      'INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, created_at) VALUES (?, ?, ?, ?, ?)',
+    )
+    .bind(uuid(), userId, provider, providerUserId, ts)
+    .run();
+  return userId;
+}
+
+function callbackUrl(c: any, provider: string): string {
+  return new URL(c.req.url).origin + `/cf-auth/${provider}/callback`;
+}
+
+/**
+ * Strict redirect-target validator for OAuth `redirect=` parameters.
+ *
+ * Allows ONLY exact, hard-coded canonical hosts — never wildcard subdomains.
+ * Subdomain wildcards are dangerous here because user-published apps live on
+ * subdomains of afroaigroup.com; a bad actor could craft a redirect that
+ * forwards a freshly-authenticated user (and any auth-related URL fragments)
+ * to a subdomain they control.
+ */
+function safeRedirect(target: string, appUrl: string): string {
+  const ALLOWED_HOSTS = new Set([
+    'afroaigroup.com',
+    'www.afroaigroup.com',
+  ]);
+  try {
+    const u = new URL(target, appUrl);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return appUrl;
+    if (ALLOWED_HOSTS.has(u.host)) {
+      return u.toString();
+    }
+  } catch {
+    /* fall through */
+  }
+  return appUrl;
+}
+
+/* ----- Google ----- */
+
+app.get('/google/start', async (c) => {
+  if (!c.env.GOOGLE_CLIENT_ID) {
+    return c.text('Google login is not configured.', 500);
+  }
+  // Default the post-login redirect to the SAME origin the user came in on
+  // (e.g. www.afroaigroup.com vs afroaigroup.com). The session cookie is
+  // host-only, so if we always redirected back to the bare apex APP_URL the
+  // user would land on a different host than the cookie was set for and
+  // appear logged out. Mobile Safari typically autocompletes www.* and is
+  // the most common victim of this. APP_URL is still the absolute fallback.
+  const currentOrigin = new URL(c.req.url).origin;
+  const tenantId = await resolveTenantIdFromQuery(c);
+  if (!tenantId) return c.text('Unknown project.', 404);
+  const redirectTo = tenantId === 'platform' ? safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin) : await tenantSecurity.oauthTarget(c, tenantId);
+  if (!redirectTo) return c.text('Configure an allowed redirect origin and provide an S256 code_challenge.', 400);
+  const state = await makeStateToken(c, 'google', redirectTo, tenantId);
+  setCookie(c, STATE_COOKIE, state, {
+    path: '/',
+    secure: true,
+    httpOnly: true,
+    sameSite: 'Lax',
+    maxAge: 600,
+  });
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id', c.env.GOOGLE_CLIENT_ID);
+  url.searchParams.set('redirect_uri', callbackUrl(c, 'google'));
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', 'openid email profile');
+  url.searchParams.set('state', state);
+  url.searchParams.set('access_type', 'online');
+  url.searchParams.set('prompt', 'select_account');
+  return c.redirect(url.toString());
+});
+
+app.get('/google/callback', async (c) => {
+  const code = c.req.query('code');
+  const stateParam = c.req.query('state');
+  const stateCookie = getCookie(c, STATE_COOKIE);
+  deleteCookie(c, STATE_COOKIE, { path: '/' });
+
+  if (!code || !stateParam || stateParam !== stateCookie) {
+    return c.text('Login flow expired. Please try again.', 400);
+  }
+  const state = await readStateToken(c, stateParam);
+  if (!state || state.provider !== 'google') {
+    return c.text('Login flow expired. Please try again.', 400);
+  }
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: c.env.GOOGLE_CLIENT_ID!,
+      client_secret: c.env.GOOGLE_CLIENT_SECRET!,
+      redirect_uri: callbackUrl(c, 'google'),
+      grant_type: 'authorization_code',
+    }).toString(),
+  });
+  if (!tokenRes.ok) {
+    const text = await tokenRes.text();
+    console.error('Google token exchange failed', tokenRes.status, text);
+    return c.text('Could not finish Google login. Please try again.', 502);
+  }
+  const tokenJson = (await tokenRes.json()) as { access_token?: string };
+  if (!tokenJson.access_token) {
+    return c.text('Could not finish Google login. Please try again.', 502);
+  }
+
+  const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+  });
+  if (!userRes.ok) return c.text('Could not load your Google profile.', 502);
+  const profile = (await userRes.json()) as {
+    sub: string;
+    email?: string;
+    given_name?: string;
+    family_name?: string;
+    picture?: string;
+    email_verified?: boolean;
+  };
+  if (!profile.email || profile.email_verified !== true) {
+    return c.text('Your Google account did not share an email address.', 400);
+  }
+
+  const userId = await upsertOAuthUser(
+    c.env.DB,
+    'google',
+    profile.sub,
+    profile.email,
+    profile.given_name || null,
+    profile.family_name || null,
+    profile.picture || null,
+    state.tenantId,
+  );
+  if (state.tenantId !== 'platform') return tenantSecurity.finishOAuth(c, state, userId);
+  await issueSession(c, userId);
+  return c.redirect(state.redirect);
+});
+
+/* ----- GitHub ----- */
+
+app.get('/github/start', async (c) => {
+  if (!c.env.GITHUB_CLIENT_ID) {
+    return c.text('GitHub login is not configured.', 500);
+  }
+  // See note in /google/start — preserve the user's current host so the
+  // host-only session cookie stays valid after the OAuth round-trip.
+  const currentOrigin = new URL(c.req.url).origin;
+  const tenantId = await resolveTenantIdFromQuery(c);
+  if (!tenantId) return c.text('Unknown project.', 404);
+  const redirectTo = tenantId === 'platform' ? safeRedirect(c.req.query('redirect') || currentOrigin, currentOrigin) : await tenantSecurity.oauthTarget(c, tenantId);
+  if (!redirectTo) return c.text('Configure an allowed redirect origin and provide an S256 code_challenge.', 400);
+  const state = await makeStateToken(c, 'github', redirectTo, tenantId);
+  setCookie(c, STATE_COOKIE, state, {
+    path: '/',
+    secure: true,
+    httpOnly: true,
+    sameSite: 'Lax',
+    maxAge: 600,
+  });
+  const url = new URL('https://github.com/login/oauth/authorize');
+  url.searchParams.set('client_id', c.env.GITHUB_CLIENT_ID);
+  url.searchParams.set('redirect_uri', callbackUrl(c, 'github'));
+  url.searchParams.set('scope', 'read:user user:email');
+  url.searchParams.set('state', state);
+  url.searchParams.set('allow_signup', 'true');
+  return c.redirect(url.toString());
+});
+
+app.get('/github/callback', async (c) => {
+  const code = c.req.query('code');
+  const stateParam = c.req.query('state');
+  const stateCookie = getCookie(c, STATE_COOKIE);
+  deleteCookie(c, STATE_COOKIE, { path: '/' });
+
+  if (!code || !stateParam || stateParam !== stateCookie) {
+    return c.text('Login flow expired. Please try again.', 400);
+  }
+  const state = await readStateToken(c, stateParam);
+  if (!state || state.provider !== 'github') {
+    return c.text('Login flow expired. Please try again.', 400);
+  }
+
+  const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'afro-ai-auth',
+    },
+    body: JSON.stringify({
+      client_id: c.env.GITHUB_CLIENT_ID,
+      client_secret: c.env.GITHUB_CLIENT_SECRET,
+      code,
+      redirect_uri: callbackUrl(c, 'github'),
+    }),
+  });
+  if (!tokenRes.ok) {
+    return c.text('Could not finish GitHub login. Please try again.', 502);
+  }
+  const tokenJson = (await tokenRes.json()) as { access_token?: string; error?: string };
+  if (!tokenJson.access_token) {
+    return c.text('Could not finish GitHub login. Please try again.', 502);
+  }
+
+  const ghHeaders = {
+    Authorization: `Bearer ${tokenJson.access_token}`,
+    'User-Agent': 'afro-ai-auth',
+    Accept: 'application/vnd.github+json',
+  };
+  const userRes = await fetch('https://api.github.com/user', { headers: ghHeaders });
+  if (!userRes.ok) return c.text('Could not load your GitHub profile.', 502);
+  const profile = (await userRes.json()) as {
+    id: number;
+    login: string;
+    name?: string | null;
+    email?: string | null;
+    avatar_url?: string | null;
+  };
+
+  let email: string | null = null;
+  if (!email) {
+    const emailsRes = await fetch('https://api.github.com/user/emails', {
+      headers: ghHeaders,
+    });
+    if (emailsRes.ok) {
+      const emails = (await emailsRes.json()) as Array<{
+        email: string;
+        primary: boolean;
+        verified: boolean;
+      }>;
+      const primary =
+        emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified);
+      email = primary?.email || null;
+    }
+  }
+  if (!email) {
+    return c.text('Your GitHub account does not have a verified email.', 400);
+  }
+
+  let firstName: string | null = null;
+  let lastName: string | null = null;
+  if (profile.name) {
+    const parts = profile.name.trim().split(/\s+/);
+    firstName = parts[0] || null;
+    lastName = parts.slice(1).join(' ') || null;
+  } else {
+    firstName = profile.login || null;
+  }
+
+  const userId = await upsertOAuthUser(
+    c.env.DB,
+    'github',
+    String(profile.id),
+    email,
+    firstName,
+    lastName,
+    profile.avatar_url || null,
+    state.tenantId,
+  );
+  if (state.tenantId !== 'platform') return tenantSecurity.finishOAuth(c, state, userId);
+  await issueSession(c, userId);
+  return c.redirect(state.redirect);
+});
+
+/* ============================================================================
+ * AFRO AUTH — Multi-tenant Login-as-a-Service
+ * ============================================================================
+ *
+ * Three surfaces:
+ *
+ *   1. Admin API   /cf-auth/v1/admin/*
+ *      Same-origin only. Authenticated by the platform user's afroai_session
+ *      cookie. Used by the React dashboard at afroaigroup.com/dashboard/auth
+ *      to manage the customer's own tenants, API keys, and users.
+ *
+ *   2. Management API   /cf-auth/v1/*
+ *      CORS-permissive. Authenticated by the customer's secret API key
+ *      (`Authorization: Bearer sk_live_...`). Called from the customer's
+ *      backend to verify session tokens and read user data.
+ *
+ *   3. Public tenant API   /cf-auth/t/:slug/*
+ *      CORS-permissive. Unauthenticated (the slug identifies the tenant).
+ *      Called from the customer's frontend to sign users up and log them in.
+ *      Returns short-lived JWTs that the customer's app then verifies via
+ *      the Management API (or by sharing the JWT with their own backend).
+ * ========================================================================= */
+
+interface TenantRow {
+  id: string;
+  slug: string;
+  name: string;
+  owner_user_id: string | null;
+  plan: string;
+  allowed_origins: string | null;
+  created_at: number;
+  updated_at: number;
+  setup_required?: number;
+}
+
+const PLAN_MAU_LIMITS: Record<string, number> = {
+  free: 5_000,
+  builder: 25_000,
+  business: 100_000,
+  scale: 500_000,
+};
+
+function genId(prefix: string): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  const b64 = btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '')
+    .replace(/\//g, '')
+    .replace(/=/g, '');
+  return `${prefix}${b64}`;
+}
+
+function genSlug(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  const suffix = genId('').slice(0, 6).toLowerCase();
+  return base ? `${base}-${suffix}` : `app-${suffix}`;
+}
+
+function periodKey(now: number): string {
+  const d = new Date(now * 1000);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+async function findTenantBySlug(db: D1Database, slug: string): Promise<TenantRow | null> {
+  const tenant = await db
+    .prepare('SELECT * FROM tenants WHERE slug = ?')
+    .bind(slug)
+    .first<TenantRow>();
+  return tenant && await tenantIsActive(db, tenant) ? tenant : null;
+}
+
+async function findTenantById(db: D1Database, id: string): Promise<TenantRow | null> {
+  return db.prepare('SELECT * FROM tenants WHERE id = ?').bind(id).first<TenantRow>();
+}
+
+/** Authenticate via `Authorization: Bearer sk_live_...` and return the
+ *  owning tenant. Updates `last_used_at` (best effort). */
+async function authenticateBySecretKey(c: any): Promise<TenantRow | null> {
+  const auth = c.req.header('authorization') || '';
+  const raw = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!raw.startsWith('sk_live_')) return null;
+  // Look up all keys for this secret format. Secrets aren't queryable directly
+  // (we only store the hash), so we hash the input and compare. Since we
+  // always use the same PBKDF2 params and a deterministic-ish KDF for keys
+  // (no per-row salt — keys are 144 bits of entropy, brute force not viable),
+  // a single SHA-256 lookup is enough.
+  const hash = await sha256Hex(raw);
+  const row = await c.env.DB.prepare(
+    'SELECT id, tenant_id FROM api_keys WHERE secret_hash = ? AND revoked_at IS NULL',
+  )
+    .bind(hash)
+    .first<{ id: string; tenant_id: string }>();
+  if (!row) return null;
+  c.executionCtx?.waitUntil(
+    c.env.DB.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?')
+      .bind(nowSec(), row.id)
+      .run()
+      .catch(() => {}),
+  );
+  const tenant = await findTenantById(c.env.DB, row.tenant_id);
+  return tenant && await tenantIsActive(c.env.DB, tenant) ? tenant : null;
+}
+
+/** Authenticate the platform user (afroaigroup.com signed-in user). */
+const authenticatePlatformUser = platformAdminIdentity;
+
+/** Issue a JWT for a tenant end-user. No cookie — token is returned in body. */
+async function issueTenantSession(c: any, tenantId: string, userId: string): Promise<string> {
+  return tenantSecurity.issue(c, tenantId, userId);
+}
+
+async function verifyTenantSession(
+  c: any,
+  token: string,
+): Promise<{ userId: string; tenantId: string } | null> {
+  return tenantSecurity.verify(c, token);
+}
+
+/** Best-effort MAU tracking. Inserts (or no-ops) into tenant_user_activity
+ *  and increments the per-tenant counter atomically the first time we see
+ *  this user in this period. */
+async function recordTenantMau(
+  db: D1Database,
+  tenantId: string,
+  userId: string,
+  now: number,
+): Promise<void> {
+  const period = periodKey(now);
+  const inserted = await db
+    .prepare(
+      'INSERT OR IGNORE INTO tenant_user_activity (tenant_id, user_id, period, seen_at) VALUES (?, ?, ?, ?)',
+    )
+    .bind(tenantId, userId, period, now)
+    .run();
+  if (inserted.meta && inserted.meta.changes && inserted.meta.changes > 0) {
+    await db
+      .prepare(
+        'INSERT INTO tenant_usage (tenant_id, period, mau_count) VALUES (?, ?, 1) ' +
+          'ON CONFLICT (tenant_id, period) DO UPDATE SET mau_count = mau_count + 1',
+      )
+      .bind(tenantId, period)
+      .run();
+  }
+}
+
+async function getTenantMauThisMonth(db: D1Database, tenantId: string, now: number): Promise<number> {
+  const row = await db
+    .prepare('SELECT mau_count FROM tenant_usage WHERE tenant_id = ? AND period = ?')
+    .bind(tenantId, periodKey(now))
+    .first<{ mau_count: number }>();
+  return row?.mau_count || 0;
+}
+
+/* --------------------------- Admin API (dashboard) --------------------------- */
+
+// All /v1/admin/* routes require the caller to be a logged-in platform user
+// AND own the tenant they're acting on (except create + list).
+
+app.post('/v1/admin/tenants', async (c) => {
+  const platformUser = await authenticatePlatformUser(c);
+  if (platformUser instanceof Response) return platformUser;
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const name = String(body.name || '').trim().slice(0, 80);
+  if (!name) return c.json({ message: 'Project name is required.' }, 400);
+  const entitlement = await tenantBrandingEntitlement(c.env.DB,{owner_user_id:platformUser.id});
+  let maxApps = -1; // Preserve existing free/legacy project creation.
+  if (entitlement.source!=="free" && entitlement.source!=="founder") {
+    maxApps=authPackage(entitlement.plan).apps;
+  }
+
+  const id = genId('tnt_');
+  const slug = genSlug(name);
+  const ts = nowSec();
+  const created = await c.env.DB.prepare(
+    `INSERT INTO tenants (id, slug, name, owner_user_id, plan, created_at, updated_at, setup_required)
+     SELECT ?,?,?,?,?,?,?,1 WHERE ?<0 OR
+       (SELECT count(*) FROM tenants WHERE owner_user_id=? AND id<>'platform')<?`,
+  )
+    .bind(id, slug, name, platformUser.id, 'free', ts, ts,maxApps,platformUser.id,maxApps)
+    .run();
+  if (!created.meta.changes)
+    return c.json({message:"Your Auth package's app allowance is reached. Existing apps remain available; upgrade before adding another.",code:"auth_app_limit"},402);
+  return c.json({ id, slug, name, plan: 'free', created_at: ts });
+});
+
+app.get('/v1/admin/tenants', async (c) => {
+  const platformUser = await authenticatePlatformUser(c);
+  if (platformUser instanceof Response) return platformUser;
+  const rows = await c.env.DB.prepare(
+    'SELECT id, slug, name, plan, created_at FROM tenants WHERE owner_user_id = ? ORDER BY created_at DESC',
+  )
+    .bind(platformUser.id)
+    .all<{ id: string; slug: string; name: string; plan: string; created_at: number }>();
+  const entitlement=await tenantBrandingEntitlement(c.env.DB,{owner_user_id:platformUser.id});
+  return c.json({ tenants: (rows.results || []).map(row=>({...row,plan:entitlement.present ? entitlement.plan : row.plan})) });
+});
+
+/** Helper used by all per-tenant admin routes to enforce ownership. */
+async function ownedTenantOr401(
+  c: any,
+  tenantId: string,
+): Promise<TenantRow | Response> {
+  const platformUser = await authenticatePlatformUser(c);
+  if (platformUser instanceof Response) return platformUser;
+  const tenant = await findTenantById(c.env.DB, tenantId);
+  if (!tenant || tenant.owner_user_id !== platformUser.id) {
+    return c.json({ message: 'Project not found.' }, 404);
+  }
+  return tenant;
+}
+
+registerTenantApiUpgrade(app, ownedTenantOr401);
+registerTenantMailStatus(app, ownedTenantOr401);
+registerTenantSetup(app, {ownedTenant: ownedTenantOr401, sendVerification: async (c, tenant, user) => {
+  const key = `tenant:${tenant.id}:admin-verification:${c.req.header('CF-Connecting-IP') || 'unknown'}`;
+  if (await checkThrottles(c.env.DB, [key], nowSec())) return {sent:false,rateLimited:true};
+  await recordThrottleFailure(c.env.DB, key, nowSec());
+  return tenantSecurity.mail(c, tenant, user, 'verify');
+}});
+
+app.get('/v1/admin/tenants/:id', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  const now = nowSec();
+  const mau = await getTenantMauThisMonth(c.env.DB, r.id, now);
+  const entitlement = await tenantBrandingEntitlement(c.env.DB,r);
+  const effectivePlan = !entitlement.present ? r.plan : entitlement.plan;
+  const userCount = await c.env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM users WHERE tenant_id = ?',
+  )
+    .bind(r.id)
+    .first<{ n: number }>();
+  const keys = await c.env.DB.prepare(
+    'SELECT id, public_key, secret_preview, label, last_used_at, revoked_at, created_at FROM api_keys WHERE tenant_id = ? ORDER BY created_at DESC',
+  )
+    .bind(r.id)
+    .all();
+  return c.json({
+    tenant: {...r,plan:effectivePlan},
+    stats: {
+      mau,
+      mauLimit: PLAN_MAU_LIMITS[effectivePlan] || PLAN_MAU_LIMITS.free,
+      totalUsers: userCount?.n || 0,
+    },
+    keys: keys.results || [],
+    setup: await tenantSetup(c.env.DB, r),
+  });
+});
+
+app.patch('/v1/admin/tenants/:id', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const updates: string[] = [];
+  const values: any[] = [];
+  if (typeof body.name === 'string') {
+    updates.push('name = ?');
+    values.push(body.name.slice(0, 80));
+  }
+  if (Array.isArray(body.allowed_origins)) {
+    if (body.allowed_origins.length > 10 || body.allowed_origins.some((v: any) => typeof v !== 'string' || !validTenantOrigin(v))) {
+      return c.json({ message: 'Use up to 10 exact HTTPS origins (localhost HTTP is allowed for development). No paths or wildcards.' }, 400);
+    }
+    const domains = await c.env.DB.prepare('SELECT domain FROM tenant_domains WHERE tenant_id=? AND verified_at IS NOT NULL').bind(r.id).all<{domain:string}>();
+    const oldOrigins = parseTenantOrigins(r.allowed_origins);
+    for (const origin of body.allowed_origins) {
+      const url = new URL(origin);
+      const legacyOrigin = !r.setup_required && oldOrigins.includes(origin);
+      const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+      if (!local && !legacyOrigin && !domains.results.some(d => url.hostname === d.domain || url.hostname.endsWith(`.${d.domain}`))) {
+        return c.json({code:'WEBSITE_OWNERSHIP_REQUIRED',message:`Verify ownership of ${url.hostname} in Setup before adding ${origin}. Verifying a subdomain does not verify its parent domain. Existing saved origins remain unchanged.`}, 400);
+      }
+    }
+    updates.push('allowed_origins = ?');
+    values.push(JSON.stringify(body.allowed_origins.slice(0, 10).map(String)));
+  }
+  if (!updates.length) return c.json({ ok: true });
+  updates.push('updated_at = ?');
+  values.push(nowSec());
+  values.push(r.id);
+  await c.env.DB.prepare(`UPDATE tenants SET ${updates.join(', ')} WHERE id = ?`)
+    .bind(...values)
+    .run();
+  return c.json({ ok: true });
+});
+
+app.post('/v1/admin/tenants/:id/keys', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  if (!(await tenantSetup(c.env.DB, r)).canCreateKeys) return c.json({message:'Verify a website domain before generating a production API key.'}, 409);
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* label optional */ }
+  const label = String(body?.label || 'production').slice(0, 40);
+
+  const publicKey = genId('pub_live_');
+  const secretKey = genId('sk_live_');
+  const secretHash = await sha256Hex(secretKey);
+  const secretPreview = secretKey.slice(0, 14) + '…';
+  const id = genId('key_');
+  const ts = nowSec();
+
+  const inserted = await c.env.DB.prepare(
+    'INSERT INTO api_keys (id, tenant_id, public_key, secret_hash, secret_preview, label, created_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM api_keys WHERE tenant_id=? AND revoked_at IS NULL)<20',
+  )
+    .bind(id, r.id, publicKey, secretHash, secretPreview, label, ts, r.id)
+    .run();
+  if (!inserted.meta.changes) return c.json({message:'This project has 20 active keys. Revoke an unused key before creating another.'}, 409);
+
+  // The plaintext secret is returned EXACTLY ONCE. The frontend must show it
+  // in a "copy now" modal — we never see it again.
+  return c.json({
+    id,
+    public_key: publicKey,
+    secret_key: secretKey,
+    secret_preview: secretPreview,
+    label,
+    created_at: ts,
+  });
+});
+
+app.post('/v1/admin/tenants/:id/keys/:keyId/rotate', async (c) => {
+  const tenant = await ownedTenantOr401(c, c.req.param('id'));
+  if (tenant instanceof Response) return tenant;
+  if (!(await tenantSetup(c.env.DB, tenant)).canCreateKeys) return c.json({message:'Verify a website domain before rotating production keys.'}, 409);
+  const body: any = await c.req.json().catch(() => ({}));
+  if (body.confirm !== true) return c.json({message:'Confirm replacement: save and deploy the new keys, then explicitly revoke the old key.'}, 400);
+  const old = await c.env.DB.prepare('SELECT id,label FROM api_keys WHERE id=? AND tenant_id=? AND revoked_at IS NULL').bind(c.req.param('keyId'), tenant.id).first<{id:string;label:string}>();
+  if (!old) return c.json({message:'Active key not found.'}, 404);
+  const id = genId('key_'), publicKey = genId('pub_live_'), secretKey = genId('sk_live_'), ts = nowSec();
+  const secretPreview = secretKey.slice(0, 14) + '…', hash = await sha256Hex(secretKey);
+  const result = await c.env.DB.prepare('INSERT INTO api_keys (id,tenant_id,public_key,secret_hash,secret_preview,label,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM api_keys WHERE id=? AND tenant_id=? AND revoked_at IS NULL) AND (SELECT COUNT(*) FROM api_keys WHERE tenant_id=? AND revoked_at IS NULL)<20')
+    .bind(id, tenant.id, publicKey, hash, secretPreview, old.label, ts, old.id, tenant.id, tenant.id).run();
+  if (!result.meta.changes) return c.json({message:'The old key was revoked or this project has 20 active keys. Refresh or revoke an unused key.'}, 409);
+  return c.json({id,public_key:publicKey,secret_key:secretKey,secret_preview:secretPreview,label:old.label,created_at:ts,replaces_key_id:old.id});
+});
+
+app.delete('/v1/admin/tenants/:id/keys/:keyId', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  await c.env.DB.prepare(
+    'UPDATE api_keys SET revoked_at = ? WHERE id = ? AND tenant_id = ?',
+  )
+    .bind(nowSec(), c.req.param('keyId'), r.id)
+    .run();
+  return c.json({ ok: true });
+});
+
+app.get('/v1/admin/tenants/:id/users', async (c) => {
+  const r = await ownedTenantOr401(c, c.req.param('id'));
+  if (r instanceof Response) return r;
+  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '50', 10) || 50, 100));
+  const offset = Math.max(0, parseInt(c.req.query('offset') || '0', 10) || 0);
+  const q = String(c.req.query('q') || '').trim().slice(0, 160);
+  const status = c.req.query('status') || 'all';
+  if (!['all','verified','unverified'].includes(status)) return c.json({message:'Use all, verified or unverified status.'}, 400);
+  let where = 'tenant_id = ?';
+  const values: (string | number)[] = [r.id];
+  if (status !== 'all') { where += ' AND email_verified = ?'; values.push(status === 'verified' ? 1 : 0); }
+  if (q) {
+    where += " AND (email LIKE ? ESCAPE '\\' OR first_name LIKE ? ESCAPE '\\' OR last_name LIKE ? ESCAPE '\\')";
+    const search = `%${q.replace(/[\\%_]/g, '\\$&')}%`; values.push(search, search, search);
+  }
+  const rows = await c.env.DB.prepare(
+    `SELECT id, email, first_name, last_name, email_verified, created_at FROM users WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,
+  )
+    .bind(...values, limit, offset)
+    .all();
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE ${where}`).bind(...values).first<{n:number}>();
+  return c.json({ users: rows.results || [],total:total?.n || 0,limit,offset,store:'D1',folder:`projects/${r.id}/users` });
+});
+
+/* --------------------------- Management API (sk_live_) --------------------------- */
+
+app.post('/v1/sessions/verify', async (c) => {
+  const tenant = await authenticateBySecretKey(c);
+  if (!tenant) return c.json({ message: 'Invalid or missing API key.' }, 401);
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const token = String(body.token || '');
+  const session = await verifyTenantSession(c, token);
+  if (!session) return c.json({ valid: false }, 200);
+  if (session.tenantId !== tenant.id) return c.json({ valid: false }, 200);
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, first_name, last_name, profile_image_url, email_verified, created_at FROM users WHERE id = ? AND tenant_id = ?',
+  )
+    .bind(session.userId, tenant.id)
+    .first();
+  if (!user) return c.json({ valid: false }, 200);
+  return c.json({ valid: true, user });
+});
+
+app.get('/v1/users', async (c) => {
+  const tenant = await authenticateBySecretKey(c);
+  if (!tenant) return c.json({ message: 'Invalid or missing API key.' }, 401);
+  const limit = Math.min(parseInt(c.req.query('limit') || '50', 10) || 50, 200);
+  const rows = await c.env.DB.prepare(
+    'SELECT id, email, first_name, last_name, email_verified, created_at FROM users WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?',
+  )
+    .bind(tenant.id, limit)
+    .all();
+  return c.json({ users: rows.results || [] });
+});
+
+app.get('/v1/users/:id', async (c) => {
+  const tenant = await authenticateBySecretKey(c);
+  if (!tenant) return c.json({ message: 'Invalid or missing API key.' }, 401);
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, first_name, last_name, profile_image_url, email_verified, created_at FROM users WHERE id = ? AND tenant_id = ?',
+  )
+    .bind(c.req.param('id'), tenant.id)
+    .first();
+  if (!user) return c.json({ message: 'User not found.' }, 404);
+  return c.json({ user });
+});
+
+/* --------------------------- Public tenant API (slug) --------------------------- */
+tenantSecurity.register(app);
+confirmationFlow.register(app);
+
+app.post('/t/:slug/signup', async (c) => {
+  const tenant = await findTenantBySlug(c.env.DB, c.req.param('slug'));
+  if (!tenant || tenant.id === 'platform') {
+    return c.json({ message: 'Project not found.' }, 404);
+  }
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  const firstName = String(body.firstName || '').trim().slice(0, 60);
+  const lastName = String(body.lastName || '').trim().slice(0, 60);
+
+  if (!isValidEmail(email)) return c.json({ message: 'Please enter a valid email.' }, 400);
+  if (password.length < 12 || password.length > 128) return c.json({ message: 'Password must be 12–128 characters.' }, 400);
+  const confirmation = await confirmationFlow.prepare(c,tenant,body);
+  if(confirmation instanceof Response)return confirmation;
+
+  // Per-tenant + per-IP throttle
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  // Authenticated customer backends share one egress IP for all visitors.
+  // Keep anonymous IP limits, but scope trusted backend signup to the email.
+  const ipKey = confirmation ? `tsignup:${tenant.id}:backend-email:${email}` : `tsignup:${tenant.id}:ip:${ip}`;
+  const emailKey = `tsignup:${tenant.id}:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_signup');
+  await recordThrottleFailure(c.env.DB, ipKey, now);
+  await recordThrottleFailure(c.env.DB, emailKey, now);
+
+  // MAU enforcement before creating new accounts
+  const entitlement = await tenantBrandingEntitlement(c.env.DB,tenant);
+  const effectivePlan = !entitlement.present ? tenant.plan : entitlement.plan;
+  const mauLimit = PLAN_MAU_LIMITS[effectivePlan] || PLAN_MAU_LIMITS.free;
+  const currentMau = await getTenantMauThisMonth(c.env.DB, tenant.id, now);
+  if (currentMau >= mauLimit) {
+    return c.json(
+      { message: 'This app has reached its monthly active-user limit. Contact the project owner.', code: 'mau_limit' },
+      402,
+    );
+  }
+
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE tenant_id = ? AND email = ?',
+  )
+    .bind(tenant.id, email)
+    .first();
+  if (existing) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    return c.json({ message: 'An account with this email already exists.' }, 409);
+  }
+
+  const id = genId('usr_');
+  const hash = await hashPassword(password);
+  const ts = nowSec();
+  await c.env.DB.prepare(
+    'INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, email_verified, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)',
+  )
+    .bind(id, tenant.id, email, hash, firstName || null, lastName || null, 'free', ts, ts)
+    .run();
+  await recordTenantMau(c.env.DB, tenant.id, id, now);
+
+  const pending=await confirmationFlow.start(c,tenant,id,confirmation);
+  try { await tenantSecurity.mail(c, tenant, { id, email }, 'verify',pending?.mailContext); }
+  catch { return c.json({ code: 'verification_delivery_failed', message: 'Account created, but verification delivery failed. Request another verification email after one minute.' }, 503); }
+  return c.json({
+    verificationRequired: true,
+    ...(pending ? {pendingId:pending.pendingId} : {}),
+    user: { id, email, firstName, lastName, email_verified: 0 },
+  });
+});
+
+app.post('/t/:slug/login', async (c) => {
+  const tenant = await findTenantBySlug(c.env.DB, c.req.param('slug'));
+  if (!tenant || tenant.id === 'platform') {
+    return c.json({ message: 'Project not found.' }, 404);
+  }
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { return c.json({ message: 'Invalid request.' }, 400); }
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (!isValidEmail(email) || !password) {
+    return c.json({ message: 'Please enter your email and password.' }, 400);
+  }
+
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const now = nowSec();
+  const ipKey = `tlogin:${tenant.id}:ip:${ip}`;
+  const emailKey = `tlogin:${tenant.id}:email:${email}`;
+  const lockedFor = await checkThrottles(c.env.DB, [ipKey, emailKey], now);
+  if (lockedFor > 0) return tooManyAttempts(c, lockedFor, 'rate_limited_login');
+
+  const user = await c.env.DB.prepare(
+    'SELECT id, password_hash, first_name, last_name, profile_image_url, email_verified FROM users WHERE tenant_id = ? AND email = ?',
+  )
+    .bind(tenant.id, email)
+    .first<{
+      id: string;
+      password_hash: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      profile_image_url: string | null;
+      email_verified: number;
+    }>();
+  if (!user || !user.password_hash) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'Wrong email or password.' }, 401);
+  }
+  const ok = await verifyPassword(password, user.password_hash);
+  if (!ok) {
+    await recordThrottleFailure(c.env.DB, ipKey, now);
+    await recordThrottleFailure(c.env.DB, emailKey, now);
+    return c.json({ message: 'Wrong email or password.' }, 401);
+  }
+  await clearThrottle(c.env.DB, ipKey);
+  await clearThrottle(c.env.DB, emailKey);
+  if (!user.email_verified) return c.json({ code: 'EMAIL_VERIFICATION_REQUIRED', message: 'Confirm your email before signing in.' }, 403);
+  await recordTenantMau(c.env.DB, tenant.id, user.id, now);
+
+  const token = await issueTenantSession(c, tenant.id, user.id);
+  return c.json({
+    token,
+    user: {
+      id: user.id,
+      email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      profileImageUrl: user.profile_image_url,
+    },
+  });
+});
+
+app.get('/t/:slug/me', async (c) => {
+  const tenant = await findTenantBySlug(c.env.DB, c.req.param('slug'));
+  if (!tenant || tenant.id === 'platform') {
+    return c.json({ message: 'Project not found.' }, 404);
+  }
+  const auth = c.req.header('authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token) return c.json({ user: null });
+  const session = await verifyTenantSession(c, token);
+  if (!session || session.tenantId !== tenant.id) return c.json({ user: null });
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, first_name AS firstName, last_name AS lastName, profile_image_url AS profileImageUrl, email_verified FROM users WHERE id = ? AND tenant_id = ?',
+  )
+    .bind(session.userId, tenant.id)
+    .first();
+  return c.json({ user: user || null });
+});
+
+/* ------------------------------ Scheduled cleanup ------------------------------
+ *
+ * The auth_throttle table accumulates one row per unique (endpoint, IP|email)
+ * combination that ever hits /login, /signup, or /forgot-password. Rows are
+ * reused while the same key keeps hitting, but a one-off visitor's row sticks
+ * around forever otherwise. Left unchecked this would balloon to millions of
+ * rows in D1 over months.
+ *
+ * The cron below sweeps any row whose rolling window started more than 24h
+ * ago AND that isn't currently inside an active lock. Active throttling is
+ * untouched: a freshly-failed key still has window_start within the last
+ * THROTTLE_WINDOW_SEC (15 min), and a locked key has locked_until > now.
+ */
+const THROTTLE_CLEANUP_AGE_SEC = 24 * 60 * 60;
+
+async function cleanupAuthThrottle(db: D1Database, now: number): Promise<void> {
+  const cutoff = now - THROTTLE_CLEANUP_AGE_SEC;
+  await db
+    .prepare(
+      'DELETE FROM auth_throttle WHERE window_start < ? AND (locked_until IS NULL OR locked_until <= ?)',
+    )
+    .bind(cutoff, now)
+    .run();
+}
+
+export default {
+  fetch: (request: Request, env: Env, ctx: ExecutionContext) =>
+    handleVersionedAuthRequest(request, routed => root.fetch(routed, env, ctx)),
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(checkTenantMailHealth(env).catch(()=>console.error("[cron] Mail health check unavailable")));
+    ctx.waitUntil(
+      cleanupAuthThrottle(env.DB, nowSec()).catch((err) => {
+        console.error('[cron] auth_throttle cleanup failed', err);
+      }),
+    );
+  },
+};

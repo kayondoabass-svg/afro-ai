@@ -1,0 +1,145 @@
+import type { RequestHandler } from "express";
+import { verifyPlatformSession } from "@shared/platform-session";
+import { parse as parseCookie } from "cookie";
+import { authStorage } from "./storage";
+import { validDeviceSession } from "./deviceSessions";
+
+const COOKIE_NAME = "afroai_session";
+const enc = new TextEncoder();
+
+interface CfClaims {
+  sub: string;
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  profile_image_url?: string;
+}
+
+/**
+ * Bridges Cloudflare Worker sessions into Express.
+ *
+ * Reads the `afroai_session` cookie (signed by the Worker with the shared
+ * JWT_SECRET), verifies it, and — if the user does not yet exist in Postgres
+ * — lazily creates them. After this middleware, `req.user` has the same
+ * `{ claims: { sub, email, first_name, last_name, profile_image_url } }` shape
+ * that Passport produces, so the existing `isAuthenticated` middleware and
+ * downstream routes do not need to change.
+ *
+ * Existing Passport sessions take precedence — this only fires when Passport
+ * has not authenticated the request, which means logged-in users keep
+ * working untouched during the cutover.
+ */
+export function cfAuthBridge(): RequestHandler {
+  return async (req, _res, next) => {
+    try {
+      // Already authenticated by Passport? Leave it alone.
+      if (typeof req.isAuthenticated === "function" && req.isAuthenticated()) {
+        const user = req.user as any;
+        if (await validDeviceSession(user.sid, user.claims?.sub)) return next();
+        (req as any).user = undefined;
+        req.isAuthenticated = (() => false) as typeof req.isAuthenticated;
+      }
+
+      const cookieHeader = req.headers.cookie;
+      if (!cookieHeader) return next();
+
+      const cookies = parseCookie(cookieHeader);
+      const token = cookies[COOKIE_NAME];
+      if (!token) return next();
+
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        console.error("[cfBridge] JWT_SECRET not set — cannot verify Worker session");
+        return next();
+      }
+
+      const payload = await verifyPlatformSession(token, enc.encode(secret));
+      const claims = payload as unknown as CfClaims;
+      if (!claims.sub) return next();
+      if (!await validDeviceSession(payload.sid, claims.sub)) return next();
+
+      // Lazy mirror into Postgres. authStorage.upsertUser dedupes by email
+      // (so an existing Postgres row for the same email gets reused, even
+      // if its id differs — its existing id is preserved).
+      const dbUser = await authStorage.upsertUser({
+        id: claims.sub,
+        email: claims.email || undefined,
+        firstName: claims.first_name || undefined,
+        lastName: claims.last_name || undefined,
+        profileImageUrl: claims.profile_image_url || undefined,
+      });
+
+      // First-time accounts: send verification email (best-effort, non-blocking).
+      // Fires only on truly fresh rows (created in the last 30s) and skips users
+      // already marked verified (e.g. founder, or returning OAuth users we trust).
+      try {
+        if (dbUser.email && !dbUser.emailVerified && dbUser.createdAt) {
+          const ageMs = Date.now() - new Date(dbUser.createdAt).getTime();
+          if (ageMs < 30_000) {
+            const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || "https";
+            const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.headers.host;
+            const origin = `${proto}://${host}`;
+            const name = dbUser.firstName || dbUser.email.split("@")[0];
+            const { sendVerificationEmailFor } = await import("./verification");
+            sendVerificationEmailFor(dbUser.id, dbUser.email, name, origin, true)
+              .catch(() => console.warn("[email-verify] Automatic verification email failed; manual resend available."));
+          }
+        }
+      } catch {}
+
+      // Affiliate attribution: if this is a fresh signup that arrived carrying
+      // an `afro_ref` cookie (dropped by the frontend when a visitor lands on a
+      // ?ref=AFFxxxx link), credit the referring affiliate. Best-effort and
+      // idempotent (one referral row per user), never blocks the request.
+      try {
+        if (dbUser.createdAt) {
+          const ageMs = Date.now() - new Date(dbUser.createdAt).getTime();
+          const refCode = cookies["afro_ref"];
+          if (ageMs < 30_000 && refCode) {
+            const { storage } = await import("../../storage");
+            const affiliate = await storage.getApprovedAffiliateByCode(refCode);
+            // Don't let an affiliate self-refer with their own application email.
+            if (affiliate && affiliate.email?.toLowerCase() !== (dbUser.email || "").toLowerCase()) {
+              await storage.createAffiliateReferral({
+                affiliateId: affiliate.id,
+                referredUserId: dbUser.id,
+                referredEmail: dbUser.email || null,
+                status: "signed_up",
+              });
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error("[cfBridge] affiliate attribution failed:", e?.message || e);
+      }
+
+      // Shape req.user identically to what Passport produces in this codebase.
+      (req as any).user = {
+        sid: payload.sid,
+        claims: {
+          sub: dbUser.id,
+          email: dbUser.email || claims.email || "",
+          first_name: dbUser.firstName || claims.first_name || "",
+          last_name: dbUser.lastName || claims.last_name || "",
+          profile_image_url: dbUser.profileImageUrl || claims.profile_image_url || "",
+        },
+      };
+
+      // Make req.isAuthenticated() return true for the rest of the chain
+      // without disturbing Passport's own implementation.
+      const original = req.isAuthenticated?.bind(req);
+      req.isAuthenticated = ((): boolean => {
+        if (original && original()) return true;
+        return Boolean((req as any).user);
+      }) as typeof req.isAuthenticated;
+    } catch (err: any) {
+      (req as any).user = undefined;
+      req.isAuthenticated = (() => false) as typeof req.isAuthenticated;
+      // Invalid / expired token — silently fall through as anonymous.
+      if (err?.code !== "ERR_JWS_INVALID" && err?.code !== "ERR_JWT_EXPIRED") {
+        console.warn("[cfBridge] verify failed:", err?.code || err?.message || err);
+      }
+    }
+    next();
+  };
+}

@@ -1,0 +1,24 @@
+{
+  "name": "afro-ai-auth-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test:runtime": "node --test scripts/admin-runtime.test.mjs",
+    "db:create": "wrangler d1 create afro-ai-auth",
+    "db:migrate": "wrangler d1 execute afro-ai-auth --remote --file=./schema.sql",
+    "db:migrate-local": "wrangler d1 execute afro-ai-auth --local --file=./schema.sql",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240925.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.78.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "hono": "^4.6.0",
+    "jose": "^5.9.0"
+  }
+}

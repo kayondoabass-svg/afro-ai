@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, test & build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Clean install (no cache reuse)
+        run: |
+          npm cache clean --force
+          rm -rf node_modules
+          npm ci --include=dev
+
+      - name: Diagnose vite
+        run: |
+          echo "node $(node -v) / npm $(npm -v)"
+          echo "--- node_modules/vite contents ---"
+          ls -la node_modules/vite 2>&1 | head -20
+          echo "--- vite package.json (version / main / exports) ---"
+          node -e "const v=require('./node_modules/vite/package.json');console.log('version:',v.version,'| main:',v.main,'| has exports:',!!v.exports)" || echo ">>> VITE package.json BROKEN OR MISSING <<<"
+          echo "--- can Node actually import vite? ---"
+          node --input-type=module -e "import('vite').then(()=>console.log('ESM import vite: OK')).catch(e=>console.log('ESM import vite FAILED:',e.code,e.message))"
+
+      - name: Typecheck (non-blocking)
+        run: node node_modules/typescript/bin/tsc
+        continue-on-error: true
+
+      - name: Test
+        run: node node_modules/vitest/vitest.mjs run
+
+      - name: Build
+        run: node node_modules/tsx/dist/cli.mjs script/build.ts

@@ -1,0 +1,85 @@
+function getCfAccountId(): string {
+  return (
+    process.env.CLOUDFLARE_ACCOUNT_ID ||
+    process.env.R2_ACCOUNT_ID ||
+    "fe7bcfa7be264c172e444e854a6bccbb"
+  );
+}
+
+function getCfToken(): string | undefined {
+  return process.env.CLOUDFLARE_API_TOKEN || process.env.CLOUDFLARE_D1_TOKEN;
+}
+
+export function isD1Configured(): boolean {
+  return !!(getCfToken() && process.env.CLOUDFLARE_D1_DATABASE_ID);
+}
+
+function getHeaders() {
+  return {
+    "Authorization": `Bearer ${getCfToken()}`,
+    "Content-Type": "application/json",
+  };
+}
+
+function getBaseUrl(databaseId?: string) {
+  const dbId = databaseId || process.env.CLOUDFLARE_D1_DATABASE_ID;
+  return `https://api.cloudflare.com/client/v4/accounts/${getCfAccountId()}/d1/database/${dbId}`;
+}
+
+/** Read-only identity check for operator migration preflight. Never log the API response. */
+export async function d1GetDatabaseInfo(): Promise<{ uuid: string; name: string }> {
+  if (!isD1Configured()) throw new Error("D1 is not configured");
+  const resp = await fetch(getBaseUrl(), { headers: getHeaders() });
+  if (!resp.ok) throw new Error("D1 database identity lookup failed");
+  const data = await resp.json() as any;
+  if (!data.success || typeof data.result?.uuid !== "string" || typeof data.result?.name !== "string") {
+    throw new Error("D1 database identity lookup failed");
+  }
+  return { uuid: data.result.uuid, name: data.result.name };
+}
+
+export async function d1Query(sql: string, params: any[] = [], databaseId?: string): Promise<{ results: any[]; meta: any }> {
+  const resp = await fetch(`${getBaseUrl(databaseId)}/query`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ sql, params }),
+  });
+  const data = await resp.json() as any;
+  if (!data.success) {
+    const errMsg = data.errors?.map((e: any) => e.message).join(", ") || "D1 query failed";
+    throw new Error(errMsg);
+  }
+  const result = data.result?.[0];
+  return { results: result?.results ?? [], meta: result?.meta ?? {} };
+}
+
+export async function d1ListTables(): Promise<string[]> {
+  const { results } = await d1Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+  return results.map((r: any) => r.name);
+}
+
+export async function d1CreateTable(sql: string): Promise<void> {
+  await d1Query(sql);
+}
+
+export async function d1GetTableInfo(tableName: string): Promise<any[]> {
+  const safe = tableName.replace(/[^a-zA-Z0-9_]/g, "");
+  const { results } = await d1Query(`PRAGMA table_info(${safe})`);
+  return results;
+}
+
+export async function d1GetTableRows(tableName: string, limit = 100, offset = 0): Promise<{ results: any[]; meta: any }> {
+  const safe = tableName.replace(/[^a-zA-Z0-9_]/g, "");
+  return d1Query(`SELECT * FROM ${safe} LIMIT ? OFFSET ?`, [limit, offset]);
+}
+
+export async function d1Export(): Promise<{ url: string }> {
+  const resp = await fetch(`${getBaseUrl()}/export`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ output_format: "polling" }),
+  });
+  const data = await resp.json() as any;
+  if (!data.success) throw new Error("D1 export failed");
+  return data.result;
+}

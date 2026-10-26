@@ -1,0 +1,985 @@
+import { useState, useRef, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Send,
+  Terminal,
+  Crown,
+  Sparkles,
+  Loader2,
+  Eye,
+  Code2,
+  X,
+  Maximize2,
+  Minimize2,
+  Rocket,
+  Download,
+  Globe,
+  Check,
+  AlertCircle,
+  ExternalLink,
+  Paperclip,
+  Image,
+  Film,
+  Smartphone,
+  Tablet,
+  Monitor,
+  Wrench,
+  FilePlus,
+  FileMinus,
+  FileEdit,
+  ShieldAlert,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+
+interface Attachment {
+  filename: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+  url: string;
+}
+
+interface CommandMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  attachments?: Attachment[];
+  timestamp: Date;
+}
+
+type PreviewDevice = "desktop" | "tablet" | "phone";
+
+type SurgeryAction = "replace" | "create" | "delete";
+interface SurgeryPlanFile {
+  path: string;
+  action: SurgeryAction;
+  newContent?: string;
+  reason?: string;
+}
+interface SurgeryProposal {
+  planId: string;
+  plan: { summary: string; files: SurgeryPlanFile[] };
+  diffs: { path: string; action: SurgeryAction; before: string; after: string }[];
+  warnings: string[];
+}
+
+const SURGERY_PREFIX_RE = /^\s*(?:\/surgery|surgery\s*:)\s*/i;
+function extractSurgeryInstruction(text: string): string | null {
+  if (!SURGERY_PREFIX_RE.test(text)) return null;
+  const stripped = text.replace(SURGERY_PREFIX_RE, "").trim();
+  return stripped.length > 0 ? stripped : null;
+}
+
+function extractHtmlCode(text: string): string | null {
+  const htmlMatch = text.match(/```html\s*\n([\s\S]*?)```/);
+  if (htmlMatch) return htmlMatch[1].trim();
+  const genericMatch = text.match(/```\s*\n([\s\S]*?)```/);
+  if (genericMatch && (genericMatch[1].includes("<!DOCTYPE") || genericMatch[1].includes("<html"))) {
+    return genericMatch[1].trim();
+  }
+  return null;
+}
+
+function removeCodeBlock(text: string): string {
+  return text.replace(/```(?:html)?\s*\n[\s\S]*?```/g, "").trim();
+}
+
+function PublishDialog({ code, open, onOpenChange }: {
+  code: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const [subdomain, setSubdomain] = useState("");
+  const [title, setTitle] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    if (open && !loadedRef.current) {
+      loadedRef.current = true;
+      fetch("/api/published-apps")
+        .then(res => res.ok ? res.json() : [])
+        .then((apps: any[]) => {
+          if (apps.length > 0) {
+            const latest = apps[0];
+            if (latest.title) setTitle(latest.title);
+            if (latest.subdomain) {
+              setSubdomain(latest.subdomain);
+              setAvailable(true);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+    if (!open) {
+      loadedRef.current = false;
+      setPublishedUrl(null);
+    }
+    return () => {
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+    };
+  }, [open]);
+
+  const checkSubdomain = async (value: string) => {
+    if (value.length < 3) { setAvailable(null); return; }
+    setChecking(true);
+    try {
+      const res = await fetch(`/api/check-subdomain/${encodeURIComponent(value)}`);
+      const data = await res.json();
+      setAvailable(data.available);
+    } catch { setAvailable(null); }
+    finally { setChecking(false); }
+  };
+
+  const handleSubdomainChange = (value: string) => {
+    const cleaned = value.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    setSubdomain(cleaned);
+    setAvailable(null);
+    setPublishedUrl(null);
+    if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+    if (cleaned.length >= 3) {
+      checkTimeoutRef.current = setTimeout(() => checkSubdomain(cleaned), 500);
+    }
+  };
+
+  const publishMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/publish", { subdomain, htmlContent: code, title });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setPublishedUrl(data.url);
+      toast({ title: "Published!", description: `Live at ${data.url}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/published-apps"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Rocket className="w-5 h-5 text-primary" />
+            Publish to Web
+          </DialogTitle>
+          <DialogDescription>
+            Deploy this directly to afroaigroup.com
+          </DialogDescription>
+        </DialogHeader>
+        {publishedUrl ? (
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-2 text-green-500">
+              <Check className="w-5 h-5" />
+              <span className="font-medium">Published Successfully!</span>
+            </div>
+            <div className="bg-card rounded-lg p-4 border">
+              <p className="text-sm text-muted-foreground mb-2">Live at:</p>
+              <a href={publishedUrl} target="_blank" rel="noopener noreferrer"
+                className="text-primary hover:underline flex items-center gap-1 font-medium" data-testid="link-admin-published-url">
+                {publishedUrl}<ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">App Title</label>
+              <Input placeholder="My App" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="input-admin-publish-title" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">App URL Name</label>
+              <div className="flex items-center gap-1">
+                <Input placeholder="my-app" value={subdomain} onChange={(e) => handleSubdomainChange(e.target.value)} className="flex-1" data-testid="input-admin-publish-subdomain" />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">.afroaigroup.com</span>
+              </div>
+              {subdomain.length >= 3 && (
+                <div className="flex items-center gap-1 text-xs">
+                  {checking ? (
+                    <><Loader2 className="w-3 h-3 animate-spin" /><span className="text-muted-foreground">Checking...</span></>
+                  ) : available === true ? (
+                    <><Check className="w-3 h-3 text-green-500" /><span className="text-green-500">Available!</span></>
+                  ) : available === false ? (
+                    <><AlertCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Already taken</span></>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          {publishedUrl ? (
+            <Button onClick={() => onOpenChange(false)} data-testid="button-admin-publish-done">Done</Button>
+          ) : (
+            <Button onClick={() => publishMutation.mutate()}
+              disabled={!subdomain || !title || subdomain.length < 3 || available === false || publishMutation.isPending}
+              data-testid="button-admin-publish-confirm">
+              {publishMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Publishing...</> : <><Globe className="w-4 h-4" />Publish</>}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const deviceSizes: Record<PreviewDevice, { width: string; label: string }> = {
+  desktop: { width: "100%", label: "Desktop" },
+  tablet: { width: "768px", label: "Tablet" },
+  phone: { width: "375px", label: "Phone" },
+};
+
+export default function AdminCommandPage() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [messages, setMessages] = useState<CommandMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [previewCode, setPreviewCode] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showPublish, setShowPublish] = useState(false);
+  const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
+  const [surgeryProposal, setSurgeryProposal] = useState<SurgeryProposal | null>(null);
+  const [showSurgeryDialog, setShowSurgeryDialog] = useState(false);
+  const [isSurgeryLoading, setIsSurgeryLoading] = useState(false);
+  const [isApplyingSurgery, setIsApplyingSurgery] = useState(false);
+  const [surgeryResult, setSurgeryResult] = useState<{ applied: any[]; failed: any[]; backupDir: string } | null>(null);
+  const [openDiffPath, setOpenDiffPath] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isFounder = (user as any)?.isFounder === true;
+
+  useEffect(() => {
+    if (!isFounder) setLocation("/dashboard");
+  }, [isFounder, setLocation]);
+
+  useEffect(() => {
+    if (isFounder) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamingContent, isFounder]);
+
+  useEffect(() => {
+    if (streamingContent) {
+      const code = extractHtmlCode(streamingContent);
+      if (code) {
+        setPreviewCode(code);
+        setShowPreview(true);
+      }
+    }
+  }, [streamingContent]);
+
+  const openPreview = (code: string) => {
+    setPreviewCode(code);
+    setShowPreview(true);
+    setMobileView("preview");
+  };
+
+  if (!isFounder) return null;
+
+  const ensureConversation = async (): Promise<number> => {
+    if (conversationId) return conversationId;
+    const res = await apiRequest("POST", "/api/conversations", { title: "Founder Command" });
+    const convo = await res.json();
+    setConversationId(convo.id);
+    return convo.id;
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+      }
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Upload failed");
+      }
+      const uploaded: Attachment[] = await res.json();
+      setPendingAttachments((prev) => [...prev, ...uploaded]);
+    } catch (error: any) {
+      toast({ title: "Upload Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removePendingAttachment = (index: number) => {
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const runSurgery = async (instruction: string, displayMessage: string) => {
+    const userMsg: CommandMessage = {
+      id: Date.now(),
+      role: "user",
+      content: displayMessage,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setIsSurgeryLoading(true);
+    setSurgeryResult(null);
+    try {
+      const res = await fetch("/api/founder/surgery/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ instruction }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Surgery planning failed");
+      const proposal = data as SurgeryProposal;
+      setSurgeryProposal(proposal);
+      setShowSurgeryDialog(true);
+
+      const planMsg: CommandMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: `__SURGERY_PROPOSAL__:${proposal.planId}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, planMsg]);
+    } catch (err: any) {
+      toast({ title: "Surgery failed", description: err.message || "Could not plan the change.", variant: "destructive" });
+      const errMsg: CommandMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: `Sorry — I couldn't plan that change. ${err.message || ""}`.trim(),
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errMsg]);
+    } finally {
+      setIsSurgeryLoading(false);
+    }
+  };
+
+  const handleApplySurgery = async () => {
+    if (!surgeryProposal) return;
+    setIsApplyingSurgery(true);
+    try {
+      const res = await fetch("/api/founder/surgery/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ planId: surgeryProposal.planId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Apply failed");
+      setSurgeryResult(data);
+      const okCount = data.applied?.length || 0;
+      const failCount = data.failed?.length || 0;
+      toast({
+        title: failCount === 0 ? "Surgery applied" : "Applied with warnings",
+        description: `${okCount} file(s) updated${failCount > 0 ? `, ${failCount} failed` : ""}. Backups saved.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Apply failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsApplyingSurgery(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if ((!input.trim() && pendingAttachments.length === 0) || isStreaming || isSurgeryLoading) return;
+
+    const trimmed = input.trim();
+    const surgeryInstruction = extractSurgeryInstruction(trimmed);
+    if (surgeryInstruction) {
+      setInput("");
+      await runSurgery(surgeryInstruction, trimmed);
+      return;
+    }
+
+    const userMessage = trimmed || "Check these attachments";
+    const currentAttachments = [...pendingAttachments];
+    setInput("");
+    setPendingAttachments([]);
+    setIsStreaming(true);
+    setStreamingContent("");
+
+    const userMsg: CommandMessage = {
+      id: Date.now(),
+      role: "user",
+      content: userMessage,
+      attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    try {
+      const convoId = await ensureConversation();
+      const response = await fetch(`/api/conversations/${convoId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          content: userMessage,
+          attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+          mode: "founder",
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to send");
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let fullResponse = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.content) {
+              fullResponse += data.content;
+              setStreamingContent(fullResponse);
+            }
+            if (data.done) {
+              const code = extractHtmlCode(fullResponse);
+              if (code) {
+                openPreview(code);
+              }
+              const assistantMsg: CommandMessage = {
+                id: Date.now() + 1,
+                role: "assistant",
+                content: fullResponse,
+                timestamp: new Date(),
+              };
+              setMessages(prev => [...prev, assistantMsg]);
+              setStreamingContent("");
+              setIsStreaming(false);
+            }
+          } catch {}
+        }
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to process command", variant: "destructive" });
+      setIsStreaming(false);
+      setStreamingContent("");
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleDownload = () => {
+    if (!previewCode) return;
+    const blob = new Blob([previewCode], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "founder-build.html";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({ title: "Downloaded!" });
+  };
+
+  const renderSurgeryCard = () => {
+    if (!surgeryProposal) return null;
+    const fileCount = surgeryProposal.plan.files.length;
+    return (
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <Wrench className="w-4 h-4 text-amber-500" />
+          <span className="text-sm font-semibold text-amber-500">Surgery plan ready</span>
+        </div>
+        <p className="text-sm">{surgeryProposal.plan.summary}</p>
+        {fileCount === 0 ? (
+          <p className="text-xs text-muted-foreground">No editable changes proposed.</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">{fileCount} file(s) will change.</p>
+        )}
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowSurgeryDialog(true)} data-testid="button-review-surgery">
+          <FileEdit className="w-3.5 h-3.5" />
+          Review &amp; apply
+        </Button>
+      </div>
+    );
+  };
+
+  const renderMessageContent = (content: string, role: string, attachments?: Attachment[]) => {
+    if (role === "assistant" && content.startsWith("__SURGERY_PROPOSAL__:")) {
+      return renderSurgeryCard();
+    }
+    if (role !== "assistant") {
+      return (
+        <div className="space-y-2">
+          <p className="whitespace-pre-wrap break-words">{content}</p>
+          {attachments && attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((att, i) => (
+                <div key={i} className="relative">
+                  {att.mimetype.startsWith("image/") ? (
+                    <img
+                      src={att.url}
+                      alt={att.originalName}
+                      className="max-w-[200px] max-h-[150px] rounded-lg border object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => window.open(att.url, "_blank")}
+                      data-testid={`img-admin-attachment-${i}`}
+                    />
+                  ) : att.mimetype.startsWith("video/") ? (
+                    <video
+                      src={att.url}
+                      controls
+                      className="max-w-[250px] max-h-[150px] rounded-lg border"
+                      data-testid={`video-admin-attachment-${i}`}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2 text-xs">
+                      <Paperclip className="w-3 h-3" />
+                      {att.originalName}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    const code = extractHtmlCode(content);
+    const textOnly = removeCodeBlock(content);
+    return (
+      <div className="space-y-3">
+        {textOnly && <p className="whitespace-pre-wrap break-words">{textOnly}</p>}
+        {code && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-border/60 hover:border-primary/50"
+              onClick={() => openPreview(code)}
+              data-testid="button-admin-view-preview"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Preview
+            </Button>
+            <Button
+              size="sm"
+              variant="default"
+              className="gap-1.5 bg-primary hover:bg-primary/90"
+              onClick={() => { setPreviewCode(code); setShowPublish(true); }}
+              data-testid="button-admin-publish"
+            >
+              <Rocket className="w-3.5 h-3.5" />
+              Republish
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5 text-muted-foreground"
+              onClick={() => { setPreviewCode(code); handleDownload(); }}
+              data-testid="button-admin-download"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className={`flex flex-col min-h-0 ${showPreview && previewCode ? "md:w-1/2 md:min-w-[320px]" : "flex-1"} ${mobileView === "preview" && showPreview && previewCode ? "hidden md:flex" : "flex"}`}>
+        <div className="flex items-center gap-3 px-4 py-3 border-b bg-card/50">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+            <Terminal className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-semibold text-sm" data-testid="text-command-title">Founder Command Center</h2>
+            <p className="text-xs text-muted-foreground">Type what you want to build or change. AI will generate it instantly.</p>
+          </div>
+          <Button size="sm" variant="outline" asChild>
+            <a href="/admin-command/keyo-studio" data-testid="link-command-keyo-studio">KEYO Studio runner studio</a>
+          </Button>
+          {showPreview && previewCode && (
+            <Button size="sm" variant="outline" className="md:hidden gap-1.5 flex-shrink-0" onClick={() => setMobileView("preview")} data-testid="button-switch-to-preview">
+              <Eye className="w-3.5 h-3.5" />
+              Preview
+            </Button>
+          )}
+        </div>
+
+        <ScrollArea className="flex-1 p-4">
+          <div className="max-w-2xl mx-auto space-y-6">
+            {messages.length === 0 && !streamingContent && (
+              <div className="text-center py-16 space-y-6">
+                <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+                  <Crown className="w-10 h-10 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold">Welcome, Founder</h3>
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto mt-2">
+                    Tell me what to add or edit.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <div key={msg.id} className="flex gap-3" data-testid={`admin-message-${msg.id}`}>
+                <Avatar className="w-8 h-8 flex-shrink-0">
+                  <AvatarFallback className={msg.role === "assistant" ? "bg-primary/10 text-primary" : "bg-orange-500/10 text-orange-500"}>
+                    {msg.role === "assistant" ? <Sparkles className="w-4 h-4" /> : <Crown className="w-4 h-4" />}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 space-y-1 min-w-0">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {msg.role === "assistant" ? "Afro AI" : "Founder"}
+                  </p>
+                  <div className="text-sm leading-relaxed">
+                    {renderMessageContent(msg.content, msg.role, msg.attachments)}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {streamingContent && (
+              <div className="flex gap-3">
+                <Avatar className="w-8 h-8 flex-shrink-0">
+                  <AvatarFallback className="bg-primary/10 text-primary">
+                    <Sparkles className="w-4 h-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 space-y-1 min-w-0">
+                  <p className="text-xs font-medium text-muted-foreground">Afro AI</p>
+                  <div className="text-sm leading-relaxed">
+                    <p className="whitespace-pre-wrap break-words">{removeCodeBlock(streamingContent)}</p>
+                    {extractHtmlCode(streamingContent) && (
+                      <div className="flex items-center gap-2 mt-2 text-xs text-primary">
+                        <Code2 className="w-3 h-3 animate-pulse" />
+                        <span>Building your app...</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isStreaming && !streamingContent && (
+              <div className="flex gap-3">
+                <Avatar className="w-8 h-8 flex-shrink-0">
+                  <AvatarFallback className="bg-primary/10 text-primary">
+                    <Sparkles className="w-4 h-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Thinking...</span>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+        </ScrollArea>
+
+        <div className="p-4 border-t bg-card/50">
+          <div className="max-w-2xl mx-auto space-y-2">
+            {pendingAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-1">
+                {pendingAttachments.map((att, i) => (
+                  <div key={i} className="relative group">
+                    {att.mimetype.startsWith("image/") ? (
+                      <img
+                        src={att.url}
+                        alt={att.originalName}
+                        className="w-16 h-16 rounded-lg border object-cover"
+                        data-testid={`img-admin-pending-${i}`}
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-lg border bg-muted flex flex-col items-center justify-center gap-1">
+                        <Film className="w-5 h-5 text-muted-foreground" />
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[56px]">{att.originalName}</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => removePendingAttachment(i)}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      data-testid={`button-admin-remove-attachment-${i}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+                data-testid="input-admin-file-upload"
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isStreaming || isUploading}
+                data-testid="button-admin-attach-file"
+                title="Attach photo, video, or screenshot"
+              >
+                {isUploading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Paperclip className="w-4 h-4" />
+                )}
+              </Button>
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Tell me what to build or change..."
+                className="min-h-[48px] max-h-[120px] resize-none flex-1"
+                disabled={isStreaming}
+                data-testid="textarea-admin-command"
+              />
+              <Button
+                onClick={handleSend}
+                disabled={(!input.trim() && pendingAttachments.length === 0) || isStreaming}
+                size="icon"
+                className="flex-shrink-0 h-12 w-12"
+                data-testid="button-admin-send"
+              >
+                {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showPreview && previewCode && (
+        <div className={`flex-col bg-background border-l ${isFullscreen ? "fixed inset-0 z-50 flex" : `flex-1 ${mobileView === "preview" ? "flex" : "hidden md:flex"}`}`}>
+          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-card/80">
+            <div className="flex items-center gap-2">
+              <Button size="icon" variant="ghost" className="md:hidden h-7 w-7" onClick={() => setMobileView("chat")} data-testid="button-back-to-chat">
+                <X className="w-4 h-4" />
+              </Button>
+              <Eye className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium" data-testid="text-admin-preview-label">Live Preview</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="flex items-center border rounded-md mr-2">
+                <Button
+                  size="icon"
+                  variant={previewDevice === "desktop" ? "default" : "ghost"}
+                  className="h-7 w-7 rounded-r-none"
+                  onClick={() => setPreviewDevice("desktop")}
+                  title="Desktop"
+                  data-testid="button-preview-desktop"
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant={previewDevice === "tablet" ? "default" : "ghost"}
+                  className="h-7 w-7 rounded-none border-x"
+                  onClick={() => setPreviewDevice("tablet")}
+                  title="Tablet"
+                  data-testid="button-preview-tablet"
+                >
+                  <Tablet className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant={previewDevice === "phone" ? "default" : "ghost"}
+                  className="h-7 w-7 rounded-l-none"
+                  onClick={() => setPreviewDevice("phone")}
+                  title="Phone"
+                  data-testid="button-preview-phone"
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              <Button size="sm" variant="default" onClick={() => setShowPublish(true)} className="gap-1" data-testid="button-admin-preview-publish">
+                <Rocket className="w-3 h-3" />Publish
+              </Button>
+              <Button size="icon" variant="ghost" onClick={handleDownload} data-testid="button-admin-preview-download">
+                <Download className="w-4 h-4" />
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => setIsFullscreen(!isFullscreen)} data-testid="button-admin-preview-fullscreen">
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => { setShowPreview(false); setMobileView("chat"); }} data-testid="button-admin-preview-close">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="flex-1 bg-white flex justify-center overflow-auto">
+            <iframe
+              srcDoc={previewCode}
+              className="h-full border-0 transition-all duration-300"
+              style={{
+                width: deviceSizes[previewDevice].width,
+                maxWidth: "100%",
+                boxShadow: previewDevice !== "desktop" ? "0 0 0 1px rgba(0,0,0,0.1), 0 4px 24px rgba(0,0,0,0.15)" : "none",
+              }}
+              sandbox="allow-scripts allow-popups"
+              title="Admin Preview"
+              data-testid="iframe-admin-preview"
+            />
+          </div>
+        </div>
+      )}
+
+      {previewCode && (
+        <PublishDialog code={previewCode} open={showPublish} onOpenChange={setShowPublish} />
+      )}
+
+      <Dialog open={showSurgeryDialog} onOpenChange={(o) => { setShowSurgeryDialog(o); if (!o) setOpenDiffPath(null); }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" data-testid="dialog-surgery-review">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wrench className="w-5 h-5 text-amber-500" />
+              Surgery — review proposed code changes
+            </DialogTitle>
+          </DialogHeader>
+
+          {!surgeryProposal ? (
+            <p className="text-sm text-muted-foreground">No plan loaded.</p>
+          ) : (
+            <div className="flex-1 overflow-auto space-y-3 pr-1">
+              <div className="rounded-md bg-muted p-3 text-sm">
+                <p className="font-medium mb-1">Summary</p>
+                <p className="whitespace-pre-wrap text-muted-foreground">{surgeryProposal.plan.summary}</p>
+              </div>
+
+              {surgeryProposal.warnings.length > 0 && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm space-y-1">
+                  <div className="flex items-center gap-2 text-destructive font-medium">
+                    <ShieldAlert className="w-4 h-4" /> Warnings
+                  </div>
+                  <ul className="list-disc pl-5 text-destructive/90">
+                    {surgeryProposal.warnings.map((w, i) => <li key={i} data-testid={`text-surgery-warning-${i}`}>{w}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Files ({surgeryProposal.plan.files.length})</p>
+                {surgeryProposal.plan.files.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No file changes were proposed.</p>
+                )}
+                {surgeryProposal.plan.files.map((f) => {
+                  const Icon = f.action === "create" ? FilePlus : f.action === "delete" ? FileMinus : FileEdit;
+                  const color = f.action === "create" ? "text-emerald-500" : f.action === "delete" ? "text-red-500" : "text-amber-500";
+                  const isOpen = openDiffPath === f.path;
+                  const diff = surgeryProposal.diffs.find(d => d.path === f.path);
+                  return (
+                    <div key={f.path} className="rounded-md border" data-testid={`row-surgery-file-${f.path}`}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenDiffPath(isOpen ? null : f.path)}
+                        className="w-full flex items-center gap-2 p-2 text-left hover:bg-muted/50"
+                        data-testid={`button-toggle-diff-${f.path}`}
+                      >
+                        <Icon className={`w-4 h-4 ${color}`} />
+                        <span className="text-xs font-mono flex-1 truncate">{f.path}</span>
+                        <span className={`text-[10px] uppercase font-semibold ${color}`}>{f.action}</span>
+                      </button>
+                      {f.reason && <p className="px-2 pb-2 text-xs text-muted-foreground">{f.reason}</p>}
+                      {isOpen && diff && (
+                        <div className="border-t bg-muted/30 p-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono">
+                          <div>
+                            <p className="text-muted-foreground mb-1">Before</p>
+                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all bg-background p-2 rounded border">{diff.before || "(empty / new file)"}</pre>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground mb-1">After</p>
+                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all bg-background p-2 rounded border">{diff.after || "(file will be deleted)"}</pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {surgeryResult && (
+                <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm space-y-1">
+                  <p className="font-medium text-emerald-600 dark:text-emerald-400">Applied</p>
+                  <p className="text-xs text-muted-foreground">Backups saved at <code>{surgeryResult.backupDir}</code></p>
+                  <p className="text-xs">{surgeryResult.applied.length} succeeded, {surgeryResult.failed.length} failed.</p>
+                  <p className="text-xs text-muted-foreground">Redeploy to push these changes to production: <code>git push</code> then run <code>/root/deploy-update.sh</code> on the droplet.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t">
+            <Button variant="outline" onClick={() => setShowSurgeryDialog(false)} data-testid="button-surgery-cancel">
+              {surgeryResult ? "Close" : "Cancel"}
+            </Button>
+            {!surgeryResult && (
+              <Button
+                variant="default"
+                disabled={isApplyingSurgery || !surgeryProposal || surgeryProposal.plan.files.length === 0}
+                onClick={handleApplySurgery}
+                className="gap-1.5"
+                data-testid="button-surgery-apply"
+              >
+                {isApplyingSurgery ? (<><Loader2 className="w-3.5 h-3.5 animate-spin" /> Applying…</>) : (<><Wrench className="w-3.5 h-3.5" /> Apply changes</>)}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
