@@ -16,6 +16,16 @@ before starting the new runner can instead hide the dependency change.
 to a temporary file, and run that script against the unchanged checkout. Verify
 the fetched revision first and retain normal locking, health and rollback checks.
 
+Do not equate a running service with uninterrupted static-page availability
+during an in-place production build.
+
+**Why:** Rebuilding the live distribution can temporarily remove files that the
+old process still serves, even while its health endpoint remains successful.
+
+**How to apply:** Verify public static routes after promotion and distinguish
+rollback protection from zero-downtime deployment. Uninterrupted delivery
+requires building separately and atomically promoting the complete output.
+
 Check a clean dependency install, backend cold start and the full legacy release
 pipeline before accepting a package-layout migration.
 
