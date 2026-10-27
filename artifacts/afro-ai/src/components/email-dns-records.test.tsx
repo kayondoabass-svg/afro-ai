@@ -11,7 +11,7 @@ describe("customer setup controls", () => {
     document.body.append(container);
     try {
       act(() => root.render(<EmailDnsRecords domain={{dkimToken:"TXT resend._domainkey → public-DKIM-value",spfRecord:null,dmarcRecord:null}} onCopy={copy} />));
-      const button = [...container.querySelectorAll("button")].find(b => b.textContent === "Copy value")!;
+      const button = Array.from(container.querySelectorAll("button")).find(b => b.textContent === "Copy value")!;
       act(() => button.click());
       expect(copy).toHaveBeenCalledWith("public-DKIM-value", "DNS value");
       expect(container.textContent).toContain("resend._domainkey");

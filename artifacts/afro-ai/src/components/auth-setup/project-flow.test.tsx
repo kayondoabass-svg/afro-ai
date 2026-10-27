@@ -34,7 +34,7 @@ function renderProject(verified: boolean) {
 it("renders the owner's setup and blocks production key generation before DNS proof", () => {
   const ui=renderProject(false);
   try {
-    const generate=[...ui.container.querySelectorAll("button")].find(b=>/Generate.*key/i.test(b.textContent || ""));
+    const generate=Array.from(ui.container.querySelectorAll("button")).find(b=>/Generate.*key/i.test(b.textContent || ""));
     expect(generate).toBeDefined();expect(generate!.disabled).toBe(true);
     expect(ui.container.textContent).toContain("Sample app");
     expect(ui.container.textContent).toContain("DNS");
@@ -48,7 +48,7 @@ it("renders the owner's setup and blocks production key generation before DNS pr
 it("enables key generation only after a real verified-state API response", () => {
   const ui=renderProject(true);
   try {
-    const generate=[...ui.container.querySelectorAll("button")].find(b=>/Generate.*key/i.test(b.textContent || ""));
+    const generate=Array.from(ui.container.querySelectorAll("button")).find(b=>/Generate.*key/i.test(b.textContent || ""));
     expect(generate!.disabled).toBe(false);
     expect(ui.container.textContent).toContain("example.com");
     expect(ui.container.textContent).toContain("Verified");

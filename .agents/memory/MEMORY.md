@@ -8,7 +8,8 @@
 - [Knowledge RAG + tool-calling](knowledge-rag.md) — per-user jsonb vector store + in-app cosine (no pgvector); embeddings reuse Gemini→OpenAI fallback; server-side URL fetch must be SSRF-guarded; RAG content is untrusted (injection vector).
 - [Blank page after deploy](blank-page-chunk-errors.md) — lazy-route SPA crashes to a black screen when stale PWA/cache chunks 404; needs an ErrorBoundary that auto-reloads on chunk-load errors.
 - [Caddy empty-200 white screen](caddy-empty-200-missing-site.md) — blank prod page returning 200 + content-length 0 + no content-type = the request Host has no Caddy site block (e.g. apex missing while api. exists); app is healthy, add the block.
-- [Build vs typecheck](build-typecheck.md) — esbuild build skips tsc; ~60 pre-existing tsc errors, so CI typecheck stays non-blocking. Never claim "tsc clean" without diffing the baseline.
+- [Build vs typecheck](build-typecheck.md) — esbuild skips tsc; CI typecheck is non-blocking until the legacy backlog is cleared. Compare against a fresh baseline.
+- [CI test boundaries](ci-test-boundaries.md) — isolate routing/mirror dependencies while retaining real budget rejection and deployment safety checks.
 - [Ownership/IDOR checks](authz-ownership.md) — scope per-user rows by req.user.claims.sub; founder-bypass policy is inconsistent across chat/audio/routes (FOUNDER_EMAIL vs FOUNDER_EMAILS vs none).
 - [attached_assets gitignore trap](attached-assets-gitignore.md) — @assets images can pass locally/prod but be untracked → CI test file fails to LOAD + build can't resolve; use `attached_assets/*` + `!` negation + commit the binary.
 - [CI "vitest: not found" w/ healthy lock](ci-npx-vs-bin.md) — npm ci green but `npm run test` can't find the bin on the runner; use `npx vitest run`/`npx tsx` in CI. Don't regenerate an all-platform lock against a 1-platform node_modules (prunes optional deps).

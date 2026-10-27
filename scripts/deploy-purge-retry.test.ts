@@ -28,6 +28,16 @@ restart_service() { echo restart >> "$TEST_DIR/events"; }
 health_check() { echo health >> "$TEST_DIR/events"; [[ "$MOCK_HEALTH_OK" == 1 ]]; }
 post_start_stability_check() { echo stability >> "$TEST_DIR/events"; }
 chown() { :; }
+# Release mirroring is an external production operation, not part of this
+# purge state-machine test. Fail if a new/unexpected node operation is added.
+node() {
+  if [[ "$1" == "$APP_DIR/scripts/keyo-sync-release.mjs" && "$2" == "--execute" ]]; then
+    echo mirror >> "$TEST_DIR/events"
+  else
+    echo "Unexpected node operation" >&2
+    return 99
+  fi
+}
 purge_cdn() { echo purge >> "$TEST_DIR/events"; [[ "$MOCK_PURGE_OK" == 1 ]]; }
 main
 `;
@@ -47,7 +57,7 @@ main
       expect(retrySuccess.status).toBe(0);
       expect(retrySuccess.stdout).toContain("DEPLOY SUCCESS");
       expect(readFileSync(join(dir, "events"), "utf8").trim().split("\n")).toEqual([
-        "build", "restart", "health", "stability", "purge",
+        "build", "mirror", "restart", "health", "stability", "purge",
         "health", "stability", "purge",
         "health", "stability", "purge",
       ]);

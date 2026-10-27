@@ -72,6 +72,7 @@ vi.mock("../../knowledge", () => ({ retrieveKnowledge: async () => [], formatKno
 import { registerChatRoutes } from "./routes";
 import { dispatchJobCall, recordJobUsage, finishJob } from "../../project-workbench/job-budget";
 import { FOUNDER_EMAILS } from "../../founder-access";
+import * as metering from "../../project-workbench/model-metering";
 
 function handler() {
   let route: any;
@@ -94,7 +95,7 @@ function response() {
 const req = (content = "Search Kampala AI conference", webSearch = true) => ({
   params: { id: "12" }, user: { claims: { id: "owner" } }, body: { content, webSearch },
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 beforeEach(() => {
   vi.mocked(dispatchJobCall).mockClear(); vi.mocked(recordJobUsage).mockClear(); vi.mocked(finishJob).mockClear();
   mocks.stream.mockReset();
@@ -231,13 +232,30 @@ describe("main chat search route wiring", () => {
     expect(mocks.rows.at(-1).content).toContain("Select **Publish**");
   });
   it("lets the model clarify an unclear image instead of forcing search from an old UI flag", async () => {
+    // This test exercises search routing, not the size of the evolving system
+    // catalogue. Real metering has its own tests; rejection is tested below.
+    vi.spyOn(metering, "modelInputBound").mockReturnValue(1000);
     mocks.inference.mockResolvedValue({ text: "Please name the event in the image.", model: "test" });
     const request: any = req("Search this image", true);
     request.body.attachments = [{ mimetype: "image/png", dataUrl: "data:image/png;base64,eA==" }];
-    await handler()(request, response());
+    const res = response();
+    await handler()(request, res);
+    expect(res.json.mock.calls).toEqual([]);
+    expect(mocks.inference).toHaveBeenCalled();
     expect(mocks.search).not.toHaveBeenCalled();
     expect(mocks.rows.some(m => m.role === "web-search")).toBe(false);
     expect(mocks.inference.mock.calls[0][0].messages.some((m: any) => m.content.includes("image's subject is unclear"))).toBe(true);
+  });
+  it("rejects an over-budget image request before search or a paid model call", async () => {
+    vi.spyOn(metering, "modelInputBound").mockReturnValue(50_001);
+    const request: any = req("Search this image", true);
+    request.body.attachments = [{ mimetype: "image/png", dataUrl: "data:image/png;base64,eA==" }];
+    const res = response();
+    await handler()(request, res);
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.stringContaining("No additional AI call was started") }));
+    expect(mocks.inference).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
   });
   it.each(["empty", "unavailable", "failed"] as const)("persists truthful %s state and gives inference no invented sources", async status => {
     if (status === "empty") mocks.search.mockResolvedValue([]);

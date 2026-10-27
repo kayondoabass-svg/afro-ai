@@ -9,7 +9,9 @@ vi.mock("../db",()=>({pool:{
 }}));
 import { reserveEmailSend, settleEmailSend, emailPayloadHash } from "../email-delivery";
 
-describe.skipIf(!process.env.DATABASE_URL)("email request ledger on isolated PostgreSQL temporary tables",()=>{
+// CI has no PostgreSQL service: Vitest's shared setup supplies an import-only
+// placeholder URL. Run these isolated SQL tests only against a real database.
+describe.skipIf(!process.env.DATABASE_URL || !!process.env.CI)("email request ledger on isolated PostgreSQL temporary tables",()=>{
   beforeAll(async()=>{
     state.client=new Client({connectionString:process.env.DATABASE_URL});
     await state.client.connect();

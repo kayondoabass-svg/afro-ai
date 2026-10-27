@@ -35,10 +35,10 @@ it("loads the owner-scoped saved website preview in an isolated iframe", async (
   expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
   expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
   expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/projects/18/preview", { credentials: "include" });
-  fireEvent.click(screen.getByRole("button", { name: "Mobile", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: /^Mobile$/ }));
   expect(screen.getByTestId("website-preview-frame")).toHaveClass("max-w-[390px]");
   expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
-  fireEvent.click(screen.getByRole("button", { name: "Desktop", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: /^Desktop$/ }));
   expect(screen.getByTestId("website-preview-frame")).toHaveClass("max-w-5xl");
 });
 
