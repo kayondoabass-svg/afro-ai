@@ -32,6 +32,16 @@ can fail while an existing workspace GitHub token remains valid. An ephemeral
 credential helper can pass that token directly from the environment to Git
 without printing it or changing the stored remote.
 
+When using an explicitly authorized replacement token, check whether a broad
+Git URL rewrite still routes the command through a different credential.
+
+**Why:** An HTTPS GitHub URL can be rewritten to the workspace Git proxy, so a
+successful token preflight does not establish which credential Git used.
+
+**How to apply:** Use a process-local exact-repository URL rewrite and temporary
+environment-backed credential helper for that authorized push. Preserve saved
+remotes, never embed tokens, and still require the changed files' permissions.
+
 **Why:** Stored Git credentials and workspace tokens have independent validity
 and permissions. Read access to a public remote does not prove write access,
 and repository write permission does not imply permission to delete test repositories.
