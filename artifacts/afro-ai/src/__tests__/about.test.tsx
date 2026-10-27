@@ -24,4 +24,12 @@ describe("About page", () => {
       "Afro AI recently fine-tuned its own language model. Testing and evaluation are ongoing as we continue its development.",
     );
   });
+  it("announces the portable release with evidence and honest Android limitations", () => {
+    render(<AboutPage />);
+    const milestone=screen.getByTestId("text-milestone-keyo-portable");
+    expect(milestone).toHaveTextContent("nine live-site checks");
+    expect(milestone).toHaveTextContent("Android physical-device testing and production signing remain pending");
+    expect(screen.getByTestId("link-keyo-portable")).toHaveAttribute("href","/keyo-studio/portable/");
+    expect(screen.getByTestId("link-keyo-achievement-release").getAttribute("href")).toMatch(/\/releases\/tag\/v/);
+  });
 });

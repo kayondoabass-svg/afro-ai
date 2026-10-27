@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { KEYO_VERSION } from "../../../../packages/keyo-studio/src/version.mjs";
+import { KEYO_VERSION, KEYO_DESKTOP_VERSION } from "../../../../packages/keyo-studio/src/version.mjs";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSelector } from "@/components/language-selector";
@@ -60,11 +60,18 @@ export default function AboutPage() {
                 weights on their own devices without a paid AI API.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                Developer release {KEYO_VERSION} includes disk-backed loading, experimental indexed
-                checkpoints and an optional KEYO-owned native CPU kernel. The existing Afro AI Qwen2
-                model (approximately 1.5 billion parameters) passed greeting and basic-arithmetic smoke
-                checks, with exact JavaScript/native agreement in a single-step comparison. CPU responses
-                remain slow. This is not certification of general answer quality, 7B/14B models or production performance.
+                Portable developer release {KEYO_VERSION} runs our own JavaScript CPU engine in a
+                background worker, with real local generation, saved conversations and offline use
+                after the initial app and model download. The pinned Qwen2.5-0.5B-Instruct and
+                SmolLM2-135M-Instruct models have independent numerical verification. Model weights
+                and chats stay on the user's device; local inference does not require a paid cloud AI API.
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                An Android debug APK has been compiled and its signature verified. Physical-phone
+                performance testing and a production-signed release are still pending. Existing desktop
+                executable downloads remain {KEYO_DESKTOP_VERSION}; they have not been relabelled as
+                the new portable release. This is not certification of general answer quality, larger
+                models or production performance.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 This is a milestone in our work to advance Ugandan and African AI development. Our long-term
@@ -76,6 +83,11 @@ export default function AboutPage() {
               <a href="/keyo-studio" className="inline-flex items-center gap-2 text-primary hover:underline" data-testid="link-keyo-studio">
                 Explore KEYO Studio and download the source
               </a>
+              <div>
+                <a href="/keyo-studio/portable/" className="text-primary hover:underline" data-testid="link-keyo-portable">
+                  Open the KEYO portable app
+                </a>
+              </div>
               <p className="text-xs text-muted-foreground">
                 A claim to be the first African company to release this category of software has not yet been independently verified.
               </p>
@@ -308,6 +320,24 @@ export default function AboutPage() {
                 Recent Milestones
               </h2>
               <div className="space-y-4">
+                <Card>
+                  <CardContent className="p-6 space-y-2">
+                    <p className="text-sm font-semibold text-primary">October 2026</p>
+                    <h3 className="font-semibold">KEYO Studio portable AI and Android development release</h3>
+                    <p className="text-sm text-muted-foreground" data-testid="text-milestone-keyo-portable">
+                      Released KEYO Studio {KEYO_VERSION}, built in Uganda with our own inference engine.
+                      Real browser generation, offline restart, saved conversations and cancellation passed
+                      nine live-site checks. Source code, checksums, verification reports and an Android
+                      debug APK are published on GitHub and Hugging Face. Android physical-device testing
+                      and production signing remain pending.
+                    </p>
+                    <a href={`https://github.com/kayondoabass-svg/keyo-studio/releases/tag/v${KEYO_VERSION}`}
+                      className="inline-block text-sm text-primary hover:underline"
+                      target="_blank" rel="noopener noreferrer" data-testid="link-keyo-achievement-release">
+                      View the release and verification reports
+                    </a>
+                  </CardContent>
+                </Card>
                 <Card>
                   <CardContent className="p-6 space-y-1">
                     <p className="text-sm font-semibold text-primary">Recently</p>

@@ -62,3 +62,4 @@
 - [JSX preview instrumentation](jsx-preview-instrumentation.md) — named Fragments may receive unsupported preview metadata; use a layout-safe element for keyed boundaries.
 - [Terminal dependency updates](terminal-dependency-updates.md) — updating Socket.IO alone can retain vulnerable nested dependencies; verify the complete transport tree.
 - [KEYO portable contract](keyo-portable-contract.md) — hard worker cancellation, production offline checks and independent desktop/mobile release identities.
+- [Product setup guidance](product-guidance.md) — Afro AI should explain how to set up and use KEYO and the company's other software when customers ask.

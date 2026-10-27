@@ -118,7 +118,7 @@ describe("trusted product context", () => {
       "desktop 1280x800/mobile 390x844", "three requests per plan revision",
       "no unattended fix/run/retest-until-perfect loop", "Not yet implemented in this workflow",
       "managed application databases is server-disabled", "A repository push is not a deployment",
-      "model loading/generation there are disabled", "512-token context", "128 output tokens",
+      "real local model loading and generation", "512-token context", "128 output tokens",
       "unsigned/not notarized or GUI-certified", "native iOS", "unknown, not zero",
       "Agent 1, Agent 2 or Agent 3", "never promise unlimited or permanent free hosting",
       "Domain ownership proof is NOT mailbox verification",
@@ -127,6 +127,35 @@ describe("trusted product context", () => {
     expect(context).not.toContain("gemini-2.5");
     expect(context).not.toContain("gpt-4");
   });
+
+  it("knows the verified portable release without overstating Android or desktop certification", () => {
+    const context = productSelfKnowledge({ afroAuthorized: false });
+    for (const fact of [
+      "/keyo-studio/portable/", "Qwen2.5-0.5B-Instruct", "SmolLM2-135M-Instruct",
+      "independent numerical comparisons", "local OPFS", "IndexedDB",
+      "without paid cloud inference", "physical-device-certified",
+      "Existing desktop executable archives remain", "no GPU, WASM/SIMD or integer quantization",
+    ]) expect(context).toContain(fact);
+    expect(context).not.toContain("model loading/generation there are disabled");
+  });
+
+  it.each(["builder", "founder", "selected-file", "project-agent", "knowledge", "voice"] as const)(
+    "includes actionable product guides in the %s assistant without granting execution",
+    channel => {
+      const context=productSelfKnowledge({afroAuthorized:false,channel});
+      for(const instruction of [
+        "practical numbered steps", "Show only the requested guide",
+        "wait for integrity verification", "Load the model and wait for Ready",
+        "KEYO Android and desktop", "Afro Auth:", "Email API:", "Customer chatbots:",
+        "Knowledge and media:", "Business/site tools:", "Domains:",
+        "Integrations, webhooks and collaboration:", "USSD and other business services:",
+        "Billing and programmes:", "A guide is not execution",
+        "Do not ask for private keys", "accepted is not delivered",
+      ]) expect(context).toContain(instruction);
+      for(const inventedRoute of ["/image-studio", "/video-studio", "/voice "])
+        expect(context).not.toContain(inventedRoute);
+    },
+  );
   it("describes the delivered evidence and metering flow without claiming hosted execution", () => {
     const context = productSelfKnowledge({ afroAuthorized: false, channel: "project-agent" });
     for (const feature of ["In-chat Visual evidence", "actual image", "latest 100 tool events",
