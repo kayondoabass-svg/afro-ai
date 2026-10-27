@@ -1,3 +1,6 @@
+import { mailEventTimes, mailTimestamp } from "../../shared/mail-timestamps";
+import { checkResendDelivery, type DeliveryCheck } from "../../shared/mail-delivery-status";
+
 const now = () => Math.floor(Date.now()/1000);
 
 export async function saveMailEvent(env: any, context: any, fields: any) {
@@ -34,7 +37,7 @@ export async function checkTenantMailHealth(env: any) {
       .bind(status,row.checked_at).run();
     if (status==="invalid_credential" || status==="unconfigured") console.error(JSON.stringify({event:"tenant_mail_health_alert",status}));
   }
-  return {status:row.status,checkedAt:row.checked_at,message:messages[row.status] || messages.unavailable};
+  return {status:row.status,checkedAt:mailTimestamp(row.checked_at),message:messages[row.status] || messages.unavailable};
 }
 
 export function registerTenantMailStatus(app: any, ownedTenant: (c:any,id:string)=>Promise<any>) {
@@ -43,20 +46,18 @@ export function registerTenantMailStatus(app: any, ownedTenant: (c:any,id:string
     const tenant=await ownedTenant(c,c.req.param("id"));
     if (tenant instanceof Response) return tenant;
     c.header("Cache-Control","private, no-store");
-    if (refresh && envKey(c.env)) {
+    const deliveryChecks = new Map<string,DeliveryCheck>();
+    if (refresh) {
       // Read-only upstream retrieval. Never resend verification or recovery mail.
       const rows=await c.env.DB.prepare(`SELECT id,message_id FROM tenant_mail_events
         WHERE tenant_id=? AND outcome IN ('accepted','delivery_delayed','unknown') AND message_id IS NOT NULL
         ORDER BY created_at DESC LIMIT 10`).bind(tenant.id).all();
       await Promise.all((rows.results || []).map(async(row:any)=>{
         try {
-          const response=await fetch(`https://api.resend.com/emails/${encodeURIComponent(row.message_id)}`,{
-            headers:{Authorization:`Bearer ${c.env.RESEND_API_KEY}`},signal:AbortSignal.timeout(8000),
-          });
-          if (!response.ok) return;
-          const body:any=await response.json();
-          const outcome=body.last_event;
-          if (!["delivered","bounced","complained","delivery_delayed"].includes(outcome)) return;
+          const check=await checkResendDelivery(String(row.message_id),c.env.RESEND_API_KEY);
+          deliveryChecks.set(String(row.id),check);
+          const outcome=check.status;
+          if (!outcome || !["delivered","bounced","complained","delivery_delayed"].includes(outcome)) return;
           await c.env.DB.prepare("UPDATE tenant_mail_events SET outcome=?,updated_at=? WHERE id=? AND tenant_id=?")
             .bind(outcome,now(),row.id,tenant.id).run();
         } catch { /* Preserve last known status. A failed lookup is not delivery evidence. */ }
@@ -65,7 +66,8 @@ export function registerTenantMailStatus(app: any, ownedTenant: (c:any,id:string
     const health=await checkTenantMailHealth(c.env);
     const events=await c.env.DB.prepare(`SELECT id,user_id,purpose,outcome,reason,message_id,created_at,updated_at
       FROM tenant_mail_events WHERE tenant_id=? ORDER BY created_at DESC LIMIT 50`).bind(tenant.id).all();
-    return c.json({health,events:events.results || []});
+    return c.json({health,timestampFormat:"ISO 8601 UTC string, or null when unavailable",
+      events:(events.results || []).map((event:any)=>({...mailEventTimes(event),deliveryCheck:deliveryChecks.get(String(event.id)) || null}))});
   };
   app.get(route,(c:any)=>serve(c,false));
   app.post(`${route}/refresh`,async(c:any)=>{
@@ -73,4 +75,3 @@ export function registerTenantMailStatus(app: any, ownedTenant: (c:any,id:string
     return serve(c,true);
   });
 }
-const envKey = (env:any) => typeof env.RESEND_API_KEY==="string" && !!env.RESEND_API_KEY;

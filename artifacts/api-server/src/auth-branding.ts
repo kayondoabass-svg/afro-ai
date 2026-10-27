@@ -7,6 +7,7 @@ import { AUTH_PACKAGES, authPackage, authFeatures } from "../shared/auth-package
 import { BRANDING_DEFAULTS, validateBranding, renderAuthEmail, lockedBrandingFields, type AuthBranding } from "../shared/auth-email-branding";
 import { paymentBrowserGuard } from "./payment-checkout";
 import { sendEmail } from "./email-provider";
+import { recentBrandingMail, refreshBrandingMail, MAIL_TIMESTAMP_FORMAT } from "./auth-branding-mail";
 
 export async function ownedAuthProject(ownerId: string, id: string) {
   const [project] = await authQuery("SELECT id,name,slug,owner_user_id,plan FROM tenants WHERE id=? AND owner_user_id=? AND id<>'platform'", [id,ownerId]);
@@ -94,11 +95,17 @@ export function registerAuthBranding(app:Express, auth:RequestHandler) {
     const owner=req.user.claims.sub, project=await ownedAuthProject(owner,req.params.id);
     const e=await syncAuthEntitlement(owner), {settings}=await stored(project.id);
     const domains=await ownedDomains(owner);
-    const recentMail=await authQuery("SELECT purpose,outcome,reason,message_id,created_at FROM tenant_mail_events WHERE tenant_id=? ORDER BY created_at DESC LIMIT 10",[project.id]);
+    const recentMail=await recentBrandingMail(project.id,owner);
     const account=(await pool.query("SELECT email FROM users WHERE id=$1",[owner])).rows[0];
     res.json({project,package:authPackage(e.plan),source:e.source,expiresAt:e.expiresAt,features:authFeatures(e.plan),
       settings,domains:domains.map(({id,domain,status}:any)=>({id,domain,status})),packages:AUTH_PACKAGES,
-      retainedLockedFields:lockedBrandingFields(settings,e.plan),recentMail,testRecipient:account?.email||null});
+      retainedLockedFields:lockedBrandingFields(settings,e.plan),recentMail,timestampFormat:MAIL_TIMESTAMP_FORMAT,testRecipient:account?.email||null});
+  }));
+  const deliveryLimiter=rateLimit({windowMs:60_000,max:6,standardHeaders:true,legacyHeaders:false,
+    keyGenerator:(req:any)=>String(req.user.claims.sub),message:{message:"Please wait before refreshing delivery status again."}});
+  app.post(`${path}/mail-status/refresh`,auth,paymentBrowserGuard,deliveryLimiter,wrap(async(req:any,res:any)=>{
+    const owner=req.user.claims.sub,project=await ownedAuthProject(owner,req.params.id);
+    res.json({recentMail:await refreshBrandingMail(project.id,owner),timestampFormat:MAIL_TIMESTAMP_FORMAT});
   }));
   app.patch(path,auth,paymentBrowserGuard,wrap(async(req:any,res:any)=>{
     const owner=req.user.claims.sub,project=await ownedAuthProject(owner,req.params.id);
@@ -136,7 +143,7 @@ export function registerAuthBranding(app:Express, auth:RequestHandler) {
     const message=renderAuthEmail({name:project.name,purpose:req.body.purpose,url:"https://example.invalid/preview-only",
       settings,plan:e.plan,platformFrom:process.env.MAIL_FROM,senderVerified:verified});
     const result=await sendEmail({...message,subject:`[Preview — not a sign-in link] ${message.subject}`,to:account.email});
-    await audit(owner,owner,project.id,"branding.test.accepted",{messageId:result.messageId,purpose:req.body.purpose});
+    await audit(owner,owner,project.id,"branding.test.accepted",{messageId:result.messageId,provider:result.provider,purpose:req.body.purpose});
     res.json({accepted:true,messageId:result.messageId});
   }));
   app.get("/api/founder/auth-projects/:id/branding",auth,wrap(async(req:any,res:any)=>{
@@ -147,9 +154,9 @@ export function registerAuthBranding(app:Express, auth:RequestHandler) {
     const owner=String(project.owner_user_id);
     const e=await syncAuthEntitlement(owner),{settings}=await stored(String(project.id));
     const domains=await ownedDomains(owner);
-    const recentMail=await authQuery("SELECT purpose,outcome,reason,message_id,created_at FROM tenant_mail_events WHERE tenant_id=? ORDER BY created_at DESC LIMIT 25",[project.id]);
+    const recentMail=await recentBrandingMail(project.id,owner);
     const records=(await pool.query("SELECT actor_id,action,metadata,created_at FROM auth_branding_audit WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 25",[owner])).rows;
-    res.json({project,entitlement:e,settings,domains:domains.map(({id,domain,status}:any)=>({id,domain,status})),recentMail,audit:records});
+    res.json({project,entitlement:e,settings,domains:domains.map(({id,domain,status}:any)=>({id,domain,status})),recentMail,timestampFormat:MAIL_TIMESTAMP_FORMAT,audit:records});
   }));
   app.patch("/api/founder/auth-projects/:id/branding-entitlement",auth,paymentBrowserGuard,wrap(async(req:any,res:any)=>{
     const actor=req.user.claims.sub,account=(await pool.query("SELECT email FROM users WHERE id=$1",[actor])).rows[0];

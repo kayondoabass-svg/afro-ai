@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { readableApiError } from "@shared/customer-api-setup";
+import { MailActivityList, type AuthMailActivity } from "./mail-activity-list";
 import { openPaymentCheckout } from "@/components/payment-checkout";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -31,7 +32,7 @@ type BrandingData = {
   domains: { id: string | number; domain: string; status: string }[];
   packages: { key: string; name: string; usd: number; mau: number; apps: number | string }[];
   retainedLockedFields: string[];
-  recentMail: { purpose: string; outcome: string; reason: string | null; message_id: string | null; created_at: string }[];
+  recentMail: AuthMailActivity[];
   testRecipient: string | null;
 };
 type Preview = { subject: string; html: string; text: string; from: string; replyTo: string | null };
@@ -97,14 +98,19 @@ export function EmailBrandingSetup({ projectId }: { projectId: string }) {
   const testMutation = useMutation({
     mutationFn: async (purposeValue: Purpose) =>
       (await apiRequest("POST", `${path}/test`, { purpose: purposeValue })).json() as Promise<{ accepted: boolean; messageId: string }>,
-    onSuccess: (result) => toast({
+    onSuccess: (result) => { void queryClient.invalidateQueries({ queryKey: [path] }); toast({
       title: result.accepted ? "Test accepted" : "Test not accepted",
       description: result.accepted
         ? `Afro Auth accepted the request for ${data?.testRecipient || "your account email"}. Acceptance is not delivery confirmation.`
         : "The test was not accepted. Check the send history and try again later.",
       variant: result.accepted ? "default" : "destructive",
-    }),
+    }); },
     onError: (testFailure) => toast({ title: "Couldn't send test", description: readableApiError(testFailure, "The test could not be accepted."), variant: "destructive" }),
+  });
+  const deliveryMutation = useMutation({
+    mutationFn: async () => (await apiRequest("POST", `${path}/mail-status/refresh`)).json() as Promise<Pick<BrandingData,"recentMail">>,
+    onSuccess: (response) => queryClient.setQueryData<BrandingData>([path], current => current ? { ...current, recentMail: response.recentMail } : current),
+    onError: (error) => toast({ title: "Delivery lookup unavailable", description: readableApiError(error, "No email was resent. Try refreshing later."), variant: "destructive" }),
   });
   const subscribeMutation = useMutation({
     mutationFn: async (plan: string) => (await apiRequest("POST", "/api/subscribe", {
@@ -274,7 +280,14 @@ export function EmailBrandingSetup({ projectId }: { projectId: string }) {
                 <Send className="mr-2 h-4 w-4" />{testMutation.isPending ? "Submitting test…" : `Send saved ${purpose === "verify" ? "verification" : "recovery"} test`}
               </Button>
             </div>
-            {data.recentMail.length > 0 && <div><p className="mb-2 text-sm font-medium">Recent email activity</p><ul className="space-y-2">{data.recentMail.slice(0, 4).map((mail, index) => <li key={`${mail.message_id || mail.created_at}-${index}`} className="flex items-start justify-between gap-3 rounded-md border p-2 text-xs"><span className="capitalize">{mail.purpose} · {mail.reason || mail.outcome}</span><span className="shrink-0 text-muted-foreground">{new Date(mail.created_at).toLocaleString()}</span></li>)}</ul></div>}
+            <div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium">Recent email activity</p>
+                <Button size="sm" variant="outline" disabled={deliveryMutation.isPending} onClick={() => deliveryMutation.mutate()}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${deliveryMutation.isPending ? "animate-spin" : ""}`} />{deliveryMutation.isPending ? "Checking delivery…" : "Refresh delivery status"}
+                </Button></div>
+              <p className="mb-2 text-xs text-muted-foreground">Times use your device’s timezone. Accepted or queued does not mean delivered. Refresh checks existing messages only; it does not send email.</p>
+              <MailActivityList events={data.recentMail} />
+            </div>
           </CardContent>
         </Card>
         <Card className="border-primary/20">

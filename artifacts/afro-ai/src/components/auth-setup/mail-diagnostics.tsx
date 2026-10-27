@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { readableApiError } from "@shared/customer-api-setup";
+import { formatMailTime } from "@shared/mail-timestamps";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,11 +17,12 @@ interface MailEvent {
   outcome: MailOutcome;
   reason: string | null;
   message_id: string | null;
-  created_at: number;
-  updated_at: number;
+  created_at: string | null;
+  updated_at: string | null;
+  deliveryCheck?: { status: string | null; error: string | null; checkedAt: string };
 }
 interface MailDiagnosticsResponse {
-  health: { status: MailStatus; checkedAt: number; message: string };
+  health: { status: MailStatus; checkedAt: string | null; message: string };
   events: MailEvent[];
 }
 
@@ -31,11 +33,6 @@ const healthLabels: Record<MailStatus, string> = {
   unavailable: "Unavailable",
   unconfigured: "Not configured",
 };
-
-function formatTime(timestamp: number) {
-  const milliseconds = timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
-  return Number.isFinite(milliseconds) ? new Date(milliseconds).toLocaleString() : "Time unavailable";
-}
 
 export function MailDiagnostics({ tenantId, active }: { tenantId: string; active: boolean }) {
   const path = `/cf-auth/v1/admin/tenants/${encodeURIComponent(tenantId)}/mail-status`;
@@ -80,7 +77,7 @@ export function MailDiagnostics({ tenantId, active }: { tenantId: string; active
         : data && <>
           <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">Sender health</span><Badge variant={data.health.status === "available" ? "secondary" : "outline"}>{healthLabels[data.health.status]}</Badge></div>
-            <p className="text-xs text-muted-foreground">Checked {formatTime(data.health.checkedAt)}</p>
+            <p className="text-xs text-muted-foreground">Checked {formatMailTime(data.health.checkedAt)}</p>
             <p className="basis-full text-sm text-muted-foreground sm:basis-auto">{data.health.message}</p>
           </div>
           <p className="text-xs text-muted-foreground">Available means the sender service reports healthy; it never proves a message was delivered or that a recipient mailbox exists.</p>
@@ -99,8 +96,9 @@ export function MailDiagnostics({ tenantId, active }: { tenantId: string; active
                   </div>
                   <p className="mt-2 break-all text-xs text-muted-foreground">User ID: {event.user_id}{event.message_id ? ` · Message: ${event.message_id}` : ""}</p>
                   {event.reason && <p className="mt-1 text-sm text-muted-foreground">{event.reason}</p>}
+                  {event.deliveryCheck?.error && <p role="status" className="mt-1 text-sm text-muted-foreground">{event.deliveryCheck.error}</p>}
                 </div>
-                <div className="shrink-0 text-xs text-muted-foreground">Updated {formatTime(event.updated_at)}</div>
+                <div className="shrink-0 text-xs text-muted-foreground">Updated {formatMailTime(event.updated_at)}</div>
               </div>)}
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">Accepted means the sending provider accepted a request, not that it reached an inbox. Delivered is a provider delivery event, not proof that the address belongs to the customer or that they can access the mailbox. Mailbox verification occurs only when the customer completes the email confirmation link.</p>

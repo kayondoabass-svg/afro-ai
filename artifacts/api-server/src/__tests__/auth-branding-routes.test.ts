@@ -9,6 +9,11 @@ vi.mock("../founder-auth-records",()=>({authQuery:mocks.d1}));
 vi.mock("../email-provider",()=>({sendEmail:mocks.send}));
 import { registerAuthBranding } from "../auth-branding";
 import { BRANDING_DEFAULTS } from "../../shared/auth-email-branding";
+vi.mock("../../shared/mail-delivery-status", async importOriginal => {
+  const original = await importOriginal<typeof import("../../shared/mail-delivery-status")>();
+  return { ...original, checkResendDelivery: vi.fn().mockResolvedValue({ status: "delivered", error: null, checkedAt: "2026-10-27T04:00:00.000Z" }) };
+});
+import { checkResendDelivery } from "../../shared/mail-delivery-status";
 let db:ReturnType<typeof sqliteD1>,server:any,base:string,plan:string,email:string;
 beforeEach(async()=>{
   db=sqliteD1();db.exec(readFileSync("cloudflare/schema.sql","utf8"));
@@ -87,4 +92,59 @@ it("requires the actual founder identity for oversight and overrides",async()=>{
 it("rejects cross-site mutation requests",async()=>{
   const result=await fetch(base+"/api/auth-projects/a/branding",{method:"PATCH",headers:{"Content-Type":"application/json",Origin:"https://attacker.test"},body:JSON.stringify({senderName:"X"})});
   expect(result.status).toBe(403);
+});
+it("normalizes actual D1 seconds, milliseconds and ISO timestamps without rewriting existing records",async()=>{
+  const iso="2026-10-27T03:00:00.000Z",ms=Date.parse(iso);
+  for(const [id,timestamp] of [["seconds",ms/1000],["milliseconds",ms],["iso",iso],["invalid","bad-value"]] as const)
+    await mocks.d1("INSERT INTO tenant_mail_events(id,tenant_id,user_id,purpose,outcome,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",[id,"a","customer","verify","accepted",timestamp,timestamp]);
+  const before=db.query("SELECT * FROM tenant_mail_events ORDER BY id");
+  const body=await (await api()).json() as any;
+  expect(body.timestampFormat).toContain("ISO 8601 UTC");
+  for(const record of body.recentMail)
+    expect(record.created_at).toBe(record.id==="invalid"?null:iso);
+  expect(body.recentMail.every((record:any)=>record.outcome==="accepted")).toBe(true);
+  expect(db.query("SELECT * FROM tenant_mail_events ORDER BY id")).toEqual(before);
+});
+it("includes existing accepted branding previews and retrieves status only after owner authorization",async()=>{
+  const oldQuery=mocks.query.getMockImplementation()!;
+  mocks.query.mockImplementation(async(sql:string,params:any[])=>{
+    if(sql.includes("action='branding.test.accepted'")) {
+      expect(params).toEqual(["a","owner"]);
+      return { rows:[{id:12,action:"branding.test.accepted",metadata:{messageId:"12345678-1234-1234-1234-123456789abc",provider:"resend",purpose:"verify"},created_at:new Date("2026-10-27T03:00:00Z")}] };
+    }
+    return oldQuery(sql,params);
+  });
+  const before=await (await api()).json() as any;
+  expect(before.recentMail[0]).toMatchObject({id:"branding-test:12",outcome:"accepted",created_at:"2026-10-27T03:00:00.000Z",delivery:null});
+  expect(checkResendDelivery).not.toHaveBeenCalled();
+  expect((await api("/api/auth-projects/b/branding/mail-status/refresh","POST",{})).status).toBe(404);
+  expect(checkResendDelivery).not.toHaveBeenCalled();
+  const result=await api("/api/auth-projects/a/branding/mail-status/refresh","POST",{});
+  expect(result.headers.get("Cache-Control")).toContain("no-store");
+  const body=await result.json() as any;
+  expect(body.recentMail[0]).toMatchObject({outcome:"accepted",delivery:{status:"delivered"}});
+  expect(mocks.send).not.toHaveBeenCalled();
+  expect(mocks.query.mock.calls.some(([sql,params])=>sql.startsWith("INSERT") && sql.includes("'mail.delivery.checked'") && JSON.parse(params[3]).eventId==="branding-test:12")).toBe(true);
+});
+it("preserves the email record and submission status when delivery lookup fails",async()=>{
+  await mocks.d1("INSERT INTO tenant_mail_events(id,tenant_id,user_id,purpose,outcome,message_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+    ["accepted-record","a","customer","verify","accepted","known-message",1793070000,1793070000]);
+  const before=db.query("SELECT * FROM tenant_mail_events");
+  vi.mocked(checkResendDelivery).mockResolvedValueOnce({status:null,error:"Delivery lookup unavailable. No email was resent.",checkedAt:"2026-10-27T04:00:00.000Z"});
+  const body=await (await api("/api/auth-projects/a/branding/mail-status/refresh","POST",{})).json() as any;
+  expect(body.recentMail[0]).toMatchObject({outcome:"accepted",delivery:{status:null,error:"Delivery lookup unavailable. No email was resent."}});
+  expect(db.query("SELECT * FROM tenant_mail_events")).toEqual(before);
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+it("retains an earlier confirmed delivery result when a later provider lookup fails",async()=>{
+  await mocks.d1("INSERT INTO tenant_mail_events(id,tenant_id,user_id,purpose,outcome,message_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+    ["already-delivered","a","customer","verify","accepted","known-message",1793070000,1793070000]);
+  const oldQuery=mocks.query.getMockImplementation()!;
+  mocks.query.mockImplementation(async(sql:string,params:any[])=>{
+    if(sql.includes("DISTINCT ON")) return {rows:[{metadata:{eventId:"already-delivered",status:"delivered",error:null,checkedAt:"2026-10-27T03:30:00Z"}}]};
+    return oldQuery(sql,params);
+  });
+  vi.mocked(checkResendDelivery).mockResolvedValueOnce({status:null,error:"Delivery lookup unavailable.",checkedAt:"2026-10-27T04:00:00.000Z"});
+  const body=await (await api("/api/auth-projects/a/branding/mail-status/refresh","POST",{})).json() as any;
+  expect(body.recentMail[0].delivery).toMatchObject({status:"delivered",error:"Delivery lookup unavailable."});
 });

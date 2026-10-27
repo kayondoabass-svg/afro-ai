@@ -68,8 +68,8 @@ it("keeps backend confirmation callbacks owner-scoped and bound to verified orig
 });
 it("keeps mail diagnostics private and refreshes delivery without sending an email",async()=>{
   db.exec(`INSERT INTO tenant_mail_events VALUES
-    ('attempt-a','a','user-a','verify','accepted',NULL,'provider-a',1,1),
-    ('attempt-b','b','user-b','verify','accepted',NULL,'provider-b',1,1)`);
+    ('attempt-a','a','user-a','verify','accepted',NULL,'provider-a',1793070000,1793070000),
+    ('attempt-b','b','user-b','verify','accepted',NULL,'provider-b',1793070000,1793070000)`);
   const reads:string[]=[];
   vi.mocked(fetch).mockImplementation(async(input,init)=>{
     const url=new URL(String(input));
@@ -87,11 +87,31 @@ it("keeps mail diagnostics private and refreshes delivery without sending an ema
   expect(first.headers.get("cache-control")).toContain("no-store");
   expect(await first.json()).toMatchObject({health:{status:"available"},events:[{id:"attempt-a",outcome:"accepted"}]});
   const refreshed=await (await req(`${base}/mail-status/refresh`,{})).json() as any;
+  expect(refreshed.timestampFormat).toContain("ISO 8601 UTC");
+  expect(refreshed.health.checkedAt).toMatch(/T.*Z$/);
+  expect(refreshed.events[0].created_at).toBe(new Date(1793070000*1000).toISOString());
   expect(refreshed.events).toHaveLength(1);
   expect(refreshed.events[0].outcome).toBe("delivered");
   expect(reads.filter(url=>url.includes("/domains"))).toHaveLength(1);
   expect(reads).not.toContain("https://api.resend.com/emails/provider-b");
   expect(db.query("SELECT outcome FROM tenant_mail_events WHERE id='attempt-b'")[0].outcome).toBe("accepted");
+});
+it("exposes provider lookup errors safely and preserves accepted records without resending",async()=>{
+  db.exec("INSERT INTO tenant_mail_events(id,tenant_id,user_id,purpose,outcome,message_id,created_at,updated_at) VALUES('lookup-error','a','u','verify','accepted','provider-error',1793070000,1793070000)");
+  vi.mocked(fetch).mockImplementation(async(input,init)=>{
+    const url=new URL(String(input));
+    expect(init?.method || "GET").toBe("GET");
+    if(url.pathname==="/api/auth/user") return Response.json({id:"owner",email:"owner@example.test",emailVerified:true});
+    if(url.pathname==="/domains") return Response.json({data:[]});
+    return Response.json({message:"private-token https://private.test/confirm"},{status:401});
+  });
+  const response=await req(`${base}/mail-status/refresh`,{});
+  const body=await response.json() as any;
+  expect(body.events[0].outcome).toBe("accepted");
+  expect(body.events[0].created_at).toBe(new Date(1793070000*1000).toISOString());
+  expect(body.events[0].deliveryCheck.error).toContain("credential");
+  expect(JSON.stringify(body)).not.toMatch(/private-token|private\.test/);
+  expect(db.query("SELECT outcome FROM tenant_mail_events WHERE id='lookup-error'")[0].outcome).toBe("accepted");
 });
 it("shows invalid platform provider credentials without exposing credentials or falsely proving delivery",async()=>{
   vi.mocked(fetch).mockImplementation(async input=>{
