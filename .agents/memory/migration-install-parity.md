@@ -3,6 +3,19 @@ name: Migration install parity
 description: Why frontend preview success alone does not establish a safe package-layout migration.
 ---
 
+# Deployment runner transitions
+
+Run the new deployment script when changing package managers, without advancing
+the production checkout before it records the previous revision.
+
+**Why:** A running Bash script keeps its old implementation after `git pull`;
+an npm-era runner can pull pnpm sources and still execute `npm ci`. Pulling
+before starting the new runner can instead hide the dependency change.
+
+**How to apply:** Fetch the authorized revision, extract its deployment script
+to a temporary file, and run that script against the unchanged checkout. Verify
+the fetched revision first and retain normal locking, health and rollback checks.
+
 Check a clean dependency install, backend cold start and the full legacy release
 pipeline before accepting a package-layout migration.
 

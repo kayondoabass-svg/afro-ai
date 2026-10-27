@@ -19,7 +19,11 @@ try{
     await fs.writeFile(key,value,{mode:0o600});
     execFileSync('ssh-keygen',['-y','-f',key],{stdio:'ignore'});
   }
-  const command=mode==='deploy'?'cd /opt/afro-ai && bash scripts/deploy.sh':
+  // Read the new deploy runner without advancing the checkout first: it must
+  // retain the previous revision to detect dependency changes and roll back.
+  const revision=mode==='deploy'?execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim():null;
+  if(revision&&!/^[a-f0-9]{40}$/.test(revision))throw new Error('Invalid release revision.');
+  const command=mode==='deploy'?`cd /opt/afro-ai && git fetch origin main && test "$(git rev-parse origin/main)" = "${revision}" && runner=$(mktemp /tmp/afro-deploy.XXXXXX) && trap 'rm -f "$runner"' EXIT && git show "${revision}:scripts/deploy.sh" > "$runner" && bash "$runner"`:
     mode==='inspect'?'cd /opt/afro-ai && printf "NODE "; node --version; printf "REVISION "; git rev-parse HEAD; printf "SERVICE "; systemctl is-active afro-ai; printf "DISK "; df -h /opt/afro-ai | tail -1; du -sh /opt/afro-ai/node_modules /opt/afro-ai/dist /root/.npm /root/.local/share/pnpm/store 2>/dev/null; printf "HEALTH "; curl --max-time 15 -s -o /dev/null -w "%{http_code}\\n" http://127.0.0.1:3000/api/health':
     'cd /opt/afro-ai && printf "REVISION "; git rev-parse HEAD; printf "SERVICE "; systemctl is-active afro-ai; printf "HEALTH "; curl --max-time 15 -s -o /dev/null -w "%{http_code}\\n" http://127.0.0.1:3000/api/health; printf "KEYO "; curl --max-time 15 -fsS http://127.0.0.1:3000/api/keyo-studio/release | node -e \'let s="";process.stdin.on("data",b=>s+=b).on("end",()=>console.log(JSON.parse(s).version))\'';
   const code=await new Promise((resolve,reject)=>{
