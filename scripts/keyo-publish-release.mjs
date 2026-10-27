@@ -7,6 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {KEYO_VERSION} from '../packages/keyo-studio/src/version.mjs';
 import {uploadFiles} from '@huggingface/hub';
+import {releaseIdentity, releaseEnvironment} from './keyo-release-identity.mjs';
 const root=process.cwd(),version=KEYO_VERSION;
 if(!process.argv.includes('--execute'))throw new Error('Use --execute only after reviewing the export and verifying this release.');
 if(!process.env.GITHUB_TOKEN||!process.env.HF_TOKEN)throw new Error('Existing GitHub and Hugging Face credentials are required.');
@@ -22,11 +23,12 @@ async function gh(url,options={}) {
 }
 const exists=await fetch(`${api}/git/ref/tags/v${version}`,{headers});
 if(exists.status!==404)throw new Error(exists.ok?'Release tag already exists; immutable release will not be overwritten.':`Cannot verify tag absence: HTTP ${exists.status}`);
+const identity=releaseIdentity(await gh('https://api.github.com/user'),'kayondoabass-svg');
 const temp=await fs.mkdtemp(path.join(os.tmpdir(),'keyo-publish-'));
 try {
   const askpass=path.join(temp,'askpass.sh');
   await fs.writeFile(askpass,'#!/bin/sh\ncase "$1" in *Username*) printf "%s" x-access-token;; *) printf "%s" "$GITHUB_TOKEN";; esac\n',{mode:0o700});
-  const env={...process.env,GIT_ASKPASS:askpass,GIT_TERMINAL_PROMPT:'0'};
+  const env=releaseEnvironment({...process.env,GIT_ASKPASS:askpass,GIT_TERMINAL_PROMPT:'0'},identity);
   const checkout=path.join(temp,'keyo-studio');
   const git=(args,cwd=checkout)=>execFileSync('git',args,{cwd,env,stdio:['ignore','pipe','pipe'],timeout:120000});
   git(['clone','--depth','1','https://github.com/kayondoabass-svg/keyo-studio.git',checkout],temp);
@@ -37,7 +39,7 @@ try {
     await fs.mkdir(path.dirname(destination),{recursive:true});await fs.copyFile(source,destination);
   }
   git(['add','--all']);
-  git(['-c','user.name=KEYO release','-c','user.email=release@users.noreply.github.com','commit','-m',`KEYO Studio ${version}: portable owned-engine Android alpha`]);
+  git(['commit','-m',`KEYO Studio ${version}: portable owned-engine Android alpha`]);
   git(['tag',`v${version}`]);
   git(['push','origin','HEAD:main',`refs/tags/v${version}`]);
   const release=await gh(`${api}/releases`,{method:'POST',body:JSON.stringify({

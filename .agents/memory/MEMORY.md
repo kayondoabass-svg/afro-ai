@@ -15,6 +15,7 @@
 - [CI "vitest: not found" w/ healthy lock](ci-npx-vs-bin.md) — npm ci green but `npm run test` can't find the bin on the runner; use `npx vitest run`/`npx tsx` in CI. Don't regenerate an all-platform lock against a 1-platform node_modules (prunes optional deps).
 - [Droplet build "tsx: not found"](deploy-devdeps-build.md) — prod-only node_modules + deploy.sh skip-npm-ci-when-unchanged = build fails on missing dev tools; fix: `rm -rf node_modules && bash scripts/deploy.sh`.
 - [GitHub push authentication](github-workflow-scope-push.md) — distinguish credential failure from workflow-scope rejection; a healthy git-provider binding does not prove a push will authenticate.
+- [GitHub release attribution](github-release-attribution.md) — generic release emails can credit unrelated accounts without granting access; verify owner identity and approve history changes.
 - [Production publishing target](production-publishing-target.md) — the Replit deployment is separate from the Afro AI VPS; a Git push does not prove the live domain was rebuilt.
 - [Replit lockfile registry URLs](lockfile-replit-registry.md) — package-firewall.replit.local URLs baked into package-lock.json break npm ci off-Replit (EAI_AGAIN/partial install); --registry can't override, sed-rewrite resolved host.
 - [Caddy shared-log-dir outage](caddy-log-permission-outage.md) — whole-site "Host Error" with healthy Node = Caddy can't write /srv/afro-ai/logs/access.log after dir/file chowned to afro; status=1 ≠ OOM (check dmesg).
