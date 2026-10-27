@@ -342,6 +342,13 @@ main() {
     exit 1
   fi
 
+  log "Synchronizing immutable KEYO release downloads..."
+  if ! node "$APP_DIR/scripts/keyo-sync-release.mjs" --execute; then
+    log "KEYO release mirror verification FAILED — entering recovery"
+    emergency_recovery "$previous_sha"
+    exit 1
+  fi
+
   rm -rf "$APP_DIR/dist.prev.kept"
   if [ -d "$APP_DIR/dist.prev" ]; then
     mv "$APP_DIR/dist.prev" "$APP_DIR/dist.prev.kept"

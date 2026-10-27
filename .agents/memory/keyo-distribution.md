@@ -17,3 +17,14 @@ matching archive and verify the public bytes against the original SHA-256.
 Show the application and separate model sizes up front, distinguish desktop
 ZIPs from developer source bundles, and provide extraction and first-run steps.
 Do not promise faster service everywhere or browser resume across hosts.
+
+Source archives also require byte-for-byte mirroring, not a fresh pack on
+each host.
+
+**Why:** Capacitor-generated source files can exist in a release workspace but
+not a clean server checkout; packaging identical tracked code can therefore
+produce different archives under the same version.
+
+**How to apply:** Pin published archive checksums and synchronize the verified
+release bytes before promoting a website build. Verify download manifests and
+upload ZIP aliases too; fail deployment rather than silently changing a release.
