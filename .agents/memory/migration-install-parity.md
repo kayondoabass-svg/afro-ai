@@ -37,6 +37,17 @@ bundler. A correctly rendered frontend did not establish backend/build parity.
 imports, and exercise server startup, production bundling and source exports
 separately. Do not infer all three from a working Vite preview.
 
+Preserve the migrated workspace's existing environment and lifecycle
+configuration when adding artifacts or recovering a preview.
+
+**Why:** A legacy configuration replacement restored a working preview but
+dropped the production payment mode, database identity and merge setup.
+Preview success did not reveal these regressions.
+
+**How to apply:** Compare against the pre-recovery workspace configuration,
+make additive artifact changes only, and verify production non-secret settings
+and merge setup through the supported configuration tools before completion.
+
 Inventory custom WebSocket/Socket.IO transport paths separately from Express
 routes, and verify an actual gateway upgrade with the browser's real origin.
 **Why:** route inventories and isolated transport tests can both pass while a
