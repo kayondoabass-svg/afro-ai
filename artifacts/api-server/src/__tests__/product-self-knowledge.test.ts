@@ -156,6 +156,42 @@ describe("trusted product context", () => {
         expect(context).not.toContain(inventedRoute);
     },
   );
+  it.each(["builder", "founder", "selected-file", "project-agent", "knowledge", "voice"] as const)(
+    "includes complete safe Auth integration guidance in %s",
+    channel => {
+      const context = productSelfKnowledge({ afroAuthorized: false, channel });
+      for (const fact of [
+        "apps built inside Afro AI and externally", "/docs/auth#start",
+        "Static publishing cannot host a server-side callback",
+        "Saving Auth settings does not deploy the customer's backend",
+        "server.mjs", "CallbackPage.jsx", "unvalidated Origin/Host",
+        "nonce-protected POST", "S256 challenge", "PKCE verifier",
+        "pending confirmation transaction expires", "first-party Secure, HttpOnly",
+        "no refresh-token rotation", "/cf-auth/v1/sessions/verify",
+        "same-user session", "original browser or normal login",
+        "inert previews", "Refresh delivery status", "does not send another email",
+        "not inbox placement", "ISO 8601 UTC strings or null", "Time unavailable",
+        "Missing records are unknown", "Provider lookup time is separate",
+        "webhook automation is not established", "never another customer's records",
+      ]) expect(context).toContain(fact);
+      expect(context).not.toContain("https://api.afro.ai");
+    },
+  );
+  it("grounds Auth branding guidance in the current separate package catalogue", () => {
+    const context = productSelfKnowledge({ afroAuthorized: false });
+    for (const line of [
+      "Starter: free; 1 app(s); up to 5,000 monthly active users; platform-managed identity",
+      "Builder: USD 5 per 30 days; 1 app(s); up to 25,000 monthly active users; logo, color",
+      "Business: USD 25 per 30 days; 5 app(s); up to 100,000 monthly active users",
+      "Scale: USD 100 per 30 days; unlimited app(s); up to 500,000 monthly active users",
+      "constrained custom HTML", "separate from builder plans",
+      "does not require a separate Email API key", "not automatic renewal",
+      "does not erase users",
+    ]) expect(context).toContain(line);
+    const builder = context.split("Builder: USD 5 per 30 days")[1].split("\n")[0];
+    expect(builder).not.toContain("custom sender domain");
+    expect(builder).not.toContain("custom HTML");
+  });
   it("describes the delivered evidence and metering flow without claiming hosted execution", () => {
     const context = productSelfKnowledge({ afroAuthorized: false, channel: "project-agent" });
     for (const feature of ["In-chat Visual evidence", "actual image", "latest 100 tool events",

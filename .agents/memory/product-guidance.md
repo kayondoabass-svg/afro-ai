@@ -5,9 +5,12 @@ description: Afro AI must explain setup and use of KEYO and its other products w
 
 Afro AI should give setup and usage guidelines for KEYO Studio and all software
 developed by the company when someone asks, not only describe capabilities.
+For Afro Auth, this must cover end-to-end setup on apps built both inside Afro AI
+and outside it, including new Auth capabilities as they become available.
 
 **Why:** The user explicitly requested this so customers can ask the assistant
-how to get started and use the products.
+how to get started and use the products, including integrating Auth regardless of
+where their app was built.
 
 **How to apply:** Keep guidance grounded in implemented controls and current
 documentation. Distinguish instructions from actions actually performed, and
