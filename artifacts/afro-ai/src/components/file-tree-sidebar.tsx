@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { ProjectImageAssets } from "./project-image-assets";
 import {
   FileCode2, FileText, FileCog, FileJson, FileImage, FolderOpen,
   Plus, Trash2, ChevronRight, ChevronDown, RefreshCw, X,
@@ -186,6 +187,7 @@ export function FileTreeSidebar({ conversationId, openedFileId, onFileOpen, onCl
         </div>
       )}
 
+      <ProjectImageAssets conversationId={conversationId} />
       {/* File tree */}
       <div className="flex-1 overflow-y-auto py-1">
         {error && <p role="alert" className="text-xs text-destructive p-2">{error.message}</p>}

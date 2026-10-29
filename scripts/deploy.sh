@@ -232,6 +232,9 @@ prepare_media_storage() {
   if ! node "$APP_DIR/scripts/media-storage-migrate.cjs"; then
     die "Media storage not ready; existing service remains running. No media generation was requested."
   fi
+  if ! node "$APP_DIR/scripts/website-assets-migrate.cjs"; then
+    die "Permanent website image schema is not ready; existing service remains running."
+  fi
 }
 
 main() {

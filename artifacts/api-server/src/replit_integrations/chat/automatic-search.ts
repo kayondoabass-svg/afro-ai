@@ -6,6 +6,17 @@ import { searchWorkspaceFiles } from "../../workspace-search";
 import { searchAccountWeb } from "../../search-policy";
 import { buildTurnPolicy, invalidBuildAnswer } from "./build-response-policy";
 import { modelInputBound, measuredUsage } from "../../project-workbench/model-metering";
+import { searchProjectImage } from "../../website-assets/service";
+import { websiteVisualBrief } from "../../website-assets/policy";
+
+export const PROJECT_IMAGE_TOOL = {
+  type:"function",
+  function:{
+    name:"search_project_images",
+    description:"Find and save one licensed illustrative photo into this exact owned project. Use only when photography helps the requested build, never for unrelated edits or dashboards. Query must be a short public subject, no customer names, contact details, URLs or private code. Supply a section such as hero, about or services. This never starts paid image generation. Include returned attribution.",
+    parameters:{type:"object",properties:{query:{type:"string",minLength:2,maxLength:120},section:{type:"string",enum:["hero","about","services","gallery"]}},required:["query","section"],additionalProperties:false},
+  },
+};
 
 export const SEARCH_WEB_TOOL = {
   type: "function",
@@ -47,6 +58,9 @@ export async function completeWithAutomaticSearch(opts: {
   afterCall?: (tokens: number, estimated: boolean) => Promise<void>;
 }) {
   const signal = AbortSignal.any([opts.signal, AbortSignal.timeout(110_000)]);
+  const latestUser=opts.messages.filter(m=>m.role==="user").at(-1)?.content;
+  const visual=websiteVisualBrief(typeof latestUser==="string"?latestUser:"");
+  const allowProjectImages=Boolean(opts.workspace&&!opts.buildTurn?.plan&&visual.needsPhotos);
   // Gemini's compatibility endpoint can discard earlier system messages.
   // Keep the builder brief, safety rules and tool policy in one leading message.
   const systemContent = [
@@ -76,7 +90,7 @@ export async function completeWithAutomaticSearch(opts: {
     const result = await complete({
       messages: [...messages], maxTokens: opts.maxTokens, tier: opts.tier, signal,
       onModelFallback: opts.onModelFallback,
-      tools: [SEARCH_WEB_TOOL, ...(opts.workspace ? [FILE_SEARCH_TOOL] : [])], toolChoice: round === 2 ? "none" : "auto",
+      tools: [SEARCH_WEB_TOOL, ...(opts.workspace ? [FILE_SEARCH_TOOL] : []),...(allowProjectImages?[PROJECT_IMAGE_TOOL]:[])], toolChoice: round === 2 ? "none" : "auto",
     });
     signal.throwIfAborted();
     completionTokens += result.completionTokens ?? 0;
@@ -114,7 +128,24 @@ export async function completeWithAutomaticSearch(opts: {
       seen.add(call.id);
       let output: unknown;
       let query = "";
+      if(call.function?.name==="search_project_images") {
+        try {
+          if(!allowProjectImages||!opts.workspace||executions>=4)throw new Error("Image lookup is not available for this turn.");
+          if(typeof call.function.arguments!=="string"||call.function.arguments.length>1024)throw new Error("Invalid image lookup arguments.");
+          const args=JSON.parse(call.function.arguments);
+          if(!args||Object.keys(args).sort().join(",")!=="query,section"||
+            !["hero","about","services","gallery"].includes(args.section))throw new Error("Invalid image lookup arguments.");
+          executions++;
+          output=await searchProjectImage(opts.workspace.userId,String(opts.workspace.conversationId),args.query,args.section,signal);
+        } catch {
+          output={assets:[],message:"Project image lookup is unavailable or returned no suitable image. Complete the build using original SVG, icons or typography. Do not invent a photo URL or start paid generation."};
+        }
+      }
       try {
+        if(output) {
+          messages.push({role:"tool",tool_call_id:call.id,content:JSON.stringify(output)});
+          continue;
+        }
         if (call.function?.name !== "search_web" && !(opts.workspace && call.function?.name === "search_workspace_files")) throw new Error("Unsupported tool.");
         if (typeof call.function.arguments !== "string" || call.function.arguments.length > 4096) throw new Error("Invalid arguments.");
         const args = JSON.parse(call.function.arguments);

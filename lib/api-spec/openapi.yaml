@@ -11,6 +11,96 @@ tags:
   - name: health
     description: Health operations
 paths:
+  /conversations/{conversationId}/website-assets:
+    parameters:
+      - $ref: "#/components/parameters/ConversationId"
+    get:
+      operationId: listProjectImages
+      summary: List permanent images belonging only to the authenticated owner and exact project
+      description: Private, no-store. Never contains bucket names, object keys or signed URLs.
+      responses:
+        "200":
+          description: Owned project images
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectImages"
+        "401":
+          description: Sign-in required
+        "404":
+          description: Project not owned by the current user
+    post:
+      operationId: saveProjectImage
+      summary: Select a permanent private copy for this project
+      description: Exactly one of base64, mediaJobId or query. Copies already generated, unexpired media without starting paid generation. Stock queries must be short public subjects. Optimized raster only, 8 MB input, 400 KB output, at most 8 per project. An image cannot be shared or transferred between projects.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectImageInput"
+      responses:
+        "200":
+          description: Licensed photo lookup result; an empty array means no usable photograph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectImages"
+        "201":
+          description: Image and project files finalized
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset]
+                properties:
+                  asset:
+                    $ref: "#/components/schemas/ProjectImage"
+        "400":
+          description: Invalid source or unsafe public query
+        "401":
+          description: Sign-in required
+        "404":
+          description: Project or media not owned by the current user
+        "503":
+          description: Permanent storage unavailable; no successful save or paid generation is claimed
+  /conversations/{conversationId}/website-assets/{assetId}/content:
+    parameters:
+      - $ref: "#/components/parameters/ConversationId"
+      - $ref: "#/components/parameters/AssetId"
+    get:
+      operationId: readProjectImage
+      summary: Read private project image bytes
+      description: Owner and project checked on every request. Private/no-store, Vary Cookie and Authorization, no presigned URLs. Published websites use their own embedded or bundled copy, never this private endpoint.
+      responses:
+        "200":
+          description: Verified WebP image
+          content:
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Sign-in required
+        "404":
+          description: Asset not owned by the current user and project
+  /conversations/{conversationId}/website-assets/{assetId}:
+    parameters:
+      - $ref: "#/components/parameters/ConversationId"
+      - $ref: "#/components/parameters/AssetId"
+    delete:
+      operationId: deleteProjectImage
+      summary: Delete an unused private project image
+      description: Explicit owner action. Rejects images still referenced by project files. Published copies are unchanged.
+      responses:
+        "204":
+          description: Private image deleted
+        "401":
+          description: Sign-in required
+        "404":
+          description: Asset not owned by the current user and project
+        "409":
+          description: Project files still reference this image
   /healthz:
     get:
       operationId: healthCheck
@@ -25,7 +115,65 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 components:
+  parameters:
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   schemas:
+    ProjectImages:
+      type: object
+      required: [assets]
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectImage"
+        message:
+          type: string
+        reused:
+          type: boolean
+    ProjectImage:
+      type: object
+      required: [id, path, runtimePath, alt, section, source, width, height, bytes, permanent, attribution, contentUrl]
+      properties:
+        id: {type: string, format: uuid}
+        path: {type: string}
+        runtimePath: {type: string}
+        filename: {type: string}
+        alt: {type: string}
+        section: {type: string}
+        source: {type: string, enum: [uploaded, generated, stock]}
+        width: {type: integer}
+        height: {type: integer}
+        bytes: {type: integer, maximum: 400000}
+        permanent: {type: boolean, const: true}
+        contentUrl: {type: string}
+        attribution: {type: object, additionalProperties: true}
+    ProjectImageInput:
+      type: object
+      additionalProperties: false
+      description: Exactly one source is required. Server derives ownership; ownership and storage fields cannot be supplied.
+      properties:
+        base64: {type: string, maxLength: 12582912}
+        mediaJobId: {type: string, format: uuid}
+        query: {type: string, minLength: 2, maxLength: 120}
+        alt: {type: string, maxLength: 300}
+        section: {type: string, enum: [hero, about, services, gallery, custom], default: custom}
+      oneOf:
+        - required: [base64]
+        - required: [mediaJobId]
+        - required: [query]
     HealthStatus:
       type: object
       properties:

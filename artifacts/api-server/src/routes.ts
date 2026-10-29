@@ -86,6 +86,7 @@ import { ZodError } from "zod";
 import { resolveEmailKey, reserveEmailSend, settleEmailSend, emailPayloadHash } from "./email-delivery";
 import { sendEmail as sendProjectEmail } from "./email-provider";
 import { extractWebsiteHtml } from "@shared/html-extraction";
+import { registerWebsiteAssetRoutes } from "./website-assets/routes";
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -357,6 +358,7 @@ export async function registerRoutes(
     throw new Error(`Sentry pipeline test — traceId=${traceId} — safe to ignore.`);
   });
   registerChatRoutes(app);
+  registerWebsiteAssetRoutes(app);
   registerProjectInfrastructureRoutes(app);
   registerVibeRoutes(app);
   registerImageRoutes(app);

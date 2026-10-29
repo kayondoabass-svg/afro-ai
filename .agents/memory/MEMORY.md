@@ -22,7 +22,9 @@
 - [AutoTrain SFT smoke test](autotrain-sft-smoke-test.md) — tiny Qwen 1.5B LoRA tests need short block sizes; expand the dataset before a real 512-token run.
 - [Afro AI pilot scope](afro-provider-pilot.md) — serving success is not tool-call or production-quality evidence; keep the trained model opt-in until evaluated.
 - [Paid provider uncertainty](paid-provider-uncertainty.md) — never automatically retry ambiguous paid jobs; cancellation does not prove provider billing stopped.
-- [Generated media retention](media-retention-policy.md) — media is retained for 72 hours after completion; storage expiry is separate from spending caps and accounting.
+- [Generated media retention](media-retention-policy.md) — temporary media lasts 72 hours; explicitly selected website copies are permanent; accounting is separate.
+- [Project image ownership](project-image-ownership.md) — private assets belong to one exact project; projects are accessible only to their sole owner.
+- [Image-source verification](image-source-verification.md) — verify real photo downloads and private read-back; metadata success and legacy URL mocks are insufficient.
 - [Metering price compatibility](metering-price-compatibility.md) — protect budgets without changing existing tariffs; customer fees and provider usage are distinct.
 - [Binary project storage](binary-project-storage.md) — bounded assets share the owned database transaction; LFS fails closed rather than pretending pointers are assets.
 - [SQLite CLI portability](sqlite-cli-portability.md) — error-path tests must not assume every CLI version continues through same-line statements.
