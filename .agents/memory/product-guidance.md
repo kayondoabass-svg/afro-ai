@@ -11,7 +11,11 @@ and outside it, including new Auth capabilities as they become available.
 **Why:** The user explicitly requested this so customers can ask the assistant
 how to get started and use the products, including integrating Auth regardless of
 where their app was built.
+The user also requires the assistant to explain proper website/app generation
+and image flow, setup, and where customers can download their own copies.
 
 **How to apply:** Keep guidance grounded in implemented controls and current
 documentation. Distinguish instructions from actions actually performed, and
 verified release evidence from hardware certification or planned features.
+For downloads, verify the current controls and distinguish optimized image
+copies, source/local-runner bundles, chat transcripts and software installers.

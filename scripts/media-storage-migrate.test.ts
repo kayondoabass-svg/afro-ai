@@ -53,7 +53,7 @@ describe("explicit media storage preparation",()=>{
 });
 
 describe("media deployment preflight",()=>{
-  const run=(prepared:boolean)=>{
+  const run=(prepared:boolean,websitePrepared=true)=>{
     const dir=mkdtempSync(join(tmpdir(),"deploy-media-"));
     try{
       mkdirSync(join(dir,"dist"),{recursive:true});
@@ -68,24 +68,37 @@ LOCK_FILE="$TEST_DIR/deploy.lock"
 check_prereqs(){ :; }
 require_clean_tree(){ :; }
 git(){ if [[ "$*" == *"rev-parse HEAD"* ]]; then echo same-sha; fi; }
-node(){ echo media >> "$TEST_DIR/events"; return "$MEDIA_EXIT"; }
+node(){
+  case "$1" in
+    */media-storage-migrate.cjs) echo media >> "$TEST_DIR/events"; return "$MEDIA_EXIT";;
+    */website-assets-migrate.cjs) echo website-assets >> "$TEST_DIR/events"; return "$WEBSITE_EXIT";;
+    *) echo unexpected-node-command >> "$TEST_DIR/events"; return 99;;
+  esac
+}
 run_build(){ echo build >> "$TEST_DIR/events"; }
 restart_service(){ echo restart >> "$TEST_DIR/events"; }
 health_check(){ echo health >> "$TEST_DIR/events"; }
 post_start_stability_check(){ echo stability >> "$TEST_DIR/events"; }
 purge_cdn(){ echo purge >> "$TEST_DIR/events"; }
 main
-`],{encoding:"utf8",env:{...process.env,DEPLOY_SCRIPT:resolve("scripts/deploy.sh"),TEST_DIR:dir,MEDIA_EXIT:prepared?"0":"1"}});
+`],{encoding:"utf8",env:{...process.env,DEPLOY_SCRIPT:resolve("scripts/deploy.sh"),TEST_DIR:dir,MEDIA_EXIT:prepared?"0":"1",WEBSITE_EXIT:websitePrepared?"0":"1"}});
       return {result,events:readFileSync(join(dir,"events"),"utf8").trim().split("\n")};
     }finally{rmSync(dir,{recursive:true,force:true});}
   };
   it("checks missing media setup even when the current build is already deployed",()=>{
     const {result,events}=run(true);
-    expect(result.status).toBe(0);expect(events).toEqual(["media","health","stability","purge"]);
+    expect(result.status).toBe(0);expect(events).toEqual(["media","website-assets","health","stability","purge"]);
   });
   it("halts without restarting or claiming success when storage cannot be prepared",()=>{
     const {result,events}=run(false);
     expect(result.status).toBe(1);expect(events).toEqual(["media"]);
+    expect(result.stdout).not.toContain("DEPLOY SUCCESS");
+  });
+  it("halts before health checks and cache purge when permanent image storage cannot be prepared",()=>{
+    const {result,events}=run(true,false);
+    expect(result.status).toBe(1);
+    expect(events).toEqual(["media","website-assets"]);
+    expect(result.stdout).toContain("Permanent website image schema is not ready");
     expect(result.stdout).not.toContain("DEPLOY SUCCESS");
   });
 });
