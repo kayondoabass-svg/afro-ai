@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "S7RolynBBKCXo5Kfd_-bQ"
+uri = "file://generated-artifacts/reports/suspended-app-audit.csv"
+type = "table"
+title = "Suspended-app investigation — 51 apps"
+description = "App-by-app inventory with suspension reasons, dates, saved-source sizes, verified project links and safe recommendations. Unchecked storage fields are marked unavailable; no credentials or customer email addresses are included."
+logical_id = "7bc0fb61-ea7d-40f3-b503-3050cf9fb555"
+content_hash = "sha256:9d17747d947440b8ca08a0425dd31b6f93698eb385411e6a5b7d422e6c47097e"
+size = 16658
+mtime_ms = 1793940438114
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:2e382b98-2f0d-4f8c-9a1b-b9f15a7019fe/7bc0fb61-ea7d-40f3-b503-3050cf9fb555/35a02c45-cd5a-48c7-a35b-b52917a9cd3b"
+storage_version_token = "1793940470851809"
+content_type = "text/csv"
