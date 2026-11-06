@@ -16,7 +16,7 @@ export const founderSections: Record<string,RecordSection> = {
   projects:section("Projects","projects",["id","user_id","name","type","status","created_at"],"status"),
   apps:{label:"Published apps",source:`SELECT to_jsonb(a) || jsonb_build_object('project_ids',
     (SELECT string_agg(project_id::text,', ') FROM (${publicationLinkSql}) links)) j FROM published_apps a`,
-    fields:Object.fromEntries(["id","user_id","project_ids","title","subdomain","custom_domain","custom_domain_verified","app_status","suspend_reason","updated_at"].map(k=>[k,text(k)])),status:"app_status"},
+    fields:Object.fromEntries(["id","user_id","project_ids","title","subdomain","custom_domain","custom_domain_verified","app_status","suspend_reason","suspended_at","created_at","updated_at"].map(k=>[k,text(k)])),status:"app_status"},
   audit:section("Founder action history","founder_action_audit",["id","actor_id","action","target","created_at"]),
   domains:section("Domain orders","domain_orders",["id","user_id","domain_name","status","expiry_date","created_at"],"status"),
   chatbots:{

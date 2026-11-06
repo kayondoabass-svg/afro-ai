@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { FounderOperations, safeFounderAppHref, type SectionId } from "@/components/founder/FounderOperations";
 import { FounderAlertCenter } from "@/components/founder/FounderAlertCenter";
+import { FounderAppDetails } from "@/components/founder/FounderAppDetails";
 import FounderProgrammes from "@/components/programmes/FounderProgrammes";
 import {
   Users,
@@ -336,31 +337,7 @@ export default function FounderDashboardPage() {
     },
   });
 
-  const suspendMutation = useMutation({
-    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
-      await apiRequest("POST", `/api/admin/published-apps/${id}/suspend`, { reason });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      toast({ title: "App suspended", description: "The app is now offline." });
-    },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message || "Failed to suspend app", variant: "destructive" });
-    },
-  });
-
-  const reactivateMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await apiRequest("POST", `/api/admin/published-apps/${id}/reactivate`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      toast({ title: "App reactivated", description: "The app is back online." });
-    },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message || "Failed to reactivate app", variant: "destructive" });
-    },
-  });
+  const [detailsAppId, setDetailsAppId] = useState<number | string | null>(null);
 
   const setPlanMutation = useMutation({
     mutationFn: async ({ userId, plan }: { userId: string; plan: string }) => {
@@ -432,6 +409,7 @@ export default function FounderDashboardPage() {
           </div>
         </div>
 
+        <FounderAppDetails appId={detailsAppId} isFounder={isFounder} open={detailsAppId !== null} onOpenChange={open => { if (!open) setDetailsAppId(null); }} />
         <FounderOperations isFounder={isFounder} initialSection={founderSection} initialStatus={founderStatus} initialId={founderId} initialOwner={founderOwner} onClearSection={() => { setFounderSection(null); setFounderStatus(""); setFounderId(""); setFounderOwner(""); }} />
         <FounderAlertCenter isFounder={isFounder} />
 
@@ -787,17 +765,16 @@ export default function FounderDashboardPage() {
                           <p className="text-[10px] text-muted-foreground truncate">{a.subdomain}.afroaigroup.com</p>
                         </div>
                         <div className="flex items-center gap-0.5 flex-shrink-0">
-                          <Button type="button" size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => openFounderRecords("apps", "", String(a.id))} aria-label={`View app record ${a.id}`}>Details</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setDetailsAppId(a.id)} aria-label={`View app details ${a.id}`} data-testid={`button-app-details-${a.id}`}>Details</Button>
                           {a.appStatus === "suspended" ? (
                             <Button size="icon" variant="ghost" className="h-6 w-6 text-green-500 hover:bg-green-500/10"
-                              onClick={() => reactivateMutation.mutate(a.id)} disabled={reactivateMutation.isPending}
+                              onClick={() => setDetailsAppId(a.id)}
                               title="Reactivate" data-testid={`button-reactivate-${a.id}`}>
                               <CheckCircle className="w-3.5 h-3.5" />
                             </Button>
                           ) : (
                             <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500 hover:bg-red-500/10"
-                              onClick={() => suspendMutation.mutate({ id: a.id, reason: "Suspended by administrator" })}
-                              disabled={suspendMutation.isPending} title="Suspend" data-testid={`button-suspend-${a.id}`}>
+                              onClick={() => setDetailsAppId(a.id)} title="Suspend" data-testid={`button-suspend-${a.id}`}>
                               <Ban className="w-3.5 h-3.5" />
                             </Button>
                           )}

@@ -98,7 +98,8 @@ export async function settlePayment(pool: Pick<Pool, "connect">, merchantRef: st
     } else if (["pro", "business"].includes(plan)) {
       if (!isFounder(account.email || "")) await conn.query("UPDATE users SET plan=$2,updated_at=NOW() WHERE id=$1", [payment.user_id, plan]);
       await conn.query(`UPDATE published_apps SET app_status='active',suspended_at=NULL,
-        suspend_reason=NULL,updated_at=NOW() WHERE user_id=$1 AND app_status='suspended'`, [payment.user_id]);
+        suspend_reason=NULL,updated_at=NOW() WHERE user_id=$1 AND app_status='suspended'
+        AND suspend_reason='Free plan 30-day limit reached. Upgrade to keep your app live.'`, [payment.user_id]);
     } else {
       throw new Error("Unknown purchased package; manual review required");
     }

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+const FounderAppDetails = lazy(() => import("@/components/founder/FounderAppDetails").then(module => ({ default: module.FounderAppDetails })));
 const FounderAuthBranding = lazy(() => import("@/components/founder-auth-branding").then(module => ({ default: module.FounderAuthBranding })));
 
 export const FOUNDER_SECTIONS = [
@@ -96,6 +97,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
   const [id, setId] = useState(initialId || "");
   const [authBrandingRecordId, setAuthBrandingRecordId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [appDetailsId, setAppDetailsId] = useState<string | null>(null);
   const overviewQuery = useQuery<Overview>({ queryKey: ["/api/founder/overview"], enabled: isFounder, refetchInterval: 60_000 });
   const params = new URLSearchParams();
   if (section) {
@@ -314,7 +316,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
                       {safeColumns.map(column => <td key={column.key} className="max-w-[260px] px-4 py-3 align-top" title={displayValue(row[column.key])}>{renderRecordCell(column, row)}</td>)}
                       <td className="whitespace-nowrap px-4 py-3 align-top">
                         <div className="flex items-center gap-2">
-                          {recordId !== "—" && <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => openRelatedRecord(section, recordId)} aria-label={`View details for record ${recordId}`}>View details</Button>}
+                          {recordId !== "—" && <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => section === "apps" ? setAppDetailsId(recordId) : openRelatedRecord(section, recordId)} aria-label={`View details for record ${recordId}`}>View details</Button>}
                           {(section === "auth-projects" || section === "auth-branding") && recordId !== "—" && <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setAuthBrandingRecordId(recordId)} aria-label={`View Auth branding for project ${recordId}`}>Branding</Button>}
                           {liveHref && <a href={liveHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Live site<ExternalLink className="h-3 w-3" /></a>}
                         </div>
@@ -332,6 +334,7 @@ export function FounderOperations({ isFounder, initialSection, initialStatus, in
         </CardContent>
       </Card>}
       {(section === "auth-projects" || section === "auth-branding") && authBrandingRecordId && <Suspense fallback={<div className="rounded-lg border p-4 text-sm text-muted-foreground">Loading Auth branding record…</div>}><FounderAuthBranding projectId={authBrandingRecordId} /></Suspense>}
+      {appDetailsId && <Suspense fallback={null}><FounderAppDetails appId={appDetailsId} isFounder={isFounder} open onOpenChange={open => { if (!open) setAppDetailsId(null); }} /></Suspense>}
     </section>
   );
 }

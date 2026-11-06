@@ -25,6 +25,7 @@ import { prepareAuthBrandingSchema } from "./auth-branding-schema";
 import { reconcileAuthEntitlements } from "./auth-branding";
 import { privateResponseCache } from "./private-response-cache";
 import { prepareFounderAlerts, startFounderAlertMonitor } from "./founder-alerts";
+import { prepareAppSuspensions, startAppSuspensionEmails } from "./app-suspension";
 import { prepareProgrammes } from "./programmes/schema";
 import { startProgrammeMailWorker } from "./programmes/mail";
 import { startProgrammeReconciliation } from "./programmes/billing";
@@ -195,6 +196,7 @@ httpServer.listen(
 (async () => {
   await prepareIntegrationSchema(pool);
   await prepareFounderAlerts();
+  await prepareAppSuspensions();
   await prepareProgrammes();
   log("✓ Integration schema ready");
   await preparePaymentSchema(pool);
@@ -202,6 +204,7 @@ httpServer.listen(
   await registerRoutes(httpServer, app);
   markRoutesReady();
   startFounderAlertMonitor(founderOverview);
+  startAppSuspensionEmails();
   startProgrammeMailWorker();
   startProgrammeReconciliation();
   log("✓ Routes ready — accepting traffic");

@@ -46,6 +46,17 @@ const request=(path:string,role="founder",method="GET",body?:object,origin="http
   ...(body?{body:JSON.stringify(body)}:{})
 });
 describe("founder oversight boundaries",()=>{
+  it("protects app details from non-founders and returns private, no-store on invalid founder requests",async()=>{
+    for(const role of ["","customer","team"]) {
+      const res=await request("/api/admin/published-apps/1/details",role);
+      expect(res.status).toBe(role?403:401);
+    }
+    expect(mocks.query).not.toHaveBeenCalled();
+    const invalid=await request("/api/admin/published-apps/1abc/details");
+    expect(invalid.status).toBe(400);
+    expect(invalid.headers.get("cache-control")).toBe("private, no-store");
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
   it.each(["","customer","team"])("rejects %s on every founder route before database access",async role=>{
     for(const [path,method] of [
       ["/api/founder/overview","GET"],["/api/founder/records/users","GET"],["/api/founder/alert-settings","GET"],

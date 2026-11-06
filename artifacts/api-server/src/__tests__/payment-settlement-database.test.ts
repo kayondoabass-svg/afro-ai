@@ -115,10 +115,20 @@ suite("payment settlement with PostgreSQL transactions and concurrent callbacks"
     });
   it("activates a platform plan and reactivates its suspended apps", async () => {
     await database.query("UPDATE payments SET plan='pro'");
-    await database.query("INSERT INTO published_apps(user_id,app_status,suspend_reason) VALUES('owner','suspended','quota')");
+    await database.query("INSERT INTO published_apps(user_id,app_status,suspend_reason) VALUES('owner','suspended','Free plan 30-day limit reached. Upgrade to keep your app live.')");
     await settle(database);
     expect((await database.query("SELECT plan FROM users")).rows[0].plan).toBe("pro");
     expect((await database.query("SELECT app_status,suspend_reason FROM published_apps")).rows[0]).toEqual({ app_status: "active", suspend_reason: null });
+  });
+  it("does not reactivate administrative suspensions or pending removal after a hosting payment", async () => {
+    await database.query("UPDATE payments SET plan='pro'");
+    await database.query(`INSERT INTO published_apps(user_id,app_status,suspend_reason) VALUES
+      ('owner','suspended','Safety review required'),('owner','suspended','deletion-pending'),
+      ('owner','suspended',NULL)`);
+    await settle(database);
+    const apps = (await database.query("SELECT app_status FROM published_apps")).rows;
+    expect(apps).toHaveLength(3);
+    expect(apps.every(app => app.app_status === "suspended")).toBe(true);
   });
   it("preserves a founder's Business plan during a platform purchase", async () => {
     await database.query("UPDATE users SET plan='business'");

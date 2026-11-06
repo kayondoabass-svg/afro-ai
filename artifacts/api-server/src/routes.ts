@@ -1,5 +1,7 @@
 import { registerPublicAuthDocs } from "./public-auth-docs";
 import { registerFounderOversight } from "./founder-oversight";
+import { suspensionReason } from "./app-suspension-policy";
+import { AppStatusConflict } from "./app-suspension";
 import { registerAuthBranding, ownedAuthProject, syncAuthEntitlement } from "./auth-branding";
 import { AUTH_PACKAGES } from "../shared/auth-packages";
 import { registerProgrammeRoutes, programmeError } from "./programmes/routes";
@@ -276,7 +278,7 @@ export async function registerRoutes(
 </urlset>`);
   });
 
-  const serveSuspendedPage = (res: any) => res.status(403).send(
+  const serveSuspendedPage = (res: any) => res.status(403).set("Cache-Control", "no-store").send(
     '<!DOCTYPE html><html><head><title>Site Suspended</title></head>' +
     '<body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#ef4444;">' +
     '<div style="text-align:center;"><h1>Site Suspended</h1><p style="color:#888;">This site has been temporarily taken offline.</p>' +
@@ -1766,7 +1768,7 @@ export async function registerRoutes(
       if ([DELETE_PENDING, UNPUBLISHED, UNPUBLISH_PENDING].includes(publishedApp.suspendReason || "")) return res.status(410).set("Cache-Control", "no-store").send("This website is offline.");
       if (publishedApp.appStatus === "suspended") {
         const isFreeExpiry = publishedApp.suspendReason?.includes("30-day");
-        return res.status(403).send(`<!DOCTYPE html>
+        return res.status(403).set("Cache-Control", "no-store").send(`<!DOCTYPE html>
           <html><head><title>Site Suspended — Afro AI</title>
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <style>
@@ -1790,10 +1792,9 @@ export async function registerRoutes(
               <h1>${isFreeExpiry ? "Free Trial Ended" : "Site Suspended"}</h1>
               ${isFreeExpiry
                 ? `<p>This app was built on Afro AI's free plan, which keeps your app live for <strong>30 days</strong>. That window has now closed.</p>
-                   <div class="reason">Upgrade to <strong>Pro ($15/mo)</strong> or <strong>Business ($29.90/mo)</strong> to restore this site instantly and keep all your apps live forever.</div>
-                   <a class="cta" href="https://afroaigroup.com/pricing">Upgrade Now — Restore Instantly</a>`
+                   <div class="reason">The saved app has not been deleted. Its owner can still access saved work with the existing daily free-use limits. A hosting plan is required to restore public access.</div>
+                   <a class="cta" href="https://afroaigroup.com/dashboard">Open Owner Dashboard</a>`
                 : `<p>This website has been temporarily taken offline.</p>
-                   ${publishedApp.suspendReason ? `<div class="reason">${publishedApp.suspendReason}</div>` : ""}
                    <p>If you are the owner, log in to your <a class="plain" href="https://afroaigroup.com">Afro AI dashboard</a> to resolve this.</p>`
               }
               <div class="footer">Built with <a class="plain" href="https://afroaigroup.com">Afro AI</a> — Born in Africa, Built for the World</div>
@@ -2057,11 +2058,16 @@ export async function registerRoutes(
   });
 
   app.post("/api/admin/published-apps/:id/suspend", isFounder, async (req: any, res) => {
+    if (!/^[1-9]\d*$/.test(String(req.params.id)) || !Number.isSafeInteger(Number(req.params.id)))
+      return res.status(400).json({ message: "Invalid app ID." });
+    let reason: string;
+    try { reason = suspensionReason(req.body?.reason); }
+    catch { return res.status(400).json({ message: "Enter a suspension reason between 5 and 1000 characters." }); }
     try {
       const id = parseInt(req.params.id);
-      const { reason } = req.body;
-      const updated = await storage.suspendPublishedApp(id, reason || "Suspended by administrator");
-      res.json(updated);
+      const updated = await storage.suspendPublishedApp(id, reason, String(req.user.claims.sub));
+      res.set("Cache-Control", "private, no-store");
+      res.json({ id: updated.id, appStatus: updated.appStatus, suspendReason: updated.suspendReason, suspendedAt: updated.suspendedAt });
     } catch (error) {
       console.error("Error suspending app:", error);
       res.status(500).json({ message: "Failed to suspend app" });
@@ -2069,21 +2075,27 @@ export async function registerRoutes(
   });
 
   app.post("/api/admin/published-apps/:id/reactivate", isFounder, async (req: any, res) => {
+    if (!/^[1-9]\d*$/.test(String(req.params.id)) || !Number.isSafeInteger(Number(req.params.id)))
+      return res.status(400).json({ message: "Invalid app ID." });
     try {
       const id = parseInt(req.params.id);
-      const updated = await storage.reactivatePublishedApp(id);
-      res.json(updated);
+      const updated = await storage.reactivatePublishedApp(id, String(req.user.claims.sub));
+      res.set("Cache-Control", "private, no-store");
+      res.json({ id: updated.id, appStatus: updated.appStatus, suspendReason: updated.suspendReason, suspendedAt: updated.suspendedAt });
     } catch (error) {
+      if (error instanceof AppStatusConflict) return res.status(409).json({ message: error.message });
       console.error("Error reactivating app:", error);
       res.status(500).json({ message: "Failed to reactivate app" });
     }
   });
 
   app.post("/api/admin/users/:userId/suspend-apps", isFounder, async (req: any, res) => {
+    let reason: string;
+    try { reason = suspensionReason(req.body?.reason); }
+    catch { return res.status(400).json({ message: "Enter a suspension reason between 5 and 1000 characters." }); }
     try {
       const { userId } = req.params;
-      const { reason } = req.body;
-      await storage.suspendAppsByUser(userId, reason || "Account suspension");
+      await storage.suspendAppsByUser(userId, reason, String(req.user.claims.sub));
       res.json({ message: "All active apps suspended" });
     } catch (error) {
       console.error("Error suspending user apps:", error);
@@ -2126,7 +2138,7 @@ export async function registerRoutes(
     try {
       const { userId } = req.params;
       await storage.reactivateAppsByUser(userId);
-      res.json({ message: "All suspended apps reactivated" });
+      res.json({ message: "Hosting-expiry suspensions cleared. Administrative suspensions and pending removals were preserved." });
     } catch (error) {
       console.error("Error reactivating user apps:", error);
       res.status(500).json({ message: "Failed to reactivate user apps" });

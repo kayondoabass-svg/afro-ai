@@ -1,4 +1,5 @@
 import { FOUNDER_EMAILS } from "./replit_integrations/auth/storage";
+import { changeAppStatus, expireFreeHosting } from "./app-suspension";
 import { db } from "./db";
 import { LOW_CREDIT_THRESHOLD_CENTS } from "../shared/credit-alerts";
 import { queueCreditBalanceCheck } from "./credit-balance-alerts";
@@ -20,7 +21,7 @@ export interface IStorage {
   createPublishedApp(app: InsertPublishedApp): Promise<PublishedApp>;
   updatePublishedApp(id: number, data: Partial<InsertPublishedApp>): Promise<PublishedApp>;
   deletePublishedApp(id: number): Promise<void>;
-  suspendPublishedApp(id: number, reason: string): Promise<PublishedApp>;
+  suspendPublishedApp(id: number, reason: string, actorId?: string): Promise<PublishedApp>;
   // App Feedback (Share-for-Feedback collab)
   createAppFeedback(data: InsertAppFeedback): Promise<AppFeedback>;
   getAppFeedback(publishedAppId: number, opts?: { onlyOpen?: boolean }): Promise<AppFeedback[]>;
@@ -28,8 +29,8 @@ export interface IStorage {
   getAppFeedbackById(id: number): Promise<AppFeedback | undefined>;
   resolveAppFeedback(id: number, resolved: boolean): Promise<AppFeedback>;
   deleteAppFeedback(id: number): Promise<void>;
-  reactivatePublishedApp(id: number): Promise<PublishedApp>;
-  suspendAppsByUser(userId: string, reason: string): Promise<void>;
+  reactivatePublishedApp(id: number, actorId?: string): Promise<PublishedApp>;
+  suspendAppsByUser(userId: string, reason: string, actorId?: string): Promise<void>;
   reactivateAppsByUser(userId: string): Promise<void>;
   getAllUsers(): Promise<any[]>;
   getAllProjects(): Promise<any[]>;
@@ -358,42 +359,27 @@ class DatabaseStorage implements IStorage {
     await db.delete(appFeedback).where(eq(appFeedback.id, id));
   }
 
-  async suspendPublishedApp(id: number, reason: string): Promise<PublishedApp> {
-    const [updated] = await db.update(publishedApps).set({
-      appStatus: "suspended",
-      suspendedAt: new Date(),
-      suspendReason: reason,
-      updatedAt: new Date(),
-    }).where(eq(publishedApps.id, id)).returning();
+  async suspendPublishedApp(id: number, reason: string, actorId = "system"): Promise<PublishedApp> {
+    await changeAppStatus({ appId: id }, "suspended", reason, actorId);
+    const [updated] = await db.select().from(publishedApps).where(eq(publishedApps.id, id));
+    if (!updated) throw new Error("App not found.");
     return updated;
   }
 
-  async reactivatePublishedApp(id: number): Promise<PublishedApp> {
-    const [updated] = await db.update(publishedApps).set({
-      appStatus: "active",
-      suspendedAt: null,
-      suspendReason: null,
-      updatedAt: new Date(),
-    }).where(eq(publishedApps.id, id)).returning();
+  async reactivatePublishedApp(id: number, actorId = "system"): Promise<PublishedApp> {
+    await changeAppStatus({ appId: id }, "reactivated", "Reactivated after administrator review.", actorId);
+    const [updated] = await db.select().from(publishedApps).where(eq(publishedApps.id, id));
+    if (!updated) throw new Error("App not found.");
     return updated;
   }
 
-  async suspendAppsByUser(userId: string, reason: string): Promise<void> {
-    await db.update(publishedApps).set({
-      appStatus: "suspended",
-      suspendedAt: new Date(),
-      suspendReason: reason,
-      updatedAt: new Date(),
-    }).where(and(eq(publishedApps.userId, userId), eq(publishedApps.appStatus, "active")));
+  async suspendAppsByUser(userId: string, reason: string, actorId = "system"): Promise<void> {
+    await changeAppStatus({ userId }, "suspended", reason, actorId);
   }
 
   async reactivateAppsByUser(userId: string): Promise<void> {
-    await db.update(publishedApps).set({
-      appStatus: "active",
-      suspendedAt: null,
-      suspendReason: null,
-      updatedAt: new Date(),
-    }).where(and(eq(publishedApps.userId, userId), eq(publishedApps.appStatus, "suspended")));
+    await changeAppStatus({ userId, expirySuspensionsOnly: true }, "reactivated",
+      "Hosting-expiry suspension cleared after account review.", "system:account-review");
   }
 
   async getAllUsers(): Promise<any[]> {
@@ -822,28 +808,7 @@ class DatabaseStorage implements IStorage {
   }
 
   async suspendExpiredFreeApps(): Promise<number> {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const starterUsers = await db.select({ id: users.id }).from(users).where(eq(users.plan, "starter"));
-    let suspended = 0;
-    for (const u of starterUsers) {
-      const expiredApps = await db.select({ id: publishedApps.id }).from(publishedApps).where(
-        and(
-          eq(publishedApps.userId, u.id),
-          eq(publishedApps.appStatus, "active"),
-          sql`${publishedApps.createdAt} < ${thirtyDaysAgo}`,
-        )
-      );
-      for (const app of expiredApps) {
-        await db.update(publishedApps).set({
-          appStatus: "suspended",
-          suspendedAt: new Date(),
-          suspendReason: "Free plan 30-day limit reached. Upgrade to keep your app live.",
-          updatedAt: new Date(),
-        }).where(eq(publishedApps.id, app.id));
-        suspended++;
-      }
-    }
-    return suspended;
+    return expireFreeHosting();
   }
 
   async countActiveAppsForUser(userId: string): Promise<number> {

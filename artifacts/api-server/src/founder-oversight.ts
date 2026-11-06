@@ -4,6 +4,7 @@ import { founderSections, projection, recordFilters, publicationLinkSql } from "
 import { authRecords, authRecordSections } from "./founder-auth-records";
 import { activeEmailProvider } from "./email-provider";
 import { registerFounderAlerts, auditFounderAction } from "./founder-alerts";
+import { registerFounderAppDetails } from "./founder-app-details";
 
 const query=(text:string,values:unknown[]=[])=>{
   // node-postgres supports this runtime option; its older type package does not declare it.
@@ -84,6 +85,7 @@ export async function founderOverview() {
 }
 
 export function registerFounderOversight(app:Express,isFounder:RequestHandler) {
+  registerFounderAppDetails(app,isFounder);
   app.use(["/api/admin","/api/founder"],auditFounderAction);
   registerFounderAlerts(app,isFounder,founderOverview);
   const privateResponse:RequestHandler=(_req,res,next)=>{res.set("Cache-Control","private, no-store");next();};
