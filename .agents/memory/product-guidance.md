@@ -40,3 +40,10 @@ project-specific secret files.
 and platform credentials. Review existing storage and compatibility before
 implementing; this requirement does not authorize arbitrary customer code to run
 on the shared platform VPS.
+
+Review the user's supplied research when planning Afro AI changes; do not ignore it.
+
+**Why:** The user explicitly insisted that their research be reviewed.
+
+**How to apply:** Explain what the supplied research contributes and what needs
+adapting to the existing implementation before proposing changes.
