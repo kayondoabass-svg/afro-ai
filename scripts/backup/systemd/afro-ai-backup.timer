@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Afro AI recovery backup, seven-day retention
+
+[Timer]
+# 19:00 UTC is 02:00 the following day in Asia/Ho_Chi_Minh.
+OnCalendar=*-*-* 19:00:00 UTC
+Persistent=true
+Unit=afro-ai-backup.service
+
+[Install]
+WantedBy=timers.target

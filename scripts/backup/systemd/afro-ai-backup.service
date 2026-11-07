@@ -1,0 +1,22 @@
+[Unit]
+Description=Afro AI private recovery backup and isolated restore verification
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=afro
+WorkingDirectory=/opt/afro-ai
+EnvironmentFile=/srv/afro-ai/shared/.env
+EnvironmentFile=/srv/afro-ai/shared/backup.env
+RuntimeDirectory=afro-ai-backup
+RuntimeDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/bin/flock -s /var/lock/afro-ai-deploy.lock /usr/bin/flock -n /var/lock/afro-ai-backup.lock /usr/bin/node scripts/backup/run.mjs
+TimeoutStartSec=900
+MemoryMax=384M
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true
+

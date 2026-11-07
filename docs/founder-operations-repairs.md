@@ -22,8 +22,10 @@ the UI displays times in the viewer's timezone.
   permission to change DNS records or purge caches.
 - Source storage: a bounded schema-only read. This is service readiness,
   not a claim that every project's files or external assets are complete.
-- Backups: explicitly **unverified**. Website snapshots and retained database
-  records are not evidence of an independent backup or a tested restore.
+- Backups: uses safe, recent off-host archive and isolated-restore evidence when
+  configured. Failed or stale jobs require attention; missing evidence remains
+  **unverified**. Website snapshots alone never establish recovery coverage.
+  See [Recovery backups](recovery-backups.md) for scope and limitations.
 
 Use a zone-scoped `CLOUDFLARE_DNS_TOKEN` when separating DNS access from
 the existing storage credential. Existing configurations retain their
