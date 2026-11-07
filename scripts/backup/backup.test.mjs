@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { Readable } from "node:stream";
-import { runKeys, expiredRuns, validManifest, quoteIdentifier } from "./policy.mjs";
+import { runKeys, expiredRuns, validManifest, quoteIdentifier, MAX_ARCHIVE_BYTES, MAX_WORK_BYTES } from "./policy.mjs";
 import { command, saveStream, saveProcess, fileDigest } from "./io.mjs";
 import { safeArchiveEntry } from "./restore.mjs";
 import { postgresEnvironment } from "./snapshot.mjs";
@@ -54,6 +54,11 @@ test("stream and process helpers bound bytes and do not disclose failed command 
       "process.stderr.write('private provider payload');process.exit(1)"]), e =>
       !e.message.includes("private provider payload"));
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+test("the initial budget accommodates the measured database while keeping bounded staging", () => {
+  assert.ok(MAX_ARCHIVE_BYTES > 20_300_357 + 3_223_715);
+  assert.ok(MAX_WORK_BYTES >= 2 * 30_000_000);
+  assert.ok(MAX_WORK_BYTES < 100_818_944);
 });
 test("D1 exports restore in isolated SQLite and reject missing tables or filesystem attachment", async () => {
   const dir = await mkdtemp(`${tmpdir()}/afro-d1-unit-`);

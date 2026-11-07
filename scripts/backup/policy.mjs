@@ -1,8 +1,8 @@
 export const PREFIX = "afro-ai-recovery/v1/";
 export const RETENTION_DAYS = 7;
-export const MAX_ARCHIVE_BYTES = 25_000_000;
+export const MAX_ARCHIVE_BYTES = 50_000_000;
 export const MAX_STORED_BYTES = 2_000_000_000;
-export const MAX_WORK_BYTES = 25_000_000;
+export const MAX_WORK_BYTES = 80_000_000;
 const RUN = /^\d{13}-[a-f0-9]{16}$/;
 export function runKeys(id) {
   if (!RUN.test(id)) throw new Error("Invalid backup identifier");

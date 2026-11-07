@@ -54,6 +54,10 @@ try {
     uploadsBucket: process.env.R2_BUCKET_NAME }), { mode: 0o600 });
   stage = "archive";
   const archive = `${directory}/recovery.tar.gz`;
+  const beforeArchive = await statfs(root);
+  if (beforeArchive.bavail * beforeArchive.bsize < budget.bytes + 10_000_000)
+    throw new Error("Insufficient temporary space to package this recovery point");
+  const snapshotBytes = budget.bytes;
   await command("tar", ["-czf", archive, "-C", staging, "snapshot.json", "postgres.dump", "d1", "objects", "uploads.json"],
     { timeout: 120000 });
   const digest = await fileDigest(archive);
@@ -65,12 +69,19 @@ try {
   await backup.send(new PutObjectCommand({ Bucket: bucket, Key: keys.archive, Body: createReadStream(archive),
     ContentLength: digest.bytes, ContentType: "application/gzip", IfNoneMatch: "*",
     Metadata: { sha256: digest.sha256 } }), { abortSignal: AbortSignal.timeout(120000) });
+  // Once uploaded, remove only our local copies. Verification must use the
+  // off-host read-back, and the small /run filesystem must not hold four copies.
+  await rm(staging, { recursive: true, force: true });
+  await rm(archive);
   stage = "archive-read-back";
   const downloaded = await backup.send(new GetObjectCommand({ Bucket: bucket, Key: keys.archive }),
     { abortSignal: AbortSignal.timeout(60000) });
   const recoveredFile = `${directory}/read-back.tar.gz`;
   const recovered = await saveStream(downloaded.Body, recoveredFile, budget, MAX_ARCHIVE_BYTES);
   if (recovered.sha256 !== digest.sha256 || recovered.bytes !== digest.bytes) throw new Error("Off-host archive checksum failed");
+  const beforeRestore = await statfs(root);
+  if (beforeRestore.bavail * beforeRestore.bsize < snapshotBytes + 10_000_000)
+    throw new Error("Insufficient temporary space for isolated recovery verification");
   stage = "isolated-restore";
   const verified = await verifyArchive(recoveredFile, `${directory}/restored`, runId.replace("-", "_"));
   const manifest = { kind: "afro-ai-recovery", version: 1, runId, startedAt,

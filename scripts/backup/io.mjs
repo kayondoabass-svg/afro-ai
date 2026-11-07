@@ -4,7 +4,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { chmod, rename, writeFile } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { MAX_WORK_BYTES } from "./policy.mjs";
+import { MAX_WORK_BYTES, MAX_ARCHIVE_BYTES } from "./policy.mjs";
 
 export function command(program, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -38,7 +38,7 @@ export async function saveProcess(program, args, file, budget, options) {
   });
   closed.catch(() => {});
   try {
-    const result = await saveStream(child.stdout, file, budget, 20_000_000);
+    const result = await saveStream(child.stdout, file, budget, MAX_ARCHIVE_BYTES);
     await closed;
     return result;
   } catch (e) {
