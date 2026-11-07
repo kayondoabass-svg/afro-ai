@@ -30,3 +30,13 @@ agent memory. Teach secure backend-only transfers from an approved secret store,
 verified SSH host identity, values on encrypted standard input, protected atomic
 configuration updates and safe verification. Do not add secret values to memory,
 claim new execution capabilities, or treat guidance as production authorization.
+
+Each website or app needs its own specific secret file.
+
+**Why:** The user requested a review of the existing environment setup and
+project-specific secret files.
+
+**How to apply:** Keep project secret configuration separate from other projects
+and platform credentials. Review existing storage and compatibility before
+implementing; this requirement does not authorize arbitrary customer code to run
+on the shared platform VPS.
