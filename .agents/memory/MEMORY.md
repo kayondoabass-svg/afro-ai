@@ -68,3 +68,4 @@
 - [KEYO portable contract](keyo-portable-contract.md) — hard worker cancellation, production offline checks and independent desktop/mobile release identities.
 - [Product setup guidance](product-guidance.md) — Afro AI should explain how to set up and use KEYO and the company's other software when customers ask.
 - [Founder suspension oversight](founder-suspension-oversight.md) — founder needs actionable app details and suspension reasons; affected owners need explanatory email alerts.
+- [Recovery backup policy](recovery-backup-policy.md) — user chose daily backups with seven-day retention.
