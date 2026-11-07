@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './founderUnpublishConfirmation';
+export * from './getFounderOperationsHealth200';
+export * from './getFounderOperationsHealth200Checks';
 export * from './healthStatus';
 export * from './projectImage';
 export * from './projectImageAttribution';
@@ -13,4 +16,5 @@ export * from './projectImageInput';
 export * from './projectImageInputSection';
 export * from './projectImages';
 export * from './projectImageSource';
+export * from './retryFounderUnpublish200';
 export * from './saveProjectImage201';

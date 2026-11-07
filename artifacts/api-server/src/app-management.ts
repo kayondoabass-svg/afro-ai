@@ -71,26 +71,39 @@ export async function getAppLibrary(userId: string) {
 }
 
 /** Fail closed at the origin first; retain metadata until all cleanup succeeds. */
-export async function removePublishedApp(userId: string, id: number, unpublish = false, projectLock?: Unlock) {
+export async function removePublishedApp(userId: string, id: number, unpublish = false, projectLock?: Unlock, actorId = userId, expectedReason?: string) {
   if (!Number.isSafeInteger(id) || id < 1) throw new ProjectLifecycleError(400, "Invalid app identifier.");
   const unlock = projectLock ? await projectLock.lockApp(id) : await lockPublishedApp(id);
   try {
     const app = await storage.getPublishedAppById(id);
     if (!app || app.userId !== userId) throw new ProjectLifecycleError(404, "Published app not found.");
+    if (expectedReason && app.suspendReason !== expectedReason) throw new ProjectLifecycleError(409, "The pending operation changed. Refresh details before retrying.");
     if (unpublish && app.suspendReason === DELETE_PENDING) throw new ProjectLifecycleError(409, "Deletion is pending. Retry deletion instead.");
+    const audit = async (action: string, reason: string) => {
+      await pool.query(`INSERT INTO app_status_events(app_id,user_id,action,reason,actor_id,email_status)
+        VALUES($1,$2,$3,$4,$5,'not_requested')`, [id, userId, action, reason, actorId]);
+    };
+    // Audit availability is a prerequisite, not permission to silently lose history.
+    await audit(unpublish ? "unpublish_requested" : "deletion_requested",
+      unpublish ? "Unpublish requested. Saved source will be retained." : "Existing explicit deletion request received.");
     await storage.updatePublishedApp(id, { appStatus: "suspended", suspendReason: unpublish ? UNPUBLISH_PENDING : DELETE_PENDING, suspendedAt: new Date() });
+    let stage = "DNS";
     try {
       await removePublishedAppDns(app.subdomain);
+      stage = "cache";
       await purgePublishedAppCache(app.subdomain);
+      stage = "hosted content";
       if (unpublish) {
         await storage.updatePublishedApp(id, { appStatus: "suspended", suspendReason: UNPUBLISHED, cloudflareDnsRecordId: null });
       } else {
         await storage.deletePublishedApp(id, true);
       }
     } catch {
+      await audit("cleanup_failed", `${stage} cleanup was not confirmed. Public serving remains blocked; saved records are retained for review.`);
       // Keep the app, resource keys and deletion marker for an idempotent retry.
-      throw new ProjectLifecycleError(503, "Live serving is blocked, but Cloudflare/hosted-content cleanup is incomplete. Retry this app's pending operation.");
+      throw new ProjectLifecycleError(503, `Public serving is blocked, but ${stage} cleanup is incomplete. Review Cloudflare access or storage readiness before retrying. Saved records have been retained.`);
     }
+    await audit("cleanup_completed", unpublish ? "Unpublish cleanup confirmed. Saved source and project retained." : "Requested publication cleanup confirmed.");
     return { id, subdomain: app.subdomain, offline: true, sourcePreserved: unpublish };
   } finally { await unlock(); }
 }

@@ -11,6 +11,70 @@ tags:
   - name: health
     description: Health operations
 paths:
+  /founder/operations-health:
+    get:
+      operationId: getFounderOperationsHealth
+      summary: Read-only founder checks for DNS and source-storage readiness
+      description: Founder-only, private no-store. Cached for 30 seconds. No customer content, credentials, mutations or paid requests. Backup coverage remains unverified until independently established.
+      responses:
+        "200":
+          description: Operational evidence from the running service
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [checkedAt, release, featureVersion, checks]
+                properties:
+                  checkedAt: { type: string, format: date-time }
+                  release: { type: [string, "null"] }
+                  featureVersion: { type: string }
+                  checks:
+                    type: object
+                    required: [dns, sourceStorage, backups]
+                    additionalProperties:
+                      type: object
+                      required: [status, message]
+                      properties:
+                        status: { type: string }
+                        message: { type: string }
+        "401": { description: Sign-in required }
+        "403": { description: Founder access required }
+        "503": { description: Checks unavailable; no records changed }
+  /admin/published-apps/{appId}/retry-unpublish:
+    post:
+      operationId: retryFounderUnpublish
+      summary: Confirm and retry an already pending unpublish without deleting saved source
+      description: Founder-only. Rechecks the exact pending reason under the app lock. Records actor and cleanup stage; does not reactivate or delete saved projects.
+      parameters:
+        - name: appId
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FounderUnpublishConfirmation"
+      responses:
+        "200":
+          description: Pending unpublish completed and saved source preserved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, subdomain, offline, sourcePreserved]
+                properties:
+                  id: { type: integer }
+                  subdomain: { type: string }
+                  offline: { type: boolean }
+                  sourcePreserved: { type: boolean }
+        "400": { description: Invalid ID or missing confirmation }
+        "401": { description: Sign-in required }
+        "403": { description: Founder access required }
+        "404": { description: App not found }
+        "409": { description: Existing operation changed or is not a pending unpublish }
+        "503": { description: Cleanup incomplete; saved records retained }
   /conversations/{conversationId}/website-assets:
     parameters:
       - $ref: "#/components/parameters/ConversationId"
@@ -131,6 +195,11 @@ components:
         type: string
         format: uuid
   schemas:
+    FounderUnpublishConfirmation:
+      type: object
+      required: [confirm]
+      properties:
+        confirm: { type: boolean, enum: [true] }
     ProjectImages:
       type: object
       required: [assets]

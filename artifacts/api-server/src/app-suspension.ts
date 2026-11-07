@@ -1,7 +1,7 @@
 import { pool } from "./db";
 import { sendEmail, EmailProviderError } from "./email-provider";
 import { checkResendDelivery } from "../shared/mail-delivery-status";
-import { FREE_HOSTING_DAYS, FREE_HOSTING_EXPIRY_REASON, suspensionNotice, suspensionReason } from "./app-suspension-policy";
+import { FREE_HOSTING_DAYS, FREE_HOSTING_EXPIRY_REASON, suspensionNotice, suspensionReason, hostingExpiryNotice } from "./app-suspension-policy";
 import { FOUNDER_EMAILS } from "./founder-access";
 
 /** Additive audit/outbox: no app/project/source rows are removed or backdated. */
@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS app_status_events (
 );
 CREATE INDEX IF NOT EXISTS app_status_events_app_idx ON app_status_events(app_id,id DESC);
 CREATE INDEX IF NOT EXISTS app_status_events_pending_idx ON app_status_events(email_status,id);
+CREATE UNIQUE INDEX IF NOT EXISTS app_status_events_hosting_warning_once
+ ON app_status_events(app_id) WHERE action='hosting_expiry_warning';
 `;
 export async function prepareAppSuspensions() {
   await pool.query(APP_SUSPENSION_SCHEMA);
@@ -73,21 +75,41 @@ export async function changeAppStatus(selection: Selection, action: "suspended" 
 export const expireFreeHosting = () => changeAppStatus(
   { expiredOnly: true }, "suspended", FREE_HOSTING_EXPIRY_REASON, "system:free-hosting-expiry");
 
+/** One additive reminder per app, only while its existing free-hosting period is still active. */
+export async function queueHostingExpiryWarnings() {
+  return pool.query(`WITH candidates AS (
+    SELECT a.id,a.user_id FROM published_apps a JOIN users u ON u.id=a.user_id
+    WHERE a.app_status='active' AND u.plan='starter'
+      AND lower(coalesce(u.email,''))<>ALL($1::text[])
+      AND a.created_at<=now()-interval '27 days' AND a.created_at>now()-interval '30 days'
+      AND NOT EXISTS(SELECT 1 FROM app_status_events e WHERE e.app_id=a.id AND e.action='hosting_expiry_warning')
+    ORDER BY a.id LIMIT 20 FOR UPDATE OF a SKIP LOCKED
+  ) INSERT INTO app_status_events(app_id,user_id,action,reason,actor_id,email_status)
+    SELECT id,user_id,'hosting_expiry_warning','The existing 30-day free public-hosting deadline is approaching.',
+    'system:free-hosting-reminder','pending' FROM candidates ON CONFLICT DO NOTHING`,
+    [FOUNDER_EMAILS.map(email => email.toLowerCase())]);
+}
+
 /** Claims persist before contacting a provider. Concurrent workers cannot send the same event. */
 export async function processAppSuspensionEmails() {
   const { rows } = await pool.query(`UPDATE app_status_events SET email_status='sending'
     WHERE id IN (SELECT id FROM app_status_events WHERE email_status='pending' ORDER BY id LIMIT 20 FOR UPDATE SKIP LOCKED)
-    AND email_status='pending' RETURNING id,app_id,user_id,reason,created_at`);
+    AND email_status='pending' RETURNING id,app_id,user_id,reason,action,created_at`);
   for (const event of rows) {
     try {
-      const owner = (await pool.query("SELECT email FROM users WHERE id=$1", [event.user_id])).rows[0];
-      const app = (await pool.query("SELECT id,title FROM published_apps WHERE id=$1 AND user_id=$2", [event.app_id, event.user_id])).rows[0];
+      const owner = (await pool.query("SELECT email,plan FROM users WHERE id=$1", [event.user_id])).rows[0];
+      const app = (await pool.query("SELECT id,title,created_at,app_status FROM published_apps WHERE id=$1 AND user_id=$2", [event.app_id, event.user_id])).rows[0];
       if (!owner?.email || !app) {
         await pool.query("UPDATE app_status_events SET email_status='failed',email_error=$2 WHERE id=$1",
           [event.id, "The app or its owner's email address is unavailable."]);
         continue;
       }
-      const notice = suspensionNotice(app, event.reason, new Date(event.created_at));
+      if (event.action === "hosting_expiry_warning" && (owner.plan !== "starter" || app.app_status !== "active")) {
+        await pool.query("UPDATE app_status_events SET email_status='skipped',email_error=$2 WHERE id=$1",
+          [event.id, "Hosting status changed; this reminder is no longer applicable."]);
+        continue;
+      }
+      const notice = event.action === "hosting_expiry_warning" ? hostingExpiryNotice(app) : suspensionNotice(app, event.reason, new Date(event.created_at));
       const result = await sendEmail({
         from: process.env.EMAIL_FROM || "Afro AI <noreply@afroaigroup.com>", to: owner.email,
         ...notice, idempotencyKey: `app-suspension-${event.id}`,
@@ -120,7 +142,7 @@ export function startAppSuspensionEmails() {
   const tick = async () => {
     if (running) return;
     running = true;
-    try { await processAppSuspensionEmails(); }
+    try { await queueHostingExpiryWarnings(); await processAppSuspensionEmails(); }
     catch { console.error("[app-suspension] Notification processing unavailable; review founder app details."); }
     finally { running = false; }
   };

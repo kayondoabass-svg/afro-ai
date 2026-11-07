@@ -57,6 +57,28 @@ describe("app-specific removal", () => {
     expect(mocks.dns).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
   });
+  it("records the actor and failed stage without provider messages or sending email", async () => {
+    mocks.dns.mockRejectedValue(new Error("private provider payload"));
+    await expect(removePublishedApp("owner", 9, true, undefined, "founder")).rejects.toMatchObject({ status: 503 });
+    expect(mocks.query).toHaveBeenCalledWith(expect.stringContaining("'not_requested'"),
+      [9, "owner", "unpublish_requested", expect.any(String), "founder"]);
+    expect(mocks.query).toHaveBeenCalledWith(expect.any(String),
+      [9, "owner", "cleanup_failed", expect.stringContaining("DNS"), "founder"]);
+    expect(JSON.stringify(mocks.query.mock.calls)).not.toContain("private provider payload");
+    expect(mocks.remove).not.toHaveBeenCalled();
+  });
+  it("rechecks the pending reason under the app lock before a founder retry", async () => {
+    mocks.get.mockResolvedValue({ ...app, suspendReason: "customer-unpublished" });
+    await expect(removePublishedApp("owner", 9, true, undefined, "founder", "unpublish-pending")).rejects.toMatchObject({ status: 409 });
+    expect(mocks.dns).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+  it("fails closed before external cleanup if the audit cannot be saved", async () => {
+    mocks.query.mockRejectedValue(new Error("audit unavailable"));
+    await expect(removePublishedApp("owner", 9, true)).rejects.toThrow("audit unavailable");
+    expect(mocks.dns).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
 });
 describe("single app library", () => {
   it("groups by explicit association, not duplicate business names, and includes drafts and unmapped sites", async () => {

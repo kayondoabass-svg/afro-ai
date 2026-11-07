@@ -1,7 +1,27 @@
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
 const ZONE_ID = process.env.CLOUDFLARE_ZONE_ID;
 const API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+// DNS permissions must not require replacing the working D1 credential.
+const DNS_TOKEN = process.env.CLOUDFLARE_DNS_TOKEN || API_TOKEN;
 const DOMAIN = "afroaigroup.com";
+
+export class CloudflareAccessError extends Error {
+  constructor(public readonly status: number, public readonly code: number | null) {
+    super(status === 401 || status === 403
+      ? "Cloudflare DNS access is not authorized for this zone. Review the DNS credential and zone permissions."
+      : "Cloudflare DNS could not confirm the operation. No cleanup completion was recorded.");
+  }
+}
+
+export async function inspectDnsAccess() {
+  if (!ZONE_ID || !DNS_TOKEN) return { status: "not_configured" as const, message: "DNS access is not configured. Existing apps and saved work have not been changed." };
+  try {
+    await cfFetch(`/zones/${ZONE_ID}/dns_records?name=${DOMAIN}&per_page=1`);
+    return { status: "ok" as const, message: "DNS read access confirmed. DNS changes and cache-purge permissions are not tested by this read-only check." };
+  } catch (error) {
+    return { status: "unavailable" as const, message: error instanceof CloudflareAccessError ? error.message : "DNS access could not be verified. No records were changed." };
+  }
+}
 
 interface CloudflareDnsRecord {
   id: string;
@@ -18,7 +38,7 @@ interface CloudflareResponse<T> {
 }
 
 async function cfFetch<T>(path: string, options: RequestInit = {}): Promise<CloudflareResponse<T>> {
-  if (!ZONE_ID || !API_TOKEN) {
+  if (!ZONE_ID || !DNS_TOKEN) {
     throw new Error("Cloudflare credentials not configured");
   }
 
@@ -26,16 +46,16 @@ async function cfFetch<T>(path: string, options: RequestInit = {}): Promise<Clou
     ...options,
     signal: options.signal || AbortSignal.timeout(15_000),
     headers: {
-      "Authorization": `Bearer ${API_TOKEN}`,
+      "Authorization": `Bearer ${DNS_TOKEN}`,
       "Content-Type": "application/json",
       ...options.headers,
     },
   });
 
   const data = await res.json() as CloudflareResponse<T>;
-  if (!data.success) {
-    const errorMsg = data.errors?.map(e => e.message).join(", ") || "Unknown Cloudflare error";
-    throw new Error(`Cloudflare API error: ${errorMsg}`);
+  if (!res.ok || !data.success) {
+    const code = (data.errors?.[0] as { code?: unknown } | undefined)?.code;
+    throw new CloudflareAccessError(res.status, typeof code === "number" ? code : null);
   }
 
   return data;

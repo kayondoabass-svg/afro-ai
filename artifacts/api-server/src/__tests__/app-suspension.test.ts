@@ -12,11 +12,18 @@ vi.mock("../email-provider", async importOriginal => {
   return { ...original, sendEmail: mocks.send };
 });
 vi.mock("../../shared/mail-delivery-status", () => ({ checkResendDelivery: mocks.delivery }));
-import { APP_SUSPENSION_SCHEMA, changeAppStatus, expireFreeHosting, processAppSuspensionEmails } from "../app-suspension";
-import { FREE_HOSTING_EXPIRY_REASON, suspensionNotice, suspensionReason } from "../app-suspension-policy";
+import { APP_SUSPENSION_SCHEMA, changeAppStatus, expireFreeHosting, processAppSuspensionEmails, queueHostingExpiryWarnings } from "../app-suspension";
+import { FREE_HOSTING_EXPIRY_REASON, suspensionNotice, suspensionReason, hostingExpiryNotice } from "../app-suspension-policy";
 import { founderAppDetails } from "../founder-app-details";
 
 describe("suspension messages", () => {
+  it("distinguishes an advance warning from an actual suspension or a new free period", () => {
+    const notice = hostingExpiryNotice({ id: 4, title: "Retained", created_at: "2026-11-01T12:00:00Z" });
+    expect(notice.text).toContain("2026-12-01T12:00:00.000Z");
+    expect(notice.text).toContain("does not mean your app is suspended now");
+    expect(notice.text).toContain("midnight resets");
+    expect(notice.text).toContain("No payment");
+  });
   it("requires an explicit reason and preserves the daily free tier", () => {
     expect(() => suspensionReason("")).toThrow();
     expect(() => suspensionReason("a".repeat(1001))).toThrow();
@@ -45,6 +52,7 @@ suite("app suspension isolated PostgreSQL lifecycle", () => {
       CREATE TABLE projects(id serial PRIMARY KEY,user_id text,name text,type text,status text);
       CREATE TABLE conversations(id serial PRIMARY KEY,user_id text,project_id integer);
       CREATE TABLE messages(id serial PRIMARY KEY,conversation_id integer,role text,content text);
+      CREATE TABLE app_versions(id serial PRIMARY KEY,conversation_id integer,html_content text);
       CREATE TABLE payments(id serial PRIMARY KEY,user_id text,plan text,amount numeric,currency text,status text,payment_method text,created_at timestamp DEFAULT now());
       CREATE TABLE ussd_subscriptions(id serial PRIMARY KEY,user_id text,plan text,status text,activated_at timestamp,expires_at timestamp,created_at timestamp);
       CREATE TABLE ussd_apps(id serial PRIMARY KEY,user_id text,name text,is_active boolean,sessions_used integer,created_at timestamp,api_key text);
@@ -59,7 +67,7 @@ suite("app suspension isolated PostgreSQL lifecycle", () => {
     vi.clearAllMocks();
     mocks.send.mockResolvedValue({ messageId: "provider-test", provider: "resend" });
     mocks.delivery.mockResolvedValue({ status: "delivered", error: null });
-    await mocks.database.query("TRUNCATE users,published_apps,projects,conversations,messages,payments,ussd_subscriptions,ussd_apps,app_status_events RESTART IDENTITY");
+    await mocks.database.query("TRUNCATE users,published_apps,projects,conversations,messages,app_versions,payments,ussd_subscriptions,ussd_apps,app_status_events RESTART IDENTITY");
     await mocks.database.query(`INSERT INTO users(id,email,plan) VALUES
       ('owner','suspension@example.invalid','starter'),('other','other@example.invalid','starter'),
       ('founder','kayondoabass@gmail.com','starter'),('paid','paid@example.invalid','pro');
@@ -81,6 +89,27 @@ suite("app suspension isolated PostgreSQL lifecycle", () => {
     expect((await mocks.database.query("SELECT * FROM projects")).rows).toHaveLength(1);
     expect((await mocks.database.query("SELECT * FROM app_status_events")).rows).toHaveLength(1);
     expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("queues one advance reminder under concurrency without changing hosting or emailing expired apps", async () => {
+    await mocks.database.query("UPDATE published_apps SET created_at=now()-interval '28 days' WHERE id IN (2,3,4)");
+    await Promise.all([queueHostingExpiryWarnings(), queueHostingExpiryWarnings()]);
+    await queueHostingExpiryWarnings();
+    const events = (await mocks.database.query("SELECT app_id,action,email_status FROM app_status_events")).rows;
+    expect(events).toEqual([{ app_id: 2, action: "hosting_expiry_warning", email_status: "pending" }]);
+    expect((await mocks.database.query("SELECT count(*)::int n FROM published_apps WHERE app_status='active'")).rows[0].n).toBe(4);
+    await processAppSuspensionEmails();
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    expect(mocks.send.mock.calls[0][0].subject).toContain("approaching");
+    expect(mocks.send.mock.calls[0][0].text).toContain("does not mean your app is suspended");
+    expect((await mocks.database.query("SELECT email_status FROM app_status_events")).rows[0].email_status).toBe("delivered");
+  });
+  it("skips a queued advance warning when the owner has since upgraded", async () => {
+    await mocks.database.query("UPDATE published_apps SET created_at=now()-interval '28 days' WHERE id=2");
+    await queueHostingExpiryWarnings();
+    await mocks.database.query("UPDATE users SET plan='pro' WHERE id='owner'");
+    await processAppSuspensionEmails();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect((await mocks.database.query("SELECT email_status FROM app_status_events")).rows[0].email_status).toBe("skipped");
   });
   it("sends only to the actual owner and exposes real delivery, not acceptance as delivery", async () => {
     await expireFreeHosting();

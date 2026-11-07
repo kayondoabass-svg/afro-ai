@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { safeFounderAppHref } from "@/components/founder/FounderOperations";
+import { founderAppStatus, LOCKED_REASONS, STATUS_TONE } from "@/components/founder/founder-app-status";
 
 export type FounderAppDetailsData = {
   app: { id: number | string; title?: string | null; subdomain?: string | null; customDomain?: string | null; appStatus?: string | null; suspendReason?: string | null; suspendedAt?: string | null; createdAt?: string | null; updatedAt?: string | null };
@@ -20,6 +21,7 @@ export type FounderAppDetailsData = {
   unavailableSections?: string[];
   relatedRecordsScope?: string | null;
   historyNote?: string | null;
+  source?: { htmlBytes: number | null; snapshotCount: number | null; linkedProjects: number | null; message: string } | null;
   hosting: { freePeriodDays?: number; projectPreserved?: boolean; dailyAllowance?: string } | null;
 };
 
@@ -74,9 +76,10 @@ export function FounderAppDetails({ appId, isFounder, open, onOpenChange }: {
   const [reason, setReason] = useState("");
   const [confirmSuspend, setConfirmSuspend] = useState(false);
   const [confirmReactivate, setConfirmReactivate] = useState(false);
+  const [confirmRetry, setConfirmRetry] = useState(false);
   const enabled = isFounder && open && appId !== null && appId !== "";
 
-  useEffect(() => { setReason(""); setConfirmSuspend(false); setConfirmReactivate(false); }, [appId]);
+  useEffect(() => { setReason(""); setConfirmSuspend(false); setConfirmReactivate(false); setConfirmRetry(false); }, [appId]);
 
   const query = useQuery<FounderAppDetailsData>({
     queryKey: founderAppDetailsKey(appId ?? ""),
@@ -108,9 +111,19 @@ export function FounderAppDetails({ appId, isFounder, open, onOpenChange }: {
     onError: (e: any) => toast({ title: "Reactivation failed", description: e?.message || "The app was not reactivated.", variant: "destructive" }),
   });
 
+  const retryUnpublish = useMutation({
+    mutationFn: async () => { const res = await apiRequest("POST", `/api/admin/published-apps/${encodeURIComponent(String(appId))}/retry-unpublish`, { confirm: true }); return res.json(); },
+    onSuccess: () => { invalidate(); setConfirmRetry(false); toast({ title: "Unpublish completed", description: "The app is offline. Its source is preserved." }); },
+    onError: (e: any) => { invalidate(); toast({ title: "Retry unpublish failed", description: e?.message || "The app was not unpublished.", variant: "destructive" }); },
+  });
+
   const d = enabled ? query.data : undefined;
   const app = d?.app;
   const suspended = app?.appStatus === "suspended";
+  const status = founderAppStatus(app);
+  const locked = LOCKED_REASONS.has((app?.suspendReason || "").trim());
+  const kb = (n: number | null | undefined) => n == null ? "Not reported" : n < 1024 ? `${n} bytes` : `${(n / 1024).toFixed(1)} KB`;
+  const num = (n: number | null | undefined) => n == null ? "Not reported" : String(n);
   const href = app ? safeFounderAppHref(app as Record<string, unknown>) : null;
   const trimmed = reason.trim();
   const reasonValid = trimmed.length >= 5 && trimmed.length <= 1000;
@@ -136,9 +149,9 @@ export function FounderAppDetails({ appId, isFounder, open, onOpenChange }: {
             </div>
           ) : d && app ? (
             <>
-              <div className={`rounded-xl border p-4 ${suspended ? "border-destructive/40 bg-destructive/[0.04]" : "border-emerald-600/30 bg-emerald-500/[0.04]"}`}>
+              <div className={`rounded-xl border p-4 ${STATUS_TONE[status.kind]}`}>
                 <div className="flex items-center justify-between gap-2">
-                  <Badge variant={suspended ? "destructive" : "secondary"} data-testid="status-app">{suspended ? "Suspended" : text(app.appStatus, "Status not recorded")}</Badge>
+                  <Badge variant="outline" className="border-current bg-background/60 text-current" data-testid="status-app">{status.label}</Badge>
                   {href && <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline" data-testid="link-app-live">Live site<ExternalLink className="h-3 w-3" /></a>}
                 </div>
                 {suspended && <div className="mt-3 space-y-1 text-sm">
@@ -195,7 +208,18 @@ export function FounderAppDetails({ appId, isFounder, open, onOpenChange }: {
                 <p className="text-xs text-muted-foreground">Shortcode and provider configuration are not included in this data.</p>
               </Block>
 
+              <Block title="Source (metadata only)" testId="section-source">
+                {d.source ? <div>
+                  <Row label="Published HTML size" value={kb(d.source.htmlBytes)} testId="text-source-bytes" />
+                  <Row label="Saved snapshots" value={num(d.source.snapshotCount)} testId="text-source-snapshots" />
+                  <Row label="Linked projects" value={num(d.source.linkedProjects)} testId="text-source-projects" />
+                  {d.source.message && <p className="pt-1 text-xs text-muted-foreground" data-testid="text-source-message">{d.source.message}</p>}
+                </div> : <Unavailable name="source" />}
+                <p className="text-[11px] text-muted-foreground">Counts and sizes only. Private source content is never shown here.</p>
+              </Block>
+
               <Block title="Hosting policy" testId="section-hosting">
+                <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-testid="text-hosting-explainer">The 30-day free hosting period only controls whether the published app stays live. It is separate from the owner's saved work, which is kept, and from daily usage limits, which reset on their own schedule.</p>
                 <div>
                   <Row label="Free hosting period" value={d.hosting?.freePeriodDays != null ? `${d.hosting.freePeriodDays} days` : "Not reported"} />
                   <Row label="Project preserved on suspension" value={d.hosting?.projectPreserved === true ? "Yes" : d.hosting?.projectPreserved === false ? "No" : "Not reported"} />
@@ -203,7 +227,17 @@ export function FounderAppDetails({ appId, isFounder, open, onOpenChange }: {
                 {d.hosting?.dailyAllowance && <p className="text-xs text-muted-foreground">{d.hosting.dailyAllowance}</p>}
               </Block>
 
-              <Block title={suspended ? "Reactivate" : "Suspend"} testId="section-action">
+              {status.kind === "unpublish-pending" && <Block title="Retry unpublish" testId="section-retry-unpublish">
+                <div className="space-y-3 rounded-lg border border-sky-600/30 p-3">
+                  <p className="text-xs text-muted-foreground">The owner asked to unpublish, but taking the app offline did not finish. Retrying only takes it offline; source and projects are preserved. No deletion or cleanup is performed.</p>
+                  <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={confirmRetry} onChange={e => setConfirmRetry(e.target.checked)} data-testid="checkbox-confirm-retry-unpublish" />I confirm the unpublish should be retried for this app.</label>
+                  <Button variant="outline" className="w-full" disabled={!confirmRetry || retryUnpublish.isPending} onClick={() => retryUnpublish.mutate()} data-testid="button-retry-unpublish"><RefreshCw className="mr-2 h-4 w-4" />{retryUnpublish.isPending ? "Retrying..." : "Retry unpublish"}</Button>
+                </div>
+              </Block>}
+
+              {locked ? <Block title="Suspend or reactivate" testId="section-action">
+                <p className="rounded-lg border border-dashed px-3 py-3 text-xs text-muted-foreground" data-testid="text-action-locked">{status.label}: hiding and reactivation are disabled because the owner's unpublish or deletion request controls this app.</p>
+              </Block> : <Block title={suspended ? "Reactivate" : "Suspend"} testId="section-action">
                 {suspended ? (
                   <div className="space-y-3 rounded-lg border p-3">
                     <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={confirmReactivate} onChange={e => setConfirmReactivate(e.target.checked)} data-testid="checkbox-confirm-reactivate" />I confirm this app should go back online.</label>
@@ -219,7 +253,7 @@ export function FounderAppDetails({ appId, isFounder, open, onOpenChange }: {
                     <Button variant="destructive" className="w-full" disabled={!reasonValid || !confirmSuspend || suspend.isPending} onClick={() => suspend.mutate(trimmed)} data-testid="button-confirm-suspend"><Ban className="mr-2 h-4 w-4" />{suspend.isPending ? "Suspending..." : "Suspend app"}</Button>
                   </div>
                 )}
-              </Block>
+              </Block>}
             </>
           ) : null}
         </div>

@@ -29,3 +29,13 @@ it("reports missing snapshots instead of inventing source", async () => {
   mocks.versions.mockResolvedValue([]);
   await expect(syncGeneratedSource("owner", 3)).rejects.toMatchObject({ status: 409 });
 });
+it("finds real saved HTML behind a newer non-HTML response", async () => {
+  mocks.versions.mockResolvedValue([{ htmlContent: "I have updated your website." }, { htmlContent: html }]);
+  await expect(syncGeneratedSource("owner", 3)).resolves.toMatchObject({ saved: true });
+  expect(mocks.save).toHaveBeenCalledWith("owner", 3, expect.arrayContaining([expect.objectContaining({ content: html })]), "merge");
+});
+it("does not rewrite already synchronized Files", async () => {
+  mocks.files.mockResolvedValue([{ path: "index.html", content: html }]);
+  await expect(syncGeneratedSource("owner", 3)).resolves.toMatchObject({ saved: true });
+  expect(mocks.save).not.toHaveBeenCalled();
+});

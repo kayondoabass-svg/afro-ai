@@ -5,6 +5,10 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface FounderUnpublishConfirmation {
+  confirm: true;
+}
+
 export type ProjectImageSource = typeof ProjectImageSource[keyof typeof ProjectImageSource];
 
 
@@ -70,6 +74,26 @@ export type ProjectImageInput = (unknown & {
 export interface HealthStatus {
   status: string;
 }
+
+export type GetFounderOperationsHealth200Checks = {[key: string]: {
+  status: string;
+  message: string;
+}};
+
+export type GetFounderOperationsHealth200 = {
+  checkedAt: string;
+  /** @nullable */
+  release: string | null;
+  featureVersion: string;
+  checks: GetFounderOperationsHealth200Checks;
+};
+
+export type RetryFounderUnpublish200 = {
+  id: number;
+  subdomain: string;
+  offline: boolean;
+  sourcePreserved: boolean;
+};
 
 export type SaveProjectImage201 = {
   asset: ProjectImage;

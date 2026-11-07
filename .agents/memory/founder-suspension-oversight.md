@@ -12,4 +12,4 @@ Expand the existing infrastructure rather than deleting or replacing it. After t
 
 **Why:** The user explicitly said, “Dont delete,” and requested that expired apps remain saved with limited usage every 24 hours.
 
-**How to apply:** Keep hosting expiry separate from saved-work access and daily allowance resets. Do not turn this requirement into an indefinite-retention promise for every category of customer data.
+**How to apply:** Make platform repairs additive: preserve existing apps, projects and assets rather than bulk-deleting or resetting them. Keep hosting expiry separate from saved-work access and daily allowance resets. Do not lift unrelated restrictions or turn this requirement into an indefinite-retention promise for every category of customer data.

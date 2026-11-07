@@ -1,6 +1,20 @@
 /** Hosting expiry does not change saved projects or daily AI usage allowances. */
 export const FREE_HOSTING_DAYS = 30;
 export const FREE_HOSTING_EXPIRY_REASON = "Free plan 30-day limit reached. Upgrade to keep your app live.";
+export function hostingExpiryNotice(app: { id: number; title: string; created_at: Date | string }) {
+  const expires = new Date(new Date(app.created_at).getTime() + FREE_HOSTING_DAYS * 86_400_000);
+  return {
+    subject: `Your app "${app.title}" is approaching its free-hosting deadline`,
+    text: [
+      `The ${FREE_HOSTING_DAYS}-day free public-hosting period for "${app.title}" is scheduled to end at ${expires.toISOString()}.`,
+      `Reference: app ${app.id}`,
+      "This reminder does not mean your app is suspended now. Check My Apps for its current status.",
+      "When free public hosting expires, the public site goes offline. Saved app/project records are retained; existing daily free-use limits and midnight resets remain separate and unchanged.",
+      "Open My Apps to review your hosting options: https://afroaigroup.com/my-apps",
+      "No payment, reactivation, deletion or extension has been performed by this email.",
+    ].join("\n\n"),
+  };
+}
 export function suspensionReason(value: unknown): string {
   if (typeof value !== "string" || value.trim().length < 5 || value.trim().length > 1000)
     throw new Error("Enter a suspension reason between 5 and 1000 characters.");

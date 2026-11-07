@@ -9,10 +9,12 @@ export async function syncGeneratedSource(userId: string, conversationId: number
   const conversation = await chatStorage.getConversation(conversationId);
   if (!conversation || conversation.userId !== userId) throw new ProjectFileError(404, "Conversation not found.");
   const versions = await storage.getAppVersions(conversationId);
-  const html = extractWebsiteHtml(versions[0]?.htmlContent || "");
+  // A malformed/newer narration-only snapshot must not conceal older saved HTML.
+  const html = versions.map(version => extractWebsiteHtml(version.htmlContent || "")).find(Boolean);
   if (!html) throw new ProjectFileError(409, "No saved generated website source is available.");
   const files = await listProjectFiles(userId, conversationId);
   const index = files.find(file => file.path.toLowerCase() === "index.html");
+  if (index?.content === html) return { saved: true, paths: [index.path] };
   if (index && index.content !== html && !versions.some(version => extractWebsiteHtml(version.htmlContent) === index.content)) {
     throw new ProjectFileError(409, "index.html has separate edits. Review them before replacing it with a generated snapshot.");
   }

@@ -25,9 +25,12 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  FounderUnpublishConfirmation,
+  GetFounderOperationsHealth200,
   HealthStatus,
   ProjectImageInput,
   ProjectImages,
+  RetryFounderUnpublish200,
   SaveProjectImage201
 } from './api.schemas';
 
@@ -57,6 +60,198 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getGetFounderOperationsHealthUrl = () => {
+
+
+
+
+  return `/api/founder/operations-health`
+}
+
+/**
+ * Founder-only, private no-store. Cached for 30 seconds. No customer content, credentials, mutations or paid requests. Backup coverage remains unverified until independently established.
+ * @summary Read-only founder checks for DNS and source-storage readiness
+ */
+export const getFounderOperationsHealth = async ( options?: Parameters<typeof customFetch>[1]): Promise<GetFounderOperationsHealth200> => {
+
+  return customFetch<GetFounderOperationsHealth200>(getGetFounderOperationsHealthUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFounderOperationsHealthQueryKey = () => {
+    return [
+    `/api/founder/operations-health`
+    ] as const;
+    }
+
+
+export const getGetFounderOperationsHealthQueryOptions = <TData = Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError = ErrorType<void>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFounderOperationsHealthQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFounderOperationsHealth>>> = ({ signal }) => getFounderOperationsHealth({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetFounderOperationsHealthQueryResult = NonNullable<Awaited<ReturnType<typeof getFounderOperationsHealth>>>
+export type GetFounderOperationsHealthQueryError = ErrorType<void>
+
+
+export function useGetFounderOperationsHealth<TData = Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError = ErrorType<void>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFounderOperationsHealth>>,
+          TError,
+          Awaited<ReturnType<typeof getFounderOperationsHealth>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFounderOperationsHealth<TData = Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFounderOperationsHealth>>,
+          TError,
+          Awaited<ReturnType<typeof getFounderOperationsHealth>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFounderOperationsHealth<TData = Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read-only founder checks for DNS and source-storage readiness
+ */
+
+export function useGetFounderOperationsHealth<TData = Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFounderOperationsHealth>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetFounderOperationsHealthQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRetryFounderUnpublishUrl = (appId: number,) => {
+
+
+
+
+  return `/api/admin/published-apps/${appId}/retry-unpublish`
+}
+
+/**
+ * Founder-only. Rechecks the exact pending reason under the app lock. Records actor and cleanup stage; does not reactivate or delete saved projects.
+ * @summary Confirm and retry an already pending unpublish without deleting saved source
+ */
+export const retryFounderUnpublish = async (appId: number,
+    founderUnpublishConfirmation: FounderUnpublishConfirmation, options?: Parameters<typeof customFetch>[1]): Promise<RetryFounderUnpublish200> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<RetryFounderUnpublish200>(getRetryFounderUnpublishUrl(appId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(founderUnpublishConfirmation)
+  }
+);}
+
+
+
+
+
+export const getRetryFounderUnpublishMutationKey = () => ['retryFounderUnpublish'] as const;
+
+export const getRetryFounderUnpublishMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryFounderUnpublish>>, TError,RetryFounderUnpublishMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryFounderUnpublish>>, TError,RetryFounderUnpublishMutationVariables, TContext> => {
+
+const mutationKey = getRetryFounderUnpublishMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryFounderUnpublish>>, RetryFounderUnpublishMutationVariables> = (props) => {
+          const {appId,data} = props ?? {};
+
+          return  retryFounderUnpublish(appId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryFounderUnpublishMutationResult = NonNullable<Awaited<ReturnType<typeof retryFounderUnpublish>>>
+    export type RetryFounderUnpublishMutationBody = BodyType<FounderUnpublishConfirmation>
+    export type RetryFounderUnpublishMutationError = ErrorType<void>
+    export type RetryFounderUnpublishMutationVariables = {appId: number;data: BodyType<FounderUnpublishConfirmation>}
+
+    /**
+ * @summary Confirm and retry an already pending unpublish without deleting saved source
+ */
+export const useRetryFounderUnpublish = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryFounderUnpublish>>, TError,RetryFounderUnpublishMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof retryFounderUnpublish>>,
+        TError,
+        RetryFounderUnpublishMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRetryFounderUnpublishMutationOptions(options), queryClient);
+    }
 
 export const getListProjectImagesUrl = (conversationId: number,) => {
 

@@ -9,6 +9,44 @@ import * as zod from 'zod';
 
 
 /**
+ * Founder-only, private no-store. Cached for 30 seconds. No customer content, credentials, mutations or paid requests. Backup coverage remains unverified until independently established.
+ * @summary Read-only founder checks for DNS and source-storage readiness
+ */
+export const GetFounderOperationsHealthResponse = zod.object({
+  "checkedAt": zod.coerce.date(),
+  "release": zod.string().nullable(),
+  "featureVersion": zod.string(),
+  "checks": zod.record(zod.string(), zod.object({
+  "status": zod.string(),
+  "message": zod.string()
+}))
+})
+
+
+/**
+ * Founder-only. Rechecks the exact pending reason under the app lock. Records actor and cleanup stage; does not reactivate or delete saved projects.
+ * @summary Confirm and retry an already pending unpublish without deleting saved source
+ */
+
+
+
+export const RetryFounderUnpublishParams = zod.object({
+  "appId": zod.coerce.number().int().min(1)
+})
+
+export const RetryFounderUnpublishBody = zod.object({
+  "confirm": zod.literal(true)
+})
+
+export const RetryFounderUnpublishResponse = zod.object({
+  "id": zod.number().int(),
+  "subdomain": zod.string(),
+  "offline": zod.boolean(),
+  "sourcePreserved": zod.boolean()
+})
+
+
+/**
  * Private, no-store. Never contains bucket names, object keys or signed URLs.
  * @summary List permanent images belonging only to the authenticated owner and exact project
  */

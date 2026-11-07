@@ -41,6 +41,16 @@ beforeEach(()=>{
   });
   mocks.auth.mockResolvedValue({total:2});
 });
+
+it("protects operational checks and pending-unpublish retry before any data or provider lookup", async () => {
+  for (const role of [undefined, "customer"]) {
+    const headers: Record<string,string> = role ? { "x-test-role": role, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+    const expected = role ? 403 : 401;
+    expect((await fetch(`${base}/api/founder/operations-health`, { headers })).status).toBe(expected);
+    expect((await fetch(`${base}/api/admin/published-apps/69/retry-unpublish`, { method: "POST", headers, body: '{"confirm":true}' })).status).toBe(expected);
+  }
+  expect(mocks.query).not.toHaveBeenCalled();
+});
 const request=(path:string,role="founder",method="GET",body?:object,origin="https://afroaigroup.com")=>fetch(base+path,{
   method,headers:{"x-test-role":role,origin,"content-type":"application/json"},
   ...(body?{body:JSON.stringify(body)}:{})

@@ -38,11 +38,12 @@ export async function d1GetDatabaseInfo(): Promise<{ uuid: string; name: string 
   return { uuid: data.result.uuid, name: data.result.name };
 }
 
-export async function d1Query(sql: string, params: any[] = [], databaseId?: string): Promise<{ results: any[]; meta: any }> {
+export async function d1Query(sql: string, params: any[] = [], databaseId?: string, signal?: AbortSignal): Promise<{ results: any[]; meta: any }> {
   const resp = await fetch(`${getBaseUrl(databaseId)}/query`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({ sql, params }),
+    ...(signal ? { signal } : {}),
   });
   const data = await resp.json() as any;
   if (!data.success) {

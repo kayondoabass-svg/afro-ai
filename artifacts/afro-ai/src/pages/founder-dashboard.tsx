@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { FounderOperations, safeFounderAppHref, type SectionId } from "@/components/founder/FounderOperations";
 import { FounderAlertCenter } from "@/components/founder/FounderAlertCenter";
 import { FounderAppDetails } from "@/components/founder/FounderAppDetails";
+import { FounderOperationsHealth } from "@/components/founder/FounderOperationsHealth";
 import FounderProgrammes from "@/components/programmes/FounderProgrammes";
 import {
   Users,
@@ -399,6 +400,7 @@ export default function FounderDashboardPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
 
         {/* Header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
             <Crown className="w-6 h-6 text-primary-foreground" />
@@ -408,6 +410,13 @@ export default function FounderDashboardPage() {
             <p className="text-sm text-muted-foreground">Complete platform overview — KEYO TECHNOLOGIES</p>
           </div>
         </div>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Button size="sm" onClick={() => openFounderRecords("apps")} data-testid="button-founder-open-apps"><Globe className="mr-2 h-4 w-4" />Apps</Button>
+            <Button size="sm" variant="outline" onClick={() => { void queryClient.invalidateQueries({ predicate: q => typeof q.queryKey[0] === "string" && (/^\/api\/(admin|founder)\//).test(q.queryKey[0] as string) }); toast({ title: "Refreshing founder data" }); }} data-testid="button-founder-refresh-data"><RefreshCw className="mr-2 h-4 w-4" />Refresh data</Button>
+          </div>
+        </div>
+
+        <FounderOperationsHealth isFounder={isFounder} />
 
         <FounderAppDetails appId={detailsAppId} isFounder={isFounder} open={detailsAppId !== null} onOpenChange={open => { if (!open) setDetailsAppId(null); }} />
         <FounderOperations isFounder={isFounder} initialSection={founderSection} initialStatus={founderStatus} initialId={founderId} initialOwner={founderOwner} onClearSection={() => { setFounderSection(null); setFounderStatus(""); setFounderId(""); setFounderOwner(""); }} />
