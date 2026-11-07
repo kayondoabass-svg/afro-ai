@@ -47,3 +47,19 @@ Review the user's supplied research when planning Afro AI changes; do not ignore
 
 **How to apply:** Explain what the supplied research contributes and what needs
 adapting to the existing implementation before proposing changes.
+
+## Customer API setup and isolation
+
+When a user reaches the step where an API is needed, Afro AI must give proper
+implementation guidance, explain how to save it, verify and connect the site to
+its user, avoid using users' APIs itself, anticipate mismatches, and keep these
+instructions well organized in its memory.
+
+**Why:** The user explicitly requested this behavior for Afro AI.
+
+**How to apply:** Keep ordered onboarding and mismatch checks in shared in-app
+instructions, not just agent notes. Customer keys serve only the customer's own
+backend, never Afro AI providers or internal services. Credential-dependent
+checks belong on that backend; ownership/connection claims need real authorized
+evidence. Explain current capability limits rather than claiming the planned
+encrypted vault or site-connection tool already exists.

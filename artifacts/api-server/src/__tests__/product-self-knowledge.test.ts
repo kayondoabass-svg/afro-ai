@@ -19,6 +19,27 @@ afterEach(() => {
 
 describe("trusted product context", () => {
   it.each(["builder", "founder", "selected-file", "project-agent", "knowledge", "voice"] as const)(
+    "includes ordered API onboarding, customer-key isolation and honest connection checks in %s",
+    channel => {
+      const context = productSelfKnowledge({ afroAuthorized: false, channel });
+      for (const rule of [
+        "RECOGNIZE THE API STEP", "IDENTIFY THE RIGHT CONFIGURATION",
+        "SAVE ON THE CUSTOMER'S BACKEND", "CURRENT PRODUCT LIMIT",
+        "STRICT CUSTOMER-KEY ISOLATION", "VERIFY AND ASSOCIATE THE SITE",
+        "KEEP OUTCOMES DISTINCT", "API MISMATCH CHECKLIST",
+        "including verification requests", "customer's own authorized backend",
+        "no general customer-site connection executor",
+        "not implemented by these instructions",
+        "no global inheritance", "Preserve multiline values exactly",
+        "Label an untested concern as possible",
+        "not automatically solved by an Afro AI upgrade",
+        "accepted a request but delivery/completion is pending",
+        "require explicit owner authorization",
+      ]) expect(context).toContain(rule);
+    },
+  );
+
+  it.each(["builder", "founder", "selected-file", "project-agent", "knowledge", "voice"] as const)(
     "teaches safe secret handling and authorized VPS transfers in %s without granting tools",
     channel => {
       const context = productSelfKnowledge({ afroAuthorized: false, channel });
