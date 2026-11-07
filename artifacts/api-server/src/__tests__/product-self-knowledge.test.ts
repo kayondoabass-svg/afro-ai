@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { productSelfKnowledge, productLanguageName, PRODUCT_LANGUAGE_NAMES } from "../product-self-knowledge";
 
 const original = {
@@ -10,6 +10,7 @@ const original = {
   JINA_API_KEY: process.env.JINA_API_KEY,
 };
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const [key, value] of Object.entries(original)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -17,6 +18,34 @@ afterEach(() => {
 });
 
 describe("trusted product context", () => {
+  it.each(["builder", "founder", "selected-file", "project-agent", "knowledge", "voice"] as const)(
+    "teaches safe secret handling and authorized VPS transfers in %s without granting tools",
+    channel => {
+      const context = productSelfKnowledge({ afroAuthorized: false, channel });
+      for (const rule of [
+        "Never expose secret values, even to a founder",
+        "Never solicit credentials in chat",
+        "AI memory", "allowlist of configuration names",
+        "not the model or browser", "pinned SSH host key",
+        "encrypted SSH standard input", "atomic rename",
+        "preserves unrelated settings", "root-only",
+        "boolean results", "operation-specific permission checks",
+        "not a new VPS upload tool", "without an authorized tool result",
+        "Authorization to give instructions is not authorization to change production",
+      ]) expect(context).toContain(rule);
+    },
+  );
+
+  it("does not copy configured operational secrets into any assistant's knowledge", () => {
+    const names = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
+      "BACKUP_R2_SECRET_ACCESS_KEY", "CLOUDFLARE_DNS_TOKEN", "DROPLET_SSH_KEY"];
+    for (const name of names) vi.stubEnv(name, `synthetic-private-canary-${name}`);
+    for (const channel of ["builder", "founder", "selected-file", "project-agent", "knowledge", "voice"] as const) {
+      const context = productSelfKnowledge({ afroAuthorized: true, channel });
+      for (const name of names) expect(context).not.toContain(`synthetic-private-canary-${name}`);
+    }
+  });
+
   it("reports unconfigured and unauthorized capabilities without revealing secrets or implying successful inference", () => {
     delete process.env.HF_TOKEN;
     delete process.env.AFRO_AI_BASE_URL;

@@ -19,3 +19,14 @@ documentation. Distinguish instructions from actions actually performed, and
 verified release evidence from hardware certification or planned features.
 For downloads, verify the current controls and distinguish optimized image
 copies, source/local-runner bundles, chat transcripts and software installers.
+
+Afro AI must not expose secrets and must explain how to upload secrets directly
+to a VPS without exposure.
+
+**Why:** The user explicitly requested these rules in Afro AI's memory.
+
+**How to apply:** Keep this in the product's shared assistant guidance, not only
+agent memory. Teach secure backend-only transfers from an approved secret store,
+verified SSH host identity, values on encrypted standard input, protected atomic
+configuration updates and safe verification. Do not add secret values to memory,
+claim new execution capabilities, or treat guidance as production authorization.
